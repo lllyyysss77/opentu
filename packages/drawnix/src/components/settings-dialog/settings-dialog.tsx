@@ -1,9 +1,7 @@
-import { Dialog, DialogContent } from '../dialog/dialog';
 import { useDrawnix } from '../../hooks/use-drawnix';
 import './settings-dialog.scss';
-import { useI18n } from '../../i18n';
 import { useEffect, useState } from 'react';
-import { Tooltip, Checkbox } from 'tdesign-react';
+import { MessagePlugin, Tooltip, Switch } from 'tdesign-react';
 import { InfoCircleIcon } from 'tdesign-icons-react';
 import { LS_KEYS } from '../../constants/storage-keys';
 import { ModelDiscoveryDialog } from './model-discovery-dialog';
@@ -39,15 +37,17 @@ import {
   type ProviderProfile,
   type RouteConfig,
 } from '../../utils/settings-manager';
+import { WinBoxWindow } from '../winbox';
 
 export { IMAGE_MODEL_GROUPED_SELECT_OPTIONS as IMAGE_MODEL_GROUPED_OPTIONS } from '../../constants/model-config';
 export { VIDEO_MODEL_SELECT_OPTIONS as VIDEO_MODEL_OPTIONS } from '../../constants/model-config';
 
-type SettingsView = 'providers' | 'presets';
+type SettingsView = 'providers' | 'presets' | 'canvas';
 
-const VIEW_TABS: Array<{ value: SettingsView; label: string }> = [
-  { value: 'providers', label: '供应商配置' },
-  { value: 'presets', label: '默认模型预设' },
+const VIEW_SECTIONS: Array<{ value: SettingsView; label: string }> = [
+  { value: 'providers', label: '供应商' },
+  { value: 'presets', label: '模型预设' },
+  { value: 'canvas', label: '画布显示' },
 ];
 
 const PROVIDER_TYPE_OPTIONS: ProviderProfile['providerType'][] = [
@@ -64,6 +64,144 @@ const ROUTE_LABELS: Record<ModelType, string> = {
   text: '文本',
 };
 
+const MODEL_GROUP_LABELS: Record<ModelType, string> = {
+  image: '图片模型',
+  video: '视频模型',
+  text: '文本模型',
+};
+
+const PROVIDER_TYPE_META: Record<
+  ProviderProfile['providerType'],
+  { label: string }
+> = {
+  'openai-compatible': {
+    label: 'OpenAI 兼容',
+  },
+  'gemini-compatible': {
+    label: 'Gemini 兼容',
+  },
+  custom: {
+    label: '自定义接入',
+  },
+};
+
+const AUTH_TYPE_META: Record<ProviderProfile['authType'], { label: string }> = {
+  bearer: {
+    label: 'Bearer Token',
+  },
+  header: {
+    label: '自定义 Header',
+  },
+};
+
+const PROVIDER_AVATAR_THEMES = [
+  'amber',
+  'sky',
+  'mint',
+  'rose',
+  'violet',
+] as const;
+
+type ProviderAvatarTheme = (typeof PROVIDER_AVATAR_THEMES)[number];
+
+function getModelTypeCounts(models: ModelConfig[]): Record<ModelType, number> {
+  return models.reduce(
+    (counts, model) => {
+      counts[model.type] += 1;
+      return counts;
+    },
+    { image: 0, video: 0, text: 0 }
+  );
+}
+
+function getConfiguredRouteCount(preset: InvocationPreset | null): number {
+  if (!preset) {
+    return 0;
+  }
+
+  return (['image', 'video', 'text'] as ModelType[]).filter((routeType) =>
+    Boolean(getRouteModelId(preset[routeType]))
+  ).length;
+}
+
+function getProviderDraftState(
+  profile: ProviderProfile,
+  initialProfiles: ProviderProfile[]
+): 'new' | 'dirty' | 'saved' {
+  const initialProfile = initialProfiles.find((item) => item.id === profile.id);
+  if (!initialProfile) {
+    return 'new';
+  }
+  return areEqual(initialProfile, profile) ? 'saved' : 'dirty';
+}
+
+function getSyncNoticeTone(
+  status: 'idle' | 'loading' | 'ready' | 'error',
+  message: string | null,
+  canManageModels: boolean
+): 'info' | 'success' | 'warning' | 'danger' {
+  if (status === 'error') {
+    return 'danger';
+  }
+
+  if (message?.startsWith('已')) {
+    return 'success';
+  }
+
+  if (!canManageModels) {
+    return 'warning';
+  }
+
+  return 'info';
+}
+
+function createSettingsDraftSignature(params: {
+  profiles: ProviderProfile[];
+  presets: InvocationPreset[];
+  activePresetId: string;
+  imageModelName: string;
+  videoModelName: string;
+  textModelName: string;
+  showWorkZoneCard: boolean;
+}): string {
+  return JSON.stringify(params);
+}
+
+function getProviderIconUrl(
+  profile: Pick<ProviderProfile, 'iconUrl'>
+): string | null {
+  if (typeof profile.iconUrl !== 'string') {
+    return null;
+  }
+
+  const trimmed = profile.iconUrl.trim();
+  return trimmed || null;
+}
+
+function getProviderAvatarLabel(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) {
+    return '供';
+  }
+
+  const alphaNumericGroups = trimmed.match(/[A-Za-z0-9]+/g);
+  if (alphaNumericGroups?.[0]) {
+    return alphaNumericGroups[0][0].toUpperCase();
+  }
+
+  return Array.from(trimmed)[0]?.toUpperCase() || '供';
+}
+
+function getProviderAvatarTheme(
+  profile: Pick<ProviderProfile, 'id' | 'name' | 'providerType'>
+): ProviderAvatarTheme {
+  const seed = Array.from(
+    `${profile.id}-${profile.providerType}-${profile.name}`
+  ).reduce((total, char, index) => total + char.charCodeAt(0) * (index + 1), 0);
+
+  return PROVIDER_AVATAR_THEMES[seed % PROVIDER_AVATAR_THEMES.length];
+}
+
 function cloneValue<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
@@ -76,6 +214,7 @@ function createProfile(index: number): ProviderProfile {
   return {
     id: createId('profile'),
     name: `供应商 ${index}`,
+    iconUrl: '',
     providerType: 'openai-compatible',
     baseUrl: '',
     apiKey: '',
@@ -90,6 +229,47 @@ function createProfile(index: number): ProviderProfile {
     },
   };
 }
+
+const ProviderAvatar = ({
+  profile,
+  size = 'regular',
+}: {
+  profile: Pick<ProviderProfile, 'id' | 'name' | 'providerType' | 'iconUrl'>;
+  size?: 'regular' | 'large';
+}) => {
+  const normalizedIconUrl = getProviderIconUrl(profile);
+  const [imageUrl, setImageUrl] = useState<string | null>(normalizedIconUrl);
+
+  useEffect(() => {
+    setImageUrl(normalizedIconUrl);
+  }, [normalizedIconUrl]);
+
+  const avatarTheme = getProviderAvatarTheme(profile);
+  const avatarLabel = getProviderAvatarLabel(profile.name);
+
+  return (
+    <span
+      className={`settings-dialog__provider-avatar settings-dialog__provider-avatar--${avatarTheme} ${
+        size === 'large' ? 'settings-dialog__provider-avatar--large' : ''
+      }`}
+      aria-hidden="true"
+    >
+      {imageUrl ? (
+        <img
+          src={imageUrl}
+          alt={`${profile.name} 图标`}
+          className="settings-dialog__provider-avatar-image"
+          loading="lazy"
+          onError={() => setImageUrl(null)}
+        />
+      ) : (
+        <span className="settings-dialog__provider-avatar-text">
+          {avatarLabel}
+        </span>
+      )}
+    </span>
+  );
+};
 
 function createPreset(
   profileId: string | null,
@@ -177,7 +357,6 @@ export const SettingsDialog = ({
   container: HTMLElement | null;
 }) => {
   const { appState, setAppState } = useDrawnix();
-  const { t } = useI18n();
 
   const [activeView, setActiveView] = useState<SettingsView>('providers');
   const [selectedProfileId, setSelectedProfileId] = useState(
@@ -198,6 +377,8 @@ export const SettingsDialog = ({
   const [showWorkZoneCard, setShowWorkZoneCard] = useState(true);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [discoveryDialogOpen, setDiscoveryDialogOpen] = useState(false);
+  const [initialDraftSignature, setInitialDraftSignature] = useState('');
+  const [isPersisting, setIsPersisting] = useState(false);
 
   const selectedProfile =
     profilesDraft.find((profile) => profile.id === selectedProfileId) ||
@@ -225,18 +406,51 @@ export const SettingsDialog = ({
   );
 
   const enabledProfiles = profilesDraft.filter((profile) => profile.enabled);
-  const selectedProfileInitial = initialProfiles.find(
-    (profile) => profile.id === selectedProfile?.id
-  );
-  const selectedProfileDirty =
-    !!selectedProfile &&
-    !areEqual(selectedProfileInitial || null, selectedProfile);
-  const selectedProfileSaved = !!selectedProfileInitial;
-  const canManageModels =
-    !!selectedProfile &&
-    selectedProfileSaved &&
-    !selectedProfileDirty &&
-    !!selectedProfile.baseUrl.trim();
+  const canManageModels = !!selectedProfile && !!selectedProfile.apiKey.trim();
+  const currentDraftSignature = createSettingsDraftSignature({
+    profiles: profilesDraft,
+    presets: presetsDraft,
+    activePresetId: activePresetIdDraft,
+    imageModelName,
+    videoModelName,
+    textModelName,
+    showWorkZoneCard,
+  });
+  const hasPendingChanges =
+    appState.openSettings && currentDraftSignature !== initialDraftSignature;
+
+  const readPersistedWorkZoneCard = () => {
+    try {
+      return localStorage.getItem(LS_KEYS.WORKZONE_CARD_VISIBLE) !== 'false';
+    } catch {
+      return true;
+    }
+  };
+
+  const syncPersistedBaseline = () => {
+    const persistedProfiles = cloneValue(providerProfilesSettings.get());
+    const persistedPresets = cloneValue(invocationPresetsSettings.get());
+    const persistedActivePresetId =
+      invocationPresetsSettings.getActivePresetId() ||
+      DEFAULT_INVOCATION_PRESET_ID;
+    const persistedGemini = geminiSettings.get();
+    const persistedShowWorkZoneCard = readPersistedWorkZoneCard();
+
+    setInitialProfiles(persistedProfiles);
+    setInitialDraftSignature(
+      createSettingsDraftSignature({
+        profiles: persistedProfiles,
+        presets: persistedPresets,
+        activePresetId: persistedActivePresetId,
+        imageModelName:
+          persistedGemini.imageModelName || getDefaultImageModel(),
+        videoModelName:
+          persistedGemini.videoModelName || getDefaultVideoModel(),
+        textModelName: persistedGemini.textModelName || getDefaultTextModel(),
+        showWorkZoneCard: persistedShowWorkZoneCard,
+      })
+    );
+  };
 
   useEffect(() => {
     if (!appState.openSettings) {
@@ -249,6 +463,7 @@ export const SettingsDialog = ({
       invocationPresetsSettings.getActivePresetId() ||
       DEFAULT_INVOCATION_PRESET_ID;
     const geminiConfig = geminiSettings.get();
+    let nextShowWorkZoneCard = true;
 
     setProfilesDraft(nextProfiles);
     setPresetsDraft(nextPresets);
@@ -269,16 +484,27 @@ export const SettingsDialog = ({
     setTextModelName(geminiConfig.textModelName || getDefaultTextModel());
 
     try {
-      setShowWorkZoneCard(
-        localStorage.getItem(LS_KEYS.WORKZONE_CARD_VISIBLE) !== 'false'
-      );
+      nextShowWorkZoneCard =
+        localStorage.getItem(LS_KEYS.WORKZONE_CARD_VISIBLE) !== 'false';
     } catch {
-      setShowWorkZoneCard(true);
+      nextShowWorkZoneCard = true;
     }
+    setShowWorkZoneCard(nextShowWorkZoneCard);
 
     setActiveView('providers');
     setSyncMessage(null);
     setDiscoveryDialogOpen(false);
+    setInitialDraftSignature(
+      createSettingsDraftSignature({
+        profiles: nextProfiles,
+        presets: nextPresets,
+        activePresetId: nextActivePresetId,
+        imageModelName: geminiConfig.imageModelName || getDefaultImageModel(),
+        videoModelName: geminiConfig.videoModelName || getDefaultVideoModel(),
+        textModelName: geminiConfig.textModelName || getDefaultTextModel(),
+        showWorkZoneCard: nextShowWorkZoneCard,
+      })
+    );
   }, [appState.openSettings]);
 
   useEffect(() => {
@@ -335,6 +561,106 @@ export const SettingsDialog = ({
         preset.id === presetId ? updater(preset) : preset
       )
     );
+  };
+
+  const persistPresetConfiguration = async (
+    nextPresets: InvocationPreset[],
+    nextActivePresetId: string
+  ): Promise<boolean> => {
+    try {
+      const persistedGemini = geminiSettings.get();
+      const effectiveActivePresetId =
+        nextPresets.find((preset) => preset.id === nextActivePresetId)?.id ||
+        nextPresets[0]?.id ||
+        DEFAULT_INVOCATION_PRESET_ID;
+      const activePreset =
+        nextPresets.find((preset) => preset.id === effectiveActivePresetId) ||
+        nextPresets[0] ||
+        null;
+      const nextImageModelName =
+        getRouteModelId(activePreset?.image) ||
+        persistedGemini.imageModelName ||
+        getDefaultImageModel();
+      const nextVideoModelName =
+        getRouteModelId(activePreset?.video) ||
+        persistedGemini.videoModelName ||
+        getDefaultVideoModel();
+      const nextTextModelName =
+        getRouteModelId(activePreset?.text) ||
+        persistedGemini.textModelName ||
+        persistedGemini.chatModel ||
+        getDefaultTextModel();
+
+      await invocationPresetsSettings.update(cloneValue(nextPresets));
+      await invocationPresetsSettings.setActivePresetId(
+        effectiveActivePresetId
+      );
+      await geminiSettings.update({
+        imageModelName: nextImageModelName,
+        videoModelName: nextVideoModelName,
+        textModelName: nextTextModelName,
+        chatModel: nextTextModelName,
+      });
+
+      setPresetsDraft(nextPresets);
+      setActivePresetIdDraft(effectiveActivePresetId);
+      setImageModelName(nextImageModelName);
+      setVideoModelName(nextVideoModelName);
+      setTextModelName(nextTextModelName);
+      syncPersistedBaseline();
+
+      return true;
+    } catch (error) {
+      console.error('Failed to persist preset configuration:', error);
+      MessagePlugin.error('预设保存失败，请重试');
+      return false;
+    }
+  };
+
+  const handleProviderEnabledChange = async (
+    profileId: string,
+    enabled: boolean
+  ) => {
+    setProfilesDraft((current) =>
+      current.map((profile) =>
+        profile.id === profileId ? { ...profile, enabled } : profile
+      )
+    );
+
+    if (!initialProfiles.some((profile) => profile.id === profileId)) {
+      return;
+    }
+
+    try {
+      await providerProfilesSettings.update(
+        cloneValue(providerProfilesSettings.get()).map((profile) =>
+          profile.id === profileId ? { ...profile, enabled } : profile
+        )
+      );
+      syncPersistedBaseline();
+    } catch (error) {
+      console.error('Failed to persist provider enabled state:', error);
+      setProfilesDraft((current) =>
+        current.map((profile) =>
+          profile.id === profileId ? { ...profile, enabled: !enabled } : profile
+        )
+      );
+      MessagePlugin.error('供应商状态保存失败，请重试');
+    }
+  };
+
+  const handleCanvasVisibilityChange = async (checked: boolean) => {
+    setShowWorkZoneCard(checked);
+
+    try {
+      localStorage.setItem(LS_KEYS.WORKZONE_CARD_VISIBLE, String(checked));
+      window.dispatchEvent(new CustomEvent('workzone-visibility-changed'));
+      syncPersistedBaseline();
+    } catch (error) {
+      console.error('Failed to persist canvas visibility state:', error);
+      setShowWorkZoneCard(!checked);
+      MessagePlugin.error('画布显示配置保存失败，请重试');
+    }
   };
 
   const handleAddProfile = () => {
@@ -403,12 +729,16 @@ export const SettingsDialog = ({
     }
 
     const nextModelRef = parseModelRefValue(value);
-
-    updatePreset(selectedPreset.id, (preset) =>
-      updatePresetRoute(preset, routeType, {
-        defaultModelRef: nextModelRef,
-      })
+    const nextPresets = presetsDraft.map((preset) =>
+      preset.id === selectedPreset.id
+        ? updatePresetRoute(preset, routeType, {
+            defaultModelRef: nextModelRef,
+          })
+        : preset
     );
+
+    setPresetsDraft(nextPresets);
+    void persistPresetConfiguration(nextPresets, activePresetIdDraft);
   };
 
   const handleFetchModels = async () => {
@@ -417,9 +747,13 @@ export const SettingsDialog = ({
       return;
     }
 
-    if (!selectedProfileSaved || selectedProfileDirty) {
-      setSyncMessage('请先保存当前供应商配置，再获取模型');
-      return;
+    if (hasPendingChanges) {
+      const savingMessage = MessagePlugin.loading('正在保存当前配置...', 0);
+      const saved = await persistDrafts(false);
+      MessagePlugin.close(savingMessage);
+      if (!saved) {
+        return;
+      }
     }
 
     const trimmedApiKey = selectedProfile.apiKey.trim();
@@ -507,203 +841,310 @@ export const SettingsDialog = ({
     setDiscoveryDialogOpen(false);
   };
 
-  const handleCancel = () => {
-    setAppState({ ...appState, openSettings: false });
+  const closeSettingsDialog = () => {
+    setAppState((prev) => ({ ...prev, openSettings: false }));
   };
 
-  const handleSave = async () => {
-    const normalizedProfiles = profilesDraft.map((profile) => {
-      const normalizedBaseUrl = profile.baseUrl.trim()
-        ? normalizeModelApiBaseUrl(profile.baseUrl)
-        : '';
+  const persistDrafts = async (closeAfterSave = false): Promise<boolean> => {
+    if (isPersisting) {
+      return false;
+    }
 
-      return {
-        ...profile,
-        name: profile.name.trim() || '未命名供应商',
-        baseUrl: normalizedBaseUrl,
-        apiKey: profile.apiKey.trim(),
-      };
-    });
+    setIsPersisting(true);
+    try {
+      const normalizedProfiles = profilesDraft.map((profile) => {
+        const normalizedBaseUrl = profile.baseUrl.trim()
+          ? normalizeModelApiBaseUrl(profile.baseUrl)
+          : '';
 
-    const profileIds = new Set(normalizedProfiles.map((profile) => profile.id));
-    const normalizedPresets = presetsDraft.map((preset) => {
-      const nextPreset: InvocationPreset = {
-        ...preset,
-        name: preset.name.trim() || '未命名预设',
-        image: { ...preset.image },
-        video: { ...preset.video },
-        text: { ...preset.text },
-      };
+        return {
+          ...profile,
+          name: profile.name.trim() || '未命名供应商',
+          iconUrl: profile.iconUrl?.trim() || undefined,
+          baseUrl: normalizedBaseUrl,
+          apiKey: profile.apiKey.trim(),
+        };
+      });
 
-      (['image', 'video', 'text'] as ModelType[]).forEach((routeType) => {
-        const route = nextPreset[routeType];
-        const routeProfileId = getRouteProfileId(route);
-        const routeModelId = getRouteModelId(route);
-        if (routeProfileId && !profileIds.has(routeProfileId)) {
+      const profileIds = new Set(
+        normalizedProfiles.map((profile) => profile.id)
+      );
+      const normalizedPresets = presetsDraft.map((preset) => {
+        const nextPreset: InvocationPreset = {
+          ...preset,
+          name: preset.name.trim() || '未命名预设',
+          image: { ...preset.image },
+          video: { ...preset.video },
+          text: { ...preset.text },
+        };
+
+        (['image', 'video', 'text'] as ModelType[]).forEach((routeType) => {
+          const route = nextPreset[routeType];
+          const routeProfileId = getRouteProfileId(route);
+          const routeModelId = getRouteModelId(route);
+          if (routeProfileId && !profileIds.has(routeProfileId)) {
+            nextPreset[routeType] = createRouteConfig(
+              createModelRef(null, routeModelId)
+            );
+            return;
+          }
+
           nextPreset[routeType] = createRouteConfig(
-            createModelRef(null, routeModelId)
+            createModelRef(routeProfileId, routeModelId)
           );
-          return;
-        }
+        });
 
-        nextPreset[routeType] = createRouteConfig(
-          createModelRef(routeProfileId, routeModelId)
+        return nextPreset;
+      });
+
+      const normalizedActivePresetId =
+        normalizedPresets.find((preset) => preset.id === activePresetIdDraft)
+          ?.id ||
+        normalizedPresets[0]?.id ||
+        DEFAULT_INVOCATION_PRESET_ID;
+      const activePreset =
+        normalizedPresets.find(
+          (preset) => preset.id === normalizedActivePresetId
+        ) ||
+        normalizedPresets[0] ||
+        null;
+
+      const legacyProfile =
+        normalizedProfiles.find(
+          (profile) => profile.id === LEGACY_DEFAULT_PROVIDER_PROFILE_ID
+        ) || normalizedProfiles[0];
+
+      const normalizedLegacyBaseUrl = normalizeModelApiBaseUrl(
+        legacyProfile?.baseUrl || 'https://api.tu-zi.com/v1'
+      );
+      const normalizedImageModel =
+        imageModelName.trim() ||
+        legacyImageModels[0]?.id ||
+        getDefaultImageModel();
+      const normalizedVideoModel =
+        videoModelName.trim() ||
+        legacyVideoModels[0]?.id ||
+        getDefaultVideoModel();
+      const normalizedTextModel =
+        textModelName.trim() ||
+        legacyTextModels[0]?.id ||
+        getDefaultTextModel();
+      const normalizedActiveImageModel =
+        getRouteModelId(activePreset?.image) || normalizedImageModel;
+      const normalizedActiveVideoModel =
+        getRouteModelId(activePreset?.video) || normalizedVideoModel;
+      const normalizedActiveTextModel =
+        getRouteModelId(activePreset?.text) || normalizedTextModel;
+
+      normalizedProfiles.forEach((profile) => {
+        runtimeModelDiscovery.invalidateIfConfigChanged(
+          profile.id,
+          profile.baseUrl || 'https://api.tu-zi.com/v1',
+          profile.apiKey || ''
         );
       });
 
-      return nextPreset;
-    });
-
-    const normalizedActivePresetId =
-      normalizedPresets.find((preset) => preset.id === activePresetIdDraft)
-        ?.id ||
-      normalizedPresets[0]?.id ||
-      DEFAULT_INVOCATION_PRESET_ID;
-    const activePreset =
-      normalizedPresets.find(
-        (preset) => preset.id === normalizedActivePresetId
-      ) ||
-      normalizedPresets[0] ||
-      null;
-
-    const legacyProfile =
-      normalizedProfiles.find(
-        (profile) => profile.id === LEGACY_DEFAULT_PROVIDER_PROFILE_ID
-      ) || normalizedProfiles[0];
-
-    const normalizedLegacyBaseUrl = normalizeModelApiBaseUrl(
-      legacyProfile?.baseUrl || 'https://api.tu-zi.com/v1'
-    );
-    const normalizedImageModel =
-      imageModelName.trim() ||
-      legacyImageModels[0]?.id ||
-      getDefaultImageModel();
-    const normalizedVideoModel =
-      videoModelName.trim() ||
-      legacyVideoModels[0]?.id ||
-      getDefaultVideoModel();
-    const normalizedTextModel =
-      textModelName.trim() || legacyTextModels[0]?.id || getDefaultTextModel();
-    const normalizedActiveImageModel =
-      getRouteModelId(activePreset?.image) || normalizedImageModel;
-    const normalizedActiveVideoModel =
-      getRouteModelId(activePreset?.video) || normalizedVideoModel;
-    const normalizedActiveTextModel =
-      getRouteModelId(activePreset?.text) || normalizedTextModel;
-
-    runtimeModelDiscovery.invalidateIfConfigChanged(
-      LEGACY_DEFAULT_PROVIDER_PROFILE_ID,
-      normalizedLegacyBaseUrl,
-      legacyProfile?.apiKey || ''
-    );
-
-    await geminiSettings.update({
-      apiKey: legacyProfile?.apiKey || '',
-      baseUrl: normalizedLegacyBaseUrl,
-      imageModelName: normalizedActiveImageModel,
-      videoModelName: normalizedActiveVideoModel,
-      textModelName: normalizedActiveTextModel,
-    });
-    await providerProfilesSettings.update(normalizedProfiles);
-    await providerCatalogsSettings.update(
-      providerCatalogsSettings
-        .get()
-        .filter((catalog) => profileIds.has(catalog.profileId))
-    );
-    await invocationPresetsSettings.update(normalizedPresets);
-    await invocationPresetsSettings.setActivePresetId(normalizedActivePresetId);
-
-    try {
-      localStorage.setItem(
-        LS_KEYS.WORKZONE_CARD_VISIBLE,
-        String(showWorkZoneCard)
+      await geminiSettings.update({
+        apiKey: legacyProfile?.apiKey || '',
+        baseUrl: normalizedLegacyBaseUrl,
+        imageModelName: normalizedActiveImageModel,
+        videoModelName: normalizedActiveVideoModel,
+        textModelName: normalizedActiveTextModel,
+      });
+      await providerProfilesSettings.update(normalizedProfiles);
+      await providerCatalogsSettings.update(
+        runtimeModelDiscovery
+          .getCatalogs()
+          .filter((catalog) => profileIds.has(catalog.profileId))
       );
-      window.dispatchEvent(new CustomEvent('workzone-visibility-changed'));
-    } catch {
-      // localStorage not available
+      await invocationPresetsSettings.update(normalizedPresets);
+      await invocationPresetsSettings.setActivePresetId(
+        normalizedActivePresetId
+      );
+
+      try {
+        localStorage.setItem(
+          LS_KEYS.WORKZONE_CARD_VISIBLE,
+          String(showWorkZoneCard)
+        );
+        window.dispatchEvent(new CustomEvent('workzone-visibility-changed'));
+      } catch {
+        // localStorage not available
+      }
+
+      setProfilesDraft(normalizedProfiles);
+      setInitialProfiles(cloneValue(normalizedProfiles));
+      setPresetsDraft(normalizedPresets);
+      setActivePresetIdDraft(normalizedActivePresetId);
+      setImageModelName(normalizedImageModel);
+      setVideoModelName(normalizedVideoModel);
+      setTextModelName(normalizedTextModel);
+      setInitialDraftSignature(
+        createSettingsDraftSignature({
+          profiles: normalizedProfiles,
+          presets: normalizedPresets,
+          activePresetId: normalizedActivePresetId,
+          imageModelName: normalizedImageModel,
+          videoModelName: normalizedVideoModel,
+          textModelName: normalizedTextModel,
+          showWorkZoneCard,
+        })
+      );
+
+      if (closeAfterSave) {
+        closeSettingsDialog();
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Failed to persist settings drafts:', error);
+      MessagePlugin.error('设置保存失败，请稍后重试');
+      return false;
+    } finally {
+      setIsPersisting(false);
+    }
+  };
+
+  const handleCancel = () => {
+    if (!hasPendingChanges) {
+      closeSettingsDialog();
+      return;
     }
 
-    setAppState({ ...appState, openSettings: false });
+    void (async () => {
+      const savingMessage = MessagePlugin.loading('正在保存设置...', 0);
+      const saved = await persistDrafts(true);
+      MessagePlugin.close(savingMessage);
+
+      if (!saved) {
+        MessagePlugin.warning('设置尚未保存，请检查后重试');
+      }
+    })();
+  };
+
+  const handleWindowClose = () => {
+    if (discoveryDialogOpen || isPersisting) {
+      return;
+    }
+    handleCancel();
   };
 
   const renderProviderList = () => (
-    <div className="settings-dialog__sidebar-list">
-      {profilesDraft.map((profile) => {
-        const state = runtimeModelDiscovery.getState(profile.id);
-        const isSelected = profile.id === selectedProfile?.id;
+    <div className="settings-dialog__sidebar-shell settings-dialog__sidebar-shell--catalog">
+      <div className="settings-dialog__sidebar-summary">
+        <span className="settings-dialog__sidebar-summary-title">
+          供应商目录
+        </span>
+      </div>
 
-        return (
-          <button
-            key={profile.id}
-            type="button"
-            className={`settings-dialog__sidebar-item ${
-              isSelected ? 'settings-dialog__sidebar-item--active' : ''
-            }`}
-            onClick={() => setSelectedProfileId(profile.id)}
-          >
-            <div className="settings-dialog__sidebar-item-top">
-              <span>{profile.name}</span>
-              {profile.id === LEGACY_DEFAULT_PROVIDER_PROFILE_ID ? (
-                <span className="settings-dialog__sidebar-badge">默认</span>
-              ) : null}
+      <div className="settings-dialog__sidebar-list">
+        {profilesDraft.map((profile) => {
+          const isSelected = profile.id === selectedProfile?.id;
+
+          return (
+            <div
+              key={profile.id}
+              className={`settings-dialog__provider-row ${
+                isSelected ? 'settings-dialog__provider-row--active' : ''
+              } ${
+                profile.enabled ? '' : 'settings-dialog__provider-row--disabled'
+              }`}
+            >
+              <button
+                type="button"
+                className="settings-dialog__provider-select"
+                onClick={() => setSelectedProfileId(profile.id)}
+                aria-pressed={isSelected}
+              >
+                <ProviderAvatar profile={profile} />
+                <span className="settings-dialog__provider-copy">
+                  <span className="settings-dialog__provider-name-row">
+                    <span className="settings-dialog__provider-name">
+                      {profile.name}
+                    </span>
+                    {profile.id === LEGACY_DEFAULT_PROVIDER_PROFILE_ID ? (
+                      <span className="settings-dialog__provider-tag">
+                        默认
+                      </span>
+                    ) : null}
+                  </span>
+                </span>
+              </button>
+
+              <div className="settings-dialog__provider-switch">
+                <Switch
+                  size="small"
+                  value={profile.enabled}
+                  disabled={profile.id === LEGACY_DEFAULT_PROVIDER_PROFILE_ID}
+                  onChange={(checked) =>
+                    void handleProviderEnabledChange(
+                      profile.id,
+                      checked as boolean
+                    )
+                  }
+                />
+              </div>
             </div>
-            <div className="settings-dialog__sidebar-item-meta">
-              <span>{profile.enabled ? '已启用' : '已停用'}</span>
-              <span>{state.models.length} 已添加</span>
-              <span>{state.discoveredModels.length} 已发现</span>
-            </div>
-          </button>
-        );
-      })}
+          );
+        })}
+      </div>
+
       <button
         type="button"
         className="settings-dialog__sidebar-add"
         onClick={handleAddProfile}
       >
-        + 新增供应商
+        <span className="settings-dialog__sidebar-add-icon">+</span>
+        <span>新增供应商</span>
       </button>
     </div>
   );
 
   const renderPresetList = () => (
-    <div className="settings-dialog__sidebar-list">
-      {presetsDraft.map((preset) => {
-        const isSelected = preset.id === selectedPreset?.id;
-        const isActive = preset.id === activePresetIdDraft;
+    <div className="settings-dialog__sidebar-shell">
+      <div className="settings-dialog__sidebar-summary">
+        <span className="settings-dialog__sidebar-summary-title">默认模型</span>
+      </div>
 
-        return (
-          <button
-            key={preset.id}
-            type="button"
-            className={`settings-dialog__sidebar-item ${
-              isSelected ? 'settings-dialog__sidebar-item--active' : ''
-            }`}
-            onClick={() => setSelectedPresetId(preset.id)}
-          >
-            <div className="settings-dialog__sidebar-item-top">
-              <span>{preset.name}</span>
-              {isActive ? (
-                <span className="settings-dialog__sidebar-badge">当前</span>
-              ) : null}
-            </div>
-            <div className="settings-dialog__sidebar-item-meta">
-              <span>
-                图 {getRouteModelId(preset.image) ? '已配置' : '未配'}
-              </span>
-              <span>
-                视 {getRouteModelId(preset.video) ? '已配置' : '未配'}
-              </span>
-              <span>文 {getRouteModelId(preset.text) ? '已配置' : '未配'}</span>
-            </div>
-          </button>
-        );
-      })}
+      <div className="settings-dialog__sidebar-list">
+        {presetsDraft.map((preset) => {
+          const isSelected = preset.id === selectedPreset?.id;
+          const isActive = preset.id === activePresetIdDraft;
+          const configuredRouteCount = getConfiguredRouteCount(preset);
+
+          return (
+            <button
+              key={preset.id}
+              type="button"
+              className={`settings-dialog__sidebar-item ${
+                isSelected ? 'settings-dialog__sidebar-item--active' : ''
+              }`}
+              onClick={() => setSelectedPresetId(preset.id)}
+            >
+              <div className="settings-dialog__sidebar-item-top">
+                <span>{preset.name}</span>
+                {isActive ? (
+                  <span className="settings-dialog__sidebar-badge settings-dialog__sidebar-badge--accent">
+                    当前
+                  </span>
+                ) : null}
+              </div>
+
+              <div className="settings-dialog__sidebar-item-meta">
+                <span>{configuredRouteCount}/3 已配置</span>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
       <button
         type="button"
         className="settings-dialog__sidebar-add"
         onClick={handleAddPreset}
       >
-        + 新增预设
+        <span className="settings-dialog__sidebar-add-icon">+</span>
+        <span>新增预设</span>
       </button>
     </div>
   );
@@ -715,16 +1156,30 @@ export const SettingsDialog = ({
       );
     }
 
+    const selectedCounts = getModelTypeCounts(runtimeState.models);
+    const draftState = getProviderDraftState(selectedProfile, initialProfiles);
+    const totalModels =
+      selectedCounts.image + selectedCounts.video + selectedCounts.text;
+
     return (
-      <div className="settings-dialog__content-panel">
-        <div className="settings-dialog__section">
-          <div className="settings-dialog__section-header">
-            <div>
-              <h3 className="settings-dialog__section-title">供应商详情</h3>
-              <p className="settings-dialog__section-note">
-                管理 Base
-                URL、认证方式和能力声明。模型与供应商绑定，实际调用会优先按所选模型所属供应商解析。
-              </p>
+      <div className="settings-dialog__content-panel settings-dialog__content-panel--providers">
+        <div className="settings-dialog__section settings-dialog__section--compact">
+          <div className="settings-dialog__panel-header">
+            <div className="settings-dialog__profile-hero">
+              <ProviderAvatar profile={selectedProfile} size="large" />
+              <div>
+                <h3 className="settings-dialog__section-title">
+                  {selectedProfile.name}
+                </h3>
+                <div className="settings-dialog__inline-meta">
+                  <span>
+                    {PROVIDER_TYPE_META[selectedProfile.providerType].label}
+                  </span>
+                  <span>{selectedProfile.enabled ? '启用' : '停用'}</span>
+                  <span>{totalModels} 个模型</span>
+                  <span>{draftState === 'saved' ? '已保存' : '未保存'}</span>
+                </div>
+              </div>
             </div>
             {selectedProfile.id !== LEGACY_DEFAULT_PROVIDER_PROFILE_ID ? (
               <button
@@ -732,9 +1187,17 @@ export const SettingsDialog = ({
                 className="settings-dialog__danger-button"
                 onClick={() => handleDeleteProfile(selectedProfile.id)}
               >
-                删除供应商
+                删除
               </button>
             ) : null}
+          </div>
+        </div>
+
+        <div className="settings-dialog__section">
+          <div className="settings-dialog__section-header">
+            <div>
+              <h3 className="settings-dialog__section-title">基础配置</h3>
+            </div>
           </div>
 
           <div className="settings-dialog__grid">
@@ -757,7 +1220,7 @@ export const SettingsDialog = ({
 
             <div className="settings-dialog__field settings-dialog__field--column">
               <label className="settings-dialog__label settings-dialog__label--stacked">
-                Provider Type
+                接口类型
               </label>
               <select
                 className="settings-dialog__select"
@@ -772,10 +1235,31 @@ export const SettingsDialog = ({
               >
                 {PROVIDER_TYPE_OPTIONS.map((providerType) => (
                   <option key={providerType} value={providerType}>
-                    {providerType}
+                    {PROVIDER_TYPE_META[providerType].label}
                   </option>
                 ))}
               </select>
+            </div>
+
+            <div className="settings-dialog__field settings-dialog__field--column settings-dialog__field--full">
+              <label className="settings-dialog__label settings-dialog__label--stacked">
+                图标 URL
+              </label>
+              <input
+                type="url"
+                className="settings-dialog__input"
+                value={selectedProfile.iconUrl || ''}
+                onChange={(event) =>
+                  updateProfile(selectedProfile.id, (profile) => ({
+                    ...profile,
+                    iconUrl: event.target.value,
+                  }))
+                }
+                placeholder="可选，留空时自动生成默认图标"
+              />
+              <span className="settings-dialog__field-hint">
+                支持填写远程图片地址；未填写时将根据供应商名称生成默认图标。
+              </span>
             </div>
 
             <div className="settings-dialog__field settings-dialog__field--column settings-dialog__field--full">
@@ -821,7 +1305,7 @@ export const SettingsDialog = ({
 
             <div className="settings-dialog__field settings-dialog__field--column settings-dialog__field--full">
               <label className="settings-dialog__label settings-dialog__label--stacked">
-                Base URL
+                API 地址
               </label>
               <input
                 type="text"
@@ -839,7 +1323,7 @@ export const SettingsDialog = ({
 
             <div className="settings-dialog__field settings-dialog__field--column">
               <label className="settings-dialog__label settings-dialog__label--stacked">
-                Auth Type
+                鉴权方式
               </label>
               <select
                 className="settings-dialog__select"
@@ -853,76 +1337,18 @@ export const SettingsDialog = ({
               >
                 {AUTH_TYPE_OPTIONS.map((authType) => (
                   <option key={authType} value={authType}>
-                    {authType}
+                    {AUTH_TYPE_META[authType].label}
                   </option>
                 ))}
               </select>
             </div>
-
-            <div className="settings-dialog__field settings-dialog__field--column">
-              <label className="settings-dialog__label settings-dialog__label--stacked">
-                状态
-              </label>
-              <div className="settings-dialog__inline-row">
-                <Checkbox
-                  checked={selectedProfile.enabled}
-                  disabled={
-                    selectedProfile.id === LEGACY_DEFAULT_PROVIDER_PROFILE_ID
-                  }
-                  onChange={(checked) =>
-                    updateProfile(selectedProfile.id, (profile) => ({
-                      ...profile,
-                      enabled: checked as boolean,
-                    }))
-                  }
-                >
-                  启用此供应商
-                </Checkbox>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="settings-dialog__section">
-          <h3 className="settings-dialog__section-title">接口能力</h3>
-          <div className="settings-dialog__capabilities">
-            {(
-              [
-                ['supportsModelsEndpoint', '支持 /v1/models'],
-                ['supportsImage', '支持图片'],
-                ['supportsVideo', '支持视频'],
-                ['supportsText', '支持文本'],
-                ['supportsTools', '支持 Tools'],
-              ] as Array<[keyof ProviderProfile['capabilities'], string]>
-            ).map(([key, label]) => (
-              <Checkbox
-                key={key}
-                checked={selectedProfile.capabilities[key]}
-                onChange={(checked) =>
-                  updateProfile(selectedProfile.id, (profile) => ({
-                    ...profile,
-                    capabilities: {
-                      ...profile.capabilities,
-                      [key]: checked as boolean,
-                    },
-                  }))
-                }
-              >
-                {label}
-              </Checkbox>
-            ))}
           </div>
         </div>
 
         {selectedProfile.id === LEGACY_DEFAULT_PROVIDER_PROFILE_ID ? (
-          <div className="settings-dialog__section">
+          <div className="settings-dialog__section settings-dialog__section--compact">
             <div className="settings-dialog__compat-card">
-              <div className="settings-dialog__compat-title">兼容模式说明</div>
-              <p className="settings-dialog__compat-text">
-                旧版 `gemini`
-                默认模型字段仍会保留，用于兼容历史链路和本地数据迁移。
-                这组值会在保存时自动跟随当前激活的默认模型预设同步，无需再单独设置。
-              </p>
+              <div className="settings-dialog__compat-title">兼容默认模型</div>
               <div className="settings-dialog__compat-meta">
                 <span>图片：{imageModelName || getDefaultImageModel()}</span>
                 <span>视频：{videoModelName || getDefaultVideoModel()}</span>
@@ -938,22 +1364,27 @@ export const SettingsDialog = ({
   };
 
   const renderProviderModelSummary = () => {
-    const modelCounts = {
-      image: runtimeState.models.filter((model) => model.type === 'image')
-        .length,
-      video: runtimeState.models.filter((model) => model.type === 'video')
-        .length,
-      text: runtimeState.models.filter((model) => model.type === 'text').length,
-    };
+    const modelGroups = (['image', 'video', 'text'] as ModelType[])
+      .map((type) => ({
+        type,
+        models: runtimeState.models.filter((model) => model.type === type),
+      }))
+      .filter(({ models }) => models.length > 0);
+    const noticeTone = getSyncNoticeTone(
+      runtimeState.status,
+      syncMessage || runtimeState.error,
+      canManageModels
+    );
+    const effectiveMessage =
+      syncMessage || runtimeState.error || '填写 API Key 后可获取模型';
+    const shouldShowNotice =
+      Boolean(syncMessage || runtimeState.error) || !canManageModels;
 
     return (
       <div className="settings-dialog__section">
         <div className="settings-dialog__section-header">
           <div>
-            <h3 className="settings-dialog__section-title">模型目录</h3>
-            <p className="settings-dialog__section-note">
-              在当前供应商下同步并选择需要启用的模型；这里只管理目录，不会自动切换默认预设或覆盖当前显式选中的模型。
-            </p>
+            <h3 className="settings-dialog__section-title">模型</h3>
           </div>
           <button
             type="button"
@@ -961,45 +1392,48 @@ export const SettingsDialog = ({
             onClick={handleFetchModels}
             disabled={!canManageModels || runtimeState.status === 'loading'}
           >
-            {runtimeState.status === 'loading' ? '同步中...' : '管理模型'}
+            {runtimeState.status === 'loading' ? '同步中...' : '获取模型'}
           </button>
         </div>
 
-        <div className="settings-dialog__summary-grid">
-          <div className="settings-dialog__summary-card">
-            <span className="settings-dialog__summary-label">状态</span>
-            <strong>{runtimeState.status}</strong>
+        {shouldShowNotice ? (
+          <div
+            className={`settings-dialog__notice settings-dialog__notice--${noticeTone}`}
+          >
+            {effectiveMessage}
           </div>
-          <div className="settings-dialog__summary-card">
-            <span className="settings-dialog__summary-label">已发现</span>
-            <strong>{runtimeState.discoveredModels.length}</strong>
-          </div>
-          <div className="settings-dialog__summary-card">
-            <span className="settings-dialog__summary-label">已添加</span>
-            <strong>{runtimeState.models.length}</strong>
-          </div>
-          <div className="settings-dialog__summary-card">
-            <span className="settings-dialog__summary-label">最后同步</span>
-            <strong>
-              {runtimeState.discoveredAt
-                ? new Date(runtimeState.discoveredAt).toLocaleString()
-                : '未同步'}
-            </strong>
-          </div>
-        </div>
+        ) : null}
 
-        <div className="settings-dialog__summary-strip">
-          <span>图片 {modelCounts.image}</span>
-          <span>视频 {modelCounts.video}</span>
-          <span>文本 {modelCounts.text}</span>
-        </div>
-
-        <div className="settings-dialog__notice">
-          {syncMessage ||
-            (canManageModels
-              ? '当前供应商已保存，可直接同步并选择模型。'
-              : '请先保存当前供应商配置，再管理模型。')}
-        </div>
+        {modelGroups.length > 0 ? (
+          <div className="settings-dialog__model-groups">
+            {modelGroups.map(({ type, models }) => (
+              <div key={type} className="settings-dialog__model-group">
+                <div className="settings-dialog__model-group-header">
+                  <span className="settings-dialog__model-group-title">
+                    {MODEL_GROUP_LABELS[type]}
+                  </span>
+                  <span className="settings-dialog__model-group-count">
+                    {models.length}
+                  </span>
+                </div>
+                <div className="settings-dialog__model-list">
+                  {models.map((model) => (
+                    <div key={model.id} className="settings-dialog__model-item">
+                      <span className="settings-dialog__model-item-name">
+                        {model.shortLabel || model.label}
+                      </span>
+                      <span className="settings-dialog__model-item-id">
+                        {model.id}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="settings-dialog__model-empty">还没有已添加的模型</div>
+        )}
       </div>
     );
   };
@@ -1074,9 +1508,13 @@ export const SettingsDialog = ({
       '未配置';
 
     return (
-      <div className="settings-dialog__route-card">
-        <div className="settings-dialog__route-card-title">
-          {ROUTE_LABELS[routeType]}
+      <div
+        className={`settings-dialog__route-card settings-dialog__route-card--${routeType}`}
+      >
+        <div className="settings-dialog__route-card-top">
+          <div className="settings-dialog__route-card-title">
+            {ROUTE_LABELS[routeType]}
+          </div>
         </div>
         <div className="settings-dialog__stack">
           <div className="settings-dialog__field settings-dialog__field--column">
@@ -1116,12 +1554,9 @@ export const SettingsDialog = ({
           </div>
 
           <div className="settings-dialog__route-meta">
-            <span>当前供应商：{selectedProfileName}</span>
-            <span>
-              {selectedModelId
-                ? '选择模型后会自动绑定对应供应商'
-                : '请先在供应商配置中管理模型，再为预设选择默认模型'}
-            </span>
+            <span>{selectedProfileName}</span>
+            <span>{selectedModelId || '未选择模型'}</span>
+            {routeGroups.length === 0 ? <span>暂无可选模型</span> : null}
           </div>
         </div>
       </div>
@@ -1137,21 +1572,32 @@ export const SettingsDialog = ({
       );
     }
 
+    const configuredRouteCount = getConfiguredRouteCount(selectedPreset);
+    const isActive = selectedPreset.id === activePresetIdDraft;
+
     return (
       <div className="settings-dialog__content-panel">
         <div className="settings-dialog__section">
-          <div className="settings-dialog__section-header">
+          <div className="settings-dialog__panel-header">
             <div>
-              <h3 className="settings-dialog__section-title">预设详情</h3>
-              <p className="settings-dialog__section-note">
-                为图片、视频、文本分别指定默认模型。这里提供的是默认值；运行时如果用户显式选择了别的模型，会优先按那个模型所属供应商调用。
-              </p>
+              <h3 className="settings-dialog__section-title">
+                {selectedPreset.name}
+              </h3>
+              <div className="settings-dialog__inline-meta">
+                <span>{isActive ? '当前预设' : '未激活'}</span>
+                <span>{configuredRouteCount}/3 已配置</span>
+              </div>
             </div>
             <div className="settings-dialog__inline-row">
               <button
                 type="button"
                 className="settings-dialog__ghost-button"
-                onClick={() => setActivePresetIdDraft(selectedPreset.id)}
+                onClick={() => {
+                  void persistPresetConfiguration(
+                    presetsDraft,
+                    selectedPreset.id
+                  );
+                }}
               >
                 设为当前预设
               </button>
@@ -1203,7 +1649,70 @@ export const SettingsDialog = ({
     );
   };
 
+  const renderCanvasSettings = () => (
+    <div className="settings-dialog__workspace settings-dialog__workspace--single">
+      <div className="settings-dialog__content-panel settings-dialog__content-panel--canvas">
+        <div className="settings-dialog__section">
+          <div className="settings-dialog__section-header">
+            <div>
+              <h3 className="settings-dialog__section-title">画布显示配置</h3>
+            </div>
+          </div>
+
+          <div className="settings-dialog__preference settings-dialog__preference--panel">
+            <div className="settings-dialog__toggle-copy">
+              <span className="settings-dialog__toggle-title">
+                任务进度卡片
+              </span>
+              <span className="settings-dialog__toggle-desc">
+                在画布中显示任务进度卡片，便于追踪当前生成状态。
+              </span>
+            </div>
+            <Switch
+              size="small"
+              value={showWorkZoneCard}
+              onChange={(checked) =>
+                void handleCanvasVisibilityChange(checked as boolean)
+              }
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderSettingsNav = () => {
+    return (
+      <aside className="settings-dialog__nav">
+        <div className="settings-dialog__nav-shell">
+          <div className="settings-dialog__nav-list">
+            {VIEW_SECTIONS.map((item) => (
+              <button
+                key={item.value}
+                type="button"
+                className={`settings-dialog__nav-item ${
+                  activeView === item.value
+                    ? 'settings-dialog__nav-item--active'
+                    : ''
+                }`}
+                onClick={() => setActiveView(item.value)}
+              >
+                <span className="settings-dialog__nav-item-title">
+                  {item.label}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </aside>
+    );
+  };
+
   const renderActiveView = () => {
+    if (activeView === 'canvas') {
+      return renderCanvasSettings();
+    }
+
     if (activeView === 'presets') {
       return (
         <div className="settings-dialog__workspace">
@@ -1226,72 +1735,33 @@ export const SettingsDialog = ({
   };
 
   return (
-    <Dialog
-      open={appState.openSettings}
-      onOpenChange={(open) => {
-        if (!open && discoveryDialogOpen) {
-          return;
-        }
-        setAppState({ ...appState, openSettings: open });
-      }}
-    >
-      <DialogContent
-        className="settings-dialog"
+    <>
+      <WinBoxWindow
+        visible={appState.openSettings}
+        title="设置"
+        onClose={handleWindowClose}
+        width="88%"
+        height="88%"
+        minWidth={1080}
+        minHeight={680}
+        x="center"
+        y="center"
+        maximizable={true}
+        minimizable={false}
+        resizable={true}
+        movable={true}
+        modal={false}
+        className="winbox-ai-generation winbox-tool-window winbox-settings-window"
         container={container}
-        data-testid="settings-dialog"
+        background="#ffffff"
       >
-        <div className="settings-dialog__header">
-          <div>
-            <h2 className="settings-dialog__title">{t('settings.title')}</h2>
-            <p className="settings-dialog__subtitle">
-              管理多供应商接入、模型目录和默认模型预设。
-            </p>
-          </div>
-          <div className="settings-dialog__tabs">
-            {VIEW_TABS.map((tab) => (
-              <button
-                key={tab.value}
-                type="button"
-                className={`settings-dialog__tab ${
-                  activeView === tab.value ? 'settings-dialog__tab--active' : ''
-                }`}
-                onClick={() => setActiveView(tab.value)}
-              >
-                {tab.label}
-              </button>
-            ))}
+        <div className="settings-dialog" data-testid="settings-dialog">
+          <div className="settings-dialog__layout">
+            {renderSettingsNav()}
+            <div className="settings-dialog__main">{renderActiveView()}</div>
           </div>
         </div>
-
-        {renderActiveView()}
-
-        <div className="settings-dialog__footer-settings">
-          <label className="settings-dialog__label">画布显示</label>
-          <Checkbox
-            checked={showWorkZoneCard}
-            onChange={(checked) => setShowWorkZoneCard(checked as boolean)}
-          >
-            显示任务进度卡片
-          </Checkbox>
-        </div>
-
-        <div className="settings-dialog__actions">
-          <button
-            className="settings-dialog__button settings-dialog__button--cancel"
-            data-track="settings_click_cancel"
-            onClick={handleCancel}
-          >
-            {t('settings.cancel')}
-          </button>
-          <button
-            className="settings-dialog__button settings-dialog__button--save"
-            data-track="settings_click_save"
-            onClick={handleSave}
-          >
-            {t('settings.save')}
-          </button>
-        </div>
-      </DialogContent>
+      </WinBoxWindow>
       <ModelDiscoveryDialog
         open={discoveryDialogOpen}
         container={container}
@@ -1300,6 +1770,6 @@ export const SettingsDialog = ({
         onClose={() => setDiscoveryDialogOpen(false)}
         onConfirm={handleApplySelectedModels}
       />
-    </Dialog>
+    </>
   );
 };

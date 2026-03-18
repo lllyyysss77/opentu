@@ -594,6 +594,14 @@ class RuntimeModelDiscoveryStore {
     return this.getCatalogState(profileId);
   }
 
+  getCatalogs(profileIds?: string[]): ProviderCatalog[] {
+    const profileIdSet = profileIds ? new Set(profileIds) : null;
+
+    return Array.from(this.catalogStates.values())
+      .filter((state) => !profileIdSet || profileIdSet.has(state.profileId))
+      .map((state) => toCatalog(state));
+  }
+
   getDiscoveredModels(
     profileId = LEGACY_DEFAULT_PROVIDER_PROFILE_ID,
     type?: ModelType

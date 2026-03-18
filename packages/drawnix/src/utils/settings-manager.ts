@@ -44,6 +44,7 @@ export interface ProviderCapabilities {
 export interface ProviderProfile {
   id: string;
   name: string;
+  iconUrl?: string;
   providerType: ProviderType;
   baseUrl: string;
   apiKey: string;
@@ -420,6 +421,7 @@ class SettingsManager {
             typeof profile.name === 'string' && profile.name.trim()
               ? profile.name.trim()
               : `供应商 ${index + 1}`,
+          iconUrl: normalizeNullableString(profile.iconUrl) || undefined,
           providerType:
             profile.providerType === 'gemini-compatible' ||
             profile.providerType === 'custom'
