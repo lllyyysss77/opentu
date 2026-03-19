@@ -1,8 +1,14 @@
 import { useDrawnix } from '../../hooks/use-drawnix';
 import './settings-dialog.scss';
-import { useEffect, useState } from 'react';
+import {
+  useDeferredValue,
+  useEffect,
+  useState,
+  type CSSProperties,
+} from 'react';
 import { MessagePlugin, Tooltip, Switch } from 'tdesign-react';
 import { InfoCircleIcon } from 'tdesign-icons-react';
+import { AlertTriangle, Loader2, Search, X } from 'lucide-react';
 import { LS_KEYS } from '../../constants/storage-keys';
 import { ModelDiscoveryDialog } from './model-discovery-dialog';
 import {
@@ -37,6 +43,12 @@ import {
   type ProviderProfile,
   type RouteConfig,
 } from '../../utils/settings-manager';
+import {
+  DISCOVERY_VENDOR_ORDER,
+  getDiscoveryVendorLabel,
+  getModelVendorPalette,
+  ModelVendorMark,
+} from '../shared/ModelVendorBrand';
 import { WinBoxWindow } from '../winbox';
 
 export { IMAGE_MODEL_GROUPED_SELECT_OPTIONS as IMAGE_MODEL_GROUPED_OPTIONS } from '../../constants/model-config';
@@ -69,6 +81,8 @@ const MODEL_GROUP_LABELS: Record<ModelType, string> = {
   video: '视频模型',
   text: '文本模型',
 };
+
+const MODEL_SUMMARY_GROUP_ORDER: ModelType[] = ['text', 'image', 'video'];
 
 const PROVIDER_TYPE_META: Record<
   ProviderProfile['providerType'],
@@ -114,6 +128,25 @@ function getModelTypeCounts(models: ModelConfig[]): Record<ModelType, number> {
   );
 }
 
+function matchesProviderModelQuery(model: ModelConfig, query: string) {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) {
+    return true;
+  }
+
+  return [
+    model.id,
+    model.label,
+    model.shortLabel,
+    model.shortCode,
+    model.description,
+    model.sourceProfileName,
+    getDiscoveryVendorLabel(model.vendor),
+  ]
+    .filter(Boolean)
+    .some((value) => value?.toLowerCase().includes(normalized));
+}
+
 function getConfiguredRouteCount(preset: InvocationPreset | null): number {
   if (!preset) {
     return 0;
@@ -133,26 +166,6 @@ function getProviderDraftState(
     return 'new';
   }
   return areEqual(initialProfile, profile) ? 'saved' : 'dirty';
-}
-
-function getSyncNoticeTone(
-  status: 'idle' | 'loading' | 'ready' | 'error',
-  message: string | null,
-  canManageModels: boolean
-): 'info' | 'success' | 'warning' | 'danger' {
-  if (status === 'error') {
-    return 'danger';
-  }
-
-  if (message?.startsWith('已')) {
-    return 'success';
-  }
-
-  if (!canManageModels) {
-    return 'warning';
-  }
-
-  return 'info';
 }
 
 function createSettingsDraftSignature(params: {
@@ -375,7 +388,7 @@ export const SettingsDialog = ({
   const [videoModelName, setVideoModelName] = useState('');
   const [textModelName, setTextModelName] = useState('');
   const [showWorkZoneCard, setShowWorkZoneCard] = useState(true);
-  const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [modelSearchQuery, setModelSearchQuery] = useState('');
   const [discoveryDialogOpen, setDiscoveryDialogOpen] = useState(false);
   const [initialDraftSignature, setInitialDraftSignature] = useState('');
   const [isPersisting, setIsPersisting] = useState(false);
@@ -392,6 +405,7 @@ export const SettingsDialog = ({
   const runtimeState = useRuntimeModelDiscoveryState(
     selectedProfile?.id || LEGACY_DEFAULT_PROVIDER_PROFILE_ID
   );
+  const deferredModelSearchQuery = useDeferredValue(modelSearchQuery);
   const legacyImageModels = useProfilePreferredModels(
     LEGACY_DEFAULT_PROVIDER_PROFILE_ID,
     'image'
@@ -492,7 +506,7 @@ export const SettingsDialog = ({
     setShowWorkZoneCard(nextShowWorkZoneCard);
 
     setActiveView('providers');
-    setSyncMessage(null);
+    setModelSearchQuery('');
     setDiscoveryDialogOpen(false);
     setInitialDraftSignature(
       createSettingsDraftSignature({
@@ -538,7 +552,7 @@ export const SettingsDialog = ({
   }, [presetsDraft, selectedPresetId]);
 
   useEffect(() => {
-    setSyncMessage(null);
+    setModelSearchQuery('');
   }, [selectedProfileId, activeView]);
 
   const updateProfile = (
@@ -743,7 +757,7 @@ export const SettingsDialog = ({
 
   const handleFetchModels = async () => {
     if (!selectedProfile) {
-      setSyncMessage('请先选择供应商配置');
+      MessagePlugin.warning('请先选择供应商配置');
       return;
     }
 
@@ -762,24 +776,24 @@ export const SettingsDialog = ({
     );
 
     if (!trimmedApiKey) {
-      setSyncMessage('请先填写 API Key');
+      MessagePlugin.warning('请先填写 API Key');
       return;
     }
 
     try {
-      const discovered = await runtimeModelDiscovery.discover(
+      await runtimeModelDiscovery.discover(
         selectedProfile.id,
         normalizedBaseUrl,
         trimmedApiKey
-      );
-      setSyncMessage(
-        `已获取 ${discovered.length} 个模型，请选择需要添加的模型`
       );
       setDiscoveryDialogOpen(true);
     } catch (error) {
       const message = error instanceof Error ? error.message : '模型同步失败';
       runtimeModelDiscovery.setError(selectedProfile.id, message);
-      setSyncMessage(message);
+      MessagePlugin.error({
+        content: message,
+        duration: 3600,
+      });
     }
   };
 
@@ -833,7 +847,7 @@ export const SettingsDialog = ({
       }
     }
 
-    setSyncMessage(
+    MessagePlugin.success(
       selectedModels.length > 0
         ? `已为 ${selectedProfile.name} 添加 ${selectedModels.length} 个模型`
         : `已清空 ${selectedProfile.name} 的已添加模型`
@@ -1364,72 +1378,166 @@ export const SettingsDialog = ({
   };
 
   const renderProviderModelSummary = () => {
-    const modelGroups = (['image', 'video', 'text'] as ModelType[])
-      .map((type) => ({
-        type,
-        models: runtimeState.models.filter((model) => model.type === type),
-      }))
-      .filter(({ models }) => models.length > 0);
-    const noticeTone = getSyncNoticeTone(
-      runtimeState.status,
-      syncMessage || runtimeState.error,
-      canManageModels
+    const vendorPriorityMap = new Map(
+      DISCOVERY_VENDOR_ORDER.map((vendor, index) => [vendor, index])
     );
-    const effectiveMessage =
-      syncMessage || runtimeState.error || '填写 API Key 后可获取模型';
-    const shouldShowNotice =
-      Boolean(syncMessage || runtimeState.error) || !canManageModels;
+    const modelSearch = deferredModelSearchQuery.trim();
+    const typeCounts = getModelTypeCounts(runtimeState.models);
+    const filteredModels = runtimeState.models.filter((model) =>
+      matchesProviderModelQuery(model, modelSearch)
+    );
+    const modelGroups = MODEL_SUMMARY_GROUP_ORDER.map((type) => ({
+      type,
+      models: filteredModels
+        .filter((model) => model.type === type)
+        .sort((left, right) => {
+          const leftPriority =
+            vendorPriorityMap.get(left.vendor) ?? Number.MAX_SAFE_INTEGER;
+          const rightPriority =
+            vendorPriorityMap.get(right.vendor) ?? Number.MAX_SAFE_INTEGER;
+
+          if (leftPriority !== rightPriority) {
+            return leftPriority - rightPriority;
+          }
+
+          return left.id.localeCompare(right.id, 'zh-Hans-CN');
+        }),
+    })).filter((group) => group.models.length > 0);
+    const showSearchToolbar = canManageModels || runtimeState.models.length > 0;
+    const shouldShowEmptySearch =
+      runtimeState.models.length > 0 &&
+      filteredModels.length === 0 &&
+      Boolean(modelSearch);
+    const shouldShowErrorState =
+      runtimeState.status === 'error' && runtimeState.models.length === 0;
+    const shouldShowHintState =
+      !canManageModels && runtimeState.models.length === 0;
 
     return (
       <div className="settings-dialog__section">
         <div className="settings-dialog__section-header">
           <div>
             <h3 className="settings-dialog__section-title">模型</h3>
+            <div className="settings-dialog__inline-meta">
+              <span>已添加 {runtimeState.models.length} 个</span>
+              <span>图 {typeCounts.image}</span>
+              <span>视 {typeCounts.video}</span>
+              <span>文 {typeCounts.text}</span>
+            </div>
           </div>
-          <button
-            type="button"
-            className="settings-dialog__button settings-dialog__button--save"
-            onClick={handleFetchModels}
-            disabled={!canManageModels || runtimeState.status === 'loading'}
-          >
-            {runtimeState.status === 'loading' ? '同步中...' : '获取模型'}
-          </button>
         </div>
 
-        {shouldShowNotice ? (
-          <div
-            className={`settings-dialog__notice settings-dialog__notice--${noticeTone}`}
-          >
-            {effectiveMessage}
+        {showSearchToolbar ? (
+          <div className="settings-dialog__model-toolbar">
+            <label
+              className={`settings-dialog__model-search ${
+                runtimeState.models.length === 0
+                  ? 'settings-dialog__model-search--disabled'
+                  : ''
+              }`}
+            >
+              <Search size={15} />
+              <input
+                type="text"
+                value={modelSearchQuery}
+                onChange={(event) => setModelSearchQuery(event.target.value)}
+                placeholder={
+                  runtimeState.models.length > 0
+                    ? '搜索模型 ID、名称或品牌'
+                    : '获取模型后可搜索'
+                }
+                disabled={runtimeState.models.length === 0}
+              />
+              {modelSearchQuery ? (
+                <button
+                  type="button"
+                  className="settings-dialog__model-search-clear"
+                  onClick={() => setModelSearchQuery('')}
+                  aria-label="清空搜索"
+                >
+                  <X size={14} />
+                </button>
+              ) : null}
+            </label>
+            <button
+              type="button"
+              className="settings-dialog__button settings-dialog__button--fetch"
+              onClick={handleFetchModels}
+              disabled={!canManageModels || runtimeState.status === 'loading'}
+            >
+              {runtimeState.status === 'loading' ? (
+                <>
+                  <Loader2
+                    size={15}
+                    className="settings-dialog__button-spinner"
+                  />
+                  同步中
+                </>
+              ) : (
+                '获取模型'
+              )}
+            </button>
           </div>
         ) : null}
 
         {modelGroups.length > 0 ? (
-          <div className="settings-dialog__model-groups">
+          <div className="settings-dialog__model-type-groups">
             {modelGroups.map(({ type, models }) => (
-              <div key={type} className="settings-dialog__model-group">
-                <div className="settings-dialog__model-group-header">
-                  <span className="settings-dialog__model-group-title">
+              <div key={type} className="settings-dialog__model-type-group">
+                <div className="settings-dialog__model-type-header">
+                  <span className="settings-dialog__model-type-title">
                     {MODEL_GROUP_LABELS[type]}
                   </span>
-                  <span className="settings-dialog__model-group-count">
+                  <span className="settings-dialog__model-type-count">
                     {models.length}
                   </span>
                 </div>
-                <div className="settings-dialog__model-list">
-                  {models.map((model) => (
-                    <div key={model.id} className="settings-dialog__model-item">
-                      <span className="settings-dialog__model-item-name">
-                        {model.shortLabel || model.label}
-                      </span>
-                      <span className="settings-dialog__model-item-id">
-                        {model.id}
-                      </span>
-                    </div>
-                  ))}
+                <div className="settings-dialog__model-type-list">
+                  {models.map((model) => {
+                    const palette = getModelVendorPalette(model.vendor);
+
+                    return (
+                      <div
+                        key={model.id}
+                        className="settings-dialog__model-type-item"
+                        style={
+                          {
+                            '--model-brand-accent': palette.accent,
+                            '--model-brand-surface': palette.surface,
+                            '--model-brand-border': palette.border,
+                          } as CSSProperties
+                        }
+                      >
+                        <span className="settings-dialog__model-type-item-logo">
+                          <ModelVendorMark vendor={model.vendor} size={16} />
+                        </span>
+                        <div className="settings-dialog__model-type-item-copy">
+                          <span className="settings-dialog__model-type-item-id">
+                            {model.id}
+                          </span>
+                          <span className="settings-dialog__model-type-item-vendor">
+                            {getDiscoveryVendorLabel(model.vendor)}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             ))}
+          </div>
+        ) : shouldShowEmptySearch ? (
+          <div className="settings-dialog__model-empty">
+            没有匹配的模型，试试搜索品牌名或更完整的模型 ID。
+          </div>
+        ) : shouldShowErrorState ? (
+          <div className="settings-dialog__model-empty settings-dialog__model-empty--error">
+            <AlertTriangle size={16} />
+            <span>{runtimeState.error || '模型获取失败，请稍后重试'}</span>
+          </div>
+        ) : shouldShowHintState ? (
+          <div className="settings-dialog__model-empty">
+            填写 API Key 后即可获取模型，获取完成后可在这里检索和浏览。
           </div>
         ) : (
           <div className="settings-dialog__model-empty">还没有已添加的模型</div>

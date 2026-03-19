@@ -92,12 +92,153 @@ function buildDiscoverySignature(baseUrl: string, apiKey: string): string {
   return `${normalizeModelApiBaseUrl(baseUrl)}::${hashString(apiKey.trim())}`;
 }
 
+function extractDiscoveryErrorMessage(
+  rawText: string,
+  fallbackMessage: string
+): string {
+  const trimmed = rawText.trim();
+  if (!trimmed) {
+    return fallbackMessage;
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed) as {
+      message?: string;
+      error?:
+        | string
+        | {
+            message?: string;
+            details?: string;
+          };
+      detail?: string;
+    };
+    const nestedError =
+      typeof parsed.error === 'string'
+        ? parsed.error
+        : parsed.error?.message || parsed.error?.details;
+
+    return parsed.message || nestedError || parsed.detail || fallbackMessage;
+  } catch {
+    const singleLineText = trimmed.replace(/\s+/g, ' ');
+    return singleLineText.slice(0, 120) || fallbackMessage;
+  }
+}
+
+type InferencePattern = string | RegExp;
+
+function matchesPattern(value: string, pattern: InferencePattern): boolean {
+  return typeof pattern === 'string'
+    ? value.includes(pattern)
+    : pattern.test(value);
+}
+
+function matchesAnyPattern(
+  value: string,
+  patterns: readonly InferencePattern[]
+): boolean {
+  return patterns.some((pattern) => matchesPattern(value, pattern));
+}
+
+function hasAnyEndpointHint(
+  endpointHints: string[],
+  patterns: readonly InferencePattern[]
+): boolean {
+  return endpointHints.some((hint) => matchesAnyPattern(hint, patterns));
+}
+
 function inferVendorByKeywords(modelId: string): ModelVendor {
   const lowerId = modelId.toLowerCase();
+  const openAIPattern =
+    /(^|[^a-z0-9])(o1|o3|o4|o4-mini|gpt-4o|gpt-4\.1|chatgpt)([^a-z0-9]|$)/;
   if (lowerId.includes('flux')) return ModelVendor.FLUX;
   if (lowerId.startsWith('mj') || lowerId.includes('midjourney'))
     return ModelVendor.MIDJOURNEY;
-  if (lowerId.includes('claude')) return ModelVendor.ANTHROPIC;
+  if (
+    lowerId.includes('grok') ||
+    lowerId.includes('xai') ||
+    lowerId.includes('supergrok')
+  ) {
+    return ModelVendor.GROK;
+  }
+  if (
+    lowerId.includes('qwen') ||
+    lowerId.includes('qwq') ||
+    lowerId.includes('qvq') ||
+    lowerId.includes('wanx')
+  ) {
+    return ModelVendor.QWEN;
+  }
+  if (
+    lowerId.includes('glm') ||
+    lowerId.includes('zhipu') ||
+    lowerId.includes('bigmodel') ||
+    lowerId.includes('cogview') ||
+    lowerId.includes('cogvideo')
+  ) {
+    return ModelVendor.GLM;
+  }
+  if (
+    lowerId.includes('minimax') ||
+    lowerId.includes('abab') ||
+    lowerId.includes('hailuo') ||
+    lowerId.includes('speech-02') ||
+    lowerId.includes('music-01')
+  ) {
+    return ModelVendor.MINIMAX;
+  }
+  if (
+    lowerId.includes('mistral') ||
+    lowerId.includes('mixtral') ||
+    lowerId.includes('pixtral') ||
+    lowerId.includes('ministral') ||
+    lowerId.includes('codestral')
+  ) {
+    return ModelVendor.MISTRAL;
+  }
+  if (
+    lowerId.includes('runway') ||
+    lowerId.includes('runwayml') ||
+    /^gen[-_]?3/.test(lowerId) ||
+    /^gen[-_]?4/.test(lowerId)
+  ) {
+    return ModelVendor.RUNWAY;
+  }
+  if (lowerId.includes('pika')) {
+    return ModelVendor.PIKA;
+  }
+  if (
+    lowerId.includes('llama') ||
+    lowerId.includes('meta-llama') ||
+    lowerId.includes('llama3') ||
+    lowerId.includes('llama-3') ||
+    lowerId.includes('llama-4')
+  ) {
+    return ModelVendor.LLAMA;
+  }
+  if (
+    lowerId.includes('hunyuan') ||
+    lowerId.includes('hunyuan-video') ||
+    lowerId.includes('hunyuanimage') ||
+    lowerId.includes('hunyuan-image')
+  ) {
+    return ModelVendor.HUNYUAN;
+  }
+  if (
+    lowerId.includes('stepfun') ||
+    lowerId.includes('jieyue') ||
+    /^step[-_]?1/.test(lowerId) ||
+    lowerId.startsWith('step-')
+  ) {
+    return ModelVendor.STEPFUN;
+  }
+  if (
+    lowerId.includes('claude') ||
+    lowerId.includes('sonnet') ||
+    lowerId.includes('haiku') ||
+    lowerId.includes('opus')
+  ) {
+    return ModelVendor.ANTHROPIC;
+  }
   if (lowerId.includes('deepseek')) return ModelVendor.DEEPSEEK;
   if (lowerId.includes('kling')) return ModelVendor.KLING;
   if (lowerId.includes('veo')) return ModelVendor.VEO;
@@ -105,14 +246,34 @@ function inferVendorByKeywords(modelId: string): ModelVendor {
   if (
     lowerId.includes('seedream') ||
     lowerId.includes('seedance') ||
-    lowerId.includes('doubao')
+    lowerId.includes('doubao') ||
+    lowerId.includes('jimeng')
   ) {
     return ModelVendor.DOUBAO;
   }
-  if (lowerId.includes('gpt') || lowerId.includes('openai')) {
+  if (
+    lowerId.includes('gpt') ||
+    lowerId.includes('openai') ||
+    lowerId.includes('dall-e') ||
+    lowerId.includes('whisper') ||
+    lowerId.includes('codex') ||
+    lowerId.includes('text-embedding') ||
+    lowerId.includes('omni') ||
+    lowerId.includes('tts-') ||
+    lowerId.includes('babbage') ||
+    lowerId.includes('davinci') ||
+    lowerId.includes('computer-use') ||
+    openAIPattern.test(lowerId)
+  ) {
     return ModelVendor.GPT;
   }
-  if (lowerId.includes('gemini') || lowerId.includes('banana')) {
+  if (
+    lowerId.includes('gemini') ||
+    lowerId.includes('banana') ||
+    lowerId.includes('gemma') ||
+    lowerId.includes('imagen') ||
+    lowerId.includes('learnlm')
+  ) {
     return ModelVendor.GEMINI;
   }
   if (lowerId.includes('google')) return ModelVendor.GOOGLE;
@@ -121,40 +282,311 @@ function inferVendorByKeywords(modelId: string): ModelVendor {
 
 function inferVendor(model: RemoteModelListItem): ModelVendor {
   const owner = (model.owned_by || '').trim().toLowerCase();
-  if (owner === 'openai') return ModelVendor.GPT;
-  if (owner === 'deepseek') return ModelVendor.DEEPSEEK;
-  if (owner === 'anthropic' || owner === 'claude') return ModelVendor.ANTHROPIC;
+  const keywordVendor = inferVendorByKeywords(model.id);
+  if (owner === 'openai' || owner.includes('openai')) return ModelVendor.GPT;
+  if (owner === 'xai' || owner.includes('x.ai') || owner.includes('grok')) {
+    return ModelVendor.GROK;
+  }
+  if (
+    owner === 'qwen' ||
+    owner.includes('alibaba') ||
+    owner.includes('dashscope') ||
+    owner.includes('tongyi')
+  ) {
+    return ModelVendor.QWEN;
+  }
+  if (
+    owner === 'zhipu' ||
+    owner.includes('zhipu') ||
+    owner.includes('bigmodel') ||
+    owner.includes('glm')
+  ) {
+    return ModelVendor.GLM;
+  }
+  if (
+    owner === 'minimax' ||
+    owner.includes('minimax') ||
+    owner.includes('abab') ||
+    owner.includes('hailuo')
+  ) {
+    return ModelVendor.MINIMAX;
+  }
+  if (owner === 'mistral' || owner.includes('mistral')) {
+    return ModelVendor.MISTRAL;
+  }
+  if (
+    owner === 'runway' ||
+    owner.includes('runway') ||
+    owner.includes('runwayml')
+  ) {
+    return ModelVendor.RUNWAY;
+  }
+  if (owner === 'pika' || owner.includes('pika')) {
+    return ModelVendor.PIKA;
+  }
+  if (owner === 'meta' || owner.includes('meta') || owner.includes('llama')) {
+    return ModelVendor.LLAMA;
+  }
+  if (
+    owner === 'hunyuan' ||
+    owner.includes('hunyuan') ||
+    owner.includes('tencent')
+  ) {
+    return ModelVendor.HUNYUAN;
+  }
+  if (
+    owner === 'stepfun' ||
+    owner.includes('stepfun') ||
+    owner.includes('jieyue')
+  ) {
+    return ModelVendor.STEPFUN;
+  }
+  if (owner === 'deepseek' || owner.includes('deepseek'))
+    return ModelVendor.DEEPSEEK;
+  if (
+    owner === 'anthropic' ||
+    owner === 'claude' ||
+    owner.includes('anthropic') ||
+    owner.includes('claude')
+  ) {
+    return ModelVendor.ANTHROPIC;
+  }
   if (
     owner === 'volcengine' ||
     owner === 'doubao-video' ||
-    owner === 'doubao'
+    owner === 'doubao' ||
+    owner.includes('volc') ||
+    owner.includes('doubao')
   ) {
     return ModelVendor.DOUBAO;
   }
-  if (owner === 'google') return ModelVendor.GOOGLE;
-  if (owner === 'vertex-ai') {
-    return model.id.toLowerCase().startsWith('gemini')
-      ? ModelVendor.GEMINI
+  if (owner === 'google' || owner.includes('google')) {
+    return keywordVendor !== ModelVendor.OTHER
+      ? keywordVendor
+      : ModelVendor.GOOGLE;
+  }
+  if (
+    owner === 'vertex-ai' ||
+    owner.includes('vertex') ||
+    owner.includes('gemini')
+  ) {
+    return keywordVendor !== ModelVendor.OTHER
+      ? keywordVendor
       : ModelVendor.GOOGLE;
   }
   if (owner === 'custom') {
-    return inferVendorByKeywords(model.id);
+    return keywordVendor;
   }
-  return inferVendorByKeywords(model.id);
+  return keywordVendor;
 }
 
 function inferModelType(model: RemoteModelListItem): ModelType {
   const endpointHints = (model.supported_endpoint_types || [])
-    .join(' ')
-    .toLowerCase();
+    .map((item) => item.toLowerCase())
+    .filter(Boolean);
   const lowerId = model.id.toLowerCase();
+  const vendor = inferVendor(model);
+  const hasVideoIdSignal = (...extraPatterns: InferencePattern[]) =>
+    matchesAnyPattern(lowerId, [
+      /(^|[^a-z0-9])t2v([^a-z0-9]|$)/,
+      /(^|[^a-z0-9])i2v([^a-z0-9]|$)/,
+      'video',
+      ...extraPatterns,
+    ]);
+  const hasImageIdSignal = (...extraPatterns: InferencePattern[]) =>
+    matchesAnyPattern(lowerId, [
+      /(^|[^a-z0-9])t2i([^a-z0-9]|$)/,
+      /(^|[^a-z0-9])i2i([^a-z0-9]|$)/,
+      'image',
+      ...extraPatterns,
+    ]);
+
+  const hasId = (...patterns: InferencePattern[]) =>
+    matchesAnyPattern(lowerId, patterns);
+  const hasHint = (...patterns: InferencePattern[]) =>
+    hasAnyEndpointHint(endpointHints, patterns);
+
+  if (
+    hasHint(
+      'video',
+      'videos',
+      'video_generation',
+      'video-generation',
+      'videos.generate',
+      'video/generations',
+      'text-to-video',
+      'image-to-video',
+      't2v',
+      'i2v',
+      'video-edit',
+      'video_edit'
+    )
+  ) {
+    return 'video';
+  }
+
+  if (
+    hasHint(
+      'image',
+      'images',
+      'image_generation',
+      'image-generation',
+      'images.generate',
+      'image/generations',
+      'image-edit',
+      'image_edit',
+      'images.edit',
+      'text-to-image',
+      'image-to-image',
+      't2i',
+      'i2i'
+    )
+  ) {
+    return 'image';
+  }
+
+  switch (vendor) {
+    case ModelVendor.FLUX:
+    case ModelVendor.MIDJOURNEY:
+      return 'image';
+    case ModelVendor.SORA:
+    case ModelVendor.VEO:
+      return 'video';
+    case ModelVendor.RUNWAY:
+      if (
+        hasImageIdSignal(
+          'frame',
+          'keyframe',
+          'reference-image',
+          'image-to-video'
+        )
+      ) {
+        return 'image';
+      }
+      return 'video';
+    case ModelVendor.PIKA:
+      if (
+        hasImageIdSignal(
+          'pikadditions',
+          'pikaswaps',
+          'pikascenes',
+          'reference-image'
+        )
+      ) {
+        return 'image';
+      }
+      return 'video';
+    case ModelVendor.KLING:
+      if (
+        hasImageIdSignal(
+          'kling_image',
+          'kling-image',
+          'img',
+          'picture',
+          'photo',
+          'poster',
+          'design'
+        )
+      ) {
+        return 'image';
+      }
+      if (hasVideoIdSignal('kling_video', 'kling-video', 'motion', 'animate')) {
+        return 'video';
+      }
+      return 'video';
+    case ModelVendor.GLM:
+      if (hasId('cogvideo')) return 'video';
+      if (hasId('cogview')) return 'image';
+      break;
+    case ModelVendor.MINIMAX:
+      if (
+        hasId(
+          'hailuo',
+          /(^|[^a-z0-9])video[-_]?0\d/,
+          'video-01',
+          'video-02',
+          'minimax-video',
+          'abab-video'
+        )
+      ) {
+        return 'video';
+      }
+      if (
+        hasId(
+          'image-01',
+          'image-02',
+          'minimax-image',
+          'abab-image',
+          'visual-generation'
+        )
+      ) {
+        return 'image';
+      }
+      break;
+    case ModelVendor.DOUBAO:
+      if (hasId('seedance')) return 'video';
+      if (hasId('seedream', 'jimeng')) return 'image';
+      break;
+    case ModelVendor.HUNYUAN:
+      if (
+        hasVideoIdSignal('hunyuan-video', 'tencent-video', 'video-generation')
+      ) {
+        return 'video';
+      }
+      if (hasImageIdSignal('hunyuan-image', 'hunyuanimage', 'vision')) {
+        return 'image';
+      }
+      break;
+    case ModelVendor.QWEN:
+      if (
+        hasId(
+          'wanx',
+          /(^|[^a-z0-9])wan([0-9.-]|$)/,
+          /(^|[^a-z0-9])wan2([^a-z0-9]|$)/
+        ) &&
+        hasVideoIdSignal('wan-video', 'wanx-video', 'animate', 'motion')
+      ) {
+        return 'video';
+      }
+      if (
+        hasId(
+          'wanx',
+          /(^|[^a-z0-9])wan([0-9.-]|$)/,
+          /(^|[^a-z0-9])wan2([^a-z0-9]|$)/
+        ) &&
+        hasImageIdSignal('wanx-image', 'wan-image', 'poster', 'illustration')
+      ) {
+        return 'image';
+      }
+      if (hasId('wanx')) return 'image';
+      if (
+        hasId(/(^|[^a-z0-9])wan([0-9.-]|$)/, /(^|[^a-z0-9])wan2([^a-z0-9]|$)/)
+      ) {
+        return 'video';
+      }
+      break;
+    case ModelVendor.GEMINI:
+    case ModelVendor.GOOGLE:
+      if (hasId('veo')) return 'video';
+      if (hasId('imagen', 'gpt-image')) return 'image';
+      break;
+    default:
+      break;
+  }
 
   const isVideo =
-    endpointHints.includes('video') ||
-    endpointHints.includes('sora-2') ||
+    hasId('sora-2') ||
     lowerId.includes('veo') ||
     lowerId.includes('sora') ||
+    lowerId.includes('runway') ||
+    lowerId.includes('gen-3') ||
+    lowerId.includes('gen3') ||
+    lowerId.includes('gen-4') ||
+    lowerId.includes('gen4') ||
+    lowerId.includes('pika') ||
     lowerId.includes('kling') ||
+    lowerId.includes('hunyuan-video') ||
+    lowerId.includes('cogvideo') ||
     lowerId.includes('seedance') ||
     lowerId.includes('t2v') ||
     lowerId.includes('i2v') ||
@@ -162,16 +594,18 @@ function inferModelType(model: RemoteModelListItem): ModelType {
   if (isVideo) return 'video';
 
   const isImage =
-    endpointHints.includes('banana') ||
-    endpointHints.includes('generate') ||
-    endpointHints.includes('edit') ||
-    endpointHints.includes('image') ||
+    hasHint('banana') ||
     lowerId.includes('image') ||
     lowerId.includes('banana') ||
     lowerId.includes('flux') ||
     lowerId.startsWith('mj') ||
     lowerId.includes('midjourney') ||
+    lowerId.includes('cogview') ||
+    lowerId.includes('hunyuan-image') ||
+    lowerId.includes('hunyuanimage') ||
     lowerId.includes('seedream') ||
+    lowerId.includes('jimeng') ||
+    lowerId.includes('imagen') ||
     lowerId.includes('gpt-image');
   if (isImage) return 'image';
 
@@ -784,7 +1218,12 @@ class RuntimeModelDiscoveryStore {
 
     const rawText = await response.text();
     if (!response.ok) {
-      throw new Error(`获取模型列表失败: HTTP ${response.status}`);
+      throw new Error(
+        extractDiscoveryErrorMessage(
+          rawText,
+          `获取模型列表失败: HTTP ${response.status}`
+        )
+      );
     }
 
     let parsed: unknown;

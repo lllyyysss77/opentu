@@ -1,16 +1,17 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Search, X } from 'lucide-react';
+import { Check, ChevronDown, Search, X } from 'lucide-react';
 import { Dialog, DialogContent } from '../dialog/dialog';
 import {
-  getModelsByVendor,
-  getModelTypeColor,
-  getVendorOrder,
-  VENDOR_NAMES,
   type ModelConfig,
   type ModelType,
   type ModelVendor,
 } from '../../constants/model-config';
-import { VendorTabPanel, type VendorTab } from '../shared/VendorTabPanel';
+import {
+  DISCOVERY_VENDOR_ORDER,
+  getDiscoveryVendorLabel,
+  getModelVendorPalette,
+  ModelVendorMark,
+} from '../shared/ModelVendorBrand';
 import './model-discovery-dialog.scss';
 
 type ModelTypeFilter = 'all' | ModelType;
@@ -22,6 +23,27 @@ const MODEL_TYPE_LABELS: Record<ModelTypeFilter, string> = {
   text: '文本',
 };
 
+const MODEL_TYPE_SECTION_LABELS: Record<ModelType, string> = {
+  image: '图片',
+  video: '视频',
+  text: '文本',
+};
+
+const MODEL_TYPE_SHORT_LABELS: Record<ModelType, string> = {
+  image: '图',
+  video: '视',
+  text: '文',
+};
+
+const MODEL_TYPE_TIE_BREAKER: ModelType[] = ['text', 'image', 'video'];
+
+type VendorGroup = {
+  vendor: ModelVendor;
+  models: ModelConfig[];
+  counts: Record<ModelType, number>;
+  selectedCount: number;
+};
+
 interface ModelDiscoveryDialogProps {
   open: boolean;
   container: HTMLElement | null;
@@ -29,6 +51,101 @@ interface ModelDiscoveryDialogProps {
   selectedModelIds: string[];
   onClose: () => void;
   onConfirm: (modelIds: string[]) => void;
+}
+
+function matchesModelQuery(model: ModelConfig, query: string) {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) {
+    return true;
+  }
+
+  return [
+    model.id,
+    model.label,
+    model.shortLabel,
+    model.shortCode,
+    model.description,
+    model.sourceProfileName,
+    getDiscoveryVendorLabel(model.vendor),
+  ]
+    .filter(Boolean)
+    .some((value) => value?.toLowerCase().includes(normalized));
+}
+
+function sortModels(models: ModelConfig[]) {
+  return [...models].sort((left, right) => {
+    const leftName = (left.shortLabel || left.label || left.id).toLowerCase();
+    const rightName = (
+      right.shortLabel ||
+      right.label ||
+      right.id
+    ).toLowerCase();
+    return leftName.localeCompare(rightName, 'zh-Hans-CN');
+  });
+}
+
+function buildVendorGroups(
+  models: ModelConfig[],
+  selectedIds: Set<string>
+): VendorGroup[] {
+  const grouped = new Map<ModelVendor, VendorGroup>();
+
+  for (const model of models) {
+    const current =
+      grouped.get(model.vendor) ||
+      ({
+        vendor: model.vendor,
+        models: [],
+        counts: { image: 0, video: 0, text: 0 },
+        selectedCount: 0,
+      } satisfies VendorGroup);
+
+    current.models.push(model);
+    current.counts[model.type] += 1;
+    if (selectedIds.has(model.id)) {
+      current.selectedCount += 1;
+    }
+
+    grouped.set(model.vendor, current);
+  }
+
+  const priorityMap = new Map(
+    DISCOVERY_VENDOR_ORDER.map((vendor, index) => [vendor, index])
+  );
+
+  return Array.from(grouped.values()).sort((left, right) => {
+    const leftPriority =
+      priorityMap.get(left.vendor) ?? Number.MAX_SAFE_INTEGER;
+    const rightPriority =
+      priorityMap.get(right.vendor) ?? Number.MAX_SAFE_INTEGER;
+
+    if (leftPriority !== rightPriority) {
+      return leftPriority - rightPriority;
+    }
+
+    return right.models.length - left.models.length;
+  });
+}
+
+function getOrderedTypeGroups(
+  group: VendorGroup
+): Array<{ type: ModelType; models: ModelConfig[] }> {
+  return (['image', 'video', 'text'] as ModelType[])
+    .filter((type) => group.counts[type] > 0)
+    .map((type) => ({
+      type,
+      models: sortModels(group.models.filter((model) => model.type === type)),
+    }))
+    .sort((left, right) => {
+      if (right.models.length !== left.models.length) {
+        return right.models.length - left.models.length;
+      }
+
+      return (
+        MODEL_TYPE_TIE_BREAKER.indexOf(left.type) -
+        MODEL_TYPE_TIE_BREAKER.indexOf(right.type)
+      );
+    });
 }
 
 export const ModelDiscoveryDialog: React.FC<ModelDiscoveryDialogProps> = ({
@@ -41,24 +158,35 @@ export const ModelDiscoveryDialog: React.FC<ModelDiscoveryDialogProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeType, setActiveType] = useState<ModelTypeFilter>('all');
-  const [activeVendor, setActiveVendor] = useState<ModelVendor | null>(null);
   const [draftSelection, setDraftSelection] =
     useState<string[]>(selectedModelIds);
+  const [expandedVendors, setExpandedVendors] = useState<
+    Partial<Record<ModelVendor, boolean>>
+  >({});
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      return;
+    }
+
     setSearchQuery('');
     setActiveType('all');
-    setActiveVendor(models[0]?.vendor ?? null);
     setDraftSelection(selectedModelIds);
-  }, [models, open, selectedModelIds]);
 
-  const typeScopedModels = useMemo(() => {
-    if (activeType === 'all') {
-      return models;
-    }
-    return models.filter((model) => model.type === activeType);
-  }, [activeType, models]);
+    const selectedIds = new Set(selectedModelIds);
+    const groups = buildVendorGroups(models, selectedIds);
+    const expandedVendor =
+      groups.find((group) => group.selectedCount > 0)?.vendor ||
+      groups[0]?.vendor ||
+      null;
+    const nextExpanded: Partial<Record<ModelVendor, boolean>> = {};
+
+    groups.forEach((group) => {
+      nextExpanded[group.vendor] = group.vendor === expandedVendor;
+    });
+
+    setExpandedVendors(nextExpanded);
+  }, [models, open, selectedModelIds]);
 
   const typeCounts = useMemo(
     () => ({
@@ -70,68 +198,76 @@ export const ModelDiscoveryDialog: React.FC<ModelDiscoveryDialogProps> = ({
     [models]
   );
 
-  const vendorTabs = useMemo((): VendorTab[] => {
-    const vendorMap = getModelsByVendor(typeScopedModels);
-    const order = getVendorOrder(typeScopedModels);
-    return order.map((vendor) => ({
-      vendor,
-      count: vendorMap.get(vendor)?.length ?? 0,
-    }));
-  }, [typeScopedModels]);
+  const visibleModels = useMemo(() => {
+    const query = searchQuery.trim();
+    const typeScoped =
+      activeType === 'all'
+        ? models
+        : models.filter((model) => model.type === activeType);
 
-  useEffect(() => {
-    if (vendorTabs.length === 0) {
-      setActiveVendor(null);
-      return;
+    if (!query) {
+      return typeScoped;
     }
 
-    if (
-      !activeVendor ||
-      !vendorTabs.some((tab) => tab.vendor === activeVendor)
-    ) {
-      setActiveVendor(vendorTabs[0].vendor);
-    }
-  }, [activeVendor, vendorTabs]);
+    return typeScoped.filter((model) => matchesModelQuery(model, query));
+  }, [activeType, models, searchQuery]);
 
-  const filteredModels = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
-    if (query) {
-      return typeScopedModels.filter(
-        (model) =>
-          model.id.toLowerCase().includes(query) ||
-          model.label.toLowerCase().includes(query) ||
-          model.shortLabel?.toLowerCase().includes(query) ||
-          model.shortCode?.toLowerCase().includes(query) ||
-          model.description?.toLowerCase().includes(query)
-      );
-    }
+  const selectedIds = useMemo(() => new Set(draftSelection), [draftSelection]);
 
-    if (!activeVendor) {
-      return typeScopedModels;
-    }
-
-    return typeScopedModels.filter((model) => model.vendor === activeVendor);
-  }, [activeVendor, searchQuery, typeScopedModels]);
+  const vendorGroups = useMemo(
+    () => buildVendorGroups(visibleModels, selectedIds),
+    [selectedIds, visibleModels]
+  );
 
   const selectedCount = draftSelection.length;
   const selectedTypeCounts = useMemo(
     () => ({
       image: models.filter(
-        (model) => model.type === 'image' && draftSelection.includes(model.id)
+        (model) => model.type === 'image' && selectedIds.has(model.id)
       ).length,
       video: models.filter(
-        (model) => model.type === 'video' && draftSelection.includes(model.id)
+        (model) => model.type === 'video' && selectedIds.has(model.id)
       ).length,
       text: models.filter(
-        (model) => model.type === 'text' && draftSelection.includes(model.id)
+        (model) => model.type === 'text' && selectedIds.has(model.id)
       ).length,
     }),
-    [draftSelection, models]
+    [models, selectedIds]
   );
 
   const allVisibleSelected =
-    filteredModels.length > 0 &&
-    filteredModels.every((model) => draftSelection.includes(model.id));
+    visibleModels.length > 0 &&
+    visibleModels.every((model) => selectedIds.has(model.id));
+
+  useEffect(() => {
+    if (vendorGroups.length === 0) {
+      return;
+    }
+
+    const hasVisibleExpandedVendor = vendorGroups.some(
+      (group) => expandedVendors[group.vendor]
+    );
+
+    if (hasVisibleExpandedVendor) {
+      return;
+    }
+
+    const hasAnyExpandedVendor = Object.values(expandedVendors).some(Boolean);
+
+    if (!hasAnyExpandedVendor) {
+      return;
+    }
+
+    setExpandedVendors(
+      vendorGroups.reduce<Partial<Record<ModelVendor, boolean>>>(
+        (state, group, index) => {
+          state[group.vendor] = index === 0;
+          return state;
+        },
+        {}
+      )
+    );
+  }, [expandedVendors, vendorGroups]);
 
   const toggleModel = (modelId: string) => {
     setDraftSelection((prev) =>
@@ -142,9 +278,9 @@ export const ModelDiscoveryDialog: React.FC<ModelDiscoveryDialogProps> = ({
   };
 
   const toggleVisibleModels = () => {
-    const visibleIds = filteredModels.map((model) => model.id);
+    const visibleIds = visibleModels.map((model) => model.id);
     const visibleSelected = visibleIds.every((modelId) =>
-      draftSelection.includes(modelId)
+      selectedIds.has(modelId)
     );
 
     setDraftSelection((prev) => {
@@ -156,6 +292,20 @@ export const ModelDiscoveryDialog: React.FC<ModelDiscoveryDialogProps> = ({
     });
   };
 
+  const toggleVendor = (vendor: ModelVendor) => {
+    setExpandedVendors((current) => {
+      const nextExpanded = !current[vendor];
+      const nextState: Partial<Record<ModelVendor, boolean>> = {};
+
+      vendorGroups.forEach((group) => {
+        nextState[group.vendor] =
+          group.vendor === vendor ? nextExpanded : false;
+      });
+
+      return nextState;
+    });
+  };
+
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
       <DialogContent
@@ -164,14 +314,19 @@ export const ModelDiscoveryDialog: React.FC<ModelDiscoveryDialogProps> = ({
         data-testid="model-discovery-dialog"
       >
         <div className="model-discovery-dialog__header">
-          <h3 className="model-discovery-dialog__title">获取模型</h3>
-          <div className="model-discovery-dialog__header-stats">
-            <span className="model-discovery-dialog__header-pill">
-              已发现 {models.length}
-            </span>
-            <span className="model-discovery-dialog__header-pill model-discovery-dialog__header-pill--accent">
-              已选 {selectedCount}
-            </span>
+          <div className="model-discovery-dialog__headline">
+            <h3 className="model-discovery-dialog__title">获取模型</h3>
+            <div className="model-discovery-dialog__header-stats">
+              <span className="model-discovery-dialog__header-pill">
+                已发现 {models.length}
+              </span>
+              <span className="model-discovery-dialog__header-pill">
+                品牌 {vendorGroups.length}
+              </span>
+              <span className="model-discovery-dialog__header-pill model-discovery-dialog__header-pill--accent">
+                已选 {selectedCount}
+              </span>
+            </div>
           </div>
           <button
             type="button"
@@ -190,7 +345,7 @@ export const ModelDiscoveryDialog: React.FC<ModelDiscoveryDialogProps> = ({
               type="text"
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder="搜索模型名称或 ID"
+              placeholder="搜索模型名称、ID 或品牌"
             />
           </label>
           <div className="model-discovery-dialog__toolbar-actions">
@@ -198,7 +353,7 @@ export const ModelDiscoveryDialog: React.FC<ModelDiscoveryDialogProps> = ({
               type="button"
               className="model-discovery-dialog__ghost-button"
               onClick={toggleVisibleModels}
-              disabled={filteredModels.length === 0}
+              disabled={visibleModels.length === 0}
             >
               {allVisibleSelected ? '取消当前结果' : '添加当前结果'}
             </button>
@@ -235,70 +390,152 @@ export const ModelDiscoveryDialog: React.FC<ModelDiscoveryDialogProps> = ({
         </div>
 
         <div className="model-discovery-dialog__body">
-          <VendorTabPanel
-            tabs={vendorTabs}
-            activeVendor={activeVendor}
-            onVendorChange={setActiveVendor}
-            searchQuery={searchQuery}
-            compact
-          >
-            <div className="model-discovery-dialog__list">
-              {filteredModels.length === 0 ? (
-                <div className="model-discovery-dialog__empty">
-                  {searchQuery.trim() ? '没有匹配的模型' : '暂无模型'}
-                </div>
-              ) : (
-                filteredModels.map((model) => {
-                  const checked = draftSelection.includes(model.id);
-                  return (
-                    <label
-                      key={model.id}
-                      className={`model-discovery-dialog__item ${
-                        checked ? 'model-discovery-dialog__item--checked' : ''
-                      }`}
+          {vendorGroups.length === 0 ? (
+            <div className="model-discovery-dialog__empty">
+              {searchQuery.trim() ? '没有匹配的模型' : '暂无模型'}
+            </div>
+          ) : (
+            <div className="model-discovery-dialog__group-list">
+              {vendorGroups.map((group) => {
+                const palette = getModelVendorPalette(group.vendor);
+                const orderedTypeGroups = getOrderedTypeGroups(group);
+                const expanded = !!expandedVendors[group.vendor];
+
+                return (
+                  <section
+                    key={group.vendor}
+                    className={`model-discovery-dialog__vendor-group ${
+                      expanded
+                        ? 'model-discovery-dialog__vendor-group--expanded'
+                        : ''
+                    }`}
+                    style={
+                      {
+                        '--vendor-accent': palette.accent,
+                        '--vendor-surface': palette.surface,
+                        '--vendor-border': palette.border,
+                      } as React.CSSProperties
+                    }
+                  >
+                    <button
+                      type="button"
+                      className="model-discovery-dialog__vendor-header"
+                      onClick={() => toggleVendor(group.vendor)}
                     >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => toggleModel(model.id)}
-                      />
-                      <div className="model-discovery-dialog__item-body">
-                        <div className="model-discovery-dialog__item-top">
-                          <div className="model-discovery-dialog__item-heading">
-                            <span className="model-discovery-dialog__item-label">
-                              {model.shortLabel || model.label}
-                            </span>
-                            {checked ? (
-                              <span className="model-discovery-dialog__added-tag">
-                                已选
-                              </span>
-                            ) : null}
-                          </div>
-                          <span
-                            className="model-discovery-dialog__type-tag"
-                            style={{ color: getModelTypeColor(model.type) }}
-                          >
-                            {MODEL_TYPE_LABELS[model.type]}
+                      <div className="model-discovery-dialog__vendor-main">
+                        <span className="model-discovery-dialog__vendor-logo-shell">
+                          <ModelVendorMark vendor={group.vendor} size={22} />
+                        </span>
+                        <div className="model-discovery-dialog__vendor-copy">
+                          <span className="model-discovery-dialog__vendor-name">
+                            {getDiscoveryVendorLabel(group.vendor)}
                           </span>
-                        </div>
-                        <div className="model-discovery-dialog__item-id">
-                          {model.id}
-                        </div>
-                        <div className="model-discovery-dialog__item-meta">
-                          <span>{VENDOR_NAMES[model.vendor]}</span>
+                          <div className="model-discovery-dialog__vendor-meta">
+                            {orderedTypeGroups.map(
+                              ({ type, models: items }) => (
+                                <span
+                                  key={`${group.vendor}-${type}`}
+                                  className="model-discovery-dialog__vendor-meta-pill"
+                                >
+                                  {MODEL_TYPE_SHORT_LABELS[type]} {items.length}
+                                </span>
+                              )
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </label>
-                  );
-                })
-              )}
+
+                      <span className="model-discovery-dialog__vendor-spacer" />
+
+                      <div className="model-discovery-dialog__vendor-side">
+                        {group.selectedCount > 0 ? (
+                          <span className="model-discovery-dialog__vendor-selected">
+                            已选 {group.selectedCount}
+                          </span>
+                        ) : null}
+                        <span className="model-discovery-dialog__vendor-count">
+                          {group.models.length}
+                        </span>
+                        <span
+                          className={`model-discovery-dialog__vendor-chevron ${
+                            expanded
+                              ? 'model-discovery-dialog__vendor-chevron--expanded'
+                              : ''
+                          }`}
+                        >
+                          <ChevronDown size={16} />
+                        </span>
+                      </div>
+                    </button>
+
+                    {expanded ? (
+                      <div className="model-discovery-dialog__vendor-body">
+                        {orderedTypeGroups.map(({ type, models: items }) => (
+                          <div
+                            key={`${group.vendor}-${type}`}
+                            className="model-discovery-dialog__type-section"
+                          >
+                            <div className="model-discovery-dialog__type-section-header">
+                              <span className="model-discovery-dialog__type-section-title">
+                                {MODEL_TYPE_SECTION_LABELS[type]}
+                              </span>
+                              <span className="model-discovery-dialog__type-section-count">
+                                {items.length}
+                              </span>
+                            </div>
+
+                            <div className="model-discovery-dialog__model-stack">
+                              {items.map((model) => {
+                                const checked = selectedIds.has(model.id);
+
+                                return (
+                                  <label
+                                    key={model.id}
+                                    className={`model-discovery-dialog__item ${
+                                      checked
+                                        ? 'model-discovery-dialog__item--checked'
+                                        : ''
+                                    }`}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      className="model-discovery-dialog__checkbox"
+                                      checked={checked}
+                                      onChange={() => toggleModel(model.id)}
+                                    />
+                                    <span className="model-discovery-dialog__checkmark">
+                                      {checked ? <Check size={12} /> : null}
+                                    </span>
+
+                                    <div className="model-discovery-dialog__item-body">
+                                      <div
+                                        className={`model-discovery-dialog__item-id ${
+                                          checked
+                                            ? 'model-discovery-dialog__item-id--checked'
+                                            : ''
+                                        }`}
+                                      >
+                                        {model.id}
+                                      </div>
+                                    </div>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </section>
+                );
+              })}
             </div>
-          </VendorTabPanel>
+          )}
         </div>
 
         <div className="model-discovery-dialog__footer">
           <span className="model-discovery-dialog__selection-count">
-            已选 {selectedCount} 个{' · '}图 {selectedTypeCounts.image} / 视{' '}
+            已选 {selectedCount} 个 · 图 {selectedTypeCounts.image} / 视{' '}
             {selectedTypeCounts.video} / 文 {selectedTypeCounts.text}
           </span>
           <div className="model-discovery-dialog__actions">
