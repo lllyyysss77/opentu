@@ -1,9 +1,13 @@
 import PptxGenJS from 'pptxgenjs';
 import type { PlaitBoard, PlaitElement } from '@plait/core';
 import { RectangleClient, getRectangleByElements } from '@plait/core';
-import { PlaitDrawElement } from '@plait/draw';
+import { PlaitDrawElement, isClosedPoints } from '@plait/draw';
 import { MindElement } from '@plait/mind';
-import { FrameTransforms } from '../../plugins/with-frame';
+import { Freehand } from '../../plugins/freehand/type';
+import { getFreehandRectangle } from '../../plugins/freehand/utils';
+import { PenPath } from '../../plugins/pen/type';
+import { getAbsoluteAnchors, getPenPathRectangle } from '../../plugins/pen/utils';
+import { getPathSamplePoints } from '../../plugins/pen/bezier-utils';
 import { isFrameElement, type PlaitFrame } from '../../types/frame.types';
 import {
   sortElementsByPosition,
@@ -268,6 +272,10 @@ function getElementLineOpts(
   return { line: { color: strokeColor, width: (element as any).strokeWidth || 1 } };
 }
 
+type CustGeomPoint =
+  | { x: number; y: number; moveTo?: boolean }
+  | { close: true };
+
 // ─── Image helper ───
 
 async function ensureBase64Image(url: string): Promise<string> {
@@ -306,6 +314,49 @@ function sortFramesForPPT(frames: PlaitFrame[]): PlaitFrame[] {
   });
 }
 
+function isRectContained(
+  inner: { x: number; y: number; width: number; height: number },
+  outer: { x: number; y: number; width: number; height: number },
+  epsilon = 0.5
+): boolean {
+  return (
+    inner.x >= outer.x - epsilon &&
+    inner.y >= outer.y - epsilon &&
+    inner.x + inner.width <= outer.x + outer.width + epsilon &&
+    inner.y + inner.height <= outer.y + outer.height + epsilon
+  );
+}
+
+function isPointInRect(
+  point: { x: number; y: number },
+  rect: { x: number; y: number; width: number; height: number },
+  epsilon = 0.5
+): boolean {
+  return (
+    point.x >= rect.x - epsilon &&
+    point.y >= rect.y - epsilon &&
+    point.x <= rect.x + rect.width + epsilon &&
+    point.y <= rect.y + rect.height + epsilon
+  );
+}
+
+function getElementsInFrame(board: PlaitBoard, frame: PlaitFrame): PlaitElement[] {
+  const frameRect = RectangleClient.getRectangleByPoints(frame.points);
+  return (board.children as PlaitElement[]).filter((el) => {
+    if (el.id === frame.id) return false;
+    if (isFrameElement(el)) return false;
+    try {
+      const rect = getRectangleByElements(board, [el], false);
+      // 导出时更宽松：只要元素与 Frame 相交且中心点在 Frame 内，就认为属于该页
+      // （避免描边/阴影导致的边界框轻微越界而被误过滤）
+      const center = { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+      return RectangleClient.isHit(rect, frameRect) && isPointInRect(center, frameRect, 2);
+    } catch {
+      return false;
+    }
+  });
+}
+
 // ─── Core: convert one Frame into a PPT slide ───
 
 async function addFrameSlide(
@@ -313,11 +364,23 @@ async function addFrameSlide(
   board: PlaitBoard,
   frame: PlaitFrame
 ): Promise<boolean> {
-  const children = FrameTransforms.getFrameChildren(board, frame);
+  const children = getElementsInFrame(board, frame);
   if (!children.length) return false;
 
   const frameRect = RectangleClient.getRectangleByPoints(frame.points);
   const slide = pptx.addSlide();
+
+  // Frame 背景图：先设置幻灯片背景，再叠加内容
+  const backgroundUrl = frame.backgroundUrl;
+  if (backgroundUrl) {
+    try {
+      const bgData = await ensureBase64Image(backgroundUrl);
+      slide.background = { data: bgData };
+    } catch {
+      console.debug('[PPT Export] Frame background image load failed, using default');
+    }
+  }
+
   const ordered = sortElementsByPosition(board, children as PlaitElement[]);
 
   // 字号缩放：画布 px → PPT pt（保持视觉比例一致）
@@ -466,6 +529,98 @@ async function addFrameSlide(
           flipH: ex < sx,
           flipV: ey < sy,
           line: lineProps,
+        });
+        continue;
+      }
+
+      // --- Freehand (画笔)：custGeom 折线/多边形 ---
+      if (Freehand.isFreehand(element)) {
+        const freehand = element as Freehand;
+        const points = freehand.points;
+        if (!points || points.length < 2) continue;
+
+        const freehandRect = getFreehandRectangle(freehand);
+        const fhPos = computeSlidePosition(freehandRect, frameRect);
+        const strokeColor = toPptColor(getCurrentStrokeColor(board, element));
+        const strokeWidth = (freehand.strokeWidth ?? 2) * (SLIDE_WIDTH / frameRect.width);
+        const lineOpts = {
+          color: strokeColor || '333333',
+          width: Math.max(0.01, strokeWidth),
+        };
+
+        // 将画布坐标转为形状局部坐标（与 ppt 形状 w×h 同单位）
+        const toLocal = (p: [number, number]) => ({
+          x: (p[0] - freehandRect.x) / freehandRect.width * fhPos.w,
+          y: (p[1] - freehandRect.y) / freehandRect.height * fhPos.h,
+        });
+
+        const pathPoints: CustGeomPoint[] = [];
+        pathPoints.push({ ...toLocal(points[0]), moveTo: true });
+        for (let i = 1; i < points.length; i++) {
+          pathPoints.push(toLocal(points[i]));
+        }
+        if (isClosedPoints(points)) {
+          pathPoints.push({ close: true });
+        }
+
+        slide.addShape((pptx as any).ShapeType.custGeom, {
+          x: fhPos.x,
+          y: fhPos.y,
+          w: fhPos.w,
+          h: fhPos.h,
+          line: lineOpts,
+          fill: { color: 'FFFFFF', transparency: 100 },
+          points: pathPoints,
+        });
+        continue;
+      }
+
+      // --- PenPath（钢笔/布尔生成的矢量形状）：custGeom 近似 ---
+      if (PenPath.isPenPath(element)) {
+        const pen = element as PenPath;
+        const absoluteAnchors = getAbsoluteAnchors(pen);
+        if (!absoluteAnchors.length) continue;
+
+        const penRect = getPenPathRectangle(pen);
+        const penPos = computeSlidePosition(penRect, frameRect);
+
+        const strokeColor = toPptColor(getCurrentStrokeColor(board, element));
+        const strokeWidth = (pen.strokeWidth ?? 2) * (SLIDE_WIDTH / frameRect.width);
+        const line = strokeColor
+          ? { color: strokeColor, width: Math.max(0.01, strokeWidth) }
+          : undefined;
+
+        const fillColor = toPptColor(pen.fill);
+        const fill = pen.closed && fillColor
+          ? { color: fillColor }
+          : { color: 'FFFFFF', transparency: 100 };
+
+        // 贝塞尔曲线按采样点近似为折线（PPT 兼容 & 实现简单）
+        const samples = getPathSamplePoints(absoluteAnchors, pen.closed, 12);
+        if (samples.length < 2) continue;
+
+        const toLocal = (p: [number, number]) => ({
+          x: (p[0] - penRect.x) / penRect.width * penPos.w,
+          y: (p[1] - penRect.y) / penRect.height * penPos.h,
+        });
+
+        const pathPoints: CustGeomPoint[] = [];
+        pathPoints.push({ ...toLocal(samples[0] as [number, number]), moveTo: true });
+        for (let i = 1; i < samples.length; i++) {
+          pathPoints.push(toLocal(samples[i] as [number, number]));
+        }
+        if (pen.closed) {
+          pathPoints.push({ close: true });
+        }
+
+        slide.addShape((pptx as any).ShapeType.custGeom, {
+          x: penPos.x,
+          y: penPos.y,
+          w: penPos.w,
+          h: penPos.h,
+          ...(line ? { line } : {}),
+          fill,
+          points: pathPoints,
         });
         continue;
       }
