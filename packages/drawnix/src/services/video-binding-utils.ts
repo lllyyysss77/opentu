@@ -18,6 +18,16 @@ const FIXED_SORA_DURATION_MODEL_PATTERN = /^sora-2-(\d+)s$/i;
 const DEFAULT_VIDEO_DOWNLOAD_PATH = '/videos/{taskId}/content';
 const SORA_API_ALLOWED_DURATIONS = ['4', '8', '12'] as const;
 const SORA_MODE_VALUES = new Set(['api', 'web']);
+const KLING_ACTION_VALUES = new Set(['text2video', 'image2video']);
+const KLING_CAMERA_PARAM_IDS = new Set([
+  'camera_control_type',
+  'camera_horizontal',
+  'camera_vertical',
+  'camera_pan',
+  'camera_tilt',
+  'camera_roll',
+  'camera_zoom',
+]);
 
 function normalizeStringParams(
   params?: Record<string, unknown> | null
@@ -48,6 +58,31 @@ function normalizeDurationValue(
 
   const normalized = String(value).trim();
   return normalized ? normalized : undefined;
+}
+
+function resolveSelectedKlingAction(
+  params?: Record<string, unknown> | null
+): 'text2video' | 'image2video' | null {
+  const action = normalizeStringParams(params).klingAction2?.toLowerCase();
+  if (action && KLING_ACTION_VALUES.has(action)) {
+    return action as 'text2video' | 'image2video';
+  }
+
+  return null;
+}
+
+function buildDynamicEnumOptions(
+  param: ParamConfig,
+  allowedValues: string[]
+): NonNullable<ParamConfig['options']> {
+  const optionLabels = new Map(
+    (param.options || []).map((option) => [option.value, option.label])
+  );
+
+  return allowedValues.map((value) => ({
+    value,
+    label: optionLabels.get(value) || value,
+  }));
 }
 
 function isSoraModel(modelId?: string | null): boolean {
@@ -294,22 +329,72 @@ export function getEffectiveVideoCompatibleParams(
   const durationParam = compatibleParams.find((param) => param.id === 'duration');
   const plan = resolveInvocationPlanFromRoute('video', modelRef || modelId);
   const soraMode = resolveSoraMode(modelId, plan?.binding || null, params);
-
-  if (!durationParam && !soraMode) {
-    return compatibleParams;
-  }
-
+  const metadata = getResolvedVideoBindingMetadata(modelId, plan?.binding || null, params);
+  const selectedKlingAction = resolveSelectedKlingAction(params);
   const effectiveConfig = getEffectiveVideoModelConfigForSelection(
     modelId,
     modelRef,
     params
   );
 
-  return compatibleParams.map((param) => {
+  return compatibleParams
+    .filter((param) => {
+      if (
+        plan?.binding?.protocol === 'kling.video' &&
+        selectedKlingAction === 'image2video' &&
+        KLING_CAMERA_PARAM_IDS.has(param.id)
+      ) {
+        return false;
+      }
+
+      return true;
+    })
+    .map((param) => {
     if (param.id === SORA_MODE_PARAM_ID && soraMode) {
       return {
         ...param,
         defaultValue: soraMode,
+      };
+    }
+
+    if (
+      plan?.binding?.protocol === 'kling.video' &&
+      metadata?.versionField === param.id &&
+      param.valueType === 'enum'
+    ) {
+      const actionScopedOptions =
+        (selectedKlingAction &&
+          metadata.versionOptionsByAction?.[selectedKlingAction]) ||
+        metadata.versionOptions ||
+        [];
+      const options =
+        actionScopedOptions.length > 0
+          ? buildDynamicEnumOptions(param, actionScopedOptions)
+          : param.options;
+      const defaultValue =
+        actionScopedOptions.length > 0
+          ? actionScopedOptions.includes(metadata.defaultVersion || '')
+            ? metadata.defaultVersion
+            : actionScopedOptions.includes(param.defaultValue || '')
+              ? param.defaultValue
+              : actionScopedOptions[0]
+          : param.defaultValue;
+
+      return {
+        ...param,
+        options,
+        defaultValue,
+      };
+    }
+
+    if (param.id === 'size') {
+      return {
+        ...param,
+        options: effectiveConfig.sizeOptions.map((option) => ({
+          value: option.value,
+          label: option.label,
+        })),
+        defaultValue: effectiveConfig.defaultSize,
       };
     }
 
