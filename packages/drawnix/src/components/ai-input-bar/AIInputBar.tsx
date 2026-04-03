@@ -61,6 +61,7 @@ import { usePromptHistory } from '../../hooks/usePromptHistory';
 import { useSelectableModels } from '../../hooks/use-runtime-models';
 import { getPinnedSelectableModel } from '../../utils/runtime-model-discovery';
 import {
+  getDefaultAudioModel,
   getDefaultImageModel,
   getModelConfig,
   getDefaultSizeForModel,
@@ -458,6 +459,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
     const { language } = useI18n();
     const imageModels = useSelectableModels('image');
     const videoModels = useSelectableModels('video');
+    const audioModels = useSelectableModels('audio');
     const textModels = useSelectableModels('text');
 
     const chatDrawerControl = useChatDrawerControl();
@@ -502,7 +504,13 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
         models: ModelConfig[]
       ): ModelConfig | undefined => {
         const routeType =
-          type === 'video' ? 'video' : type === 'text' ? 'text' : 'image';
+          type === 'video'
+            ? 'video'
+            : type === 'audio'
+            ? 'audio'
+            : type === 'text'
+            ? 'text'
+            : 'image';
         const route = resolveInvocationRoute(routeType);
         const routeModel = findMatchingSelectableModel(
           models,
@@ -516,6 +524,8 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
         const fallbackModelId =
           type === 'video'
             ? getDefaultVideoModel()
+            : type === 'audio'
+            ? getDefaultAudioModel()
             : type === 'text'
             ? getDefaultTextModel()
             : getDefaultImageModel();
@@ -601,6 +611,27 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
       );
       return pinnedModel ? [pinnedModel, ...videoModels] : videoModels;
     }, [generationType, selectedModel, selectedModelRef, videoModels]);
+    const visibleAudioModels = useMemo(() => {
+      if (generationType !== 'audio') {
+        return audioModels;
+      }
+
+      const currentMatch = findMatchingSelectableModel(
+        audioModels,
+        selectedModel,
+        selectedModelRef
+      );
+      if (currentMatch) {
+        return audioModels;
+      }
+
+      const pinnedModel = getPinnedSelectableModel(
+        'audio',
+        selectedModel,
+        selectedModelRef
+      );
+      return pinnedModel ? [pinnedModel, ...audioModels] : audioModels;
+    }, [audioModels, generationType, selectedModel, selectedModelRef]);
     const visibleTextModels = useMemo(() => {
       if (generationType !== 'text') {
         return textModels;
@@ -694,6 +725,8 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
       const modelsForType =
         generationType === 'video'
           ? visibleVideoModels
+          : generationType === 'audio'
+          ? visibleAudioModels
           : generationType === 'text'
           ? visibleTextModels
           : visibleImageModels;
@@ -722,11 +755,12 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
       if (generationType !== 'text') {
         setSelectedSkillId(SKILL_AUTO_ID);
       }
-      // Agent 模式通常只需要 1 个结果
-      if (generationType === 'text') {
+      // Agent / audio 模式默认单结果
+      if (generationType === 'text' || generationType === 'audio') {
         setSelectedCount(1);
       }
     }, [
+      visibleAudioModels,
       generationType,
       visibleImageModels,
       resolvePreferredModelSelection,
@@ -739,9 +773,11 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
     // 根据当前生成类型获取模型列表
     const currentModels = useMemo(() => {
       if (generationType === 'video') return visibleVideoModels;
+      if (generationType === 'audio') return visibleAudioModels;
       if (generationType === 'text') return visibleTextModels;
       return visibleImageModels;
     }, [
+      visibleAudioModels,
       generationType,
       visibleImageModels,
       visibleTextModels,
@@ -1111,7 +1147,10 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
 
     // 处理历史提示词选择：将提示词回填到输入框并切换生成类型
     const handleSelectHistoryPrompt = useCallback(
-      (info: { content: string; modelType?: 'image' | 'video' | 'agent' }) => {
+      (info: {
+        content: string;
+        modelType?: 'image' | 'video' | 'audio' | 'agent';
+      }) => {
         setPrompt(info.content);
 
         // 根据 modelType 自动切换生成类型
@@ -1120,6 +1159,8 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
             setGenerationType('image');
           } else if (info.modelType === 'video') {
             setGenerationType('video');
+          } else if (info.modelType === 'audio') {
+            setGenerationType('audio');
           } else if (info.modelType === 'agent') {
             setGenerationType('text');
           }
@@ -1657,6 +1698,8 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
         const currentRouteType =
           generationType === 'video'
             ? 'video'
+            : generationType === 'audio'
+            ? 'audio'
             : generationType === 'text'
             ? 'text'
             : 'image';
@@ -2020,6 +2063,8 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
             isExplicit: parsedParams.isModelExplicit,
           },
           defaultModels: {
+            audio:
+              resolveInvocationRoute('audio').modelId || getDefaultAudioModel(),
             image:
               resolveInvocationRoute('image').modelId ||
               'gemini-3-pro-image-preview-vip',
@@ -3102,7 +3147,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
               />
             )}
 
-            {generationType !== 'text' && (
+            {generationType !== 'text' && generationType !== 'audio' && (
               <CountDropdown
                 value={selectedCount}
                 onSelect={handleCountSelect}
@@ -3169,6 +3214,10 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
                     ? language === 'zh'
                       ? '输入指令，让 Agent 为你工作...'
                       : 'Type instructions for Agent...'
+                    : generationType === 'audio'
+                    ? language === 'zh'
+                      ? '描述你想要生成的音乐、风格、歌词或情绪'
+                      : 'Describe the music, style, lyrics, or mood you want'
                     : language === 'zh'
                     ? `描述你想要创建的${
                         generationType === 'image' ? '图片' : '视频'

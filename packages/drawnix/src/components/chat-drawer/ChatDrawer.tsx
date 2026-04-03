@@ -26,6 +26,7 @@ import { chatStorageService } from '../../services/chat-storage-service';
 import { useChatHandler } from '../../hooks/useChatHandler';
 import {
   createModelRef,
+  geminiSettings,
   resolveInvocationRoute,
   type ModelRef,
 } from '../../utils/settings-manager';
@@ -66,6 +67,11 @@ function getToolDescription(
       )}...`;
     case 'generate_video':
       return `生成视频: ${((args?.prompt as string) || '').substring(
+        0,
+        30
+      )}...`;
+    case 'generate_audio':
+      return `生成音频: ${((args?.prompt as string) || '').substring(
         0,
         30
       )}...`;
@@ -248,6 +254,8 @@ export const ChatDrawer = forwardRef<ChatDrawerRef, ChatDrawerProps>(
           name: 'AI 智能生成',
           generationType: toolCalls[0]?.name.includes('video')
             ? 'video'
+            : toolCalls[0]?.name.includes('audio')
+            ? 'audio'
             : 'image',
           prompt: aiAnalysis || '',
           aiAnalysis: aiAnalysis,

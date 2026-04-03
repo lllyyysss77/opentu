@@ -295,6 +295,7 @@ export const DialogTaskList: React.FC<DialogTaskListProps> = ({
     return filteredTasks.filter((t) => {
       if (t.status !== TaskStatus.COMPLETED) return false;
       if (!t.result?.url && !t.result?.urls?.length) return false;
+      if (t.type !== TaskType.IMAGE && t.type !== TaskType.VIDEO) return false;
       if (seen.has(t.id)) return false;
       seen.add(t.id);
       return true;

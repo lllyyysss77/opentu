@@ -22,6 +22,17 @@ import './task-progress-overlay.scss';
 // 弹窗侧栏宽度约 280px-500px，任务队列面板宽度约 300px-600px
 const COMPACT_LAYOUT_THRESHOLD = 500;
 
+function formatAudioDuration(duration?: number): string | null {
+  if (typeof duration !== 'number' || !Number.isFinite(duration) || duration <= 0) {
+    return null;
+  }
+
+  const totalSeconds = Math.round(duration);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
+
 function normalizeNestedString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }
@@ -180,6 +191,14 @@ export const TaskItem: React.FC<TaskItemProps> = React.memo(({
 
   // Check if this is a character task
   const isCharacterTask = task.type === TaskType.CHARACTER;
+  const isAudioTask = task.type === TaskType.AUDIO;
+  const isPreviewableTask =
+    task.type === TaskType.IMAGE || task.type === TaskType.VIDEO;
+  const displayPrompt = isCharacterTask
+    ? isCompleted && task.result?.characterUsername
+      ? `@${task.result.characterUsername}`
+      : '角色创建中...'
+    : task.result?.title || task.params.title || task.params.prompt;
   const extraParams =
     task.params.params && typeof task.params.params === 'object'
       ? (task.params.params as Record<string, unknown>)
@@ -198,23 +217,26 @@ export const TaskItem: React.FC<TaskItemProps> = React.memo(({
 
   // Unified cache hook (skip for character tasks)
   const { isCached } = useUnifiedCache(
-    isCharacterTask ? undefined : task.result?.url
+    isCharacterTask || isAudioTask ? undefined : task.result?.url
   );
 
   // Use original URL or cached URL (Service Worker handles caching automatically)
   const mediaUrl = task.result?.urls?.[0] || task.result?.url;
   const mediaCount = task.result?.urls?.length || (task.result?.url ? 1 : 0);
+  const previewMediaUrl = isAudioTask
+    ? task.result?.previewImageUrl
+    : mediaUrl;
   
   // 获取预览图URL（任务列表使用小尺寸）
   const thumbnailUrl = useThumbnailUrl(
-    mediaUrl,
+    previewMediaUrl,
     task.type === TaskType.IMAGE ? 'image' : task.type === TaskType.VIDEO ? 'video' : undefined,
     'small' // 任务列表使用小尺寸预览图
   );
 
   // Load image to get actual dimensions
   useEffect(() => {
-    if (isCompleted && mediaUrl && task.type === TaskType.IMAGE) {
+    if (isCompleted && previewMediaUrl && task.type === TaskType.IMAGE) {
       const img = new Image();
       img.onload = () => {
         setImageDimensions({ width: img.naturalWidth, height: img.naturalHeight });
@@ -223,9 +245,9 @@ export const TaskItem: React.FC<TaskItemProps> = React.memo(({
         // If image fails to load, keep dimensions null
         setImageDimensions(null);
       };
-      img.src = mediaUrl;
+      img.src = previewMediaUrl;
     }
-  }, [isCompleted, mediaUrl, task.type]);
+  }, [isCompleted, previewMediaUrl, task.type]);
 
   // Build detailed tooltip content
   const buildTooltipContent = () => {
@@ -283,7 +305,7 @@ export const TaskItem: React.FC<TaskItemProps> = React.memo(({
     
     if (selectionMode) {
       onSelectionChange?.(task.id, !isSelected);
-    } else if (isCompleted && mediaUrl) {
+    } else if (isCompleted && mediaUrl && isPreviewableTask) {
       onPreviewOpen?.();
     }
   };
@@ -291,7 +313,7 @@ export const TaskItem: React.FC<TaskItemProps> = React.memo(({
   // Handle preview click with event propagation stopped
   const handlePreviewClick = (e: React.MouseEvent) => {
     e.stopPropagation(); // 阻止冒泡到父元素的 handleItemClick
-    if (isCompleted && mediaUrl) {
+    if (isCompleted && mediaUrl && isPreviewableTask) {
       onPreviewOpen?.();
     }
   };
@@ -313,7 +335,12 @@ export const TaskItem: React.FC<TaskItemProps> = React.memo(({
         )}
 
       {/* 1. Preview Area - Visual entry point */}
-      {(isCompleted || isFailed || task.status === TaskStatus.PROCESSING) && (mediaUrl || isCharacterTask || task.type === TaskType.VIDEO || task.type === TaskType.IMAGE) && (
+      {(isCompleted || isFailed || task.status === TaskStatus.PROCESSING) &&
+        (previewMediaUrl ||
+          isCharacterTask ||
+          task.type === TaskType.VIDEO ||
+          task.type === TaskType.IMAGE ||
+          task.type === TaskType.AUDIO) && (
         <div className="task-item__preview-wrapper">
           <div className="task-item__preview" data-track="task_click_preview" onClick={handlePreviewClick}>
             {/* 失败状态：显示失败占位图 */}
@@ -330,7 +357,7 @@ export const TaskItem: React.FC<TaskItemProps> = React.memo(({
                 taskStatus={task.status}
                 realProgress={task.progress}
                 startedAt={task.startedAt}
-                mediaUrl={mediaUrl}
+                mediaUrl={previewMediaUrl}
               />
             ) : (
               <>
@@ -349,6 +376,26 @@ export const TaskItem: React.FC<TaskItemProps> = React.memo(({
                     />
                     {mediaCount > 1 && (
                       <span className="task-item__multi-badge">{mediaCount}张</span>
+                    )}
+                  </>
+                ) : isAudioTask && previewMediaUrl ? (
+                  <>
+                    <RetryImage
+                      src={previewMediaUrl}
+                      alt={displayPrompt}
+                      maxRetries={3}
+                      fallback={
+                        <div className="task-item__preview-placeholder">
+                          <PlayCircleIcon size="24px" />
+                          <span>音频封面</span>
+                        </div>
+                      }
+                    />
+                    <div className="task-item__video-play-overlay">
+                      <PlayCircleIcon size="28px" />
+                    </div>
+                    {mediaCount > 1 && (
+                      <span className="task-item__multi-badge">{mediaCount}首</span>
                     )}
                   </>
                 ) : isCharacterTask && task.result?.characterProfileUrl ? (
@@ -374,7 +421,16 @@ export const TaskItem: React.FC<TaskItemProps> = React.memo(({
                   </>
                 ) : (
                   <div className="task-item__preview-placeholder">
-                    {task.type === TaskType.IMAGE ? <ImageIcon size="24px" /> : <VideoIcon size="24px" />}
+                    {task.type === TaskType.IMAGE ? (
+                      <ImageIcon size="24px" />
+                    ) : task.type === TaskType.VIDEO ? (
+                      <VideoIcon size="24px" />
+                    ) : (
+                      <>
+                        <PlayCircleIcon size="24px" />
+                        <span>音频</span>
+                      </>
+                    )}
                   </div>
                 )}
               </>
@@ -388,11 +444,7 @@ export const TaskItem: React.FC<TaskItemProps> = React.memo(({
         {/* Prompt Area */}
         <div className="task-item__prompt-area">
           <div className="task-item__prompt" title={task.params.prompt}>
-            {isCharacterTask ? (
-              isCompleted && task.result?.characterUsername
-                ? `@${task.result.characterUsername}`
-                : '角色创建中...'
-            ) : task.params.prompt}
+            {displayPrompt}
           </div>
         </div>
 
@@ -429,6 +481,19 @@ export const TaskItem: React.FC<TaskItemProps> = React.memo(({
                 {task.type === TaskType.VIDEO && task.params.size && (
                   <Tag variant="outline">{task.params.size}</Tag>
                 )}
+                {task.type === TaskType.AUDIO && task.result?.duration && (
+                  <Tag variant="outline">
+                    {formatAudioDuration(task.result.duration)}
+                  </Tag>
+                )}
+                {task.type === TaskType.AUDIO && task.params.mv && (
+                  <Tag variant="outline">{task.params.mv}</Tag>
+                )}
+                {task.type === TaskType.AUDIO && task.params.tags && (
+                  <Tag variant="outline">
+                    {String(task.params.tags).split(',')[0]?.trim() || '音频'}
+                  </Tag>
+                )}
                 {task.params.batchId && task.params.batchIndex && (
                   <Tag variant="outline">批量 {task.params.batchIndex}/{task.params.batchTotal}</Tag>
                 )}
@@ -449,6 +514,12 @@ export const TaskItem: React.FC<TaskItemProps> = React.memo(({
                   }
                   return null;
                 })()}
+                {task.type === TaskType.AUDIO && task.result?.duration && (
+                  <span className="task-item__size">
+                    {' · '}
+                    {formatAudioDuration(task.result.duration)}
+                  </span>
+                )}
                 {isCompleted && task.result?.url && (
                   <a
                     href={task.result.url}
@@ -464,7 +535,8 @@ export const TaskItem: React.FC<TaskItemProps> = React.memo(({
               </div>
 
               {/* Progress bar for video tasks (outside tags) */}
-              {task.type === TaskType.VIDEO && task.status === TaskStatus.PROCESSING && (
+              {(task.type === TaskType.VIDEO || task.type === TaskType.AUDIO) &&
+                task.status === TaskStatus.PROCESSING && (
                 <div className="task-item__progress-container">
                   <div className="task-item__progress-bar">
                     <div
@@ -490,7 +562,7 @@ export const TaskItem: React.FC<TaskItemProps> = React.memo(({
                   </Tooltip>
                 )}
 
-                {!isCharacterTask && (
+                {!isCharacterTask && !isAudioTask && (
                   <Tooltip content="编辑" theme="light">
                     <Button
                       size="small"
@@ -524,7 +596,9 @@ export const TaskItem: React.FC<TaskItemProps> = React.memo(({
               </div>
 
               {/* Primary Action Button (Insert/Retry) - Moved to far right */}
-              {isCompleted && task.result?.url && !isCharacterTask && (
+              {isCompleted &&
+                task.result?.url &&
+                !isCharacterTask && (
                 <Button
                   size="small"
                   theme="primary"
