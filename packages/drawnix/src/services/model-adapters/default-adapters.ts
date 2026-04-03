@@ -1,9 +1,15 @@
 import { defaultGeminiClient } from '../../utils/gemini-api';
 import { asyncImageAPIService } from '../async-image-api-service';
+import {
+  audioAPIService,
+  extractAudioGenerationResult,
+} from '../audio-api-service';
 import { videoAPIService } from '../video-api-service';
 import {
+  DEFAULT_AUDIO_MODEL_ID,
   DEFAULT_IMAGE_MODEL_ID,
   DEFAULT_VIDEO_MODEL_ID,
+  AUDIO_MODELS,
   IMAGE_MODEL_MORE_OPTIONS,
   IMAGE_MODEL_VIP_OPTIONS,
   VIDEO_MODELS,
@@ -12,6 +18,8 @@ import {
 } from '../../constants/model-config';
 import type { UploadedVideoImage } from '../../types/video.types';
 import type {
+  AudioModelAdapter,
+  AudioGenerationRequest,
   ImageModelAdapter,
   VideoModelAdapter,
   ImageGenerationRequest,
@@ -37,6 +45,8 @@ const imageModelIds = [...IMAGE_MODEL_VIP_OPTIONS, ...IMAGE_MODEL_MORE_OPTIONS]
 const videoModelIds = VIDEO_MODELS.map((model) => model.id).filter(
   (modelId) => !modelId.startsWith('kling') && !modelId.startsWith('seedance')
 );
+
+const audioModelIds = AUDIO_MODELS.map((model) => model.id);
 
 const extractImageUrl = (
   response: any,
@@ -232,9 +242,49 @@ export const geminiVideoAdapter: VideoModelAdapter = {
   },
 };
 
+export const sunoAudioAdapter: AudioModelAdapter = {
+  id: 'suno-audio-adapter',
+  label: 'Suno Audio',
+  kind: 'audio',
+  docsUrl: 'https://tuzi-api.apifox.cn',
+  matchProtocols: ['tuzi.suno.music'],
+  matchRequestSchemas: ['tuzi.suno.music.submit'],
+  matchModels: ['suno_music'],
+  matchTags: ['suno', 'audio', 'music'],
+  supportedModels: audioModelIds,
+  defaultModel: DEFAULT_AUDIO_MODEL_ID,
+  async generateAudio(_context, request: AudioGenerationRequest) {
+    const result = await audioAPIService.generateAudioWithPolling(
+      {
+        model: request.model || DEFAULT_AUDIO_MODEL_ID,
+        modelRef: request.modelRef || null,
+        prompt: request.prompt,
+        title: request.title,
+        tags: request.tags,
+        mv: request.mv,
+        continueClipId: request.continueClipId,
+        continueAt: request.continueAt,
+        params: request.params,
+      },
+      {
+        interval: 5000,
+        onProgress: request.params?.onProgress as
+          | ((progress: number, status?: string) => void)
+          | undefined,
+        onSubmitted: request.params?.onSubmitted as
+          | ((taskId: string) => void)
+          | undefined,
+      }
+    );
+
+    return extractAudioGenerationResult(result);
+  },
+};
+
 export function registerDefaultModelAdapters(): void {
   registerModelAdapter(geminiImageAdapter);
   registerModelAdapter(geminiVideoAdapter);
+  registerModelAdapter(sunoAudioAdapter);
   registerKlingAdapter();
   registerMJImageAdapter();
   registerFluxAdapter();

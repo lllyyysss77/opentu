@@ -8,6 +8,7 @@ export type ProviderProtocol =
   | 'openai.images.generations'
   | 'openai.async.media'
   | 'openai.async.video'
+  | 'tuzi.suno.music'
   | 'google.generateContent'
   | 'mj.imagine'
   | 'flux.task'
@@ -53,7 +54,20 @@ export interface ProviderTextBindingMetadata {
 export interface ProviderBindingMetadata {
   text?: ProviderTextBindingMetadata;
   video?: ProviderVideoBindingMetadata;
+  audio?: ProviderAudioBindingMetadata;
   [key: string]: unknown;
+}
+
+export interface ProviderAudioBindingMetadata {
+  action?: string;
+  versionField?: string;
+  versionOptions?: string[];
+  defaultVersion?: string;
+  supportsContinuation?: boolean;
+  supportsUploadContinuation?: boolean;
+  supportsTags?: boolean;
+  supportsTitle?: boolean;
+  supportsLyricsPrompt?: boolean;
 }
 
 export interface ProviderProfileSnapshot
@@ -100,6 +114,7 @@ export interface DiscoveredProviderModel {
     supportsText: boolean;
     supportsImage: boolean;
     supportsVideo: boolean;
+    supportsAudio: boolean;
   };
   bindings: ProviderModelBinding[];
 }

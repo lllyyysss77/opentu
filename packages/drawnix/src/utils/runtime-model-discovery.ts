@@ -4,6 +4,7 @@ import {
   ModelVendor,
   VENDOR_NAMES,
   DEFAULT_IMAGE_MODEL_ID,
+  DEFAULT_AUDIO_MODEL_ID,
   DEFAULT_VIDEO_MODEL_ID,
   DEFAULT_TEXT_MODEL_ID,
   getModelsByType,
@@ -400,11 +401,36 @@ function inferModelType(model: RemoteModelListItem): ModelType {
       'image',
       ...extraPatterns,
     ]);
+  const hasAudioIdSignal = (...extraPatterns: InferencePattern[]) =>
+    matchesAnyPattern(lowerId, [
+      'audio',
+      'music',
+      'suno',
+      'chirp',
+      'lyrics',
+      'midi',
+      'stems',
+      ...extraPatterns,
+    ]);
 
   const hasId = (...patterns: InferencePattern[]) =>
     matchesAnyPattern(lowerId, patterns);
   const hasHint = (...patterns: InferencePattern[]) =>
     hasAnyEndpointHint(endpointHints, patterns);
+
+  if (
+    hasHint(
+      'audio',
+      'music',
+      'audio_generation',
+      'music-generation',
+      'lyrics',
+      'stems',
+      'midi'
+    )
+  ) {
+    return 'audio';
+  }
 
   if (
     hasHint(
@@ -570,6 +596,11 @@ function inferModelType(model: RemoteModelListItem): ModelType {
       if (hasId('veo')) return 'video';
       if (hasId('imagen', 'gpt-image')) return 'image';
       break;
+    case ModelVendor.OTHER:
+      if (hasAudioIdSignal()) {
+        return 'audio';
+      }
+      break;
     default:
       break;
   }
@@ -609,6 +640,17 @@ function inferModelType(model: RemoteModelListItem): ModelType {
     lowerId.includes('gpt-image');
   if (isImage) return 'image';
 
+  const isAudio =
+    lowerId.includes('suno') ||
+    lowerId.includes('chirp') ||
+    lowerId.includes('music') ||
+    lowerId.includes('lyrics') ||
+    lowerId.includes('midi') ||
+    lowerId.includes('stems') ||
+    lowerId.includes('remix') ||
+    lowerId.includes('infill');
+  if (isAudio) return 'audio';
+
   return 'text';
 }
 
@@ -620,6 +662,7 @@ function buildShortCode(modelId: string, type: ModelType): string {
     .map((part) => part[0]?.toLowerCase() || '')
     .join('');
   if (compact) return compact.slice(0, 6);
+  if (type === 'audio') return 'aud';
   if (type === 'video') return 'vid';
   if (type === 'text') return 'txt';
   return 'img';
@@ -656,7 +699,13 @@ function buildFallbackConfig(model: RemoteModelListItem): ModelConfig {
     shortLabel: model.id,
     shortCode: buildShortCode(model.id, type),
     description: `${vendorLabel} ${
-      type === 'image' ? '图片模型' : type === 'video' ? '视频模型' : '文本模型'
+      type === 'image'
+        ? '图片模型'
+        : type === 'video'
+        ? '视频模型'
+        : type === 'audio'
+        ? '音频模型'
+        : '文本模型'
     }`,
     type,
     vendor,
@@ -1336,6 +1385,7 @@ export function getFallbackDefaultModelId(type: ModelType): string {
   if (preferred.length > 0) {
     return preferred[0].id;
   }
+  if (type === 'audio') return DEFAULT_AUDIO_MODEL_ID;
   if (type === 'video') return DEFAULT_VIDEO_MODEL_ID;
   if (type === 'text') return DEFAULT_TEXT_MODEL_ID;
   return DEFAULT_IMAGE_MODEL_ID;

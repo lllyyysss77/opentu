@@ -10,7 +10,7 @@
 /**
  * 模型类型
  */
-export type ModelType = 'image' | 'video' | 'text';
+export type ModelType = 'image' | 'video' | 'text' | 'audio';
 
 /**
  * 模型厂商
@@ -180,6 +180,7 @@ export const MODEL_TYPE_COLORS = {
   image: '#E53935', // 红色
   video: '#FF9800', // 橙色
   text: '#4CAF50', // 绿色
+  audio: '#1E88E5', // 蓝色
 } as const;
 
 // ============================================
@@ -798,6 +799,25 @@ export const TEXT_MODELS: ModelConfig[] = [
   },
 ];
 
+/**
+ * 音频模型
+ *
+ * 注意：Suno 实际执行使用 submit/fetch 规则与 mv 字段，
+ * 这里保留的是可供路由与默认预设选择的逻辑音频入口。
+ */
+export const AUDIO_MODELS: ModelConfig[] = [
+  {
+    id: 'suno_music',
+    label: 'Suno Music',
+    shortLabel: 'Suno 音乐',
+    shortCode: 'suno',
+    description: 'Suno 音乐生成入口（通过 mv 决定实际版本）',
+    type: 'audio',
+    vendor: ModelVendor.OTHER,
+    tags: ['audio', 'music', 'suno'],
+  },
+];
+
 // ============================================
 // 所有模型
 // ============================================
@@ -817,6 +837,7 @@ export const ALL_MODELS: ModelConfig[] = [
   ...IMAGE_MODELS,
   ...VIDEO_MODELS,
   ...TEXT_MODELS,
+  ...AUDIO_MODELS,
 ];
 
 let runtimeModels: ModelConfig[] = [];
@@ -1007,6 +1028,14 @@ export const TEXT_MODEL_SELECT_OPTIONS = TEXT_MODELS.map((model) => ({
 }));
 
 /**
+ * 音频模型选项（用于 Select 组件）
+ */
+export const AUDIO_MODEL_SELECT_OPTIONS = AUDIO_MODELS.map((model) => ({
+  label: model.label,
+  value: model.id,
+}));
+
+/**
  * 默认图片模型 ID
  */
 export const DEFAULT_IMAGE_MODEL_ID = 'gemini-3-pro-image-preview-vip';
@@ -1056,6 +1085,18 @@ export function getDefaultTextModel(): string {
  * 默认文本模型（兼容旧代码）
  */
 export const DEFAULT_TEXT_MODEL = DEFAULT_TEXT_MODEL_ID;
+
+/**
+ * 默认音频模型 ID
+ */
+export const DEFAULT_AUDIO_MODEL_ID = 'suno_music';
+
+/**
+ * 获取默认音频模型 ID
+ */
+export function getDefaultAudioModel(): string {
+  return DEFAULT_AUDIO_MODEL_ID;
+}
 
 // ============================================
 // 参数配置（用于 SmartSuggestionPanel）
@@ -1467,6 +1508,85 @@ export const VIDEO_PARAMS: ParamConfig[] = [
 ];
 
 /**
+ * 音频参数配置
+ */
+export const AUDIO_PARAMS: ParamConfig[] = [
+  {
+    id: 'mv',
+    label: 'Suno 版本',
+    shortLabel: '版本',
+    description: 'Suno 音乐生成版本',
+    valueType: 'enum',
+    options: [
+      { value: 'chirp-v5-5', label: 'v5.5' },
+      { value: 'chirp-v5', label: 'v5.0' },
+      { value: 'chirp-v4-5', label: 'v4.5' },
+      { value: 'chirp-v4', label: 'v4.0' },
+      { value: 'chirp-v3-0', label: 'v3.0' },
+      { value: 'chirp-v3-5', label: 'v3.5' },
+    ],
+    defaultValue: 'chirp-v3-5',
+    compatibleModels: ['suno_music'],
+    compatibleTags: ['suno', 'audio', 'music'],
+    modelType: 'audio',
+  },
+  {
+    id: 'title',
+    label: '歌曲标题',
+    shortLabel: '标题',
+    description: '可选，设置歌曲标题',
+    valueType: 'string',
+    compatibleModels: ['suno_music'],
+    compatibleTags: ['suno', 'audio', 'music'],
+    modelType: 'audio',
+  },
+  {
+    id: 'tags',
+    label: '风格标签',
+    shortLabel: '风格',
+    description: '可选，使用逗号分隔多个风格标签',
+    valueType: 'string',
+    compatibleModels: ['suno_music'],
+    compatibleTags: ['suno', 'audio', 'music'],
+    modelType: 'audio',
+  },
+  {
+    id: 'continueSource',
+    label: '续写来源',
+    shortLabel: '续写',
+    description: '选择普通续写还是基于上传音频续写',
+    valueType: 'enum',
+    options: [
+      { value: 'clip', label: '已有 clip' },
+      { value: 'upload', label: '上传音频' },
+    ],
+    compatibleModels: ['suno_music'],
+    compatibleTags: ['suno', 'audio', 'music'],
+    modelType: 'audio',
+  },
+  {
+    id: 'continueClipId',
+    label: '续写 Clip ID',
+    shortLabel: 'Clip',
+    description: '续写已有歌曲时填写 clip ID',
+    valueType: 'string',
+    compatibleModels: ['suno_music'],
+    compatibleTags: ['suno', 'audio', 'music'],
+    modelType: 'audio',
+  },
+  {
+    id: 'continueAt',
+    label: '续写起点秒数',
+    shortLabel: '起点',
+    description: '从第几秒开始续写',
+    valueType: 'number',
+    compatibleModels: ['suno_music'],
+    compatibleTags: ['suno', 'audio', 'music'],
+    modelType: 'audio',
+  },
+];
+
+/**
  * 图片参数配置
  * 根据 API 文档，size 使用宽高比格式（如 16x9），API 会自动转换为对应像素
  * 'auto' 表示不传尺寸参数，让模型自动决定
@@ -1726,7 +1846,11 @@ export const IMAGE_PARAMS: ParamConfig[] = [
 /**
  * 所有参数配置
  */
-export const ALL_PARAMS: ParamConfig[] = [...VIDEO_PARAMS, ...IMAGE_PARAMS];
+export const ALL_PARAMS: ParamConfig[] = [
+  ...VIDEO_PARAMS,
+  ...IMAGE_PARAMS,
+  ...AUDIO_PARAMS,
+];
 
 /**
  * 根据模型类型获取参数列表
@@ -1757,6 +1881,11 @@ export function getCompatibleParams(modelId: string): ParamConfig[] {
   if (idLower.includes('veo')) modelTags.add('veo');
   if (idLower.includes('sora')) modelTags.add('sora');
   if (idLower.includes('seedance')) modelTags.add('seedance');
+  if (idLower.includes('suno') || idLower.includes('chirp')) {
+    modelTags.add('suno');
+    modelTags.add('audio');
+    modelTags.add('music');
+  }
   // 这里不再自动按 doubao 分类，避免与 seedream 重复；若需要可通过 tags 显式声明
 
   return ALL_PARAMS.filter((param) => {

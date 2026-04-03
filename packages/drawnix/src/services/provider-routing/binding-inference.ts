@@ -152,6 +152,17 @@ function isSoraModel(model: ModelConfig): boolean {
   );
 }
 
+function isSunoModel(model: ModelConfig): boolean {
+  const lowerId = model.id.toLowerCase();
+  return (
+    lowerId.includes('suno') ||
+    lowerId.includes('chirp') ||
+    normalizeModelTags(model).includes('suno') ||
+    normalizeModelTags(model).includes('audio') ||
+    normalizeModelTags(model).includes('music')
+  );
+}
+
 function isOfficialOpenAIProfile(profile: ProviderProfileSnapshot): boolean {
   return profile.baseUrl.toLowerCase().includes('api.openai.com');
 }
@@ -486,6 +497,56 @@ function inferVideoBindings(
   return bindings;
 }
 
+function inferAudioBindings(
+  profile: ProviderProfileSnapshot,
+  model: ModelConfig
+): ProviderModelBinding[] {
+  const bindings: ProviderModelBinding[] = [];
+
+  if (
+    isSunoModel(model) &&
+    (profile.providerType === 'openai-compatible' ||
+      profile.providerType === 'custom')
+  ) {
+    bindings.push(
+      buildBinding(profile, model, {
+        protocol: 'tuzi.suno.music',
+        requestSchema: 'tuzi.suno.music.submit',
+        responseSchema: 'tuzi.suno.task',
+        submitPath: '/suno/submit/music',
+        pollPathTemplate: '/suno/fetch/{taskId}',
+        baseUrlStrategy: 'trim-v1',
+        metadata: {
+          audio: {
+            action: 'music',
+            versionField: 'mv',
+            versionOptions: [
+              'chirp-v5-5',
+              'chirp-v5',
+              'chirp-v4-5',
+              'chirp-v4',
+              'chirp-v3-0',
+              'chirp-v3-5',
+            ],
+            defaultVersion: 'chirp-v3-5',
+            supportsContinuation: true,
+            supportsUploadContinuation: true,
+            supportsTags: true,
+            supportsTitle: true,
+            supportsLyricsPrompt: true,
+          },
+        },
+        priority: profile.providerType === 'openai-compatible' ? 320 : 160,
+        confidence:
+          profile.providerType === 'openai-compatible' ? 'high' : 'medium',
+        source: 'template',
+      })
+    );
+  }
+
+  return bindings;
+}
+
 function dedupeBindings(bindings: ProviderModelBinding[]): ProviderModelBinding[] {
   const deduped = new Map<string, ProviderModelBinding>();
 
@@ -509,6 +570,8 @@ export function inferBindingsForProviderModel(
       return dedupeBindings(inferImageBindings(profile, model));
     case 'video':
       return dedupeBindings(inferVideoBindings(profile, model));
+    case 'audio':
+      return dedupeBindings(inferAudioBindings(profile, model));
     default:
       return [];
   }
