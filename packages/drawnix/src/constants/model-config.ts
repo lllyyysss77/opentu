@@ -1437,37 +1437,6 @@ export const IMAGE_PARAMS: ParamConfig[] = [
     compatibleModels: ['doubao-seedream-5-0-260128'],
     modelType: 'image',
   },
-  // Gemini 3.1 Flash 2K/4K 独立模型默认质量
-  {
-    id: 'quality',
-    label: '图片质量',
-    shortLabel: '质量',
-    description: '选择图像生成质量（1K/2K/4K）',
-    valueType: 'enum',
-    options: [
-      { value: '1k', label: '1K' },
-      { value: '2k', label: '2K' },
-      { value: '4k', label: '4K' },
-    ],
-    defaultValue: '2k',
-    compatibleModels: ['gemini-3.1-flash-image-preview-2k'],
-    modelType: 'image',
-  },
-  {
-    id: 'quality',
-    label: '图片质量',
-    shortLabel: '质量',
-    description: '选择图像生成质量（1K/2K/4K）',
-    valueType: 'enum',
-    options: [
-      { value: '1k', label: '1K' },
-      { value: '2k', label: '2K' },
-      { value: '4k', label: '4K' },
-    ],
-    defaultValue: '4k',
-    compatibleModels: ['gemini-3.1-flash-image-preview-4k'],
-    modelType: 'image',
-  },
   // nano-banana-2 图片质量（1K/2K/4K）- 适用于 gemini-3-pro-image-preview 和 gemini-3.1-flash-image-preview
   {
     id: 'quality',
