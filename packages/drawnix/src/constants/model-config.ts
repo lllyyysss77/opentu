@@ -270,6 +270,30 @@ export const IMAGE_MODEL_MORE_OPTIONS: ModelConfig[] = [
     tags: ['new'],
   },
   {
+    id: 'gemini-3.1-flash-image-preview-2k',
+    label: 'gemini-3.1-flash-image-preview-2k (nano-banana-2-2k)',
+    shortLabel: 'nano-banana-2-2k',
+    shortCode: 'nb22k',
+    description: 'Gemini 3.1 Flash 图片模型（2K）',
+    type: 'image',
+    vendor: ModelVendor.GEMINI,
+    supportsTools: true,
+    imageDefaults: IMAGE_2K_DEFAULT_PARAMS,
+    tags: ['new'],
+  },
+  {
+    id: 'gemini-3.1-flash-image-preview-4k',
+    label: 'gemini-3.1-flash-image-preview-4k (nano-banana-2-4k)',
+    shortLabel: 'nano-banana-2-4k',
+    shortCode: 'nb24k',
+    description: 'Gemini 3.1 Flash 图片模型（4K）',
+    type: 'image',
+    vendor: ModelVendor.GEMINI,
+    supportsTools: true,
+    imageDefaults: IMAGE_4K_DEFAULT_PARAMS,
+    tags: ['new'],
+  },
+  {
     id: 'mj-imagine',
     label: 'midjourney imagine',
     shortLabel: 'midjourney',
@@ -1095,7 +1119,11 @@ const SEEDREAM_IMAGE_MODEL_IDS = [
 /** GPT 图片模型 ID（仅支持有限尺寸） */
 const GPT_IMAGE_MODEL_IDS = ['gpt-image-1.5'];
 const MJ_IMAGE_MODEL_IDS = ['mj-imagine'];
-const GEMINI_31_FLASH_IMAGE_MODEL_IDS = ['gemini-3.1-flash-image-preview'];
+const GEMINI_31_FLASH_IMAGE_MODEL_IDS = [
+  'gemini-3.1-flash-image-preview',
+  'gemini-3.1-flash-image-preview-2k',
+  'gemini-3.1-flash-image-preview-4k',
+];
 
 /** Gemini 图片模型 ID（支持完整尺寸） */
 const GEMINI_IMAGE_MODEL_IDS = IMAGE_MODELS.filter(
@@ -1407,6 +1435,37 @@ export const IMAGE_PARAMS: ParamConfig[] = [
     ],
     defaultValue: '2k',
     compatibleModels: ['doubao-seedream-5-0-260128'],
+    modelType: 'image',
+  },
+  // Gemini 3.1 Flash 2K/4K 独立模型默认质量
+  {
+    id: 'quality',
+    label: '图片质量',
+    shortLabel: '质量',
+    description: '选择图像生成质量（1K/2K/4K）',
+    valueType: 'enum',
+    options: [
+      { value: '1k', label: '1K' },
+      { value: '2k', label: '2K' },
+      { value: '4k', label: '4K' },
+    ],
+    defaultValue: '2k',
+    compatibleModels: ['gemini-3.1-flash-image-preview-2k'],
+    modelType: 'image',
+  },
+  {
+    id: 'quality',
+    label: '图片质量',
+    shortLabel: '质量',
+    description: '选择图像生成质量（1K/2K/4K）',
+    valueType: 'enum',
+    options: [
+      { value: '1k', label: '1K' },
+      { value: '2k', label: '2K' },
+      { value: '4k', label: '4K' },
+    ],
+    defaultValue: '4k',
+    compatibleModels: ['gemini-3.1-flash-image-preview-4k'],
     modelType: 'image',
   },
   // nano-banana-2 图片质量（1K/2K/4K）- 适用于 gemini-3-pro-image-preview 和 gemini-3.1-flash-image-preview
