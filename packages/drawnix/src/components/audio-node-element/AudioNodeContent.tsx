@@ -602,29 +602,6 @@ export const AudioNodeContent: React.FC<AudioNodeContentProps> = ({
             {isPlaying ? <Pause size={16} /> : <Play size={16} />}
           </div>
         </button>
-
-        <div
-          className={classNames('audio-node__time-cluster', {
-            'audio-node__time-cluster--active': isActive,
-          })}
-        >
-          <span
-            className={classNames(
-              'audio-node__time audio-node__time--primary',
-              {
-                'audio-node__time--active': isActive,
-              }
-            )}
-          >
-            {primaryTimeLabel}
-          </span>
-          {secondaryTimeLabel ? (
-            <>
-              <span className="audio-node__time-divider">/</span>
-              <span className="audio-node__time">{secondaryTimeLabel}</span>
-            </>
-          ) : null}
-        </div>
       </div>
 
       <div className="audio-node__body">
@@ -633,16 +610,7 @@ export const AudioNodeContent: React.FC<AudioNodeContentProps> = ({
             <div className="audio-node__title">
               {truncate(element.title || '未命名音频', titleMaxLength)}
             </div>
-            <div className="audio-node__subtitle-row">
-              <span
-                className={classNames('audio-node__status-dot', {
-                  'audio-node__status-dot--active': isActive,
-                  'audio-node__status-dot--playing': isPlaying,
-                })}
-                aria-hidden="true"
-              />
-              <div className="audio-node__subtitle">{subtitle}</div>
-            </div>
+            <div className="audio-node__subtitle">{subtitle}</div>
           </div>
           <div
             className={classNames('audio-node__badge', {
@@ -855,6 +823,26 @@ export const AudioNodeContent: React.FC<AudioNodeContentProps> = ({
               ) : null}
             </svg>
           </div>
+        </div>
+
+        <div
+          className={classNames('audio-node__time-cluster', {
+            'audio-node__time-cluster--active': isActive,
+          })}
+        >
+          <span
+            className={classNames('audio-node__time audio-node__time--primary', {
+              'audio-node__time--active': isActive,
+            })}
+          >
+            {primaryTimeLabel}
+          </span>
+          {secondaryTimeLabel ? (
+            <>
+              <span className="audio-node__time-divider">/</span>
+              <span className="audio-node__time">{secondaryTimeLabel}</span>
+            </>
+          ) : null}
         </div>
       </div>
     </div>
