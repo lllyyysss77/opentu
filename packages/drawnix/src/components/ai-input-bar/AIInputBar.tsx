@@ -130,6 +130,12 @@ import {
   saveAIInputPreferences,
 } from '../../services/ai-generation-preferences-service';
 import { applyForcedSunoParams } from '../../utils/suno-model-aliases';
+import {
+  clearPersistedModelSelection,
+  getPersistedModelSelection,
+  setPersistedModelSelection,
+  type PersistedGenerationType,
+} from '../../utils/ai-model-selection-storage';
 
 /**
  * 将 WorkflowDefinition 转换为 WorkflowMessageData
@@ -502,12 +508,44 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
 
     // 当前 WorkZone 元素 ID（用于在画布上显示工作流进度）
     const currentWorkZoneIdRef = useRef<string | null>(null);
+    const initialPreferences = loadAIInputPreferences();
+
+    const resolvePersistedModelSelection = useCallback(
+      (
+        type: PersistedGenerationType,
+        models: ModelConfig[]
+      ): ModelConfig | undefined => {
+        const persisted = getPersistedModelSelection(type);
+        if (!persisted) {
+          return undefined;
+        }
+
+        const matchedModel = findMatchingSelectableModel(
+          models,
+          persisted.modelId,
+          createModelRef(persisted.profileId, persisted.modelId)
+        );
+
+        if (matchedModel) {
+          return matchedModel;
+        }
+
+        clearPersistedModelSelection(type);
+        return undefined;
+      },
+      []
+    );
 
     const resolvePreferredModelSelection = useCallback(
       (
         type: GenerationType,
         models: ModelConfig[]
       ): ModelConfig | undefined => {
+        const persistedModel = resolvePersistedModelSelection(type, models);
+        if (persistedModel) {
+          return persistedModel;
+        }
+
         const routeType =
           type === 'video'
             ? 'video'
@@ -540,16 +578,44 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
           models[0]
         );
       },
-      []
+      [resolvePersistedModelSelection]
     );
 
+    const initialGenerationType = initialPreferences.generationType;
+    const initialModelsForType =
+      initialGenerationType === 'video'
+        ? videoModels
+        : initialGenerationType === 'audio'
+        ? audioModels
+        : initialGenerationType === 'text'
+        ? textModels
+        : imageModels;
+    const initialSelectedModelConfig =
+      resolvePreferredModelSelection(
+        initialGenerationType,
+        initialModelsForType
+      ) ||
+      getModelConfig(initialPreferences.selectedModel) ||
+      getModelConfig(
+        initialGenerationType === 'video'
+          ? getDefaultVideoModel()
+          : initialGenerationType === 'audio'
+          ? getDefaultAudioModel()
+          : initialGenerationType === 'text'
+          ? getDefaultTextModel()
+          : getDefaultImageModel()
+      );
+    const initialImageModel =
+      resolvePreferredModelSelection('image', imageModels) ||
+      getModelConfig(getDefaultImageModel());
     const initialImageRoute = resolveInvocationRoute('image');
     const initialSelectedModelId =
-      initialImageRoute.modelId || getDefaultImageModel();
-    const initialSelectedModelRef = createModelRef(
-      initialImageRoute.profileId,
-      initialImageRoute.modelId
-    );
+      initialImageModel?.id ||
+      initialImageRoute.modelId ||
+      getDefaultImageModel();
+    const initialSelectedModelRef =
+      getModelRefFromConfig(initialImageModel) ||
+      createModelRef(initialImageRoute.profileId, initialImageRoute.modelId);
 
     // State
     const [prompt, setPrompt] = useState('');
@@ -565,14 +631,16 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
     const [isCanvasEmpty, setIsCanvasEmpty] = useState<boolean | null>(null); // null=加载中, true=空, false=有内容
     // 当前选中的生成类型（图片、视频、Agent）
     const [generationType, setGenerationType] =
-      useState<GenerationType>('image');
+      useState<GenerationType>(initialGenerationType);
     // 当前选中的 Skill ID（仅在 Agent/text 模式下有效）
     const [selectedSkillId, setSelectedSkillId] =
-      useState<string>(SKILL_AUTO_ID);
+      useState<string>(initialPreferences.selectedSkillId || SKILL_AUTO_ID);
     // 当前选中的图片/视频/文本模型
-    const [selectedModel, setSelectedModel] = useState(initialSelectedModelId);
+    const [selectedModel, setSelectedModel] = useState(
+      initialSelectedModelConfig?.id || initialSelectedModelId
+    );
     const [selectedModelRef, setSelectedModelRef] = useState<ModelRef | null>(
-      initialSelectedModelRef
+      getModelRefFromConfig(initialSelectedModelConfig) || initialSelectedModelRef
     );
     const visibleImageModels = useMemo(() => {
       if (generationType !== 'image') {
@@ -661,17 +729,32 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
     // 当前选中的参数映射 (id -> value)
     const [selectedParams, setSelectedParams] = useState<
       Record<string, string>
-    >(() => ({
-      ...(initialSelectedModelId.startsWith('mj')
+    >(() =>
+      initialGenerationType === 'text'
         ? {}
-        : { size: getDefaultSizeForModel(initialSelectedModelId) }),
-    }));
+        : {
+            ...initialPreferences.selectedParams,
+            ...((initialSelectedModelConfig?.id || initialSelectedModelId).startsWith(
+              'mj'
+            )
+              ? {}
+              : {
+                  size:
+                    initialPreferences.selectedParams.size ||
+                    getDefaultSizeForModel(
+                      initialSelectedModelConfig?.id || initialSelectedModelId
+                    ),
+                }),
+          }
+    );
     const selectedParamsRef = useRef<Record<string, string>>(selectedParams);
     useEffect(() => {
       selectedParamsRef.current = selectedParams;
     }, [selectedParams]);
     // 当前选中的生成数量
-    const [selectedCount, setSelectedCount] = useState(1);
+    const [selectedCount, setSelectedCount] = useState(
+      initialPreferences.selectedCount
+    );
 
     // 下拉菜单的打开状态（用于特殊符号触发）
     const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
@@ -1529,6 +1612,12 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
         setSelectedModel(model.id);
         const nextModelRef = getModelRefFromConfig(model);
         setSelectedModelRef(nextModelRef);
+        setPersistedModelSelection(model.type as PersistedGenerationType, {
+          modelId: model.id,
+          modelRef: nextModelRef,
+          providerIdHint: model.sourceProfileId || nextModelRef?.profileId,
+          vendorHint: model.vendor,
+        });
         // 仅保留新模型兼容的参数，并设置默认值
         const compatibleParams =
           model.type === 'video'
@@ -1655,6 +1744,22 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
       // 仅在模型或兼容参数变动时运行，避免用户选择被覆盖
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [selectedModel, compatibleParams]);
+
+    useEffect(() => {
+      saveAIInputPreferences({
+        generationType,
+        selectedModel,
+        selectedParams,
+        selectedCount,
+        selectedSkillId,
+      });
+    }, [
+      generationType,
+      selectedModel,
+      selectedParams,
+      selectedCount,
+      selectedSkillId,
+    ]);
 
     // 处理参数选择
     const handleParamSelect = useCallback(

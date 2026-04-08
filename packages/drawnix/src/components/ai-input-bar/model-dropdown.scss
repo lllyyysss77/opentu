@@ -301,91 +301,6 @@ $green-health: #10b981;
     text-transform: uppercase;
   }
 
-  &__content-shell {
-    display: flex;
-    min-height: 0;
-    flex: 1;
-  }
-
-  &__content-shell--single-category {
-    .model-dropdown__list-pane {
-      width: 100%;
-    }
-  }
-
-  &__category-tabs {
-    width: 110px;
-    flex-shrink: 0;
-    border-right: 1px solid #f3f4f6;
-    background: #fcfcfd;
-    padding: 6px 4px;
-    overflow-y: auto;
-
-    &::-webkit-scrollbar {
-      width: 4px;
-    }
-
-    &::-webkit-scrollbar-track {
-      background: transparent;
-    }
-
-    &::-webkit-scrollbar-thumb {
-      background: #e5e7eb;
-      border-radius: 2px;
-    }
-  }
-
-  &__category-tab {
-    width: 100%;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 10px;
-    border: none;
-    border-radius: 8px;
-    background: transparent;
-    color: $gray-dark;
-    cursor: pointer;
-    text-align: left;
-    transition: all 0.15s ease;
-
-    &:hover {
-      background: $gray-light;
-      color: $text-dark;
-    }
-
-    &--active {
-      background: rgba($orange-primary, 0.1);
-      color: $orange-dark;
-      font-weight: 600;
-    }
-  }
-
-  &__category-tab-icon {
-    width: 14px;
-    height: 14px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    color: inherit;
-  }
-
-  &__category-tab-label {
-    flex: 1;
-    min-width: 0;
-    font-size: 12px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  &__category-tab-count {
-    flex-shrink: 0;
-    font-size: 11px;
-    color: $gray-medium;
-  }
-
   &__list-pane {
     flex: 1;
     min-width: 0;
@@ -571,33 +486,6 @@ $green-health: #10b981;
       &::-webkit-scrollbar-thumb {
         background: var(--color-border, #444);
       }
-    }
-
-    &__category-tabs {
-      background: var(--color-surface, #262626);
-      border-right-color: var(--color-border, #444);
-
-      &::-webkit-scrollbar-thumb {
-        background: var(--color-border, #444);
-      }
-    }
-
-    &__category-tab {
-      color: var(--color-gray-50, #999);
-
-      &:hover {
-        background: var(--color-surface-mid, #333);
-        color: var(--color-gray-20, #ccc);
-      }
-
-      &--active {
-        background: rgba($orange-primary, 0.15);
-        color: $orange-primary;
-      }
-    }
-
-    &__category-tab-count {
-      color: var(--color-gray-60, #666);
     }
 
     &__section-title {

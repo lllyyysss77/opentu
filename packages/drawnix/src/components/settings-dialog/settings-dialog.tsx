@@ -21,6 +21,7 @@ import {
 import { LS_KEYS } from '../../constants/storage-keys';
 import { ModelDiscoveryDialog } from './model-discovery-dialog';
 import {
+  ALL_MODELS,
   getDefaultAudioModel,
   getDefaultImageModel,
   getDefaultTextModel,
@@ -1627,12 +1628,18 @@ export const SettingsDialog = ({
   };
 
   const renderProviderModelSummary = () => {
+    // 仅默认分组(legacy-default)显示内置模型，原价分组有自己的运行时模型
+    const isDefaultProvider =
+      selectedProfile?.id === LEGACY_DEFAULT_PROVIDER_PROFILE_ID;
+    const displayModels = isDefaultProvider
+      ? [...ALL_MODELS, ...runtimeState.models]
+      : runtimeState.models;
     const vendorPriorityMap = new Map(
       DISCOVERY_VENDOR_ORDER.map((vendor, index) => [vendor, index])
     );
     const modelSearch = deferredModelSearchQuery.trim();
-    const typeCounts = getModelTypeCounts(runtimeState.models);
-    const filteredModels = runtimeState.models.filter((model) =>
+    const typeCounts = getModelTypeCounts(displayModels);
+    const filteredModels = displayModels.filter((model) =>
       matchesProviderModelQuery(model, modelSearch)
     );
     const modelGroups = MODEL_SUMMARY_GROUP_ORDER.map((type) => ({
@@ -1652,15 +1659,15 @@ export const SettingsDialog = ({
           return left.id.localeCompare(right.id, 'zh-Hans-CN');
         }),
     })).filter((group) => group.models.length > 0);
-    const showSearchToolbar = canManageModels || runtimeState.models.length > 0;
+    const showSearchToolbar = canManageModels || displayModels.length > 0;
     const shouldShowEmptySearch =
-      runtimeState.models.length > 0 &&
+      displayModels.length > 0 &&
       filteredModels.length === 0 &&
       Boolean(modelSearch);
     const shouldShowErrorState =
-      runtimeState.status === 'error' && runtimeState.models.length === 0;
+      runtimeState.status === 'error' && displayModels.length === 0;
     const shouldShowHintState =
-      !canManageModels && runtimeState.models.length === 0;
+      !canManageModels && displayModels.length === 0;
 
     return (
       <div className="settings-dialog__section">
@@ -1668,7 +1675,7 @@ export const SettingsDialog = ({
           <div>
             <h3 className="settings-dialog__section-title">模型</h3>
             <div className="settings-dialog__inline-meta">
-              <span>已添加 {runtimeState.models.length} 个</span>
+              <span>已添加 {displayModels.length} 个</span>
               <span>图 {typeCounts.image}</span>
               <span>视 {typeCounts.video}</span>
               <span>音 {typeCounts.audio}</span>
@@ -1681,7 +1688,7 @@ export const SettingsDialog = ({
           <div className="settings-dialog__model-toolbar">
             <label
               className={`settings-dialog__model-search ${
-                runtimeState.models.length === 0
+                displayModels.length === 0
                   ? 'settings-dialog__model-search--disabled'
                   : ''
               }`}
@@ -1692,11 +1699,11 @@ export const SettingsDialog = ({
                 value={modelSearchQuery}
                 onChange={(event) => setModelSearchQuery(event.target.value)}
                 placeholder={
-                  runtimeState.models.length > 0
+                  displayModels.length > 0
                     ? '搜索模型 ID、名称或品牌'
                     : '获取模型后可搜索'
                 }
-                disabled={runtimeState.models.length === 0}
+                disabled={displayModels.length === 0}
               />
               {modelSearchQuery ? (
                 <button

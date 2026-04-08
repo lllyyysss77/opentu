@@ -4,6 +4,8 @@
  * 展示分两种：
  * 1. minimal (默认): 显示在 AI 输入框左下角，以 #shortCode 形式显示当前模型
  * 2. form: 表单下拉框风格，支持输入搜索过滤
+ *
+ * 三列布局：供应商 → 模型分类(Vendor) → 具体模型
  */
 
 import React, {
@@ -27,7 +29,6 @@ import { Z_INDEX } from '../../constants/z-index';
 import { useControllableState } from '../../hooks/useControllableState';
 import { useProviderProfiles } from '../../hooks/use-provider-profiles';
 import {
-  DISCOVERY_VENDOR_ORDER,
   ModelVendorMark,
   getDiscoveryVendorLabel,
 } from '../shared/ModelVendorBrand';
@@ -35,6 +36,9 @@ import { ModelSourceIcon } from '../shared/ModelSourceIcon';
 import './model-dropdown.scss';
 import { ModelHealthBadge } from '../shared/ModelHealthBadge';
 import { KeyboardDropdown } from './KeyboardDropdown';
+import {
+  groupModelsByProvider,
+} from '../../utils/model-grouping';
 
 export interface ModelDropdownProps {
   /** 当前选中的模型 ID */
@@ -91,8 +95,8 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
 
   const [searchQuery, setSearchQuery] = useState('');
   const [highlightedIndex, setHighlightedIndex] = useState(0);
-  const [activeTabId, setActiveTabId] = useState<string | null>(null);
-  const [activeSectionKey, setActiveSectionKey] = useState<string | null>(null);
+  const [activeProviderId, setActiveProviderId] = useState<string | null>(null);
+  const [activeVendor, setActiveVendor] = useState<string | null>(null);
   const triggerInputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const providerProfiles = useProviderProfiles();
@@ -113,14 +117,6 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
     []
   );
 
-  const getModelGroupKey = useCallback(
-    (model: ModelConfig) =>
-      model.sourceProfileId
-        ? `profile:${model.sourceProfileId}`
-        : `vendor:${model.vendor}`,
-    []
-  );
-
   const getModelProfile = useCallback(
     (model: ModelConfig) =>
       model.sourceProfileId
@@ -129,13 +125,32 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
     [providerProfileMap]
   );
 
-  const getModelGroupLabel = useCallback(
-    (model: ModelConfig) =>
-      getModelProfile(model)?.name ||
-      model.sourceProfileName ||
-      getDiscoveryVendorLabel(model.vendor),
-    [getModelProfile]
+  // 三级分组：供应商 → 厂商分类 → 模型
+  const providerGroups = useMemo(
+    () => groupModelsByProvider(models, providerProfiles),
+    [models, providerProfiles]
   );
+
+  // 当前选中的供应商
+  const activeProvider = useMemo(
+    () =>
+      providerGroups.find((g) => g.providerId === activeProviderId) ||
+      providerGroups[0] ||
+      null,
+    [providerGroups, activeProviderId]
+  );
+
+  // 当前选中的厂商分类
+  const activeCategory = useMemo(() => {
+    if (!activeProvider) return null;
+    return (
+      activeProvider.vendorCategories.find(
+        (c) => c.vendor === activeVendor
+      ) ||
+      activeProvider.vendorCategories[0] ||
+      null
+    );
+  }, [activeProvider, activeVendor]);
 
   // 确保高亮项可见
   useEffect(() => {
@@ -192,12 +207,10 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
   // 过滤模型列表
   const filteredModels = useMemo(() => {
     const query = searchQuery.toLowerCase().trim();
-    const isSearching = !!query;
-    let baseModels: ModelConfig[];
+    if (!query) return [];
 
-    // 搜索时跨厂商过滤
-    if (isSearching) {
-      baseModels = models.filter(
+    return models
+      .filter(
         (m) =>
           m.id.toLowerCase().includes(query) ||
           m.label.toLowerCase().includes(query) ||
@@ -206,142 +219,83 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
           m.description?.toLowerCase().includes(query) ||
           m.sourceProfileName?.toLowerCase().includes(query) ||
           getDiscoveryVendorLabel(m.vendor).toLowerCase().includes(query)
-      );
-    } else if (activeTabId) {
-      baseModels = models.filter((m) => getModelGroupKey(m) === activeTabId);
-    } else {
-      baseModels = models;
-    }
-
-    const getPriority = (model: ModelConfig) => {
-      if (model.tags?.includes('new')) return 0;
-      if (model.isVip) return 1;
-      return 2;
-    };
-
-    return [...baseModels].sort((a, b) => {
-      const priorityDiff = getPriority(a) - getPriority(b);
-      if (priorityDiff !== 0) return priorityDiff;
-      const sourceDiff =
-        Number(!a.tags?.includes('runtime')) -
-        Number(!b.tags?.includes('runtime'));
-      if (sourceDiff !== 0) return sourceDiff;
-      return (
-        (modelOrderMap.get(getModelKey(a)) ?? 0) -
-        (modelOrderMap.get(getModelKey(b)) ?? 0)
-      );
-    });
-  }, [
-    models,
-    searchQuery,
-    activeTabId,
-    modelOrderMap,
-    getModelKey,
-    getModelGroupKey,
-  ]);
-
-  const vendorSections = useMemo(() => {
-    const sections = new Map<
-      ModelVendor,
-      {
-        key: string;
-        label: string;
-        vendor: ModelVendor;
-        models: ModelConfig[];
-      }
-    >();
-
-    filteredModels.forEach((model) => {
-      const existing = sections.get(model.vendor);
-      if (existing) {
-        existing.models.push(model);
-        return;
-      }
-
-      sections.set(model.vendor, {
-        key: `vendor:${model.vendor}`,
-        label: getDiscoveryVendorLabel(model.vendor),
-        vendor: model.vendor,
-        models: [model],
+      )
+      .sort((a, b) => {
+        const getPriority = (model: ModelConfig) => {
+          if (model.tags?.includes('new')) return 0;
+          if (model.isVip) return 1;
+          return 2;
+        };
+        const priorityDiff = getPriority(a) - getPriority(b);
+        if (priorityDiff !== 0) return priorityDiff;
+        return (
+          (modelOrderMap.get(getModelKey(a)) ?? 0) -
+          (modelOrderMap.get(getModelKey(b)) ?? 0)
+        );
       });
-    });
-
-    const priorityMap = new Map(
-      DISCOVERY_VENDOR_ORDER.map((vendor, index) => [vendor, index])
-    );
-
-    return Array.from(sections.values()).sort((left, right) => {
-      const leftPriority =
-        priorityMap.get(left.vendor) ?? Number.MAX_SAFE_INTEGER;
-      const rightPriority =
-        priorityMap.get(right.vendor) ?? Number.MAX_SAFE_INTEGER;
-
-      if (leftPriority !== rightPriority) {
-        return leftPriority - rightPriority;
-      }
-
-      return right.models.length - left.models.length;
-    });
-  }, [filteredModels]);
-
-  const activeSection = useMemo(
-    () =>
-      vendorSections.find((section) => section.key === activeSectionKey) ||
-      vendorSections[0] ||
-      null,
-    [vendorSections, activeSectionKey]
-  );
+  }, [models, searchQuery, modelOrderMap, getModelKey]);
 
   const displayedModels = useMemo(
-    () => (isSearching ? filteredModels : activeSection?.models || []),
-    [isSearching, filteredModels, activeSection]
+    () => (isSearching ? filteredModels : activeCategory?.models || []),
+    [isSearching, filteredModels, activeCategory]
   );
-  const showCategoryTabs = !isSearching && vendorSections.length > 1;
 
-  // 计算厂商标签列表
-  const vendorTabs = useMemo((): VendorTab[] => {
-    const tabs = new Map<string, VendorTab>();
-
-    models.forEach((model) => {
-      const tabId = getModelGroupKey(model);
-      const profile = getModelProfile(model);
-      const existing = tabs.get(tabId);
-
-      if (existing) {
-        existing.count += 1;
-        return;
-      }
-
-      tabs.set(tabId, {
-        id: tabId,
-        label: getModelGroupLabel(model),
-        count: 1,
-        icon: model.sourceProfileId ? (
+  // 供应商标签列表（第一列）
+  const providerTabs = useMemo(
+    (): VendorTab[] =>
+      providerGroups.map((g) => ({
+        id: g.providerId,
+        label: g.providerName,
+        count: g.totalCount,
+        icon: g.providerIconUrl ? (
           <ModelSourceIcon
-            vendor={model.vendor}
-            profileName={profile?.name || model.sourceProfileName}
-            iconUrl={profile?.iconUrl}
+            vendor={
+              g.vendorCategories[0]?.vendor || ('OTHER' as ModelVendor)
+            }
+            profileName={g.providerName}
+            iconUrl={g.providerIconUrl}
             size={16}
           />
         ) : (
-          <ModelVendorMark vendor={model.vendor} size={16} />
+          <ModelVendorMark
+            vendor={
+              g.vendorCategories[0]?.vendor || ('OTHER' as ModelVendor)
+            }
+            size={16}
+          />
         ),
-      });
-    });
+      })),
+    [providerGroups]
+  );
 
-    return Array.from(tabs.values());
-  }, [models, getModelGroupKey, getModelGroupLabel, getModelProfile]);
+  // 厂商分类标签列表（中间列）
+  const vendorCategoryTabs = useMemo(
+    (): VendorTab[] =>
+      (activeProvider?.vendorCategories || []).map((c) => ({
+        id: c.vendor,
+        label: c.label,
+        count: c.models.length,
+        icon: <ModelVendorMark vendor={c.vendor} size={14} />,
+      })),
+    [activeProvider]
+  );
 
-  // 切换厂商
-  const handleVendorChange = useCallback((tabId: string) => {
-    setActiveTabId(tabId);
-    setSearchQuery('');
-    setActiveSectionKey(null);
-    setHighlightedIndex(0);
-  }, []);
+  // 切换供应商
+  const handleProviderChange = useCallback(
+    (providerId: string) => {
+      setActiveProviderId(providerId);
+      setSearchQuery('');
+      // 自动选中第一个分类
+      const group = providerGroups.find((g) => g.providerId === providerId);
+      setActiveVendor(group?.vendorCategories[0]?.vendor ?? null);
+      setHighlightedIndex(0);
+    },
+    [providerGroups]
+  );
 
-  const handleSectionChange = useCallback((sectionKey: string) => {
-    setActiveSectionKey(sectionKey);
+  // 切换厂商分类
+  const handleVendorChange = useCallback((vendorId: string) => {
+    setActiveVendor(vendorId);
     setHighlightedIndex(0);
   }, []);
 
@@ -351,24 +305,34 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
   }, [displayedModels]);
 
   useEffect(() => {
-    if (isSearching) {
-      return;
-    }
+    if (isSearching) return;
 
-    if (vendorSections.length === 0) {
-      if (activeSectionKey) {
-        setActiveSectionKey(null);
-      }
-      return;
-    }
-
+    // 确保 activeProviderId 有效
     if (
-      !activeSectionKey ||
-      !vendorSections.some((section) => section.key === activeSectionKey)
+      !activeProviderId ||
+      !providerGroups.some((g) => g.providerId === activeProviderId)
     ) {
-      setActiveSectionKey(vendorSections[0].key);
+      if (providerGroups.length > 0) {
+        setActiveProviderId(providerGroups[0].providerId);
+      }
     }
-  }, [vendorSections, activeSectionKey, isSearching]);
+
+    // 确保 activeVendor 有效
+    if (activeProvider) {
+      const validVendors = activeProvider.vendorCategories.map(
+        (c) => c.vendor
+      );
+      if (!activeVendor || !validVendors.includes(activeVendor as ModelVendor)) {
+        setActiveVendor(validVendors[0] ?? null);
+      }
+    }
+  }, [
+    providerGroups,
+    activeProviderId,
+    activeProvider,
+    activeVendor,
+    isSearching,
+  ]);
 
   // 切换下拉菜单
   const handleToggle = useCallback(
@@ -376,11 +340,10 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
       e?.preventDefault(); // 阻止触发输入框失焦
       if (disabled) return;
       const next = !isOpen;
-      if (next) {
-        setActiveTabId(currentModel ? getModelGroupKey(currentModel) : null);
-        setActiveSectionKey(
-          currentModel ? `vendor:${currentModel.vendor}` : null
-        );
+      if (next && currentModel) {
+        const pid = currentModel.sourceProfileId || providerGroups[0]?.providerId || null;
+        setActiveProviderId(pid);
+        setActiveVendor(currentModel.vendor);
       }
       if (variant === 'form') {
         if (next) {
@@ -400,7 +363,7 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
       variant,
       currentModel,
       selectedModel,
-      getModelGroupKey,
+      providerGroups,
     ]
   );
 
@@ -537,9 +500,12 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
           if (!isOpen) {
             setIsOpen(true);
             setSearchQuery('');
-            setActiveTabId(
-              currentModel ? getModelGroupKey(currentModel) : null
-            );
+            if (currentModel) {
+              setActiveProviderId(
+                currentModel.sourceProfileId || providerGroups[0]?.providerId || null
+              );
+              setActiveVendor(currentModel.vendor);
+            }
           }
         }}
       >
@@ -625,7 +591,7 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
                       variant === 'form'
                         ? Math.max(
                             portalPosition.width,
-                            showCategoryTabs ? 520 : 420
+                            providerGroups.length > 1 ? 620 : 520
                           )
                         : 'auto',
                     top:
@@ -647,143 +613,103 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
             )}
 
             <VendorTabPanel
-              tabs={vendorTabs}
-              activeTab={activeTabId}
-              onTabChange={handleVendorChange}
+              tabs={providerTabs}
+              activeTab={activeProviderId}
+              onTabChange={handleProviderChange}
+              middleTabs={vendorCategoryTabs}
+              activeMiddleTab={activeVendor}
+              onMiddleTabChange={handleVendorChange}
               searchQuery={searchQuery}
               compact
             >
-              <div
-                className={`model-dropdown__content-shell ${
-                  showCategoryTabs
-                    ? 'model-dropdown__content-shell--with-category'
-                    : 'model-dropdown__content-shell--single-category'
-                }`}
-              >
-                {showCategoryTabs ? (
-                  <div className="model-dropdown__category-tabs">
-                    {vendorSections.map((section) => {
-                      const isSectionActive =
-                        activeSection?.key === section.key;
-
-                      return (
-                        <button
-                          key={section.key}
-                          type="button"
-                          className={`model-dropdown__category-tab ${
-                            isSectionActive
-                              ? 'model-dropdown__category-tab--active'
-                              : ''
-                          }`}
-                          onClick={() => handleSectionChange(section.key)}
-                        >
-                          <span className="model-dropdown__category-tab-icon">
-                            <ModelVendorMark
-                              vendor={section.vendor}
-                              size={14}
-                            />
-                          </span>
-                          <span className="model-dropdown__category-tab-label">
-                            {section.label}
-                          </span>
-                          <span className="model-dropdown__category-tab-count">
-                            {section.models.length}
-                          </span>
-                        </button>
-                      );
-                    })}
+              <div className="model-dropdown__list-pane">
+                {!isSearching && activeCategory ? (
+                  <div className="model-dropdown__section-header">
+                    <span className="model-dropdown__section-header-label">
+                      <ModelVendorMark
+                        vendor={activeCategory.vendor}
+                        size={14}
+                      />
+                      {activeCategory.label}
+                    </span>
+                    <span>{activeCategory.models.length}</span>
                   </div>
                 ) : null}
 
-                <div className="model-dropdown__list-pane">
-                  {!isSearching && activeSection ? (
-                    <div className="model-dropdown__section-header">
-                      <span className="model-dropdown__section-header-label">
-                        <ModelVendorMark
-                          vendor={activeSection.vendor}
-                          size={14}
-                        />
-                        {activeSection.label}
-                      </span>
-                      <span>{activeSection.models.length}</span>
-                    </div>
-                  ) : null}
-
-                  <div className="model-dropdown__list" ref={listRef}>
-                    {displayedModels.length > 0 ? (
-                      displayedModels.map((model, index) => {
-                        const modelKey = getModelKey(model);
-                        const profile = getModelProfile(model);
-                        const isSelected =
-                          modelKey === (selectedSelectionKey || selectedModel);
-                        const isHighlighted = index === highlightedIndex;
-                        return (
-                          <div
-                            key={modelKey}
-                            data-model-index={index}
-                            className={`model-dropdown__item ${
-                              isSelected ? 'model-dropdown__item--selected' : ''
-                            } ${
-                              isHighlighted
-                                ? 'model-dropdown__item--highlighted'
-                                : ''
-                            }`}
-                            onClick={() => handleSelect(model)}
-                            onMouseEnter={() => setHighlightedIndex(index)}
-                            role="option"
-                            aria-selected={isSelected}
-                          >
-                            <div className="model-dropdown__item-content">
-                              <div className="model-dropdown__item-name">
-                                <span className="model-dropdown__item-source-icon">
-                                  <ModelVendorMark
-                                    vendor={model.vendor}
-                                    size={16}
-                                  />
+                <div className="model-dropdown__list" ref={listRef}>
+                  {displayedModels.length > 0 ? (
+                    displayedModels.map((model, index) => {
+                      const modelKey = getModelKey(model);
+                      const profile = getModelProfile(model);
+                      const isSelected =
+                        modelKey === (selectedSelectionKey || selectedModel);
+                      const isHighlighted = index === highlightedIndex;
+                      return (
+                        <div
+                          key={modelKey}
+                          data-model-index={index}
+                          className={`model-dropdown__item ${
+                            isSelected ? 'model-dropdown__item--selected' : ''
+                          } ${
+                            isHighlighted
+                              ? 'model-dropdown__item--highlighted'
+                              : ''
+                          }`}
+                          onClick={() => handleSelect(model)}
+                          onMouseEnter={() => setHighlightedIndex(index)}
+                          role="option"
+                          aria-selected={isSelected}
+                        >
+                          <div className="model-dropdown__item-content">
+                            <div className="model-dropdown__item-name">
+                              <span className="model-dropdown__item-source-icon">
+                                <ModelVendorMark
+                                  vendor={model.vendor}
+                                  size={16}
+                                />
+                              </span>
+                              <span className="model-dropdown__item-code">
+                                #{model.shortCode}
+                              </span>
+                              <span className="model-dropdown__item-label">
+                                {model.shortLabel || model.label}
+                              </span>
+                              {isSearching ? (
+                                <span className="model-dropdown__item-group-tag">
+                                  {profile?.name ||
+                                    model.sourceProfileName ||
+                                    getDiscoveryVendorLabel(model.vendor)}
                                 </span>
-                                <span className="model-dropdown__item-code">
-                                  #{model.shortCode}
+                              ) : null}
+                              {model.tags?.includes('new') && (
+                                <span className="model-dropdown__item-new">
+                                  NEW
                                 </span>
-                                <span className="model-dropdown__item-label">
-                                  {model.shortLabel || model.label}
-                                </span>
-                                {isSearching ? (
-                                  <span className="model-dropdown__item-group-tag">
-                                    {profile?.name ||
-                                      model.sourceProfileName ||
-                                      getDiscoveryVendorLabel(model.vendor)}
-                                  </span>
-                                ) : null}
-                                {model.tags?.includes('new') && (
-                                  <span className="model-dropdown__item-new">
-                                    NEW
-                                  </span>
-                                )}
-                                <ModelHealthBadge modelId={model.id} />
-                              </div>
-                              {model.description && (
-                                <div className="model-dropdown__item-desc">
-                                  {model.description}
-                                </div>
                               )}
+                              <ModelHealthBadge modelId={model.id} />
                             </div>
-                            {isSelected && (
-                              <Check
-                                size={16}
-                                className="model-dropdown__item-check"
-                              />
+                            {model.description && (
+                              <div className="model-dropdown__item-desc">
+                                {model.description}
+                              </div>
                             )}
                           </div>
-                        );
-                      })
-                    ) : (
-                      <div className="model-dropdown__empty">
-                        {language === 'zh'
-                          ? '未找到匹配的模型'
-                          : 'No matching models'}
-                      </div>
-                    )}
-                  </div>
+                          {isSelected && (
+                            <Check
+                              size={16}
+                              className="model-dropdown__item-check"
+                            />
+                          )}
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="model-dropdown__empty">
+                      {language === 'zh'
+                        ? '未找到匹配的模型'
+                        : 'No matching models'}
+                    </div>
+                  )}
                 </div>
               </div>
             </VendorTabPanel>

@@ -4,6 +4,7 @@
  * 当用户输入 "#" 时显示模型选择下拉菜单
  * 支持键盘操作：上/下选择，Enter/Tab/空格确认
  * 支持同时选择图片模型和视频模型
+ * 三列布局：供应商 → 模型分类(Vendor) → 具体模型
  */
 
 import React, {
@@ -17,15 +18,17 @@ import { Bot, Check, Image, Video } from 'lucide-react';
 import {
   IMAGE_VIDEO_MODELS,
   getModelConfig,
-  getModelsByVendor,
-  getVendorOrder,
-  VENDOR_NAMES,
+  type ModelConfig,
   type ModelType,
+  type ModelVendor,
 } from '../../constants/model-config';
 import './model-selector.scss';
 import { ModelHealthBadge } from '../shared/ModelHealthBadge';
 import { VendorTabPanel, type VendorTab } from '../shared/VendorTabPanel';
 import { ModelVendorMark } from '../shared/ModelVendorBrand';
+import { ModelSourceIcon } from '../shared/ModelSourceIcon';
+import { useProviderProfiles } from '../../hooks/use-provider-profiles';
+import { groupModelsByProvider } from '../../utils/model-grouping';
 
 export interface ModelSelectorProps {
   /** 是否可见 */
@@ -42,6 +45,8 @@ export interface ModelSelectorProps {
   onClose: () => void;
   /** 语言 */
   language?: 'zh' | 'en';
+  /** 模型列表（可选，默认为图片+视频模型） */
+  models?: ModelConfig[];
 }
 
 /**
@@ -55,74 +60,134 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
   onSelect,
   onClose,
   language = 'zh',
+  models = IMAGE_VIDEO_MODELS,
 }) => {
-  // console.log('[ModelSelector] render, visible:', visible, 'filterKeyword:', filterKeyword);
   const panelRef = useRef<HTMLDivElement>(null);
   const [highlightedIndex, setHighlightedIndex] = useState(0);
+  const [activeProviderId, setActiveProviderId] = useState<string | null>(null);
   const [activeVendor, setActiveVendor] = useState<string | null>(null);
+  const providerProfiles = useProviderProfiles();
 
   // 检查是否两种模型都已选择
   const allModelsSelected = !!selectedImageModel && !!selectedVideoModel;
 
-  // 按类型过滤后的模型（用于生成厂商标签）
+  // 按类型过滤后的模型
   const typeFilteredModels = useMemo(() => {
     if (allModelsSelected) return [];
-    return IMAGE_VIDEO_MODELS.filter((model) => {
+    return models.filter((model) => {
       if (model.type === 'image' && selectedImageModel) return false;
       if (model.type === 'video' && selectedVideoModel) return false;
       return true;
     });
-  }, [selectedImageModel, selectedVideoModel, allModelsSelected]);
+  }, [models, selectedImageModel, selectedVideoModel, allModelsSelected]);
 
-  // 计算厂商标签列表
-  const vendorTabs = useMemo((): VendorTab[] => {
-    const vendorMap = getModelsByVendor(typeFilteredModels);
-    const order = getVendorOrder(typeFilteredModels);
-    return order.map((vendor) => ({
-      id: vendor,
-      label: VENDOR_NAMES[vendor],
-      count: vendorMap.get(vendor)?.length ?? 0,
-      icon: <ModelVendorMark vendor={vendor} size={14} />,
-    }));
-  }, [typeFilteredModels]);
+  // 三级分组
+  const providerGroups = useMemo(
+    () => groupModelsByProvider(typeFilteredModels, providerProfiles),
+    [typeFilteredModels, providerProfiles]
+  );
 
-  // 初始化 activeVendor（visible 变化时）
+  const activeProvider = useMemo(
+    () =>
+      providerGroups.find((g) => g.providerId === activeProviderId) ||
+      providerGroups[0] ||
+      null,
+    [providerGroups, activeProviderId]
+  );
+
+  const activeCategory = useMemo(() => {
+    if (!activeProvider) return null;
+    return (
+      activeProvider.vendorCategories.find(
+        (c) => c.vendor === activeVendor
+      ) ||
+      activeProvider.vendorCategories[0] ||
+      null
+    );
+  }, [activeProvider, activeVendor]);
+
+  const isSearching = !!filterKeyword.trim();
+
+  // 搜索过滤
+  const searchFilteredModels = useMemo(() => {
+    if (!isSearching) return [];
+    const keyword = filterKeyword.toLowerCase().trim();
+    return typeFilteredModels.filter(
+      (model) =>
+        model.id.toLowerCase().includes(keyword) ||
+        model.label.toLowerCase().includes(keyword) ||
+        (model.shortLabel && model.shortLabel.toLowerCase().includes(keyword))
+    );
+  }, [typeFilteredModels, filterKeyword, isSearching]);
+
+  const displayedModels = isSearching
+    ? searchFilteredModels
+    : activeCategory?.models || [];
+
+  // 供应商标签（第一列）
+  const providerTabs = useMemo(
+    (): VendorTab[] =>
+      providerGroups.map((g) => ({
+        id: g.providerId,
+        label: g.providerName,
+        count: g.totalCount,
+        icon: g.providerIconUrl ? (
+          <ModelSourceIcon
+            vendor={
+              g.vendorCategories[0]?.vendor || ('OTHER' as ModelVendor)
+            }
+            profileName={g.providerName}
+            iconUrl={g.providerIconUrl}
+            size={14}
+          />
+        ) : (
+          <ModelVendorMark
+            vendor={
+              g.vendorCategories[0]?.vendor || ('OTHER' as ModelVendor)
+            }
+            size={14}
+          />
+        ),
+      })),
+    [providerGroups]
+  );
+
+  // 厂商分类标签（中间列）
+  const vendorCategoryTabs = useMemo(
+    (): VendorTab[] =>
+      (activeProvider?.vendorCategories || []).map((c) => ({
+        id: c.vendor,
+        label: c.label,
+        count: c.models.length,
+        icon: <ModelVendorMark vendor={c.vendor} size={14} />,
+      })),
+    [activeProvider]
+  );
+
+  // 初始化 activeProviderId
   useEffect(() => {
-    if (visible && vendorTabs.length > 0 && !activeVendor) {
-      setActiveVendor(vendorTabs[0].id);
+    if (visible && providerGroups.length > 0 && !activeProviderId) {
+      setActiveProviderId(providerGroups[0].providerId);
     }
     if (!visible) {
+      setActiveProviderId(null);
       setActiveVendor(null);
     }
-  }, [visible, vendorTabs, activeVendor]);
+  }, [visible, providerGroups, activeProviderId]);
 
-  // 过滤模型列表
-  const filteredModels = useMemo(() => {
-    const keyword = filterKeyword.toLowerCase().trim();
-    const isSearching = !!keyword;
-
-    // 搜索时跨厂商过滤
-    if (isSearching) {
-      return typeFilteredModels.filter(
-        (model) =>
-          model.id.toLowerCase().includes(keyword) ||
-          model.label.toLowerCase().includes(keyword) ||
-          (model.shortLabel && model.shortLabel.toLowerCase().includes(keyword))
-      );
+  // 确保 activeVendor 有效
+  useEffect(() => {
+    if (!activeProvider || isSearching) return;
+    const validVendors = activeProvider.vendorCategories.map((c) => c.vendor);
+    if (!activeVendor || !validVendors.includes(activeVendor as ModelVendor)) {
+      setActiveVendor(validVendors[0] ?? null);
     }
-
-    // 无搜索时按 activeVendor 过滤
-    if (activeVendor) {
-      return typeFilteredModels.filter((m) => m.vendor === activeVendor);
-    }
-
-    return typeFilteredModels;
-  }, [typeFilteredModels, filterKeyword, activeVendor]);
+  }, [activeProvider, activeVendor, isSearching]);
 
   // 重置高亮索引当过滤结果变化时
   useEffect(() => {
     setHighlightedIndex(0);
-  }, [filteredModels.length]);
+  }, [displayedModels.length]);
 
   // 处理模型选择
   const handleSelect = useCallback(
@@ -132,7 +197,18 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     [onSelect]
   );
 
-  // 切换厂商
+  // 切换供应商
+  const handleProviderChange = useCallback(
+    (providerId: string) => {
+      setActiveProviderId(providerId);
+      const group = providerGroups.find((g) => g.providerId === providerId);
+      setActiveVendor(group?.vendorCategories[0]?.vendor ?? null);
+      setHighlightedIndex(0);
+    },
+    [providerGroups]
+  );
+
+  // 切换厂商分类
   const handleVendorChange = useCallback((vendorId: string) => {
     setActiveVendor(vendorId);
     setHighlightedIndex(0);
@@ -157,14 +233,13 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     }
 
     // 如果没有可选模型，只处理 Escape
-    if (filteredModels.length === 0) {
+    if (displayedModels.length === 0) {
       const handleKeyDown = (event: KeyboardEvent) => {
         if (event.key === 'Escape') {
           event.preventDefault();
           event.stopPropagation();
           onClose();
         }
-        // 不拦截其他键，让它们传递到 textarea
       };
       document.addEventListener('keydown', handleKeyDown, true);
       return () => document.removeEventListener('keydown', handleKeyDown, true);
@@ -172,29 +247,26 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
 
     // 有可选模型时，处理方向键和选择
     const handleKeyDown = (event: KeyboardEvent) => {
-      // console.log('[ModelSelector] handleKeyDown, key:', event.key, 'filteredModels.length:', filteredModels.length);
       switch (event.key) {
         case 'ArrowUp':
           event.preventDefault();
           event.stopPropagation();
           setHighlightedIndex((prev) =>
-            prev <= 0 ? filteredModels.length - 1 : prev - 1
+            prev <= 0 ? displayedModels.length - 1 : prev - 1
           );
           break;
         case 'ArrowDown':
           event.preventDefault();
           event.stopPropagation();
           setHighlightedIndex((prev) =>
-            prev >= filteredModels.length - 1 ? 0 : prev + 1
+            prev >= displayedModels.length - 1 ? 0 : prev + 1
           );
           break;
         case 'Tab':
-          // Tab 键选择当前高亮项
-          // console.log('[ModelSelector] Tab pressed, selecting model');
           event.preventDefault();
           event.stopPropagation();
-          if (filteredModels[highlightedIndex]) {
-            handleSelect(filteredModels[highlightedIndex].id);
+          if (displayedModels[highlightedIndex]) {
+            handleSelect(displayedModels[highlightedIndex].id);
           }
           break;
         case 'Enter':
@@ -216,7 +288,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     };
   }, [
     visible,
-    filteredModels,
+    displayedModels,
     highlightedIndex,
     handleSelect,
     onClose,
@@ -315,7 +387,8 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
   }
 
   // 如果没有匹配的模型，不显示
-  if (filteredModels.length === 0) return null;
+  if (displayedModels.length === 0 && isSearching) return null;
+  if (typeFilteredModels.length === 0) return null;
 
   // 获取类型标签
   const getTypeLabel = (type: ModelType) => {
@@ -340,7 +413,6 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
       role="listbox"
       aria-label={language === 'zh' ? '选择模型' : 'Select Model'}
       onMouseDown={(e) => {
-        // 阻止默认行为，防止 textarea 失去焦点
         e.preventDefault();
       }}
     >
@@ -355,21 +427,24 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
       </div>
 
       <VendorTabPanel
-        tabs={vendorTabs}
-        activeTab={activeVendor}
-        onTabChange={handleVendorChange}
+        tabs={providerTabs}
+        activeTab={activeProviderId}
+        onTabChange={handleProviderChange}
+        middleTabs={vendorCategoryTabs}
+        activeMiddleTab={activeVendor}
+        onMiddleTabChange={handleVendorChange}
         searchQuery={filterKeyword}
         compact
       >
         <div className="ai-model-selector__list">
-          {filteredModels.map((model, index) => {
+          {displayedModels.map((model, index) => {
             const isSelected =
               (model.type === 'image' && selectedImageModel === model.id) ||
               (model.type === 'video' && selectedVideoModel === model.id);
 
             return (
               <div
-                key={model.id}
+                key={model.selectionKey || model.id}
                 className={`ai-model-selector__item ${
                   isSelected ? 'ai-model-selector__item--selected' : ''
                 } ${

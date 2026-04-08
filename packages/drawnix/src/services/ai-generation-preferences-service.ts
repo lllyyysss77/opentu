@@ -27,6 +27,7 @@ export interface AIInputPreferences {
   selectedModel: string;
   selectedParams: PersistedParams;
   selectedCount: number;
+  selectedSkillId: string;
 }
 
 export interface AIImageToolPreferences {
@@ -207,6 +208,10 @@ export function loadAIInputPreferences(): AIInputPreferences {
     selectedModel,
     selectedParams,
     selectedCount,
+    selectedSkillId:
+      typeof stored.selectedSkillId === 'string' && stored.selectedSkillId.trim()
+        ? stored.selectedSkillId.trim()
+        : 'auto',
   };
 }
 

@@ -1187,6 +1187,22 @@ class RuntimeModelDiscoveryStore {
         return directMatch;
       }
 
+      const conflictingTypeMatch =
+        state?.models.find(
+          (model) =>
+            (model.selectionKey || buildSelectionKey(profileId, model.id)) ===
+            expectedSelectionKey
+        ) ||
+        state?.discoveredModels.find(
+          (model) =>
+            (model.selectionKey || buildSelectionKey(profileId, model.id)) ===
+            expectedSelectionKey
+        );
+
+      if (conflictingTypeMatch) {
+        return null;
+      }
+
       return createPinnedRuntimeModel(profileId, modelId, type);
     }
 
