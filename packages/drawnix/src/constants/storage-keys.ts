@@ -70,6 +70,12 @@ export const LS_KEYS = {
   /** LocalStorage 到 IndexedDB 迁移完成标记 */
   LS_TO_IDB_MIGRATION_DONE: 'aitu_ls_to_idb_migration_v1',
 
+  // ---- 音频播放器 UI ----
+  /** 画布音频播放器位置 */
+  AUDIO_PLAYER_POSITION: 'aitu:audio-player-position',
+  /** 画布音频播放器布局模式 */
+  AUDIO_PLAYER_LAYOUT: 'aitu:audio-player-layout',
+
   // ---- 废弃键（仅用于迁移读取后删除） ----
   /** @deprecated 旧版本本地数据，迁移后删除 */
   OLD_LOCAL_DATA: 'drawnix-local-data',

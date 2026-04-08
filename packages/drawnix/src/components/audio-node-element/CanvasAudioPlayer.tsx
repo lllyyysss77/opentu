@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import classNames from 'classnames';
 import {
   ChevronDown,
@@ -6,12 +6,16 @@ import {
   Play,
   SkipBack,
   SkipForward,
-  Volume2,
-  VolumeX,
   X,
+  Rows3,
+  Columns3,
 } from 'lucide-react';
 import { useCanvasAudioPlayback } from '../../hooks/useCanvasAudioPlayback';
+import { useDraggablePosition } from '../../hooks/useDraggablePosition';
+import { LS_KEYS } from '../../constants/storage-keys';
 import { AudioCover } from '../shared/AudioCover';
+import { CanvasAudioPlayerVolume } from './CanvasAudioPlayerVolume';
+import { CanvasAudioPlayerPlaylist } from './CanvasAudioPlayerPlaylist';
 import './canvas-audio-player.scss';
 
 function formatDuration(duration?: number): string {
@@ -28,20 +32,27 @@ function formatDuration(duration?: number): string {
 export const CanvasAudioPlayer: React.FC = () => {
   const playback = useCanvasAudioPlayback();
   const playerRef = useRef<HTMLDivElement>(null);
-  const volumeRef = useRef<HTMLDivElement>(null);
-  const collapseTimeoutRef = useRef<number | null>(null);
-  const volumeTogglePointerDownRef = useRef(false);
-  const volumeHoveredRef = useRef(false);
-  const volumeDraggingRef = useRef(false);
   const [playlistOpen, setPlaylistOpen] = useState(false);
-  const [volumeExpanded, setVolumeExpanded] = useState(false);
-  const [volumeHovered, setVolumeHovered] = useState(false);
-  const [volumeDragging, setVolumeDragging] = useState(false);
+  const [layout, setLayout] = useState<'horizontal' | 'vertical'>(() => {
+    try {
+      const stored = localStorage.getItem(LS_KEYS.AUDIO_PLAYER_LAYOUT);
+      return stored === 'vertical' ? 'vertical' : 'horizontal';
+    } catch {
+      return 'horizontal';
+    }
+  });
   const [mobileAnchorRect, setMobileAnchorRect] = useState<{
     left: number;
     width: number;
     bottom: number;
   } | null>(null);
+
+  const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
+  const { position, isDragging, wasDraggedRef, elementRef, handlePointerDown } =
+    useDraggablePosition({
+      storageKey: LS_KEYS.AUDIO_PLAYER_POSITION,
+      enabled: !isMobile,
+    });
 
   const progress = useMemo(() => {
     if (!playback.duration || playback.duration <= 0) {
@@ -63,9 +74,7 @@ export const CanvasAudioPlayer: React.FC = () => {
     playback.activeQueueIndex >= 0 &&
     playback.activeQueueIndex < playback.queue.length - 1;
   const hasQueueInfo =
-    playback.queue.length > 1 && playback.activeQueueIndex >= 0
-      ? true
-      : false;
+    playback.queue.length > 1 && playback.activeQueueIndex >= 0;
   const queueInfoLabel = hasQueueInfo
     ? `${playback.activeQueueIndex + 1}/${playback.queue.length}`
     : null;
@@ -75,46 +84,24 @@ export const CanvasAudioPlayer: React.FC = () => {
   const mobileSubtitle = queueInfoLabel
     ? `${queueInfoLabel} · ${currentTimeLabel} / ${durationLabel}`
     : `${currentTimeLabel} / ${durationLabel}`;
-  const volumePercentage = Math.round(playback.volume * 100);
 
   const scrubberStyle = {
     '--canvas-audio-progress': `${progress}%`,
   } as React.CSSProperties;
-  const volumeStyle = {
-    '--canvas-audio-progress': `${playback.volume * 100}%`,
-  } as React.CSSProperties;
 
-  const clearCollapseTimer = () => {
-    if (collapseTimeoutRef.current !== null) {
-      window.clearTimeout(collapseTimeoutRef.current);
-      collapseTimeoutRef.current = null;
-    }
-  };
+  const toggleLayout = useCallback(() => {
+    setLayout((prev) => {
+      const next = prev === 'horizontal' ? 'vertical' : 'horizontal';
+      try {
+        localStorage.setItem(LS_KEYS.AUDIO_PLAYER_LAYOUT, next);
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }, []);
 
-  const expandVolume = () => {
-    clearCollapseTimer();
-    setVolumeExpanded(true);
-  };
-
-  const toggleVolumeExpanded = () => {
-    clearCollapseTimer();
-    setVolumeExpanded((expanded) => !expanded);
-  };
-
-  const scheduleCollapse = () => {
-    clearCollapseTimer();
-    if (
-      volumeHoveredRef.current ||
-      volumeDraggingRef.current
-    ) {
-      return;
-    }
-    collapseTimeoutRef.current = window.setTimeout(() => {
-      setVolumeExpanded(false);
-    }, 180);
-  };
-
-  const handleToggle = async () => {
+  const handleToggle = useCallback(async () => {
     try {
       if (playback.playing) {
         playback.pausePlayback();
@@ -124,56 +111,7 @@ export const CanvasAudioPlayer: React.FC = () => {
     } catch {
       // Error feedback is surfaced globally from the playback store.
     }
-  };
-
-  useEffect(() => {
-    volumeHoveredRef.current = volumeHovered;
-  }, [volumeHovered]);
-
-  useEffect(() => {
-    volumeDraggingRef.current = volumeDragging;
-  }, [volumeDragging]);
-
-  useEffect(() => {
-    return () => {
-      clearCollapseTimer();
-    };
-  }, []);
-
-  useEffect(() => {
-    if (playback.activeAudioUrl) {
-      return;
-    }
-
-    clearCollapseTimer();
-    volumeHoveredRef.current = false;
-    volumeDraggingRef.current = false;
-    setVolumeExpanded(false);
-    setVolumeHovered(false);
-    setVolumeDragging(false);
-  }, [playback.activeAudioUrl]);
-
-  useEffect(() => {
-    if (!volumeExpanded) {
-      return;
-    }
-
-    const handlePointerDown = (event: PointerEvent) => {
-      if (volumeRef.current?.contains(event.target as Node)) {
-        return;
-      }
-      clearCollapseTimer();
-      setVolumeExpanded(false);
-      setVolumeDragging(false);
-      setVolumeHovered(false);
-      volumeTogglePointerDownRef.current = false;
-    };
-
-    document.addEventListener('pointerdown', handlePointerDown, true);
-    return () => {
-      document.removeEventListener('pointerdown', handlePointerDown, true);
-    };
-  }, [volumeExpanded]);
+  }, [playback]);
 
   useEffect(() => {
     if (!playback.activeAudioUrl) {
@@ -206,7 +144,6 @@ export const CanvasAudioPlayer: React.FC = () => {
         ) {
           return previousRect;
         }
-
         return nextRect;
       });
     };
@@ -220,20 +157,13 @@ export const CanvasAudioPlayer: React.FC = () => {
     const inputBar = document.querySelector('.ai-input-bar');
     const resizeObserver =
       typeof ResizeObserver !== 'undefined'
-        ? new ResizeObserver(() => {
-            scheduleUpdate();
-          })
+        ? new ResizeObserver(() => scheduleUpdate())
         : null;
 
     if (resizeObserver && inputContainer instanceof HTMLElement) {
       resizeObserver.observe(inputContainer);
     }
-
-    if (
-      resizeObserver &&
-      inputBar instanceof HTMLElement &&
-      inputBar !== inputContainer
-    ) {
+    if (resizeObserver && inputBar instanceof HTMLElement && inputBar !== inputContainer) {
       resizeObserver.observe(inputBar);
     }
 
@@ -250,70 +180,54 @@ export const CanvasAudioPlayer: React.FC = () => {
   }, [playback.activeAudioUrl]);
 
   useEffect(() => {
-    if (!volumeDragging) {
-      return;
-    }
-
-    const handlePointerUp = () => {
-      volumeDraggingRef.current = false;
-      setVolumeDragging(false);
-      if (!volumeHoveredRef.current) {
-        clearCollapseTimer();
-        collapseTimeoutRef.current = window.setTimeout(() => {
-          setVolumeExpanded(false);
-        }, 180);
-      }
-    };
-
-    window.addEventListener('pointerup', handlePointerUp);
-    return () => {
-      window.removeEventListener('pointerup', handlePointerUp);
-    };
-  }, [volumeDragging]);
-
-  useEffect(() => {
-    if (!playlistOpen) {
-      return;
-    }
-
-    const handlePointerDown = (event: PointerEvent) => {
-      if (playerRef.current?.contains(event.target as Node)) {
-        return;
-      }
-
+    if (!playlistOpen) return;
+    const handleClickOutside = (event: PointerEvent) => {
+      if (playerRef.current?.contains(event.target as Node)) return;
       setPlaylistOpen(false);
     };
-
-    document.addEventListener('pointerdown', handlePointerDown, true);
-    return () => {
-      document.removeEventListener('pointerdown', handlePointerDown, true);
-    };
+    document.addEventListener('pointerdown', handleClickOutside, true);
+    return () => document.removeEventListener('pointerdown', handleClickOutside, true);
   }, [playlistOpen]);
+
+  // Sync elementRef for drag
+  useEffect(() => {
+    elementRef.current = playerRef.current;
+  });
 
   if (!playback.activeAudioUrl) {
     return null;
   }
 
-  const playerStyle = mobileAnchorRect
+  const positionStyle: React.CSSProperties = position
+    ? { left: position.x, top: position.y }
+    : {};
+  const mobileStyle = mobileAnchorRect
     ? ({
         '--canvas-audio-mobile-left': `${mobileAnchorRect.left}px`,
         '--canvas-audio-mobile-width': `${mobileAnchorRect.width}px`,
         '--canvas-audio-mobile-offset': `${mobileAnchorRect.bottom}px`,
       } as React.CSSProperties)
-    : undefined;
+    : {};
+  const playerStyle = { ...mobileStyle, ...positionStyle };
 
   return (
     <div
       ref={playerRef}
       className={classNames('canvas-audio-player', {
         'canvas-audio-player--playlist-open': playlistOpen,
+        'canvas-audio-player--positioned': !!position,
+        'canvas-audio-player--dragging': isDragging,
+        'canvas-audio-player--vertical': layout === 'vertical',
       })}
-      style={playerStyle}
+      style={Object.keys(playerStyle).length > 0 ? playerStyle : undefined}
     >
       <button
         type="button"
         className="canvas-audio-player__queue-trigger"
-        onClick={() => setPlaylistOpen((open) => !open)}
+        onPointerDown={handlePointerDown}
+        onClick={() => {
+          if (!wasDraggedRef.current) setPlaylistOpen((open) => !open);
+        }}
         aria-expanded={playlistOpen}
         aria-label="切换播放列表"
       >
@@ -322,7 +236,7 @@ export const CanvasAudioPlayer: React.FC = () => {
             src={playback.activePreviewImageUrl}
             alt={playback.activeTitle || 'Audio cover'}
             fallbackClassName="canvas-audio-player__cover-fallback"
-            iconSize={18}
+            iconSize={16}
           />
         </div>
 
@@ -349,41 +263,33 @@ export const CanvasAudioPlayer: React.FC = () => {
         <button
           type="button"
           className="canvas-audio-player__action canvas-audio-player__action--previous"
-          onClick={() => {
-            void playback.playPrevious();
-          }}
+          onClick={() => void playback.playPrevious()}
           disabled={!canPlayPrevious}
           title="Previous track"
         >
-          <SkipBack size={16} />
+          <SkipBack size={14} />
         </button>
         <button
           type="button"
           className="canvas-audio-player__action canvas-audio-player__action--primary"
-          onClick={() => {
-            void handleToggle();
-          }}
+          onClick={() => void handleToggle()}
           title={playback.playing ? 'Pause audio' : 'Play audio'}
         >
-          {playback.playing ? <Pause size={16} /> : <Play size={16} />}
+          {playback.playing ? <Pause size={14} /> : <Play size={14} />}
         </button>
         <button
           type="button"
           className="canvas-audio-player__action canvas-audio-player__action--next"
-          onClick={() => {
-            void playback.playNext();
-          }}
+          onClick={() => void playback.playNext()}
           disabled={!canPlayNext}
           title="Next track"
         >
-          <SkipForward size={16} />
+          <SkipForward size={14} />
         </button>
       </div>
 
       <div className="canvas-audio-player__progress">
-        <span className="canvas-audio-player__time">
-          {currentTimeLabel}
-        </span>
+        <span className="canvas-audio-player__time">{currentTimeLabel}</span>
         <input
           type="range"
           min={0}
@@ -395,87 +301,22 @@ export const CanvasAudioPlayer: React.FC = () => {
           style={scrubberStyle}
           aria-label="Audio progress"
         />
-        <span className="canvas-audio-player__time">
-          {durationLabel}
-        </span>
+        <span className="canvas-audio-player__time">{durationLabel}</span>
       </div>
 
-      <div
-        ref={volumeRef}
-        className={classNames('canvas-audio-player__volume', {
-          'canvas-audio-player__volume--expanded': volumeExpanded,
-        })}
-        onPointerDown={(event) => event.stopPropagation()}
-        onMouseEnter={() => {
-          volumeHoveredRef.current = true;
-          setVolumeHovered(true);
-          clearCollapseTimer();
-        }}
-        onMouseLeave={() => {
-          volumeHoveredRef.current = false;
-          setVolumeHovered(false);
-          scheduleCollapse();
-        }}
-        onBlur={(event) => {
-          const nextTarget = event.relatedTarget as Node | null;
-          if (nextTarget && volumeRef.current?.contains(nextTarget)) {
-            return;
-          }
-          scheduleCollapse();
-        }}
+      <CanvasAudioPlayerVolume
+        volume={playback.volume}
+        onVolumeChange={playback.setVolume}
+      />
+
+      <button
+        type="button"
+        className="canvas-audio-player__toggle"
+        onClick={toggleLayout}
+        title={layout === 'horizontal' ? '切换为垂直布局' : '切换为水平布局'}
       >
-        <div className="canvas-audio-player__volume-shell">
-          <div className="canvas-audio-player__volume-slider-wrap">
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.01}
-              value={playback.volume}
-              onFocus={expandVolume}
-              onPointerDown={(event) => {
-                event.stopPropagation();
-                volumeDraggingRef.current = true;
-                setVolumeDragging(true);
-                expandVolume();
-              }}
-              onChange={(event) => playback.setVolume(Number(event.target.value))}
-              className="canvas-audio-player__slider canvas-audio-player__slider--volume"
-              style={volumeStyle}
-              aria-label="Playback volume"
-              aria-valuetext={`${volumePercentage}%`}
-            />
-          </div>
-          <span className="canvas-audio-player__volume-value">
-            {volumePercentage}%
-          </span>
-          <button
-            type="button"
-            className="canvas-audio-player__volume-toggle"
-            onPointerDown={(event) => {
-              event.stopPropagation();
-              volumeTogglePointerDownRef.current = true;
-            }}
-            onClick={() => {
-              volumeTogglePointerDownRef.current = false;
-              toggleVolumeExpanded();
-            }}
-            onFocus={() => {
-              if (volumeTogglePointerDownRef.current) {
-                return;
-              }
-              expandVolume();
-            }}
-            onBlur={() => {
-              volumeTogglePointerDownRef.current = false;
-            }}
-            aria-label="Volume controls"
-            aria-expanded={volumeExpanded}
-          >
-            {playback.volume <= 0.01 ? <VolumeX size={16} /> : <Volume2 size={16} />}
-          </button>
-        </div>
-      </div>
+        {layout === 'horizontal' ? <Rows3 size={14} /> : <Columns3 size={14} />}
+      </button>
 
       <button
         type="button"
@@ -483,44 +324,18 @@ export const CanvasAudioPlayer: React.FC = () => {
         onClick={playback.stopPlayback}
         title="Close player"
       >
-        <X size={16} />
+        <X size={14} />
       </button>
 
       {playlistOpen ? (
-        <div className="canvas-audio-player__playlist">
-          {playback.queue.map((item, index) => (
-            <button
-              key={`${item.audioUrl}-${index}`}
-              type="button"
-              className={classNames('canvas-audio-player__playlist-item', {
-                'canvas-audio-player__playlist-item--active':
-                  index === playback.activeQueueIndex,
-              })}
-              onClick={() => {
-                void playback.togglePlayback(item);
-                setPlaylistOpen(false);
-              }}
-            >
-              <div className="canvas-audio-player__playlist-cover">
-                <AudioCover
-                  src={item.previewImageUrl}
-                  alt={item.title || 'Audio cover'}
-                  fallbackClassName="canvas-audio-player__cover-fallback"
-                  iconSize={16}
-                  loading="lazy"
-                />
-              </div>
-              <div className="canvas-audio-player__playlist-meta">
-                <div className="canvas-audio-player__playlist-title">
-                  {item.title || '未命名音频'}
-                </div>
-                <div className="canvas-audio-player__playlist-subtitle">
-                  {formatDuration(item.duration)}
-                </div>
-              </div>
-            </button>
-          ))}
-        </div>
+        <CanvasAudioPlayerPlaylist
+          queue={playback.queue}
+          activeQueueIndex={playback.activeQueueIndex}
+          onSelect={(item) => {
+            void playback.togglePlayback(item);
+            setPlaylistOpen(false);
+          }}
+        />
       ) : null}
     </div>
   );
