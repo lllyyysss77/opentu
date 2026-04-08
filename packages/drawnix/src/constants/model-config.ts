@@ -1544,10 +1544,10 @@ export const AUDIO_PARAMS: ParamConfig[] = [
     description: '选择生成音乐还是歌词',
     valueType: 'enum',
     options: [
-      { value: 'music', label: '生成音乐' },
       { value: 'lyrics', label: '生成歌词' },
+      { value: 'music', label: '生成音乐' },
     ],
-    defaultValue: 'music',
+    defaultValue: 'lyrics',
     compatibleModels: ['suno_music'],
     compatibleTags: ['suno', 'audio', 'music'],
     modelType: 'audio',

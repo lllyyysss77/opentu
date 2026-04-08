@@ -259,7 +259,7 @@ export function loadAIInputPreferences(): AIInputPreferences {
 export function saveAIInputPreferences(preferences: AIInputPreferences): void {
   const stored =
     readStoredValue<Partial<AIInputPreferencesStored>>(LS_KEYS.AI_INPUT_PREFERENCES) || {};
-  writeStoredValue(LS_KEYS.AI_INPUT_PREFERENCES, {
+  writeStoredValue<AIInputPreferencesStored>(LS_KEYS.AI_INPUT_PREFERENCES, {
     ...stored,
     ...preferences,
   } satisfies AIInputPreferencesStored);
@@ -295,7 +295,7 @@ export function saveAIImageToolPreferences(preferences: AIImageToolPreferences):
     preferences.currentSelectionKey
   );
 
-  writeStoredValue(LS_KEYS.AI_IMAGE_TOOL_PREFERENCES, {
+  writeStoredValue<Partial<AIImageToolPreferencesStored>>(LS_KEYS.AI_IMAGE_TOOL_PREFERENCES, {
     ...stored,
     ...preferences,
     scopedPreferences: {
@@ -353,7 +353,7 @@ export function saveAIVideoToolPreferences(preferences: AIVideoToolPreferences):
     preferences.currentSelectionKey
   );
 
-  writeStoredValue(LS_KEYS.AI_VIDEO_TOOL_PREFERENCES, {
+  writeStoredValue<Partial<AIVideoToolPreferencesStored>>(LS_KEYS.AI_VIDEO_TOOL_PREFERENCES, {
     ...stored,
     ...preferences,
     scopedPreferences: {
@@ -392,7 +392,7 @@ export function saveScopedAIInputModelParams(
     readStoredValue<Partial<AIInputPreferencesStored>>(LS_KEYS.AI_INPUT_PREFERENCES) || {};
   const preferenceKey = getModelPreferenceKey(modelId, selectionKey);
 
-  writeStoredValue(LS_KEYS.AI_INPUT_PREFERENCES, {
+  writeStoredValue<Partial<AIInputPreferencesStored>>(LS_KEYS.AI_INPUT_PREFERENCES, {
     ...stored,
     scopedPreferences: {
       ...(stored.scopedPreferences || {}),
@@ -401,7 +401,7 @@ export function saveScopedAIInputModelParams(
         [preferenceKey]: asRecord(selectedParams),
       },
     },
-  } satisfies AIInputPreferencesStored);
+  });
 }
 
 export function loadScopedAIImageToolPreferences(

@@ -24,13 +24,15 @@ import {
   getAutoInsertValue,
 } from './shared';
 import {
-  loadScopedAIVideoToolPreferences,
-  saveAIVideoToolPreferences,
   geminiSettings,
   resolveInvocationRoute,
   createModelRef,
   type ModelRef,
 } from '../../utils/settings-manager';
+import {
+  loadScopedAIVideoToolPreferences,
+  saveAIVideoToolPreferences,
+} from '../../services/ai-generation-preferences-service';
 import { useTaskQueue } from '../../hooks/useTaskQueue';
 import { TaskType } from '../../types/task.types';
 import { MessagePlugin } from 'tdesign-react';
