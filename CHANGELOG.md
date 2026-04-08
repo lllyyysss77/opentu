@@ -1,3 +1,55 @@
+## 0.6.14 (2026-04-08)
+
+### 🚀 Features
+
+- 支持 Suno 歌词任务与厂商识别能力 ([d3223043](https://github.com/ljquan/aitu/commit/d3223043))
+- 恢复被误删掉代码 ([9166971c](https://github.com/ljquan/aitu/commit/9166971c))
+- 恢复被误删掉代码 ([82134958](https://github.com/ljquan/aitu/commit/82134958))
+- 优化代码 ([4ebfdf60](https://github.com/ljquan/aitu/commit/4ebfdf60))
+- 优化代码 ([7f71ea6c](https://github.com/ljquan/aitu/commit/7f71ea6c))
+- 新增模型 ([d8cf2816](https://github.com/ljquan/aitu/commit/d8cf2816))
+- 优化导出 ([ea50f410](https://github.com/ljquan/aitu/commit/ea50f410))
+- 增加 Stitch 设计工作流资产与规范 ([5d2c139b](https://github.com/ljquan/aitu/commit/5d2c139b))
+- 增加画布音频节点与播放能力 ([6bf9d299](https://github.com/ljquan/aitu/commit/6bf9d299))
+- 接入音频生成任务与工作流链路 ([9fe365ab](https://github.com/ljquan/aitu/commit/9fe365ab))
+- 增加音频模态与 Suno 路由基础 ([d3d94f4c](https://github.com/ljquan/aitu/commit/d3d94f4c))
+- 增加 Kling 参数适配 ([539a2827](https://github.com/ljquan/aitu/commit/539a2827))
+- 增加 Kling 能力路由 ([03f2fec2](https://github.com/ljquan/aitu/commit/03f2fec2))
+- 优化至形状可导出 ([210c68b9](https://github.com/ljquan/aitu/commit/210c68b9))
+- 优化至适配画笔 ([a946b42f](https://github.com/ljquan/aitu/commit/a946b42f))
+- 优化移动端设置与供应商配置体验 ([868f1fee](https://github.com/ljquan/aitu/commit/868f1fee))
+- 增强文本多模态识图与供应商模型路由体验 ([ad47afef](https://github.com/ljquan/aitu/commit/ad47afef))
+- 完善多供应商模型协议路由与 Sora 视频适配 ([5c217bd2](https://github.com/ljquan/aitu/commit/5c217bd2))
+- 优化模型选择器供应商与厂商分层展示 ([f43a9e4d](https://github.com/ljquan/aitu/commit/f43a9e4d))
+- 优化设置页模型发现与配置体验 ([868b0d45](https://github.com/ljquan/aitu/commit/868b0d45))
+- 重构设置页并修复配置持久化 ([f7962788](https://github.com/ljquan/aitu/commit/f7962788))
+
+### 🩹 Fixes
+
+- persist dropdown selections and correct type fallback ([1d868c5e](https://github.com/ljquan/aitu/commit/1d868c5e))
+- 修复 web 端音频任务类型检查失败 ([74e80377](https://github.com/ljquan/aitu/commit/74e80377))
+- 优化音频节点内容布局与信息层级 ([526cd0ce](https://github.com/ljquan/aitu/commit/526cd0ce))
+- 优化移动端音频播放器并恢复桌面端展示 ([ab75d70a](https://github.com/ljquan/aitu/commit/ab75d70a))
+- 补充媒体任务兼容与路由回归 ([e09750e1](https://github.com/ljquan/aitu/commit/e09750e1))
+- 完善音频入口与任务展示体验 ([10dc0abd](https://github.com/ljquan/aitu/commit/10dc0abd))
+- 优化 Kling 参数展示 ([b7ad05d4](https://github.com/ljquan/aitu/commit/b7ad05d4))
+
+### 🔧 Chores
+
+- bump version to 0.6.13 ([1a3d4deb](https://github.com/ljquan/aitu/commit/1a3d4deb))
+- bump version to 0.6.12 ([ecaf487e](https://github.com/ljquan/aitu/commit/ecaf487e))
+- checkpoint current local changes ([fe2bdb7e](https://github.com/ljquan/aitu/commit/fe2bdb7e))
+- 优化弹窗 ([16563720](https://github.com/ljquan/aitu/commit/16563720))
+- featL：优化导出 ([8e78c7ff](https://github.com/ljquan/aitu/commit/8e78c7ff))
+- 实现多供应商模型配置与按模型来源路由 ([979ff59d](https://github.com/ljquan/aitu/commit/979ff59d))
+- 实现模型获取与按需添加流程 ([7d5f9ab8](https://github.com/ljquan/aitu/commit/7d5f9ab8))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+- gongchengtu <1817063960@qq.com>
+- liangyufeng <l.yfeng@qq.com>
+
 ## 0.6.12 (2026-03-31)
 
 ### 🚀 Features
