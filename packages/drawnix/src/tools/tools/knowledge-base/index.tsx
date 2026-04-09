@@ -41,7 +41,7 @@ export const knowledgeBaseTool: ToolPluginModule = {
     name: '知识库',
     description: '个人知识管理工具，支持目录分类、标签管理和 Markdown 编辑',
     icon: React.createElement(BookOpenIcon),
-    category: ToolCategory.CONTENT_TOOLS,
+    category: ToolCategory.UTILITIES,
     component: 'knowledge-base',
     defaultWidth: 900,
     defaultHeight: 700,
