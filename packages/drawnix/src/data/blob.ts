@@ -151,3 +151,9 @@ export const isSupportedImageFile = (
   const { type } = blob || {};
   return isSupportedImageFileType(type);
 };
+
+const AUDIO_MIME_TYPES = ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/ogg', 'audio/webm', 'audio/aac', 'audio/flac'];
+
+export const isSupportedAudioFileType = (type: string | null | undefined) => {
+  return !!type && AUDIO_MIME_TYPES.includes(type);
+};

@@ -269,7 +269,7 @@ export async function generateAsyncImage(
 export async function cacheRemoteUrl(
   remoteUrl: string,
   taskId: string,
-  mediaType: 'image' | 'video',
+  mediaType: 'image' | 'video' | 'audio',
   format: string,
   index?: number
 ): Promise<string> {
@@ -344,7 +344,7 @@ export async function cacheRemoteUrl(
 export async function cacheRemoteUrls(
   urls: string[],
   taskId: string,
-  mediaType: 'image' | 'video',
+  mediaType: 'image' | 'video' | 'audio',
   format: string
 ): Promise<string[]> {
   return Promise.all(

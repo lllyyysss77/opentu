@@ -13,6 +13,7 @@ import {
   HardDrive,
   Video as VideoIcon,
   Image as ImageIcon,
+  Music,
   Globe,
   User,
   Sparkles,
@@ -97,6 +98,7 @@ const TYPE_OPTIONS = [
   { value: 'ALL', label: '全部类型', icon: MediaLibraryIcon },
   { value: AssetType.IMAGE, label: '图片', icon: ImageUploadIconComp },
   { value: AssetType.VIDEO, label: '视频', icon: VideoIcon },
+  { value: AssetType.AUDIO, label: '音频', icon: Music },
 ];
 
 // 来源过滤选项
@@ -207,6 +209,7 @@ export function MediaLibraryGrid({
       all: assets.length,
       image: assets.filter(a => a.type === AssetType.IMAGE).length,
       video: assets.filter(a => a.type === AssetType.VIDEO).length,
+      audio: assets.filter(a => a.type === AssetType.AUDIO).length,
       local: assets.filter(a => a.source === AssetSource.LOCAL).length,
       ai: assets.filter(a => a.source === AssetSource.AI_GENERATED).length,
       sourceAll: assets.length,
@@ -673,7 +676,7 @@ export function MediaLibraryGrid({
     return assetList.map(asset => ({
       id: asset.id,
       url: asset.type === AssetType.IMAGE ? normalizeImageDataUrl(asset.url) : asset.url,
-      type: asset.type === AssetType.VIDEO ? 'video' : 'image',
+      type: asset.type === AssetType.VIDEO ? 'video' : asset.type === AssetType.AUDIO ? 'audio' : 'image',
       title: asset.name,
       alt: asset.name,
     }));
@@ -933,7 +936,7 @@ export function MediaLibraryGrid({
           <div className="media-library-grid__filter-island">
             <div className="media-library-grid__filter-group">
               {TYPE_OPTIONS.map(opt => {
-                  const count = opt.value === 'ALL' ? counts.all : (opt.value === AssetType.IMAGE ? counts.image : counts.video);
+                  const count = opt.value === 'ALL' ? counts.all : opt.value === AssetType.IMAGE ? counts.image : opt.value === AssetType.AUDIO ? counts.audio : counts.video;
                   const Icon = opt.icon;
                   const isActive = (filters.activeType || 'ALL') === opt.value;
                   return (

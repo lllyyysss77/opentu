@@ -97,26 +97,37 @@ export function AssetProvider({ children }: AssetProviderProps) {
   const taskToAsset = useCallback((task: {
     id: string;
     type: TaskType;
-    result: { url: string; format?: string; size?: number };
+    result: { url: string; format?: string; size?: number; previewImageUrl?: string };
     params: { prompt?: string; model?: string };
     completedAt?: number;
     createdAt: number;
   }): Asset => {
+    const assetType = task.type === TaskType.IMAGE
+      ? AssetTypeEnum.IMAGE
+      : task.type === TaskType.AUDIO
+      ? AssetTypeEnum.AUDIO
+      : AssetTypeEnum.VIDEO;
+
+    const mimeType = task.type === TaskType.AUDIO
+      ? 'audio/mpeg'
+      : task.result.format === 'mp4'
+      ? 'video/mp4'
+      : task.result.format === 'webm'
+      ? 'video/webm'
+      : `image/${task.result.format || 'png'}`;
+
     return {
       id: task.id,
-      type: task.type === TaskType.IMAGE ? AssetTypeEnum.IMAGE : AssetTypeEnum.VIDEO,
+      type: assetType,
       source: AssetSourceEnum.AI_GENERATED,
       url: task.result.url,
       name: task.params.prompt?.substring(0, 30) || 'AI生成',
-      mimeType: task.result.format === 'mp4'
-        ? 'video/mp4'
-        : task.result.format === 'webm'
-        ? 'video/webm'
-        : `image/${task.result.format || 'png'}`,
+      mimeType,
       createdAt: task.completedAt || task.createdAt,
       size: task.result.size,
       prompt: task.params.prompt,
       modelName: task.params.model,
+      ...(task.result.previewImageUrl && { thumbnail: task.result.previewImageUrl }),
     };
   }, []);
 
@@ -150,13 +161,20 @@ export function AssetProvider({ children }: AssetProviderProps) {
         if (!isAituCache && !isAssetLibrary) continue;
         
         const filename = pathname.split('/').pop() || '';
-        const isVideo = item.type === 'video' || 
-                        pathname.includes('/video/') || 
+        const isVideo = item.type === 'video' ||
+                        pathname.includes('/video/') ||
                         /\.(mp4|webm|mov)$/i.test(pathname);
+        const isAudio = item.type === 'audio' ||
+                        pathname.startsWith('/__aitu_cache__/audio/') ||
+                        /\.(mp3|wav|ogg|aac|flac)$/i.test(pathname);
+
+        const assetType = isAudio ? AssetTypeEnum.AUDIO
+          : isVideo ? AssetTypeEnum.VIDEO
+          : AssetTypeEnum.IMAGE;
         
         assets.push({
           id: `unified-cache-${filename}`,
-          type: isVideo ? AssetTypeEnum.VIDEO : AssetTypeEnum.IMAGE,
+          type: assetType,
           source: AssetSourceEnum.LOCAL,
           url: pathname,
           name: item.metadata?.name || filename,
@@ -191,7 +209,7 @@ export function AssetProvider({ children }: AssetProviderProps) {
       const completedTasks = await taskStorageReader.getAllTasks({ status: TaskStatus.COMPLETED });
       const aiAssets = completedTasks
         .filter((task): task is typeof task & { result: NonNullable<typeof task.result> } =>
-          (task.type === TaskType.IMAGE || task.type === TaskType.VIDEO) &&
+          (task.type === TaskType.IMAGE || task.type === TaskType.VIDEO || task.type === TaskType.AUDIO) &&
           !!task.result?.url
         )
         .map(taskToAsset);

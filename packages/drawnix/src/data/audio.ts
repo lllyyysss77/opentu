@@ -436,3 +436,20 @@ export async function insertAudioFromUrl(
     });
   }
 }
+
+export function getAudioFileDuration(file: File): Promise<number | undefined> {
+  return new Promise((resolve) => {
+    const audio = new Audio();
+    const url = URL.createObjectURL(file);
+    audio.addEventListener('loadedmetadata', () => {
+      const d = audio.duration;
+      URL.revokeObjectURL(url);
+      resolve(Number.isFinite(d) ? d : undefined);
+    });
+    audio.addEventListener('error', () => {
+      URL.revokeObjectURL(url);
+      resolve(undefined);
+    });
+    audio.src = url;
+  });
+}

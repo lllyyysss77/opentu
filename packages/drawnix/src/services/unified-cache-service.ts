@@ -46,7 +46,7 @@ export type CacheProgressCallback = (progress: number) => void;
 // ==================== 类型定义 ====================
 
 /** 缓存媒体类型 */
-export type CacheMediaType = 'image' | 'video';
+export type CacheMediaType = 'image' | 'video' | 'audio';
 
 export interface CacheMediaFromBlobOptions {
   metadata?: {

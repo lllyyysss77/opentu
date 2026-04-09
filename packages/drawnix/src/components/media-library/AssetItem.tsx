@@ -5,7 +5,7 @@
  */
 
 import { memo, useCallback, useState } from 'react';
-import { Image as ImageIcon, Video as VideoIcon, Plus, Cloud } from 'lucide-react';
+import { Image as ImageIcon, Video as VideoIcon, Music, Plus, Cloud } from 'lucide-react';
 import { Checkbox, Tooltip } from 'tdesign-react';
 import { formatDate, formatFileSize } from '../../utils/asset-utils';
 import { useAssetSize } from '../../hooks/useAssetSize';
@@ -108,7 +108,20 @@ export const AssetItem = memo<AssetItemProps>(
 
         {/* 缩略图容器 - 所有模式共享，切换时不销毁 */}
         <div className="asset-item__thumbnail">
-          {asset.type === 'IMAGE' ? (
+          {asset.type === 'AUDIO' ? (
+            asset.thumbnail ? (
+              <LazyImage
+                src={asset.thumbnail}
+                alt={asset.name}
+                className="asset-item__image"
+                rootMargin="100px"
+              />
+            ) : (
+              <div className="asset-item__audio-preview">
+                <Music size={32} />
+              </div>
+            )
+          ) : asset.type === 'IMAGE' ? (
             <LazyImage
               src={thumbnailUrl || asset.url}
               alt={asset.name}
@@ -128,7 +141,7 @@ export const AssetItem = memo<AssetItemProps>(
           {!isListMode && !isCompactMode && (
             <div className="asset-item__badges">
               <div className="asset-item__type-badge">
-                {asset.type === 'IMAGE' ? <ImageIcon /> : <VideoIcon />}
+                {asset.type === 'AUDIO' ? <Music /> : asset.type === 'IMAGE' ? <ImageIcon /> : <VideoIcon />}
               </div>
               {asset.source === 'AI_GENERATED' && (
                 <div className="asset-item__ai-badge">AI</div>

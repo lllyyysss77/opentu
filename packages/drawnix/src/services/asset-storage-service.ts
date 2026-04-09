@@ -205,7 +205,7 @@ class AssetStorageService {
             const assetUrl = this.generateAssetUrl(item.id, item.mimeType);
 
             // 将 Blob 数据迁移到统一缓存
-            const cacheType = item.type === 'IMAGE' ? 'image' : 'video';
+            const cacheType = item.type === 'IMAGE' ? 'image' : item.type === 'AUDIO' ? 'audio' : 'video';
             await unifiedCacheService.cacheMediaFromBlob(assetUrl, item.blobData, cacheType, {
               taskId: item.id,
               prompt: item.prompt,
@@ -311,7 +311,7 @@ class AssetStorageService {
       // console.log('[AssetStorageService] Generated asset URL:', assetUrl);
 
       // 使用统一缓存服务缓存媒体
-      const cacheType = data.type === 'IMAGE' ? 'image' : 'video';
+      const cacheType = data.type === 'IMAGE' ? 'image' : data.type === 'AUDIO' ? 'audio' : 'video';
       await unifiedCacheService.cacheMediaFromBlob(assetUrl, data.blob, cacheType, {
         taskId: assetId,
         prompt: data.prompt,
@@ -612,6 +612,7 @@ class AssetStorageService {
       const keys = await this.store!.keys();
       let imageCount = 0;
       let videoCount = 0;
+      let audioCount = 0;
       let localCount = 0;
       let aiGeneratedCount = 0;
       let totalSize = 0;
@@ -622,6 +623,7 @@ class AssetStorageService {
           // 统计类型
           if (stored.type === 'IMAGE') imageCount++;
           if (stored.type === 'VIDEO') videoCount++;
+          if (stored.type === 'AUDIO') audioCount++;
 
           // 统计来源
           if (stored.source === 'LOCAL') localCount++;
@@ -636,6 +638,7 @@ class AssetStorageService {
         totalAssets: keys.length,
         imageCount,
         videoCount,
+        audioCount,
         localCount,
         aiGeneratedCount,
         totalSize,
@@ -686,7 +689,9 @@ class AssetStorageService {
     const blob = new Blob([bytes], { type: mimeType });
 
     // 确定素材类型
-    const assetType = mimeType.startsWith('video/') ? AssetType.VIDEO : AssetType.IMAGE;
+    const assetType = mimeType.startsWith('video/') ? AssetType.VIDEO
+      : mimeType.startsWith('audio/') ? AssetType.AUDIO
+      : AssetType.IMAGE;
 
     // 生成默认文件名
     const extension = mimeType.split('/')[1] || 'bin';

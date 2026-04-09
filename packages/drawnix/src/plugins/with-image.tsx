@@ -14,8 +14,10 @@ import {
   toViewBoxPoint,
   WritableClipboardOperationType,
 } from '@plait/core';
-import { isSupportedImageFileType } from '../data/blob';
+import { isSupportedImageFileType, isSupportedAudioFileType } from '../data/blob';
 import { insertImage, insertImageFromUrlAndSelect } from '../data/image';
+import { insertAudioFromUrl, getAudioFileDuration } from '../data/audio';
+import { unifiedCacheService } from '../services/unified-cache-service';
 import { isHitImage, MindElement, ImageData } from '@plait/mind';
 import { ImageViewer } from '../libs/image-viewer';
 
@@ -117,13 +119,35 @@ export const withImagePlugin = (board: PlaitBoard) => {
   newBoard.drop = (event: DragEvent) => {
     // 优先处理文件拖拽
     if (event.dataTransfer?.files?.length) {
-      const imageFile = event.dataTransfer.files[0];
-      if (isSupportedImageFileType(imageFile.type)) {
+      const file = event.dataTransfer.files[0];
+      if (isSupportedImageFileType(file.type)) {
         const point = toViewBoxPoint(
           board,
           toHostPoint(board, event.x, event.y)
         );
-        insertImage(board, imageFile, point, true);
+        insertImage(board, file, point, true);
+        return true;
+      }
+      if (isSupportedAudioFileType(file.type)) {
+        const point = toViewBoxPoint(
+          board,
+          toHostPoint(board, event.x, event.y)
+        );
+        (async () => {
+          try {
+            const assetId = crypto.randomUUID();
+            const ext = file.name.split('.').pop() || 'mp3';
+            const cacheUrl = `/__aitu_cache__/audio/${assetId}.${ext}`;
+            await unifiedCacheService.cacheMediaFromBlob(cacheUrl, file, 'audio', { taskId: assetId });
+            const duration = await getAudioFileDuration(file);
+            await insertAudioFromUrl(board, cacheUrl, {
+              title: file.name.replace(/\.[^.]+$/, ''),
+              duration,
+            }, point, true);
+          } catch (err) {
+            console.error('[withImagePlugin] Failed to insert audio from drop:', err);
+          }
+        })();
         return true;
       }
     }

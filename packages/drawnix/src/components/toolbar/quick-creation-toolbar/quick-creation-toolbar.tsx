@@ -38,6 +38,7 @@ import { MediaLibraryModal } from '../../media-library/MediaLibraryModal';
 import { SelectionMode, Asset, AssetType } from '../../../types/asset.types';
 import { insertImageFromUrl } from '../../../data/image';
 import { insertVideoFromUrl } from '../../../data/video';
+import { insertAudioFromUrl } from '../../../data/audio';
 import { MessagePlugin } from 'tdesign-react';
 import './quick-creation-toolbar.scss';
 
@@ -191,6 +192,8 @@ export const QuickCreationToolbar: React.FC<QuickCreationToolbarProps> = ({
         await insertImageFromUrl(board, asset.url);
       } else if (asset.type === AssetType.VIDEO) {
         await insertVideoFromUrl(board, asset.url);
+      } else if (asset.type === AssetType.AUDIO) {
+        await insertAudioFromUrl(board, asset.url, { title: asset.name });
       }
       MessagePlugin.success(t('toolbar.assetInserted' as any) || '素材已插入到画板');
       setMediaLibraryOpen(false);

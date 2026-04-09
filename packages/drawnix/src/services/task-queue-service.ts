@@ -35,6 +35,7 @@ import {
   getAdapterContextFromSettings,
   resolveAdapterForInvocation,
 } from './model-adapters';
+import { cacheRemoteUrl, cacheRemoteUrls } from './media-executor/fallback-utils';
 
 /**
  * Task Queue Service
@@ -174,20 +175,42 @@ class TaskQueueService {
           }
         );
 
+        // 缓存音频 URL 到 Cache Storage，防止远程链接过期
+        const fmt = result.format || (result.resultKind === 'lyrics' ? 'lyrics' : 'mp3');
+        let cachedUrl = result.url;
+        let cachedUrls = result.urls;
+        let cachedPreviewImageUrl = result.imageUrl;
+
+        if (fmt !== 'lyrics') {
+          try {
+            cachedUrl = await cacheRemoteUrl(result.url, task.id, 'audio', fmt);
+            if (result.urls?.length) {
+              cachedUrls = await cacheRemoteUrls(result.urls, task.id, 'audio', fmt);
+            }
+            if (result.imageUrl) {
+              cachedPreviewImageUrl = await cacheRemoteUrl(
+                result.imageUrl, `${task.id}-cover`, 'image', 'png'
+              );
+            }
+          } catch (cacheError) {
+            console.warn('[TaskQueueService] Audio cache failed, using original URLs:', cacheError);
+          }
+        }
+
         const now = Date.now();
         const completedTask: Task = {
           ...(this.tasks.get(task.id) || task),
           status: TaskStatus.COMPLETED,
           progress: 100,
           result: {
-            url: normalizeImageDataUrl(result.url),
-            urls: result.urls?.map((u: string) => normalizeImageDataUrl(u)),
-            format: result.format || (result.resultKind === 'lyrics' ? 'lyrics' : 'mp3'),
+            url: normalizeImageDataUrl(cachedUrl),
+            urls: cachedUrls?.map((u: string) => normalizeImageDataUrl(u)),
+            format: fmt,
             size: 0,
             resultKind: result.resultKind,
             duration:
               typeof result.duration === 'number' ? result.duration : undefined,
-            previewImageUrl: result.imageUrl,
+            previewImageUrl: cachedPreviewImageUrl,
             title: result.title,
             lyricsText: result.lyricsText,
             lyricsTitle: result.lyricsTitle,

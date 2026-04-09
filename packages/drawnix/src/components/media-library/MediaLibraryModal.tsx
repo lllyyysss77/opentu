@@ -149,10 +149,11 @@ export function MediaLibraryModal({
       for (const file of mediaFiles) {
         const isImage = file.type.startsWith('image/');
         const isVideo = file.type.startsWith('video/');
+        const isAudio = file.type.startsWith('audio/');
 
-        if (!isImage && !isVideo) {
+        if (!isImage && !isVideo && !isAudio) {
           console.warn(`[MediaLibrary] Invalid file type: ${file.type}`);
-          MessagePlugin.warning(`文件 "${file.name}" 不是有效的图片或视频格式`);
+          MessagePlugin.warning(`文件 "${file.name}" 不是有效的图片、视频或音频格式`);
           continue;
         }
 
@@ -198,7 +199,8 @@ export function MediaLibraryModal({
       try {
         for (const file of validFiles) {
           const isImage = file.type.startsWith('image/');
-          const type = isImage ? AssetType.IMAGE : AssetType.VIDEO;
+          const isAudio = file.type.startsWith('audio/');
+          const type = isImage ? AssetType.IMAGE : isAudio ? AssetType.AUDIO : AssetType.VIDEO;
           await addAsset(file, type, AssetSource.LOCAL);
         }
 
@@ -290,7 +292,7 @@ export function MediaLibraryModal({
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/*,video/*,.zip,application/zip,application/x-zip-compressed"
+          accept="image/*,video/*,audio/*,.zip,application/zip,application/x-zip-compressed"
           multiple
           style={{ display: 'none' }}
           onChange={handleFileInputChange}

@@ -13,6 +13,7 @@
 export enum AssetType {
   IMAGE = 'IMAGE',
   VIDEO = 'VIDEO',
+  AUDIO = 'AUDIO',
 }
 
 /**
@@ -195,6 +196,7 @@ export interface StorageStats {
   totalAssets: number;
   imageCount: number;
   videoCount: number;
+  audioCount: number;
   localCount: number;
   aiGeneratedCount: number;
   totalSize: number; // 估算的总大小（字节）
