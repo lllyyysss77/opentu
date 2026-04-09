@@ -15,7 +15,7 @@ import {
 import { isDataURL, normalizeImageDataUrl } from '@aitu/utils';
 import { formatDate, formatFileSize } from '../../utils/asset-utils';
 import { useAssetSize } from '../../hooks/useAssetSize';
-import { isCacheUrl, countElementsByAssetUrl } from '../../utils/asset-cleanup';
+import { isCacheUrl, countElementsByAssetUrls } from '../../utils/asset-cleanup';
 import { useDrawnix } from '../../hooks/use-drawnix';
 import type { MediaLibraryInspectorProps } from '../../types/asset.types';
 import './MediaLibraryInspector.scss';
@@ -70,7 +70,7 @@ export function MediaLibraryInspector({
       return { isCacheAsset: false, canvasElementCount: 0 };
     }
     const isCache = isCacheUrl(asset.url);
-    const count = isCache ? countElementsByAssetUrl(board, asset.url) : 0;
+    const count = isCache ? countElementsByAssetUrls(board, asset.dedupeUrls || [asset.url]) : 0;
     return { isCacheAsset: isCache, canvasElementCount: count };
   }, [asset, board]);
 

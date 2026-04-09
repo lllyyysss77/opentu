@@ -18,8 +18,10 @@ import { isSupportedImageFileType, isSupportedAudioFileType } from '../data/blob
 import { insertImage, insertImageFromUrlAndSelect } from '../data/image';
 import { insertAudioFromUrl, getAudioFileDuration, extractAudioCoverArt } from '../data/audio';
 import { unifiedCacheService } from '../services/unified-cache-service';
+import { assetStorageService } from '../services/asset-storage-service';
 import { isHitImage, MindElement, ImageData } from '@plait/mind';
 import { ImageViewer } from '../libs/image-viewer';
+import { AssetSource, AssetType } from '../types/asset.types';
 
 /**
  * 从 dataTransfer 中提取图片 URL
@@ -135,13 +137,19 @@ export const withImagePlugin = (board: PlaitBoard) => {
         );
         (async () => {
           try {
-            const assetId = crypto.randomUUID();
-            const ext = file.name.split('.').pop() || 'mp3';
             const title = file.name.replace(/\.[^.]+$/, '');
-            const cacheUrl = `/__aitu_cache__/audio/${assetId}.${ext}`;
-            await unifiedCacheService.cacheMediaFromBlob(cacheUrl, file, 'audio', {
-              taskId: assetId,
-              name: title,
+            await assetStorageService.initialize();
+            const asset = await assetStorageService.addAsset({
+              type: AssetType.AUDIO,
+              source: AssetSource.LOCAL,
+              name: file.name,
+              blob: file,
+              mimeType: file.type,
+            });
+            await unifiedCacheService.updateCachedMedia(asset.url, {
+              metadata: {
+                name: title,
+              },
             });
 
             // 并行提取时长和封面
@@ -152,14 +160,15 @@ export const withImagePlugin = (board: PlaitBoard) => {
 
             let previewImageUrl: string | undefined;
             if (coverBlob) {
-              const coverUrl = `/__aitu_cache__/image/${assetId}-cover.png`;
+              const coverUrl = `/__aitu_cache__/image/${asset.id}-cover.png`;
               await unifiedCacheService.cacheMediaFromBlob(coverUrl, coverBlob, 'image', {
-                taskId: `${assetId}-cover`,
+                taskId: `${asset.id}-cover`,
+                name: `${title}-cover`,
               });
               previewImageUrl = coverUrl;
             }
 
-            await insertAudioFromUrl(board, cacheUrl, {
+            await insertAudioFromUrl(board, asset.url, {
               title,
               duration,
               previewImageUrl,

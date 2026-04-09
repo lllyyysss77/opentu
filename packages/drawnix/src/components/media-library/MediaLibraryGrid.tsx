@@ -51,7 +51,7 @@ import { ImageEditor } from '../image-editor';
 import type { MediaLibraryGridProps, ViewMode, SortOption, Asset } from '../../types/asset.types';
 import { AssetType, AssetSource } from '../../types/asset.types';
 import { useDrawnix } from '../../hooks/use-drawnix';
-import { removeElementsByAssetIds, removeElementsByAssetUrl, isCacheUrl, countElementsByAssetUrl } from '../../utils/asset-cleanup';
+import { removeElementsByAssetIds, removeElementsByAssetUrls, isCacheUrl, countElementsByAssetUrls } from '../../utils/asset-cleanup';
 import { insertImageFromUrl } from '../../data/image';
 import { insertVideoFromUrl } from '../../data/video';
 import { useGitHubSync } from '../../contexts/GitHubSyncContext';
@@ -502,12 +502,15 @@ export function MediaLibraryGrid({
         
         // 缓存类型素材使用 URL 匹配删除
         for (const asset of cacheAssets) {
-          removeElementsByAssetUrl(board, asset.url);
+          removeElementsByAssetUrls(board, asset.dedupeUrls || [asset.url]);
         }
-        
+
         // 普通素材使用 ID 匹配删除
         if (normalAssetIds.length > 0) {
-          removeElementsByAssetIds(board, normalAssetIds);
+          const expandedIds = filteredSelectedAssets.flatMap(asset =>
+            isCacheUrl(asset.url) ? [] : (asset.dedupeAssetIds || [asset.id])
+          );
+          removeElementsByAssetIds(board, expandedIds);
         }
       }
       
@@ -542,7 +545,7 @@ export function MediaLibraryGrid({
     const cacheAssets = filteredSelectedAssets.filter(a => isCacheUrl(a.url));
     
     for (const asset of cacheAssets) {
-      affectedCount += countElementsByAssetUrl(board, asset.url);
+      affectedCount += countElementsByAssetUrls(board, asset.dedupeUrls || [asset.url]);
     }
     
     return { hasCacheAssets: cacheAssets.length > 0, affectedCount };

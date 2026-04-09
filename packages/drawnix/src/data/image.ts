@@ -9,7 +9,6 @@ import {
   Transforms,
 } from '@plait/core';
 import { DataURL } from '../types';
-import { getDataURL } from './blob';
 import { MindElement, MindTransforms } from '@plait/mind';
 import { DrawTransforms } from '@plait/draw';
 import { getElementOfFocusedImage } from '@plait/common';
@@ -18,6 +17,7 @@ import { assetStorageService } from '../services/asset-storage-service';
 import { analytics } from '../utils/posthog-analytics';
 import { cacheRemoteUrl } from '../services/media-executor/fallback-utils';
 import { normalizeImageDataUrl } from '@aitu/utils';
+import { AssetSource, AssetType } from '../types/asset.types';
 
 /**
  * 从保存的选中元素IDs计算插入点
@@ -90,6 +90,22 @@ export const loadHTMLImageElement = (dataURL: DataURL, crossOrigin = false) => {
       reject(error);
     };
     image.src = normalizedURL;
+  });
+};
+
+const loadHTMLImageElementFromBlob = (blob: Blob) => {
+  const objectUrl = URL.createObjectURL(blob);
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(image);
+    };
+    image.onerror = (error) => {
+      URL.revokeObjectURL(objectUrl);
+      reject(error);
+    };
+    image.src = objectUrl;
   });
 };
 
@@ -262,80 +278,77 @@ export const insertImage = async (
     ? null
     : getSelectedElements(board)[0] || getElementOfFocusedImage(board);
   const defaultImageWidth = selectedElement ? 240 : 400;
-  
-  // 先读取图片数据用于获取尺寸
-  const dataURL = await getDataURL(imageFile);
-  const image = await loadHTMLImageElement(dataURL);
-  
-  // 将图片存入素材库获取虚拟 URL
-  let imageUrl: string = dataURL;
+
+  const image = await loadHTMLImageElementFromBlob(imageFile);
+  let imageUrl = URL.createObjectURL(imageFile);
+  let shouldRevokeObjectUrl = true;
+
   try {
     await assetStorageService.initialize();
-    const { virtualUrl } = await assetStorageService.storeBase64AsAsset(
-      dataURL,
-      imageFile.name
-    );
-    imageUrl = virtualUrl;
+    const asset = await assetStorageService.addAsset({
+      type: AssetType.IMAGE,
+      source: AssetSource.LOCAL,
+      name: imageFile.name,
+      blob: imageFile,
+      mimeType: imageFile.type,
+    });
+    imageUrl = asset.url;
+    shouldRevokeObjectUrl = false;
   } catch (err) {
-    console.warn('[insertImage] Failed to store asset, using base64:', err);
-    // 失败时回退到使用 base64
-  }
-  
-  // 使用虚拟 URL 构建 imageItem
-  const imageItem = buildImage(image, imageUrl as DataURL, defaultImageWidth);
-  const element = startPoint && getHitElementByPoint(board, startPoint);
-
-  if (isDrop && element && MindElement.isMindElement(board, element)) {
-    MindTransforms.setImage(board, element as MindElement, imageItem);
-    return;
+    console.warn('[insertImage] Failed to store asset, using object URL:', err);
   }
 
-  if (
-    selectedElement &&
-    MindElement.isMindElement(board, selectedElement) &&
-    !isDrop
-  ) {
-    MindTransforms.setImage(board, selectedElement as MindElement, imageItem);
-  } else {
-    // If no startPoint is provided, use saved selection for insertion point calculation
-    let insertionPoint = startPoint;
-    if (!startPoint && !isDrop) {
-      // 优先使用保存的选中元素IDs计算插入位置
-      insertionPoint = getInsertionPointFromSavedSelection(
-        board,
-        imageItem.width
-      );
+  try {
+    const imageItem = buildImage(image, imageUrl as DataURL, defaultImageWidth);
+    const element = startPoint && getHitElementByPoint(board, startPoint);
 
-      // 如果没有保存的选中元素,回退到使用当前选中元素
-      if (!insertionPoint) {
-        const calculatedPoint = getInsertionPointForSelectedElements(board);
-        if (calculatedPoint) {
-          // 图片插入位置应该在所有选中元素垂直居中对齐
-          // 将X坐标向左偏移图片宽度的一半，让图片以计算点为中心显示
-          insertionPoint = [
-            calculatedPoint[0] - imageItem.width / 2,
-            calculatedPoint[1],
-          ] as Point;
-        } else {
-          // 如果没有选中元素,在最下方元素的下方插入
-          insertionPoint = getInsertionPointBelowBottommostElement(board, imageItem.width);
-        }
-      }
+    if (isDrop && element && MindElement.isMindElement(board, element)) {
+      MindTransforms.setImage(board, element as MindElement, imageItem);
+      return;
     }
 
-    DrawTransforms.insertImage(board, imageItem, insertionPoint);
+    if (
+      selectedElement &&
+      MindElement.isMindElement(board, selectedElement) &&
+      !isDrop
+    ) {
+      MindTransforms.setImage(board, selectedElement as MindElement, imageItem);
+    } else {
+      let insertionPoint = startPoint;
+      if (!startPoint && !isDrop) {
+        insertionPoint = getInsertionPointFromSavedSelection(
+          board,
+          imageItem.width
+        );
 
-    // 插入后滚动视口到新元素位置（如果不在视口内）
-    if (insertionPoint && !isDrop) {
-      // 计算图片中心点位置用于滚动
-      const centerPoint: Point = [
-        insertionPoint[0] + imageItem.width / 2,
-        insertionPoint[1] + imageItem.height / 2,
-      ];
-      // 使用 requestAnimationFrame 确保 DOM 更新后再滚动
-      requestAnimationFrame(() => {
-        scrollToPointIfNeeded(board, centerPoint);
-      });
+        if (!insertionPoint) {
+          const calculatedPoint = getInsertionPointForSelectedElements(board);
+          if (calculatedPoint) {
+            insertionPoint = [
+              calculatedPoint[0] - imageItem.width / 2,
+              calculatedPoint[1],
+            ] as Point;
+          } else {
+            insertionPoint = getInsertionPointBelowBottommostElement(board, imageItem.width);
+          }
+        }
+      }
+
+      DrawTransforms.insertImage(board, imageItem, insertionPoint);
+
+      if (insertionPoint && !isDrop) {
+        const centerPoint: Point = [
+          insertionPoint[0] + imageItem.width / 2,
+          insertionPoint[1] + imageItem.height / 2,
+        ];
+        requestAnimationFrame(() => {
+          scrollToPointIfNeeded(board, centerPoint);
+        });
+      }
+    }
+  } finally {
+    if (shouldRevokeObjectUrl) {
+      URL.revokeObjectURL(imageUrl);
     }
   }
 };

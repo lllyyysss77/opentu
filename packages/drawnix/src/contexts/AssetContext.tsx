@@ -35,6 +35,11 @@ import { AssetType as AssetTypeEnum, AssetSource as AssetSourceEnum, DEFAULT_FIL
 import { TaskStatus, TaskType } from '../types/task.types';
 import { AssetContext } from './asset-context-instance';
 import { audioPlaylistService } from '../services/audio-playlist-service';
+import {
+  getAssetContentHash,
+  getLocalAssetGroupKey,
+  normalizeAssetUrl,
+} from '../utils/asset-dedupe';
 
 
 /**
@@ -42,6 +47,92 @@ import { audioPlaylistService } from '../services/audio-playlist-service';
  */
 interface AssetProviderProps {
   children: ReactNode;
+}
+
+function getLocalDedupeKey(asset: Asset): string | undefined {
+  return getLocalAssetGroupKey(asset) || undefined;
+}
+
+function isUnifiedCacheAsset(asset: Asset): boolean {
+  return asset.id.startsWith('unified-cache-');
+}
+
+function mergeLocalAssets(assets: Asset[]): Asset[] {
+  const grouped = new Map<string, Asset>();
+
+  for (const asset of assets) {
+    const groupKey = getLocalDedupeKey(asset);
+    if (!groupKey) {
+      grouped.set(`${asset.id}:${asset.url}`, {
+        ...asset,
+        dedupeAssetIds: isUnifiedCacheAsset(asset) ? [] : [asset.id],
+        dedupeUrls: [normalizeAssetUrl(asset.url)],
+      });
+      continue;
+    }
+
+    const normalizedUrl = normalizeAssetUrl(asset.url);
+    const existing = grouped.get(groupKey);
+    const candidateAssetIds = isUnifiedCacheAsset(asset) ? [] : [asset.id];
+
+    if (!existing) {
+      grouped.set(groupKey, {
+        ...asset,
+        contentHash: getAssetContentHash(asset),
+        dedupeAssetIds: candidateAssetIds,
+        dedupeUrls: [normalizedUrl],
+      });
+      continue;
+    }
+
+    const mergedAssetIds = new Set([...(existing.dedupeAssetIds || []), ...candidateAssetIds]);
+    const mergedUrls = new Set([...(existing.dedupeUrls || []), normalizedUrl]);
+    const shouldReplaceRepresentative =
+      (isUnifiedCacheAsset(existing) && !isUnifiedCacheAsset(asset)) ||
+      (isUnifiedCacheAsset(existing) === isUnifiedCacheAsset(asset) && asset.createdAt > existing.createdAt);
+
+    const representative = shouldReplaceRepresentative ? asset : existing;
+    const fallbackName = representative.name || existing.name || asset.name;
+
+    grouped.set(groupKey, {
+      ...representative,
+      name: fallbackName,
+      size: representative.size || existing.size || asset.size,
+      contentHash: getAssetContentHash(representative) || existing.contentHash || getAssetContentHash(asset),
+      createdAt: Math.max(existing.createdAt, asset.createdAt),
+      thumbnail: representative.thumbnail || existing.thumbnail || asset.thumbnail,
+      dedupeAssetIds: Array.from(mergedAssetIds),
+      dedupeUrls: Array.from(mergedUrls),
+    });
+  }
+
+  return Array.from(grouped.values());
+}
+
+function mergeVisibleAsset(prevAssets: Asset[], nextAsset: Asset): Asset[] {
+  const localKey = getLocalDedupeKey(nextAsset);
+  const remainingAssets = prevAssets.filter((asset) => {
+    if (asset.id === nextAsset.id) {
+      return false;
+    }
+    if (!localKey) {
+      return true;
+    }
+    return getLocalDedupeKey(asset) !== localKey;
+  });
+
+  const mergedAsset = localKey
+    ? mergeLocalAssets([nextAsset, ...prevAssets.filter(asset => getLocalDedupeKey(asset) === localKey)])[0]
+    : nextAsset;
+
+  return [mergedAsset, ...remainingAssets].sort((a, b) => b.createdAt - a.createdAt);
+}
+
+function getLocalCleanupTargets(asset: Asset): { assetIds: string[]; urls: string[]; dedupeKey?: string } {
+  const dedupeKey = getLocalDedupeKey(asset);
+  const urls = Array.from(new Set((asset.dedupeUrls || [asset.url]).map(normalizeAssetUrl)));
+  const assetIds = Array.from(new Set(asset.dedupeAssetIds || (isUnifiedCacheAsset(asset) ? [] : [asset.id])));
+  return { assetIds, urls, dedupeKey };
 }
 
 /**
@@ -148,7 +239,7 @@ export function AssetProvider({ children }: AssetProviderProps) {
       // 直接从 IndexedDB 获取所有缓存媒体的元数据
       // 这比遍历 Cache Storage 快得多
       const cachedMediaList = await unifiedCacheService.getAllCachedMedia();
-      
+
       const assets: Asset[] = [];
       
       for (const item of cachedMediaList) {
@@ -182,7 +273,18 @@ export function AssetProvider({ children }: AssetProviderProps) {
         const assetType = isAudio ? AssetTypeEnum.AUDIO
           : isVideo ? AssetTypeEnum.VIDEO
           : AssetTypeEnum.IMAGE;
-        
+
+        // 音频素材：尝试查找对应的封面图缓存
+        let thumbnail: string | undefined;
+        if (isAudio && item.metadata?.taskId) {
+          const coverUrl = `/__aitu_cache__/image/${item.metadata.taskId}-cover.png`;
+          const hasCover = cachedMediaList.some(m => {
+            const mPath = m.url.startsWith('/') ? m.url : (() => { try { return new URL(m.url).pathname; } catch { return m.url; } })();
+            return mPath === coverUrl;
+          });
+          if (hasCover) thumbnail = coverUrl;
+        }
+
         assets.push({
           id: `unified-cache-${filename}`,
           type: assetType,
@@ -192,6 +294,8 @@ export function AssetProvider({ children }: AssetProviderProps) {
           mimeType: item.mimeType,
           createdAt: item.cachedAt,
           size: item.size,
+          contentHash: item.contentHash || getAssetContentHash({ url: pathname }),
+          ...(thumbnail && { thumbnail }),
         });
       }
       
@@ -227,32 +331,15 @@ export function AssetProvider({ children }: AssetProviderProps) {
 
       // 3. 从 Cache Storage 获取媒体（优先级最低，用于补充）
       const cacheStorageAssets = await getAssetsFromCacheStorage();
-      
-      // 4. 收集已有素材的 URL 用于去重（提取路径部分进行比较）
-      const extractPath = (url: string): string => {
-        // 如果是完整 URL，提取 pathname
-        if (url.startsWith('http')) {
-          try {
-            return new URL(url).pathname;
-          } catch {
-            return url;
-          }
-        }
-        return url;
-      };
-      
-      const existingUrls = new Set<string>([
-        ...localAssets.map(a => extractPath(a.url)),
-        ...aiAssets.map(a => extractPath(a.url)),
-      ]);
-      
-      // 5. 过滤掉已存在的 Cache Storage 素材
-      const uniqueCacheAssets = cacheStorageAssets.filter(
-        asset => !existingUrls.has(extractPath(asset.url))
-      );
 
-      // 6. 合并三个来源的素材，按创建时间倒序排列
-      const allAssets = [...localAssets, ...aiAssets, ...uniqueCacheAssets].sort(
+      // 4. 本地来源按内容去重；AI 结果保持独立
+      const groupedLocalAssets = mergeLocalAssets([
+        ...localAssets,
+        ...cacheStorageAssets,
+      ]);
+
+      // 5. 合并所有来源，按创建时间倒序排列
+      const allAssets = [...groupedLocalAssets, ...aiAssets].sort(
         (a, b) => b.createdAt - a.createdAt
       );
 
@@ -401,7 +488,7 @@ export function AssetProvider({ children }: AssetProviderProps) {
         // console.log('[AssetContext] Asset added to storage:', asset);
 
         // 更新状态
-        setAssets((prev) => [asset, ...prev]); // 新素材排在最前面
+        setAssets((prev) => mergeVisibleAsset(prev, asset));
         // console.log('[AssetContext] Assets state updated');
 
         // 检查存储配额
@@ -458,11 +545,11 @@ export function AssetProvider({ children }: AssetProviderProps) {
 
     try {
       const asset = assets.find(a => a.id === id);
+      const cleanupTargets = asset ? getLocalCleanupTargets(asset) : null;
 
       if (id.startsWith('unified-cache-')) {
-        // 缓存素材：使用素材的实际 URL 删除
-        if (asset) {
-          await unifiedCacheService.deleteCache(asset.url);
+        if (cleanupTargets) {
+          await Promise.all(cleanupTargets.urls.map((url) => unifiedCacheService.deleteCache(url)));
         }
       } else if (asset?.source === AssetSourceEnum.AI_GENERATED) {
         // AI 生成的素材：删除任务 + 清理缓存
@@ -473,8 +560,20 @@ export function AssetProvider({ children }: AssetProviderProps) {
           });
         }
       } else {
-        // 本地上传的素材：从 IndexedDB 删除
-        await assetStorageService.removeAsset(id);
+        if (cleanupTargets) {
+          await Promise.all(cleanupTargets.assetIds.map((assetId) => assetStorageService.removeAsset(assetId)));
+          const storedAssetUrls = new Set(
+            assets
+              .filter(existingAsset => cleanupTargets.assetIds.includes(existingAsset.id))
+              .map(existingAsset => normalizeAssetUrl(existingAsset.url))
+          );
+          const cacheOnlyUrls = cleanupTargets.urls.filter((url) => !storedAssetUrls.has(normalizeAssetUrl(url)));
+          await Promise.all(cacheOnlyUrls.map((url) => unifiedCacheService.deleteCache(url).catch((e) => {
+            console.debug('[AssetContext] Local cache delete skipped:', e);
+          })));
+        } else {
+          await assetStorageService.removeAsset(id);
+        }
       }
 
       await audioPlaylistService.removeAssetFromAllPlaylists(id).catch((playlistError) => {
@@ -482,7 +581,11 @@ export function AssetProvider({ children }: AssetProviderProps) {
       });
 
       // 更新状态
-      setAssets((prev) => prev.filter((a) => a.id !== id));
+      setAssets((prev) => prev.filter((a) =>
+        cleanupTargets?.dedupeKey
+          ? getLocalDedupeKey(a) !== cleanupTargets.dedupeKey
+          : a.id !== id
+      ));
 
       // 如果删除的是当前选中的素材，清除选中状态
       setSelectedAssetId((prev) => (prev === id ? null : prev));
@@ -523,6 +626,7 @@ export function AssetProvider({ children }: AssetProviderProps) {
    */
   const removeAssets = useCallback(async (ids: string[]): Promise<void> => {
     if (ids.length === 0) return;
+    const requestedCount = ids.length;
 
     setLoading(true);
     setError(null);
@@ -535,17 +639,33 @@ export function AssetProvider({ children }: AssetProviderProps) {
       const localIds: string[] = [];
       const aiIds: string[] = [];
       const cacheIds: string[] = [];
+      const localUrlSet = new Set<string>();
+      const localDedupeKeys = new Set<string>();
 
       for (const id of ids) {
+        const asset = assets.find(a => a.id === id);
+        if (asset?.source === AssetSourceEnum.AI_GENERATED) {
+          aiIds.push(id);
+          continue;
+        }
+
+        if (asset) {
+          const cleanupTargets = getLocalCleanupTargets(asset);
+          cleanupTargets.assetIds.forEach(assetId => localIds.push(assetId));
+          cleanupTargets.urls.forEach(url => localUrlSet.add(normalizeAssetUrl(url)));
+          if (cleanupTargets.dedupeKey) {
+            localDedupeKeys.add(cleanupTargets.dedupeKey);
+          }
+          if (id.startsWith('unified-cache-')) {
+            cacheIds.push(id);
+          }
+          continue;
+        }
+
         if (id.startsWith('unified-cache-')) {
           cacheIds.push(id);
         } else {
-          const asset = assets.find(a => a.id === id);
-          if (asset?.source === AssetSourceEnum.AI_GENERATED) {
-            aiIds.push(id);
-          } else {
-            localIds.push(id);
-          }
+          localIds.push(id);
         }
       }
 
@@ -554,7 +674,8 @@ export function AssetProvider({ children }: AssetProviderProps) {
         try {
           const asset = assets.find(a => a.id === id);
           if (asset) {
-            await unifiedCacheService.deleteCache(asset.url);
+            const cleanupTargets = getLocalCleanupTargets(asset);
+            await Promise.all(cleanupTargets.urls.map((url) => unifiedCacheService.deleteCache(url)));
           }
           await audioPlaylistService.removeAssetFromAllPlaylists(id);
           successIds.push(id);
@@ -583,22 +704,38 @@ export function AssetProvider({ children }: AssetProviderProps) {
       }
 
       // 并行删除本地素材
-      if (localIds.length > 0) {
+      const uniqueLocalIds = Array.from(new Set(localIds));
+
+      if (uniqueLocalIds.length > 0) {
         const deleteResults = await Promise.allSettled(
-          localIds.map(id => assetStorageService.removeAsset(id))
+          uniqueLocalIds.map(id => assetStorageService.removeAsset(id))
         );
 
         deleteResults.forEach((result, index) => {
           if (result.status === 'fulfilled') {
-            successIds.push(localIds[index]);
+            successIds.push(uniqueLocalIds[index]);
           } else {
-            console.error(`Failed to remove asset ${localIds[index]}:`, result.reason);
-            errors.push({ id: localIds[index], error: result.reason as Error });
+            console.error(`Failed to remove asset ${uniqueLocalIds[index]}:`, result.reason);
+            errors.push({ id: uniqueLocalIds[index], error: result.reason as Error });
           }
         });
 
+        const storedAssetUrls = new Set(
+          assets
+            .filter(asset => uniqueLocalIds.includes(asset.id))
+            .map(asset => normalizeAssetUrl(asset.url))
+        );
+
+        await Promise.all(Array.from(localUrlSet)
+          .filter((url) => !storedAssetUrls.has(normalizeAssetUrl(url)))
+          .map((url) =>
+          unifiedCacheService.deleteCache(url).catch((e) => {
+            console.debug('[AssetContext] Batch local cache delete skipped:', e);
+          })
+        ));
+
         await Promise.all(
-          localIds
+          uniqueLocalIds
             .filter((id) => successIds.includes(id))
             .map((id) =>
               audioPlaylistService.removeAssetFromAllPlaylists(id).catch((playlistError) => {
@@ -609,7 +746,13 @@ export function AssetProvider({ children }: AssetProviderProps) {
       }
 
       // 更新状态 - 只移除成功删除的素材
-      setAssets((prev) => prev.filter((asset) => !successIds.includes(asset.id)));
+      setAssets((prev) => prev.filter((asset) => {
+        if (successIds.includes(asset.id)) {
+          return false;
+        }
+        const dedupeKey = getLocalDedupeKey(asset);
+        return dedupeKey ? !localDedupeKeys.has(dedupeKey) : true;
+      }));
 
       // 如果删除的包含当前选中的素材,清除选中状态
       if (selectedAssetId && successIds.includes(selectedAssetId)) {
@@ -622,12 +765,12 @@ export function AssetProvider({ children }: AssetProviderProps) {
       // 显示结果消息
       if (errors.length === 0) {
         MessagePlugin.success({
-          content: `成功删除 ${successIds.length} 个素材`,
+          content: `成功删除 ${requestedCount} 个素材`,
           duration: 2000,
         });
       } else {
         MessagePlugin.warning({
-          content: `删除了 ${successIds.length} 个素材，${errors.length} 个失败`,
+          content: `已处理 ${requestedCount} 个素材，存在 ${errors.length} 个删除失败`,
           duration: 3000,
         });
       }

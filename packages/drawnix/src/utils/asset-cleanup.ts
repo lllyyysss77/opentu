@@ -25,7 +25,7 @@ export function isVirtualUrl(url: string): boolean {
  * 支持相对路径 (/__aitu_cache__/...) 和完整 URL (http://xxx/__aitu_cache__/...)
  */
 export function isCacheUrl(url: string): boolean {
-  return url.startsWith(CACHE_URL_PREFIX) || url.includes(CACHE_URL_PREFIX);
+  return isVirtualUrl(url);
 }
 
 /**
@@ -220,28 +220,35 @@ export function countElementsByAssetUrl(board: PlaitBoard, assetUrl: string): nu
   let count = 0;
 
   for (const element of board.children) {
-    const url = (element as any).url;
-    if (!url || typeof url !== 'string') {
+    const candidateUrls = [(element as any).url, (element as any).audioUrl].filter(
+      (value): value is string => typeof value === 'string' && value.length > 0
+    );
+    if (candidateUrls.length === 0) {
       continue;
     }
 
-    // 支持完整 URL 和相对路径的匹配
-    const elementCachePath = extractCachePath(url);
-    const isMatch = url === assetUrl || 
-                    (targetCachePath && elementCachePath && targetCachePath === elementCachePath);
-    
+    const isMatch = candidateUrls.some((url) => {
+      const elementCachePath = extractCachePath(url);
+      return url === assetUrl ||
+        (targetCachePath && elementCachePath && targetCachePath === elementCachePath);
+    });
+
     if (isMatch) {
-      // 检查是否为图片或视频元素
       const isImage = PlaitDrawElement.isDrawElement(element) && PlaitDrawElement.isImage(element);
       const isVideo = (element as any).type === 'video' || (element as any).isVideo;
-      
-      if (isImage || isVideo) {
+      const isAudio = typeof (element as any).audioUrl === 'string';
+
+      if (isImage || isVideo || isAudio) {
         count++;
       }
     }
   }
 
   return count;
+}
+
+export function countElementsByAssetUrls(board: PlaitBoard, assetUrls: string[]): number {
+  return assetUrls.reduce((total, assetUrl) => total + countElementsByAssetUrl(board, assetUrl), 0);
 }
 
 /**
@@ -261,22 +268,25 @@ export function removeElementsByAssetUrl(board: PlaitBoard, assetUrl: string): n
   const elementsToRemove: PlaitElement[] = [];
 
   for (const element of board.children) {
-    const url = (element as any).url;
-    if (!url || typeof url !== 'string') {
+    const candidateUrls = [(element as any).url, (element as any).audioUrl].filter(
+      (value): value is string => typeof value === 'string' && value.length > 0
+    );
+    if (candidateUrls.length === 0) {
       continue;
     }
 
-    // 支持完整 URL 和相对路径的匹配
-    const elementCachePath = extractCachePath(url);
-    const isMatch = url === assetUrl ||
-                    (targetCachePath && elementCachePath && targetCachePath === elementCachePath);
+    const isMatch = candidateUrls.some((url) => {
+      const elementCachePath = extractCachePath(url);
+      return url === assetUrl ||
+        (targetCachePath && elementCachePath && targetCachePath === elementCachePath);
+    });
 
     if (isMatch) {
-      // 检查是否为图片或视频元素
       const isImage = PlaitDrawElement.isDrawElement(element) && PlaitDrawElement.isImage(element);
       const isVideo = (element as any).type === 'video' || (element as any).isVideo;
+      const isAudio = typeof (element as any).audioUrl === 'string';
 
-      if (isImage || isVideo) {
+      if (isImage || isVideo || isAudio) {
         elementsToRemove.push(element);
       }
     }
@@ -292,4 +302,8 @@ export function removeElementsByAssetUrl(board: PlaitBoard, assetUrl: string): n
   }
 
   return elementsToRemove.length;
+}
+
+export function removeElementsByAssetUrls(board: PlaitBoard, assetUrls: string[]): number {
+  return assetUrls.reduce((total, assetUrl) => total + removeElementsByAssetUrl(board, assetUrl), 0);
 }

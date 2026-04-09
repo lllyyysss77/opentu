@@ -5,7 +5,12 @@
  * 负责元数据管理、智能图片传递、缓存满处理等功能
  */
 
-import { isDataURL, normalizeImageDataUrl } from '@aitu/utils';
+import {
+  calculateBlobChecksum,
+  getFileExtension,
+  isDataURL,
+  normalizeImageDataUrl,
+} from '@aitu/utils';
 import { getDataURL } from '../data/blob';
 import { swChannelClient } from './sw-channel/client';
 
@@ -55,6 +60,7 @@ export interface CacheMediaFromBlobOptions {
     model?: string;
     [key: string]: any;
   };
+  contentHash?: string;
   cachedAt?: number;
   lastUsed?: number;
 }
@@ -71,6 +77,8 @@ export interface CachedMedia {
   mimeType: string;
   /** 文件大小（字节） */
   size: number;
+  /** 文件内容哈希（本地文件去重主键） */
+  contentHash?: string;
   /** 缓存时间戳 */
   cachedAt: number;
   /** 最后使用时间戳 */
@@ -267,6 +275,22 @@ class UnifiedCacheService {
       request.onsuccess = () => resolve();
       request.onerror = () => reject(request.error);
     });
+  }
+
+  private buildContentAddressedUrl(
+    type: CacheMediaType,
+    contentHash: string,
+    mimeType?: string
+  ): string {
+    const extension = getFileExtension('', mimeType);
+    const resolvedExtension = extension !== 'bin'
+      ? extension
+      : type === 'video'
+      ? 'mp4'
+      : type === 'audio'
+      ? 'mp3'
+      : 'png';
+    return `/__aitu_cache__/${type}/content-${contentHash}.${resolvedExtension}`;
   }
 
   /**
@@ -932,6 +956,9 @@ class UnifiedCacheService {
         typeof normalizedOptions?.lastUsed === 'number' && Number.isFinite(normalizedOptions.lastUsed)
           ? normalizedOptions.lastUsed
           : cachedAt;
+      const contentHash =
+        normalizedOptions?.contentHash ||
+        await calculateBlobChecksum(blob);
 
       // 1. 将 blob 放入 Cache API（通过创建 Response）
       if (typeof caches !== 'undefined') {
@@ -974,6 +1001,7 @@ class UnifiedCacheService {
         type,
         mimeType: blob.type || (type === 'video' ? 'video/mp4' : 'image/png'),
         size: blob.size,
+        contentHash,
         cachedAt,
         lastUsed,
         metadata: normalizedOptions?.metadata || {},
@@ -1024,6 +1052,38 @@ class UnifiedCacheService {
       console.error('[UnifiedCache] Failed to get cached blob:', error);
       return null;
     }
+  }
+
+  async cacheLocalMediaByContent(
+    blob: Blob,
+    type: CacheMediaType,
+    metadata?: CacheMediaMetadata
+  ): Promise<{ url: string; contentHash: string; reused: boolean }> {
+    const contentHash = await calculateBlobChecksum(blob);
+    const canonicalUrl = this.buildContentAddressedUrl(type, contentHash, blob.type);
+    const existing = await this.getItem(canonicalUrl);
+
+    if (existing) {
+      if (metadata && Object.keys(metadata).length > 0) {
+        await this.updateCachedMedia(canonicalUrl, { metadata });
+      }
+      return {
+        url: canonicalUrl,
+        contentHash,
+        reused: true,
+      };
+    }
+
+    await this.cacheMediaFromBlob(canonicalUrl, blob, type, {
+      metadata,
+      contentHash,
+    });
+
+    return {
+      url: canonicalUrl,
+      contentHash,
+      reused: false,
+    };
   }
 
   /**

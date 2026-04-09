@@ -17,7 +17,7 @@ import type {
 import { AssetType, AssetSource, SelectionMode } from '../../types/asset.types';
 import { downloadFile, normalizeImageDataUrl } from '@aitu/utils';
 import { useDrawnix } from '../../hooks/use-drawnix';
-import { removeElementsByAssetId, removeElementsByAssetUrl, isCacheUrl } from '../../utils/asset-cleanup';
+import { removeElementsByAssetIds, removeElementsByAssetUrls, isCacheUrl } from '../../utils/asset-cleanup';
 import { isZipFile, extractMediaFromZip } from '../../utils/zip-utils';
 import './MediaLibraryModal.scss';
 
@@ -253,9 +253,9 @@ export function MediaLibraryModal({
       const isCacheAsset = isCacheUrl(asset.url);
 
       if (isCacheAsset) {
-        removeElementsByAssetUrl(board, asset.url);
+        removeElementsByAssetUrls(board, asset.dedupeUrls || [asset.url]);
       } else {
-        removeElementsByAssetId(board, assetId);
+        removeElementsByAssetIds(board, asset.dedupeAssetIds || [assetId]);
       }
     }
 
