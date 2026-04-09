@@ -112,6 +112,8 @@ class TaskQueueService {
           ? 'video'
           : task.type === TaskType.AUDIO
           ? 'audio'
+          : task.type === TaskType.CHAT
+          ? 'text'
           : 'image';
       if (
         !hasInvocationRouteCredentials(
@@ -312,6 +314,22 @@ class TaskQueueService {
               )?.toString(),
               size: task.params.size,
               referenceImages: finalRefs,
+              params: (task.params as any).params,
+            },
+            executionOptions
+          );
+          break;
+        }
+        case TaskType.CHAT: {
+          await executor.generateText(
+            {
+              taskId: task.id,
+              prompt: task.params.prompt,
+              model: task.params.model,
+              modelRef: task.params.modelRef || null,
+              referenceImages: task.params.referenceImages as
+                | string[]
+                | undefined,
               params: (task.params as any).params,
             },
             executionOptions

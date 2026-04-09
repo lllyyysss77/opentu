@@ -126,7 +126,8 @@ export function isValidTaskType(type: string): type is TaskType {
     type === TaskType.IMAGE ||
     type === TaskType.VIDEO ||
     type === TaskType.AUDIO ||
-    type === TaskType.CHARACTER
+    type === TaskType.CHARACTER ||
+    type === TaskType.CHAT
   );
 }
 

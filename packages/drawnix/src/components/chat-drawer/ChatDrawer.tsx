@@ -75,6 +75,11 @@ function getToolDescription(
         0,
         30
       )}...`;
+    case 'generate_text':
+      return `生成文本: ${((args?.prompt as string) || '').substring(
+        0,
+        30
+      )}...`;
     case 'generate_grid_image':
       return `生成宫格图: ${((args?.theme as string) || '').substring(
         0,

@@ -66,7 +66,7 @@ export type SendScenario =
 /**
  * 生成类型
  */
-export type GenerationType = 'image' | 'video' | 'audio' | 'text';
+export type GenerationType = 'image' | 'video' | 'audio' | 'text' | 'agent';
 
 /**
  * 带尺寸信息的图片
@@ -280,8 +280,8 @@ export function parseAIInput(
     hasExtraContent &&
     !options?.generationType
   ) {
-    // 没有选中元素、只有文字输入时，默认使用文本模型（Agent 流程）
-    generationType = 'text';
+    // 没有选中元素、只有文字输入时，默认进入 Agent 流程
+    generationType = 'agent';
     modelId = getDefaultTextModel();
   } else {
     // 有选中元素但没指定模型时，默认使用图片模型
@@ -289,7 +289,7 @@ export function parseAIInput(
       modelId = getDefaultVideoModel();
     } else if (generationType === 'audio') {
       modelId = getDefaultAudioModel();
-    } else if (generationType === 'text') {
+    } else if (generationType === 'text' || generationType === 'agent') {
       modelId = getDefaultTextModel();
     } else {
       modelId = getDefaultImageModel();
@@ -302,9 +302,12 @@ export function parseAIInput(
   if (
     options?.generationType === 'image' ||
     options?.generationType === 'video' ||
-    options?.generationType === 'audio'
+    options?.generationType === 'audio' ||
+    options?.generationType === 'text'
   ) {
     scenario = 'direct_generation';
+  } else if (options?.generationType === 'agent') {
+    scenario = 'agent_flow';
   } else {
     scenario = hasExtraContent ? 'agent_flow' : 'direct_generation';
   }
@@ -325,7 +328,10 @@ export function parseAIInput(
     prompt = selectedTextContent;
   } else if (hasSelectedElements && imageCount > 0) {
     // 只有图片，生成默认提示词
-    prompt = generateDefaultPrompt(hasSelectedElements, [], imageCount);
+    prompt =
+      generationType === 'text'
+        ? ''
+        : generateDefaultPrompt(hasSelectedElements, [], imageCount);
   } else {
     prompt = '';
   }
@@ -352,6 +358,7 @@ export function parseAIInput(
     if (
       generationType !== 'audio' &&
       generationType !== 'text' &&
+      generationType !== 'agent' &&
       !modelId.startsWith('mj') &&
       options.params.size
     ) {
@@ -400,6 +407,7 @@ export function parseAIInput(
     !size &&
     options?.size !== 'auto' &&
     generationType !== 'text' &&
+    generationType !== 'agent' &&
     generationType !== 'audio'
   ) {
     const modelConfig = getModelConfig(modelId);

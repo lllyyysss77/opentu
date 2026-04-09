@@ -123,7 +123,7 @@ export interface WorkflowMessageData {
   /** 工作流名称 */
   name: string;
   /** 生成类型 */
-  generationType: 'image' | 'video' | 'audio' | 'text';
+  generationType: 'image' | 'video' | 'audio' | 'text' | 'agent';
   /** 原始提示词 */
   prompt: string;
   /** AI 分析内容（AI 对用户请求的理解和执行计划） */
@@ -232,7 +232,7 @@ export interface AIInputContext {
     /** 模型 ID */
     id: string;
     /** 生成类型 */
-    type: 'image' | 'video' | 'audio' | 'text';
+    type: 'image' | 'video' | 'audio' | 'text' | 'agent';
     /** 是否为用户显式选择 */
     isExplicit: boolean;
   };

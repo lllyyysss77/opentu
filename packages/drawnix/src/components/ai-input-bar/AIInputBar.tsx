@@ -553,7 +553,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
             ? 'video'
             : type === 'audio'
             ? 'audio'
-            : type === 'text'
+            : type === 'text' || type === 'agent'
             ? 'text'
             : 'image';
         const route = resolveInvocationRoute(routeType);
@@ -571,7 +571,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
             ? getDefaultVideoModel()
             : type === 'audio'
             ? getDefaultAudioModel()
-            : type === 'text'
+            : type === 'text' || type === 'agent'
             ? getDefaultTextModel()
             : getDefaultImageModel();
 
@@ -589,7 +589,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
         ? videoModels
         : initialGenerationType === 'audio'
         ? audioModels
-        : initialGenerationType === 'text'
+        : initialGenerationType === 'text' || initialGenerationType === 'agent'
         ? textModels
         : imageModels;
     const initialSelectedModelConfig =
@@ -603,7 +603,8 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
           ? getDefaultVideoModel()
           : initialGenerationType === 'audio'
           ? getDefaultAudioModel()
-          : initialGenerationType === 'text'
+          : initialGenerationType === 'text' ||
+            initialGenerationType === 'agent'
           ? getDefaultTextModel()
           : getDefaultImageModel()
       );
@@ -624,7 +625,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
         initialSelectedModelRef
     );
     const initialScopedSelectedParams =
-      initialGenerationType === 'text'
+      initialGenerationType === 'agent'
         ? {}
         : loadScopedAIInputModelParams(
             initialGenerationType,
@@ -648,7 +649,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
     // 当前选中的生成类型（图片、视频、Agent）
     const [generationType, setGenerationType] =
       useState<GenerationType>(initialGenerationType);
-    // 当前选中的 Skill ID（仅在 Agent/text 模式下有效）
+    // 当前选中的 Skill ID（仅在 Agent 模式下有效）
     const [selectedSkillId, setSelectedSkillId] =
       useState<string>(initialPreferences.selectedSkillId || SKILL_AUTO_ID);
     // 当前选中的图片/视频/文本模型
@@ -722,7 +723,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
       return pinnedModel ? [pinnedModel, ...audioModels] : audioModels;
     }, [audioModels, generationType, selectedModel, selectedModelRef]);
     const visibleTextModels = useMemo(() => {
-      if (generationType !== 'text') {
+      if (generationType !== 'text' && generationType !== 'agent') {
         return textModels;
       }
 
@@ -745,28 +746,32 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
     // 当前选中的参数映射 (id -> value)
     const [selectedParams, setSelectedParams] = useState<
       Record<string, string>
-    >(() =>
-      initialGenerationType === 'text'
-        ? {}
-        : {
-            ...initialScopedSelectedParams,
-            ...((initialSelectedModelConfig?.id || initialSelectedModelId).startsWith(
-              'mj'
-            )
-              ? {}
-              : {
-                  size:
-                    initialScopedSelectedParams.size ||
-                    getDefaultSizeForModel(
-                      initialSelectedModelConfig?.id || initialSelectedModelId
-                    ),
-                }),
-          }
-    );
+    >(() => {
+      if (initialGenerationType === 'agent') {
+        return {};
+      }
+
+      const initialModelId =
+        initialSelectedModelConfig?.id || initialSelectedModelId;
+      const sizeParam = getCompatibleParams(initialModelId).find(
+        (param) => param.id === 'size'
+      );
+
+      return {
+        ...initialScopedSelectedParams,
+        ...(initialModelId.startsWith('mj') || !sizeParam
+          ? {}
+          : {
+              size:
+                initialScopedSelectedParams.size ||
+                getDefaultSizeForModel(initialModelId),
+            }),
+      };
+    });
     const selectedParamsRef = useRef<Record<string, string>>(selectedParams);
     const selectedParamScopeRef = useRef<string>(
-      initialGenerationType === 'text'
-        ? 'text'
+      initialGenerationType === 'agent'
+        ? 'agent'
         : `${initialGenerationType}:${initialSelectedModelKey}`
     );
     useEffect(() => {
@@ -836,7 +841,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
           ? visibleVideoModels
           : generationType === 'audio'
           ? visibleAudioModels
-          : generationType === 'text'
+          : generationType === 'text' || generationType === 'agent'
           ? visibleTextModels
           : visibleImageModels;
       const currentModelConfig = findMatchingSelectableModel(
@@ -860,12 +865,16 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
         }
       }
 
-      // 切换离开 text 模式时重置 Skill 选择
-      if (generationType !== 'text') {
+      // 切换离开 Agent 模式时重置 Skill 选择
+      if (generationType !== 'agent') {
         setSelectedSkillId(SKILL_AUTO_ID);
       }
-      // Agent / audio 模式默认单结果
-      if (generationType === 'text' || generationType === 'audio') {
+      // Agent / 文本 / 音频模式默认单结果
+      if (
+        generationType === 'agent' ||
+        generationType === 'text' ||
+        generationType === 'audio'
+      ) {
         setSelectedCount(1);
       }
     }, [
@@ -883,7 +892,8 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
     const currentModels = useMemo(() => {
       if (generationType === 'video') return visibleVideoModels;
       if (generationType === 'audio') return visibleAudioModels;
-      if (generationType === 'text') return visibleTextModels;
+      if (generationType === 'text' || generationType === 'agent')
+        return visibleTextModels;
       return visibleImageModels;
     }, [
       visibleAudioModels,
@@ -895,7 +905,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
 
     // 预计算当前模型的可用参数，避免子组件内部 stale 计算
     const compatibleParams = useMemo(() => {
-      if (generationType === 'text') return [];
+      if (generationType === 'agent') return [];
       if (generationType === 'video') {
         return getEffectiveVideoCompatibleParams(
           selectedModel,
@@ -1262,7 +1272,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
     const handleSelectInspirationPrompt = useCallback(
       (info: { prompt: string; modelType: 'agent' }) => {
         setPrompt(info.prompt);
-        setGenerationType('text'); // agent 对应 text 生成类型
+        setGenerationType('agent');
         inputRef.current?.focus();
 
         // 埋点：灵感模板选择（用于追踪转化率）
@@ -1278,7 +1288,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
     const handleSelectHistoryPrompt = useCallback(
       (info: {
         content: string;
-        modelType?: 'image' | 'video' | 'audio' | 'agent';
+        modelType?: 'image' | 'video' | 'audio' | 'text' | 'agent';
       }) => {
         setPrompt(info.content);
 
@@ -1290,8 +1300,10 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
             setGenerationType('video');
           } else if (info.modelType === 'audio') {
             setGenerationType('audio');
-          } else if (info.modelType === 'agent') {
+          } else if (info.modelType === 'text') {
             setGenerationType('text');
+          } else if (info.modelType === 'agent') {
+            setGenerationType('agent');
           }
         }
 
@@ -1700,11 +1712,13 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
       };
 
       const currentScopeKey =
-        generationType === 'text'
-          ? 'text'
+        generationType === 'agent'
+          ? 'agent'
           : `${generationType}:${getSelectionKey(selectedModel, selectedModelRef)}`;
       const baseParams =
-        selectedParamScopeRef.current === currentScopeKey
+        generationType === 'agent'
+          ? {}
+          : selectedParamScopeRef.current === currentScopeKey
           ? selectedParamsRef.current || {}
           : loadScopedAIInputModelParams(
               generationType,
@@ -1760,7 +1774,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
         selectedCount,
         selectedSkillId,
       });
-      if (generationType !== 'text') {
+      if (generationType !== 'agent') {
         saveScopedAIInputModelParams(
           generationType,
           selectedModel,
@@ -1840,7 +1854,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
             ? 'video'
             : generationType === 'audio'
             ? 'audio'
-            : generationType === 'text'
+            : generationType === 'text' || generationType === 'agent'
             ? 'text'
             : 'image';
         const hasRouteCredentials = hasInvocationRouteCredentials(
@@ -1914,7 +1928,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
 
         // 创建工作流定义（仅用于 WorkZone 显示，实际工作流由 submitWorkflowToSW 创建）
         let workflow: WorkflowDefinition;
-        if (generationType === 'text' && selectedSkillId !== SKILL_AUTO_ID) {
+        if (generationType === 'agent' && selectedSkillId !== SKILL_AUTO_ID) {
           // Skill 模式：根据 skillId 决定使用系统内置 Skill 还是用户自定义 Skill
           const systemSkill = findSystemSkillById(selectedSkillId);
           if (systemSkill) {
@@ -2246,10 +2260,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
           if (usedSW) {
             if (prompt.trim()) {
               const hasSelection = allContent.length > 0;
-              // 将 generationType 'text' 映射为 'agent' 用于历史记录
-              const modelType =
-                generationType === 'text' ? 'agent' : generationType;
-              addPromptHistory(prompt.trim(), hasSelection, modelType);
+              addPromptHistory(prompt.trim(), hasSelection, generationType);
             }
             setPrompt('');
             setSelectedContent([]);
@@ -2282,9 +2293,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
         // 工作流已提交，立即保存历史、清空输入并解锁，步骤执行在后台继续
         if (prompt.trim()) {
           const hasSelection = allContent.length > 0;
-          const modelTypeForHistory =
-            generationType === 'text' ? 'agent' : generationType;
-          addPromptHistory(prompt.trim(), hasSelection, modelTypeForHistory);
+          addPromptHistory(prompt.trim(), hasSelection, generationType);
         }
         setPrompt('');
         setSelectedContent([]);
@@ -2504,47 +2513,56 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
                 taskId: result.taskId,
               });
             } else if (currentStepStatus === 'running') {
+              const normalizedResultData =
+                result.type === 'text' &&
+                result.data &&
+                typeof result.data === 'object' &&
+                'content' in result.data
+                  ? { content: (result.data as { content?: string }).content }
+                  : result.data;
               // 同步模式且未被回调更新：标记为完成
               workflowControl.updateStep(
                 step.id,
                 'completed',
-                result.data,
+                normalizedResultData,
                 undefined,
                 Date.now() - stepStartTime
               );
 
-              // 路径 C（角色扮演模式）：ai_analyze 返回纯文本，onAddSteps 未被调用
-              // 自动添加 insert_to_canvas 步骤，将文本以 markdown 方式插入画布
-              if (step.mcp === 'ai_analyze') {
-                const responseText = (result.data as { response?: string })
-                  ?.response;
-                // 只有当 onAddSteps 没有被调用（没有新增步骤）且有文本内容时才插入
-                if (
-                  responseText &&
-                  responseText.trim() &&
-                  pendingNewSteps.length === pendingStepsBeforeExec
-                ) {
-                  const insertStepId = `${step.id}-insert-text`;
-                  // 将用户输入的 prompt 作为一级标题，拼接在 AI 回复内容前面
-                  const titlePrefix =
-                    prompt && prompt.trim() ? `# ${prompt.trim()}\n\n` : '';
-                  const insertStep = {
-                    id: insertStepId,
-                    mcp: 'insert_to_canvas',
-                    args: {
-                      items: [
-                        {
-                          type: 'text',
-                          content: titlePrefix + responseText,
-                        },
-                      ],
-                    },
-                    description: '将 AI 回复插入画布',
-                    status: 'pending' as const,
-                  };
-                  workflowControl.addSteps([insertStep]);
-                  pendingNewSteps.push(insertStep);
-                }
+              const responseText =
+                step.mcp === 'generate_text'
+                  ? (result.data as { content?: string })?.content
+                  : step.mcp === 'ai_analyze'
+                  ? (result.data as { response?: string })?.response
+                  : undefined;
+
+              const shouldInsertReturnedText =
+                (step.mcp === 'generate_text' || step.mcp === 'ai_analyze') &&
+                responseText &&
+                responseText.trim() &&
+                pendingNewSteps.length === pendingStepsBeforeExec;
+
+              if (shouldInsertReturnedText) {
+                const insertStepId = `${step.id}-insert-text`;
+                const insertStep = {
+                  id: insertStepId,
+                  mcp: 'insert_to_canvas',
+                  args: {
+                    items: [
+                      {
+                        type: 'text',
+                        content: responseText,
+                      },
+                    ],
+                  },
+                  description:
+                    step.mcp === 'generate_text'
+                      ? '将生成文本插入画布'
+                      : '将 AI 回复插入画布',
+                  status: 'pending' as const,
+                };
+                workflowControl.addSteps([insertStep]);
+                pendingNewSteps.push(insertStep);
               }
             }
 
@@ -2931,49 +2949,55 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
                 taskId: result.taskId,
               });
             } else if (currentStepStatus === 'running') {
+              const normalizedResultData =
+                result.type === 'text' &&
+                result.data &&
+                typeof result.data === 'object' &&
+                'content' in result.data
+                  ? { content: (result.data as { content?: string }).content }
+                  : result.data;
               workflowControl.updateStep(
                 step.id,
                 'completed',
-                result.data,
+                normalizedResultData,
                 undefined,
                 Date.now() - stepStartTime
               );
 
-              // 路径 C（角色扮演模式）：ai_analyze 返回纯文本，onAddSteps 未被调用
-              // 自动添加 insert_to_canvas 步骤，将文本以 markdown 方式插入画布
-              if (step.mcp === 'ai_analyze') {
-                const responseText = (result.data as { response?: string })
-                  ?.response;
-                // 只有当 onAddSteps 没有被调用（没有新增步骤）且有文本内容时才插入
-                if (
-                  responseText &&
-                  responseText.trim() &&
-                  pendingNewStepsForRetry.length === pendingStepsBeforeExec
-                ) {
-                  const insertStepId = `${step.id}-insert-text`;
-                  // 将用户输入的 prompt 作为一级标题，拼接在 AI 回复内容前面
-                  const retryPrompt = retryContext?.aiContext?.rawInput || '';
-                  const titlePrefix =
-                    retryPrompt && retryPrompt.trim()
-                      ? `# ${retryPrompt.trim()}\n\n`
-                      : '';
-                  const insertStep = {
-                    id: insertStepId,
-                    mcp: 'insert_to_canvas',
-                    args: {
-                      items: [
-                        {
-                          type: 'text',
-                          content: titlePrefix + responseText,
-                        },
-                      ],
-                    },
-                    description: '将 AI 回复插入画布',
-                    status: 'pending' as const,
-                  };
-                  workflowControl.addSteps([insertStep]);
-                  pendingNewStepsForRetry.push(insertStep);
-                }
+              const responseText =
+                step.mcp === 'generate_text'
+                  ? (result.data as { content?: string })?.content
+                  : step.mcp === 'ai_analyze'
+                  ? (result.data as { response?: string })?.response
+                  : undefined;
+
+              const shouldInsertReturnedText =
+                (step.mcp === 'generate_text' || step.mcp === 'ai_analyze') &&
+                responseText &&
+                responseText.trim() &&
+                pendingNewStepsForRetry.length === pendingStepsBeforeExec;
+
+              if (shouldInsertReturnedText) {
+                const insertStepId = `${step.id}-insert-text`;
+                const insertStep = {
+                  id: insertStepId,
+                  mcp: 'insert_to_canvas',
+                  args: {
+                    items: [
+                      {
+                        type: 'text',
+                        content: responseText,
+                      },
+                    ],
+                  },
+                  description:
+                    step.mcp === 'generate_text'
+                      ? '将生成文本插入画布'
+                      : '将 AI 回复插入画布',
+                  status: 'pending' as const,
+                };
+                workflowControl.addSteps([insertStep]);
+                pendingNewStepsForRetry.push(insertStep);
               }
             }
             return true;
@@ -3248,7 +3272,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
             />
 
             {/* Skill 下拉框：仅在 Agent 模式下显示 */}
-            {generationType === 'text' && (
+            {generationType === 'agent' && (
               <SkillDropdown
                 value={selectedSkillId}
                 onSelect={setSelectedSkillId}
@@ -3277,7 +3301,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
             />
 
             {/* Parameters dropdown selector - Hidden for Agent mode */}
-            {generationType !== 'text' && compatibleParams.length > 0 && (
+            {generationType !== 'agent' && compatibleParams.length > 0 && (
               <ParametersDropdown
                 key={selectedModel} // 强制在模型切换时重新挂载以刷新可配置参数
                 selectedParams={selectedParams}
@@ -3290,7 +3314,9 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
               />
             )}
 
-            {generationType !== 'text' && generationType !== 'audio' && (
+            {generationType !== 'agent' &&
+              generationType !== 'text' &&
+              generationType !== 'audio' && (
               <CountDropdown
                 value={selectedCount}
                 onSelect={handleCountSelect}
@@ -3353,10 +3379,14 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
                 onFocus={handleFocus}
                 onBlur={handleBlur}
                 placeholder={
-                  generationType === 'text'
+                  generationType === 'agent'
                     ? language === 'zh'
                       ? '输入指令，让 Agent 为你工作...'
                       : 'Type instructions for Agent...'
+                    : generationType === 'text'
+                    ? language === 'zh'
+                      ? '输入你想生成的文本内容、文章、摘要或 Markdown'
+                      : 'Describe the text, article, summary, or markdown you want'
                     : generationType === 'audio'
                     ? hasSelectedTextContent
                       ? language === 'zh'

@@ -46,6 +46,7 @@ export interface AIVideoToolPreferences {
 }
 
 interface AIInputPreferencesStored extends AIInputPreferences {
+  modeVersion?: number;
   scopedPreferences?: Partial<Record<GenerationType, Record<string, PersistedParams>>>;
 }
 
@@ -150,7 +151,10 @@ function sanitizeSelectedParams(
     if (excludeParamIds.has(param.id) || param.id === 'size') return;
 
     const persistedValue = persistedParams[param.id];
-    const isValidPersistedValue = param.options?.some(option => option.value === persistedValue);
+    const isValidPersistedValue =
+      param.valueType === 'enum'
+        ? param.options?.some(option => option.value === persistedValue)
+        : typeof persistedValue === 'string' && persistedValue !== '';
 
     if (isValidPersistedValue && persistedValue) {
       nextParams[param.id] = persistedValue;
@@ -168,7 +172,7 @@ function sanitizeSelectedParams(
 function getDefaultModelForGenerationType(type: GenerationType): string {
   if (type === 'video') return getDefaultVideoModel();
   if (type === 'audio') return getDefaultAudioModel();
-  if (type === 'text') return DEFAULT_TEXT_MODEL;
+  if (type === 'text' || type === 'agent') return DEFAULT_TEXT_MODEL;
   return getDefaultImageModel();
 }
 
@@ -177,7 +181,8 @@ function isValidGenerationType(value: unknown): value is GenerationType {
     value === 'image' ||
     value === 'video' ||
     value === 'audio' ||
-    value === 'text'
+    value === 'text' ||
+    value === 'agent'
   );
 }
 
@@ -226,19 +231,32 @@ function sanitizeAspectRatio(modelId: string, aspectRatio: unknown): string {
 export function loadAIInputPreferences(): AIInputPreferences {
   const stored =
     readStoredValue<Partial<AIInputPreferencesStored>>(LS_KEYS.AI_INPUT_PREFERENCES) || {};
-  const generationType = isValidGenerationType(stored.generationType) ? stored.generationType : 'image';
+  const rawGenerationType = stored.generationType;
+  const isLegacyMode = stored.modeVersion !== 2;
+  const generationType =
+    isLegacyMode && rawGenerationType === 'text'
+      ? 'agent'
+      : isValidGenerationType(rawGenerationType)
+      ? rawGenerationType
+      : 'image';
 
   const fallbackModel = getDefaultModelForGenerationType(generationType);
   const persistedModel = typeof stored.selectedModel === 'string' ? stored.selectedModel : '';
   const persistedModelConfig = persistedModel ? getModelConfig(persistedModel) : null;
-  const selectedModel = persistedModelConfig?.type === generationType ? persistedModel : fallbackModel;
+  const selectedModel =
+    persistedModelConfig &&
+    (persistedModelConfig.type === generationType ||
+      ((generationType === 'text' || generationType === 'agent') &&
+        persistedModelConfig.type === 'text'))
+      ? persistedModel
+      : fallbackModel;
 
-  const selectedParams = generationType === 'text'
+  const selectedParams = generationType === 'agent'
     ? {}
     : sanitizeSelectedParams(selectedModel, stored.selectedParams);
 
   const selectedCount =
-    generationType === 'text'
+    generationType === 'agent' || generationType === 'text'
       ? 1
       : typeof stored.selectedCount === 'number' && COUNT_OPTIONS.has(stored.selectedCount)
         ? stored.selectedCount
@@ -262,6 +280,13 @@ export function saveAIInputPreferences(preferences: AIInputPreferences): void {
   writeStoredValue<AIInputPreferencesStored>(LS_KEYS.AI_INPUT_PREFERENCES, {
     ...stored,
     ...preferences,
+    modeVersion: 2,
+    selectedParams: preferences.generationType === 'agent' ? {} : preferences.selectedParams,
+    selectedCount:
+      preferences.generationType === 'agent' ||
+      preferences.generationType === 'text'
+        ? 1
+        : preferences.selectedCount,
   } satisfies AIInputPreferencesStored);
 }
 

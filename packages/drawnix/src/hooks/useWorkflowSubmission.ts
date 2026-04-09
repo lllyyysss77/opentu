@@ -561,11 +561,16 @@ export function useWorkflowSubmission(
       generationType: retryContext.aiContext.model.type as
         | 'image'
         | 'video'
-        | 'audio',
+        | 'audio'
+        | 'text'
+        | 'agent',
       count: workflowMessageData.count || 1,
       size: retryContext.aiContext.params.size,
       duration: retryContext.aiContext.params.duration,
-      scenario: 'direct_generation',
+      scenario:
+        retryContext.aiContext.model.type === 'agent'
+          ? 'agent_flow'
+          : 'direct_generation',
       selection: retryContext.aiContext.selection,
       parseResult: {} as any, // Not needed for retry
       hasExtraContent: false,

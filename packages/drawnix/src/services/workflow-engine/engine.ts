@@ -433,6 +433,51 @@ export class WorkflowEngine {
         break;
       }
 
+      case 'generate_text': {
+        const fallbackExecutor = executorFactory.getFallbackExecutor();
+        const textResult = await fallbackExecutor.generateText(
+          {
+            prompt: step.args.prompt as string,
+            model: step.args.model as string | undefined,
+            modelRef:
+              (step.args.modelRef as ModelRef | null | undefined) || null,
+            referenceImages:
+              step.args.referenceImages as string[] | undefined,
+            params: step.args.params as Record<string, unknown> | undefined,
+          },
+          { signal }
+        );
+        const content = textResult.content;
+
+        step.result = { content };
+
+        const insertStepId = `${step.id}-insert-text`;
+        if (!workflow.steps.find((s) => s.id === insertStepId)) {
+          const insertStep: WorkflowStep = {
+            id: insertStepId,
+            mcp: 'insert_to_canvas',
+            args: {
+              items: [
+                {
+                  type: 'text',
+                  content,
+                },
+              ],
+            },
+            description: '将生成文本插入画布',
+            status: 'pending',
+          };
+          workflow.steps.push(insertStep);
+          await workflowStorageWriter.saveWorkflow(workflow);
+          this.emitEvent({
+            type: 'steps_added',
+            workflowId: workflow.id,
+            steps: [insertStep],
+          });
+        }
+        break;
+      }
+
       case 'ai_analyze': {
         // AI 分析任务（不写入 tasks 表，chat 类型不应该出现在用户任务列表）
         // 注意：ai_analyze 必须使用降级执行器（主线程执行），因为需要立即返回结果和 addSteps

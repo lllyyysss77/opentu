@@ -28,7 +28,8 @@ function isPersistedGenerationType(
     value === 'image' ||
     value === 'video' ||
     value === 'audio' ||
-    value === 'text'
+    value === 'text' ||
+    value === 'agent'
   );
 }
 
@@ -101,7 +102,16 @@ function writeCache(cache: PersistedModelSelectionMap): void {
 export function getPersistedModelSelection(
   type: PersistedGenerationType
 ): PersistedModelSelection | null {
-  return readCache()[type] || null;
+  const cache = readCache();
+  if (cache[type]) {
+    return cache[type] || null;
+  }
+
+  if (type === 'agent') {
+    return cache.text || null;
+  }
+
+  return null;
 }
 
 export function setPersistedModelSelection(

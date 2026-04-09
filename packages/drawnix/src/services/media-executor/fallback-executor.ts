@@ -11,6 +11,8 @@ import type {
   VideoGenerationParams,
   AIAnalyzeParams,
   AIAnalyzeResult,
+  TextGenerationParams,
+  TextGenerationResult,
   ExecutionOptions,
   GeminiConfig,
   VideoAPIConfig,
@@ -35,7 +37,10 @@ import {
   updateLLMApiLogMetadata,
   LLMReferenceImage,
 } from './llm-api-logger';
-import { callApiWithRetry } from '../../utils/gemini-api/apiCalls';
+import {
+  callApiWithRetry,
+  callGoogleGenerateContentRaw,
+} from '../../utils/gemini-api/apiCalls';
 import type { GeminiMessage as UnifiedGeminiMessage } from '../../utils/gemini-api/types';
 import {
   isAuthError,
@@ -836,6 +841,155 @@ export class FallbackMediaExecutor implements IMediaExecutor {
       failLLMApiLog(logId, {
         duration: elapsedTime,
         errorMessage,
+      });
+      throw error;
+    }
+  }
+
+  async generateText(
+    params: TextGenerationParams,
+    options?: ExecutionOptions
+  ): Promise<TextGenerationResult> {
+    const {
+      taskId,
+      prompt,
+      model,
+      modelRef,
+      referenceImages,
+      params: extraParams,
+    } = params;
+    const startTime = Date.now();
+    const config = this.getConfig({
+      textModel: modelRef || model,
+    });
+    const modelName = model || config.textConfig.modelName;
+    const normalizedPrompt = prompt.trim();
+    const messages: UnifiedGeminiMessage[] = [
+      {
+        role: 'user',
+        content: [
+          ...(normalizedPrompt
+            ? [{ type: 'text' as const, text: normalizedPrompt }]
+            : []),
+          ...((referenceImages || []).map((url) => ({
+            type: 'image_url' as const,
+            image_url: { url },
+          })) || []),
+        ],
+      },
+    ];
+
+    const logId = startLLMApiLog({
+      endpoint: '/chat/completions',
+      model: modelName,
+      taskType: 'chat',
+      prompt,
+      hasReferenceImages: !!referenceImages?.length,
+      referenceImageCount: referenceImages?.length,
+    });
+
+    const toNumber = (value: unknown): number | undefined => {
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        return value;
+      }
+      if (typeof value === 'string' && value.trim()) {
+        const parsed = Number(value);
+        if (Number.isFinite(parsed)) {
+          return parsed;
+        }
+      }
+      return undefined;
+    };
+
+    try {
+      if (taskId) {
+        await taskStorageWriter.updateStatus(taskId, 'processing');
+      }
+      options?.onProgress?.({ progress: 30, phase: 'submitting' });
+      if (taskId) {
+        await taskStorageWriter.updateProgress(taskId, 30, 'submitting');
+      }
+
+      const data =
+        config.textConfig.protocol === 'google.generateContent'
+          ? await callGoogleGenerateContentRaw(config.textConfig, messages, {
+              stream: false,
+              signal: options?.signal,
+              generationConfig: {
+                ...(toNumber(extraParams?.temperature) !== undefined
+                  ? { temperature: toNumber(extraParams?.temperature) }
+                  : {}),
+                ...(toNumber(extraParams?.top_p) !== undefined
+                  ? { topP: toNumber(extraParams?.top_p) }
+                  : {}),
+                ...(toNumber(extraParams?.max_tokens) !== undefined
+                  ? { maxOutputTokens: toNumber(extraParams?.max_tokens) }
+                  : {}),
+              },
+            })
+          : await providerTransport.send(buildProviderContext(config.textConfig), {
+              path: '/chat/completions',
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                model: modelName,
+                messages,
+                stream: false,
+                ...(toNumber(extraParams?.temperature) !== undefined
+                  ? { temperature: toNumber(extraParams?.temperature) }
+                  : {}),
+                ...(toNumber(extraParams?.top_p) !== undefined
+                  ? { top_p: toNumber(extraParams?.top_p) }
+                  : {}),
+                ...(toNumber(extraParams?.max_tokens) !== undefined
+                  ? { max_tokens: toNumber(extraParams?.max_tokens) }
+                  : {}),
+              }),
+              signal: options?.signal,
+            }).then(async (response) => {
+              if (!response.ok) {
+                throw new Error(
+                  `HTTP ${response.status}: ${response.statusText || 'Text generation failed'}`
+                );
+              }
+              return response.json();
+            });
+
+      const fullResponse = data.choices?.[0]?.message?.content || '';
+      options?.onProgress?.({ progress: 100 });
+      if (taskId) {
+        await taskStorageWriter.completeTask(taskId, {
+          url: '',
+          format: 'md',
+          size: fullResponse.length,
+          resultKind: 'chat',
+          title: prompt.slice(0, 80),
+          chatResponse: fullResponse,
+        });
+      }
+      completeLLMApiLog(logId, {
+        httpStatus: 200,
+        duration: Date.now() - startTime,
+        resultType: 'text',
+        resultCount: 1,
+        resultText: fullResponse.substring(0, 500),
+      });
+
+      return {
+        content: fullResponse,
+      };
+    } catch (error: any) {
+      if (taskId) {
+        await taskStorageWriter.failTask(taskId, {
+          code: 'TEXT_GENERATION_FAILED',
+          message: error?.message || 'Text generation failed',
+        });
+      }
+      failLLMApiLog(logId, {
+        duration: Date.now() - startTime,
+        errorMessage: error?.message || 'Text generation failed',
       });
       throw error;
     }

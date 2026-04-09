@@ -590,18 +590,18 @@ export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): v
         return;
       }
 
-      // 只处理图片、视频和音频任务
+      // 只处理图片、视频、音频和文本任务
       if (
         task.type !== TaskType.IMAGE &&
         task.type !== TaskType.VIDEO &&
-        task.type !== TaskType.AUDIO
+        task.type !== TaskType.AUDIO &&
+        task.type !== TaskType.CHAT
       ) {
-        // console.log(`[AutoInsert] Task ${task.id} skipped: type is ${task.type}, not IMAGE or VIDEO`);
         return;
       }
 
       // 检查是否有结果 URL
-      if (!task.result?.url && !isLyricsTask(task)) {
+      if (!task.result?.url && !isLyricsTask(task) && !task.result?.chatResponse) {
         return;
       }
 
@@ -615,6 +615,27 @@ export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): v
       taskQueueService.markAsInserted(task.id);
 
       const params = task.params as TaskParams;
+
+      // 检查是否为灵感图任务（需要在宫格图之前检查）
+      if (task.type === TaskType.CHAT) {
+        executeCanvasInsertion({
+          items: [
+            {
+              type: 'text',
+              content: task.result?.chatResponse || '',
+            },
+          ],
+        })
+          .then(() => {
+            workflowCompletionService.completePostProcessing(task.id, {
+              insertedCount: 1,
+            });
+          })
+          .catch((error) => {
+            workflowCompletionService.failPostProcessing(task.id, String(error));
+          });
+        return;
+      }
 
       // 检查是否为灵感图任务（需要在宫格图之前检查）
       if (checkInspirationBoardTask(params)) {

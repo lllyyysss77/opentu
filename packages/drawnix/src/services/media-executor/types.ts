@@ -98,6 +98,15 @@ export interface AIAnalyzeParams {
   systemPrompt?: string;
 }
 
+export interface TextGenerationParams {
+  taskId?: string;
+  prompt: string;
+  model?: string;
+  modelRef?: ModelRef | null;
+  referenceImages?: string[];
+  params?: Record<string, unknown>;
+}
+
 // ============================================================================
 // AI 分析返回结果
 // ============================================================================
@@ -113,6 +122,10 @@ export interface AIAnalyzeResult {
     description: string;
     status: 'pending';
   }>;
+}
+
+export interface TextGenerationResult {
+  content: string;
 }
 
 // ============================================================================
@@ -207,6 +220,11 @@ export interface IMediaExecutor {
     params: AIAnalyzeParams,
     options?: ExecutionOptions
   ): Promise<AIAnalyzeResult>;
+
+  generateText(
+    params: TextGenerationParams,
+    options?: ExecutionOptions
+  ): Promise<TextGenerationResult>;
 }
 
 // ============================================================================

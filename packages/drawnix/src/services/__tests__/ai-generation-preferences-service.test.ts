@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 describe('ai-generation-preferences-service', () => {
@@ -6,25 +7,59 @@ describe('ai-generation-preferences-service', () => {
     localStorage.clear();
   });
 
-  it('保存并恢复 AI 输入栏下拉偏好', async () => {
+  it('兼容旧 text 偏好并恢复为 agent 模式', async () => {
+    localStorage.setItem(
+      'aitu_ai_input_preferences',
+      JSON.stringify({
+        value: {
+          generationType: 'text',
+          selectedModel: 'deepseek-v3.2',
+          selectedParams: {},
+          selectedCount: 1,
+          selectedSkillId: 'skill-123',
+        },
+        updatedAt: Date.now(),
+      })
+    );
+
+    const { loadAIInputPreferences } = await import(
+      '../ai-generation-preferences-service'
+    );
+
+    expect(loadAIInputPreferences()).toMatchObject({
+      generationType: 'agent',
+      selectedModel: 'deepseek-v3.2',
+      selectedCount: 1,
+      selectedSkillId: 'skill-123',
+    });
+  });
+
+  it('保存并恢复文本生成模式偏好', async () => {
     const {
       loadAIInputPreferences,
       saveAIInputPreferences,
     } = await import('../ai-generation-preferences-service');
 
     saveAIInputPreferences({
-      generationType: 'text',
+      generationType: 'agent',
       selectedModel: 'deepseek-v3.2',
       selectedParams: {},
       selectedCount: 1,
       selectedSkillId: 'skill-123',
     });
 
+    saveAIInputPreferences({
+      generationType: 'text',
+      selectedModel: 'deepseek-v3.2',
+      selectedParams: {},
+      selectedCount: 1,
+      selectedSkillId: 'auto',
+    });
+
     expect(loadAIInputPreferences()).toMatchObject({
       generationType: 'text',
       selectedModel: 'deepseek-v3.2',
       selectedCount: 1,
-      selectedSkillId: 'skill-123',
     });
   });
 

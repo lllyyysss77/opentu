@@ -197,6 +197,7 @@ export const TaskItem: React.FC<TaskItemProps> = React.memo(({
   // Check if this is a character task
   const isCharacterTask = task.type === TaskType.CHARACTER;
   const isAudioTask = task.type === TaskType.AUDIO;
+  const isChatTask = task.type === TaskType.CHAT;
   const isLyricsTask = isAudioTask && isLyricsResult(task.result);
   const isPreviewableTask =
     task.type === TaskType.IMAGE || task.type === TaskType.VIDEO || (task.type === TaskType.AUDIO && !isLyricsTask);
@@ -211,6 +212,8 @@ export const TaskItem: React.FC<TaskItemProps> = React.memo(({
     ? isCompleted && task.result?.characterUsername
       ? `@${task.result.characterUsername}`
       : '角色创建中...'
+    : isChatTask
+    ? task.result?.chatResponse || task.result?.title || task.params.prompt
     : isLyricsTask
     ? lyricsTitle || lyricsPreview || task.params.prompt
     : task.result?.title || task.params.title || task.params.prompt;
@@ -364,6 +367,7 @@ export const TaskItem: React.FC<TaskItemProps> = React.memo(({
       {(isCompleted || isFailed || task.status === TaskStatus.PROCESSING) &&
         (previewMediaUrl ||
           isCharacterTask ||
+          isChatTask ||
           task.type === TaskType.VIDEO ||
           task.type === TaskType.IMAGE ||
           task.type === TaskType.AUDIO) && (
@@ -376,15 +380,21 @@ export const TaskItem: React.FC<TaskItemProps> = React.memo(({
                 <span>生成失败</span>
               </div>
             ) : task.status === TaskStatus.PROCESSING ? (
-              /* 处理中状态：只显示进度覆盖层，不显示其他内容 */
-              <TaskProgressOverlay
-                key={task.startedAt} // 重试时 startedAt 变化，强制重新挂载以重置进度
-                taskType={task.type}
-                taskStatus={task.status}
-                realProgress={task.progress}
-                startedAt={task.startedAt}
-                mediaUrl={previewMediaUrl}
-              />
+              isChatTask ? (
+                <div className="task-item__preview-placeholder">
+                  <span>生成文本中</span>
+                </div>
+              ) : (
+                /* 处理中状态：只显示进度覆盖层，不显示其他内容 */
+                <TaskProgressOverlay
+                  key={task.startedAt} // 重试时 startedAt 变化，强制重新挂载以重置进度
+                  taskType={task.type}
+                  taskStatus={task.status}
+                  realProgress={task.progress}
+                  startedAt={task.startedAt}
+                  mediaUrl={previewMediaUrl}
+                />
+              )
             ) : (
               <>
                 {/* 已完成状态：显示实际内容 */}
@@ -428,6 +438,10 @@ export const TaskItem: React.FC<TaskItemProps> = React.memo(({
                   <div className="task-item__preview-placeholder">
                     <CopyIcon size="24px" />
                     <span>歌词</span>
+                  </div>
+                ) : isChatTask ? (
+                  <div className="task-item__preview-placeholder">
+                    <span>文本</span>
                   </div>
                 ) : isCharacterTask && task.result?.characterProfileUrl ? (
                   <div className="task-item__character-preview">
@@ -610,7 +624,7 @@ export const TaskItem: React.FC<TaskItemProps> = React.memo(({
                   </Tooltip>
                 )}
 
-                {!isCharacterTask && !isAudioTask && (
+                {!isCharacterTask && !isAudioTask && !isChatTask && (
                   <Tooltip content="编辑" theme="light">
                     <Button
                       size="small"
@@ -645,7 +659,8 @@ export const TaskItem: React.FC<TaskItemProps> = React.memo(({
 
               {/* Primary Action Button (Insert/Retry) - Moved to far right */}
               {isCompleted &&
-                ((task.result?.url && !isCharacterTask) || isLyricsTask) && (
+                (((task.result?.url || task.result?.chatResponse) && !isCharacterTask) ||
+                  isLyricsTask) && (
                 <Button
                   size="small"
                   theme="primary"

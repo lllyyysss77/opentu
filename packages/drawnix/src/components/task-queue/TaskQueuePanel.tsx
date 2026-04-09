@@ -88,7 +88,7 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
   const [clearType, setClearType] = useState<'completed' | 'failed'>('completed');
   const [searchText, setSearchText] = useState<string>('');
   const [typeFilter, setTypeFilter] = useState<
-    'all' | 'image' | 'video' | 'audio' | 'character'
+    'all' | 'image' | 'video' | 'audio' | 'text' | 'character'
   >('all');
   const [previewTaskId, setPreviewTaskId] = useState<string | null>(null);
   const [previewVisible, setPreviewVisible] = useState(false);
@@ -157,6 +157,8 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
           ? TaskType.IMAGE
           : typeFilter === 'audio'
           ? TaskType.AUDIO
+          : typeFilter === 'text'
+          ? TaskType.CHAT
           : TaskType.VIDEO)
       );
     }
@@ -169,6 +171,7 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
         String(task.result?.title || '').toLowerCase().includes(searchLower) ||
         String(task.result?.lyricsTitle || '').toLowerCase().includes(searchLower) ||
         String(task.result?.lyricsText || '').toLowerCase().includes(searchLower) ||
+        String(task.result?.chatResponse || '').toLowerCase().includes(searchLower) ||
         (task.result?.lyricsTags || []).some((tag) =>
           String(tag).toLowerCase().includes(searchLower)
         )
@@ -308,6 +311,7 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
       image: tasks.filter(t => t.type === TaskType.IMAGE).length,
       video: tasks.filter(t => t.type === TaskType.VIDEO).length,
       audio: tasks.filter(t => t.type === TaskType.AUDIO).length,
+      text: tasks.filter(t => t.type === TaskType.CHAT).length,
       character: characters.length,
     };
   }, [tasks, characters]);
@@ -476,6 +480,21 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
       return;
     }
     if (!task.result?.url && !task.result?.urls?.length && !isLyricsTask(task)) {
+      const chatResponse =
+        task.type === TaskType.CHAT ? task.result?.chatResponse : undefined;
+      if (chatResponse?.trim()) {
+        await executeCanvasInsertion({
+          items: [
+            {
+              type: 'text',
+              content: chatResponse,
+            },
+          ],
+        });
+        MessagePlugin.success('文本已插入到白板');
+        onTaskAction?.('insert', taskId);
+        return;
+      }
       console.warn('Cannot insert: task result is empty');
       MessagePlugin.warning('无法插入：任务结果为空');
       return;
@@ -564,6 +583,17 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
         MessagePlugin.success(
           urls.length > 1 ? '多条音频卡片已插入到白板' : '音频卡片已插入到白板'
         );
+      } else if (task.type === TaskType.CHAT) {
+        const chatResponse = taskResult.chatResponse || '';
+        await executeCanvasInsertion({
+          items: [
+            {
+              type: 'text',
+              content: chatResponse,
+            },
+          ],
+        });
+        MessagePlugin.success('文本已插入到白板');
       }
       onTaskAction?.('insert', taskId);
     } catch (error) {
@@ -864,6 +894,17 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
               className={typeFilter === 'audio' ? 'task-queue-panel__filter-btn--active' : ''}
             >
               <Music4 size={16} strokeWidth={1.9} />
+            </Button>
+          </Tooltip>
+          <Tooltip content={`文本 (${typeCounts.text})`} theme="light">
+            <Button
+              size="small"
+              variant="text"
+              shape="square"
+              onClick={() => setTypeFilter('text')}
+              className={typeFilter === 'text' ? 'task-queue-panel__filter-btn--active' : ''}
+            >
+              文
             </Button>
           </Tooltip>
           <Tooltip content={`角色 (${typeCounts.character})`} theme="light">

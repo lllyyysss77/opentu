@@ -72,6 +72,8 @@ export interface SWTask {
       modelName?: string;
       majorModelVersion?: string;
     }>;
+    chatResponse?: string;
+    toolCalls?: any[];
   };
   error?: {
     code: string;

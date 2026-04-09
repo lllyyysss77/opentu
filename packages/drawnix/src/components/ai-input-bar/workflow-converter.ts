@@ -15,7 +15,10 @@ import type {
   SelectionInfo,
 } from '../../utils/ai-input-parser';
 import type { ModelRef } from '../../utils/settings-manager';
-import { cleanLLMResponse } from '../../services/agent/tool-parser';
+import {
+  cleanLLMResponse,
+  parseWorkflowJson,
+} from '../../services/agent/tool-parser';
 import {
   generateSystemPrompt,
   generateReferenceImagesPrompt,
@@ -151,7 +154,7 @@ function generateWorkflowId(): string {
 /**
  * 场景1-3: 将直接生成场景转换为工作流定义
  *
- * 这些场景通过正则解析用户输入，直接生成图片/视频
+ * 这些场景通过正则解析用户输入，直接生成图片/视频/音频/文本
  * 步骤中包含完整的工具调用信息（mcp、args、options），调用方可直接执行
  */
 export function convertDirectGenerationToWorkflow(
@@ -259,7 +262,7 @@ export function convertDirectGenerationToWorkflow(
         description: count > 1 ? `生成视频 (${i + 1}/${count})` : '生成视频',
         status: 'pending',
       });
-    } else {
+    } else if (generationType === 'audio') {
       const sunoAction =
         typeof extraParams?.sunoAction === 'string'
           ? extraParams.sunoAction
@@ -316,6 +319,28 @@ export function convertDirectGenerationToWorkflow(
             : '生成音频',
         status: 'pending',
       });
+    } else {
+      const textArgs: Record<string, unknown> = {
+        prompt,
+        model: modelId,
+        modelRef,
+        rawInput,
+      };
+      if (referenceImages.length > 0) {
+        textArgs.referenceImages = referenceImages;
+      }
+      if (extraParams) {
+        textArgs.params = extraParams;
+      }
+
+      steps.push({
+        id: stepId,
+        mcp: 'generate_text',
+        args: textArgs,
+        options,
+        description: '生成文本',
+        status: 'pending',
+      });
     }
   }
 
@@ -330,6 +355,8 @@ export function convertDirectGenerationToWorkflow(
         ? '图片生成'
         : generationType === 'video'
         ? '视频生成'
+        : generationType === 'text'
+        ? '文本生成'
         : isLyricsWorkflow
         ? '歌词生成'
         : '音频生成',
@@ -340,6 +367,8 @@ export function convertDirectGenerationToWorkflow(
         ? '图片'
         : generationType === 'video'
         ? '视频'
+        : generationType === 'text'
+        ? '文本'
         : isLyricsWorkflow
         ? '歌词'
         : '音频'
@@ -394,13 +423,15 @@ export function convertAgentFlowToWorkflow(
   const workflowId = generateWorkflowId();
 
   // 构建 Agent 执行上下文（与 AgentExecutionContext 类型一致）
-  // Agent flow 场景下 generationType 不会是 'text'
   const agentContext = {
     userInstruction,
     rawInput,
     model: {
       id: modelId,
-      type: generationType as 'image' | 'video' | 'audio',
+      type:
+        generationType === 'agent'
+          ? 'text'
+          : (generationType as 'image' | 'video' | 'audio' | 'text'),
       isExplicit: isModelExplicit,
     },
     params: {
@@ -662,7 +693,10 @@ export async function convertSkillFlowToWorkflow(
     rawInput,
     model: {
       id: modelId,
-      type: generationType as 'image' | 'video' | 'audio',
+      type:
+        generationType === 'agent'
+          ? 'text'
+          : (generationType as 'image' | 'video' | 'audio' | 'text'),
       isExplicit: isModelExplicit,
     },
     params: { count, size, duration },
@@ -909,20 +943,19 @@ export function parseAIResponse(
   existingStepCount: number = 0
 ): AIResponseParseResult {
   try {
-    // 使用公共清理函数
-    const cleaned = cleanLLMResponse(response);
-
-    // 尝试提取 JSON
-    const jsonMatch =
-      cleaned.match(/\{\s*"content"\s*:[\s\S]*?"next"\s*:[\s\S]*?\}/) ||
-      cleaned.match(/\{[\s\S]*"content"[\s\S]*"next"[\s\S]*\}/);
-
-    if (!jsonMatch) {
-      return { content: '', steps: [] };
+    let parsed = parseWorkflowJson(response);
+    if (!parsed) {
+      const cleaned = cleanLLMResponse(response);
+      const firstBrace = cleaned.indexOf('{');
+      const lastBrace = cleaned.lastIndexOf('}');
+      if (firstBrace >= 0 && lastBrace > firstBrace) {
+        parsed = parseWorkflowJson(cleaned.slice(firstBrace, lastBrace + 1));
+      }
     }
 
-    const jsonStr = jsonMatch[0];
-    const parsed = JSON.parse(jsonStr);
+    if (!parsed) {
+      return { content: '', steps: [] };
+    }
 
     // 提取 content 字段
     const content = typeof parsed.content === 'string' ? parsed.content : '';
@@ -976,6 +1009,10 @@ function getStepDescription(
       return `生成图片: ${(args.prompt as string)?.substring(0, 30) || ''}...`;
     case 'generate_video':
       return `生成视频: ${(args.prompt as string)?.substring(0, 30) || ''}...`;
+    case 'generate_audio':
+      return `生成音频: ${(args.prompt as string)?.substring(0, 30) || ''}...`;
+    case 'generate_text':
+      return `生成文本: ${(args.prompt as string)?.substring(0, 30) || ''}...`;
     case 'ai_analyze':
       return 'AI 分析用户意图';
     case 'format_markdown':

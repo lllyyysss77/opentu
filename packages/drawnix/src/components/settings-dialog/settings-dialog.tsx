@@ -4,6 +4,7 @@ import './settings-dialog.scss';
 import {
   useDeferredValue,
   useEffect,
+  useRef,
   useState,
   type CSSProperties,
   type ReactNode,
@@ -75,6 +76,7 @@ type ProviderNavigationIntent =
   | { action: 'create' };
 
 const SETTINGS_PROVIDER_NAV_EVENT = 'aitu:settings:provider-nav';
+const SETTINGS_DIALOG_COMPACT_BREAKPOINT = 980;
 
 const VIEW_SECTIONS: Array<{ value: SettingsView; label: string }> = [
   { value: 'providers', label: '供应商' },
@@ -446,6 +448,8 @@ export const SettingsDialog = ({
     viewportWidth,
     viewportHeight,
   } = useDeviceType();
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const [dialogWidth, setDialogWidth] = useState(0);
 
   const [activeView, setActiveView] = useState<SettingsView>('providers');
   const [selectedProfileId, setSelectedProfileId] = useState(
@@ -505,7 +509,10 @@ export const SettingsDialog = ({
   );
 
   const enabledProfiles = profilesDraft.filter((profile) => profile.enabled);
-  const isCompactLayout = isMobileDevice || viewportWidth <= 980;
+  const isCompactLayout =
+    isMobileDevice ||
+    viewportWidth <= SETTINGS_DIALOG_COMPACT_BREAKPOINT ||
+    (dialogWidth > 0 && dialogWidth <= SETTINGS_DIALOG_COMPACT_BREAKPOINT);
   const canManageModels = !!selectedProfile && !!selectedProfile.apiKey.trim();
   const currentDraftSignature = createSettingsDraftSignature({
     profiles: profilesDraft,
@@ -519,6 +526,29 @@ export const SettingsDialog = ({
   });
   const hasPendingChanges =
     appState.openSettings && currentDraftSignature !== initialDraftSignature;
+
+  useEffect(() => {
+    const target = dialogRef.current;
+
+    if (!target || typeof ResizeObserver === 'undefined') {
+      return;
+    }
+
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width;
+      if (!width) {
+        return;
+      }
+
+      setDialogWidth((prev) => (Math.abs(prev - width) < 1 ? prev : width));
+    });
+
+    observer.observe(target);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [appState.openSettings]);
 
   const handleViewChange = (nextView: SettingsView) => {
     setActiveView(nextView);
@@ -2274,9 +2304,14 @@ export const SettingsDialog = ({
         className="winbox-ai-generation winbox-tool-window winbox-settings-window"
         container={container}
         background="#ffffff"
-        autoMaximize={isCompactLayout}
       >
-        <div className="settings-dialog" data-testid="settings-dialog">
+        <div
+          ref={dialogRef}
+          className={`settings-dialog ${
+            isCompactLayout ? 'settings-dialog--compact' : ''
+          }`}
+          data-testid="settings-dialog"
+        >
           <div className="settings-dialog__layout">
             {renderSettingsNav()}
             <div className="settings-dialog__main">{renderActiveView()}</div>

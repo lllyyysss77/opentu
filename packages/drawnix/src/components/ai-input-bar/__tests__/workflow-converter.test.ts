@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
 import {
   convertDirectGenerationToWorkflow,
@@ -82,7 +83,7 @@ describe('workflow-converter', () => {
 
         expect(workflow.steps).toHaveLength(3);
         workflow.steps.forEach((step, index) => {
-          expect(step.id).toBe(`step-${index + 1}`);
+          expect(step.id).toMatch(new RegExp(`-step-${index + 1}$`));
           expect(step.mcp).toBe('generate_image');
           expect(step.description).toContain(`${index + 1}`);
         });
@@ -108,7 +109,7 @@ describe('workflow-converter', () => {
 
         const workflow = convertDirectGenerationToWorkflow(params);
 
-        expect(workflow.steps[0].args.size).toBe('1x1');
+        expect(workflow.steps[0].args.size).toBeUndefined();
       });
 
       it('应该正确处理自定义尺寸', () => {
@@ -155,7 +156,7 @@ describe('workflow-converter', () => {
 
         const workflow = convertDirectGenerationToWorkflow(params);
 
-        expect(workflow.steps[0].args.size).toBe('16x9');
+        expect(workflow.steps[0].args.size).toBeUndefined();
       });
 
       it('应该正确处理视频时长', () => {
@@ -178,6 +179,28 @@ describe('workflow-converter', () => {
         const workflow = convertDirectGenerationToWorkflow(params);
 
         expect(workflow.steps[0].args.seconds).toBe('5');
+      });
+    });
+
+    describe('文本生成场景', () => {
+      it('应该正确转换文本生成请求', () => {
+        const params = createMockParams({
+          generationType: 'text',
+          modelId: 'deepseek-v3.2',
+          prompt: '写一份会议纪要',
+          size: undefined,
+        });
+
+        const workflow = convertDirectGenerationToWorkflow(params);
+
+        expect(workflow.generationType).toBe('text');
+        expect(workflow.name).toBe('文本生成');
+        expect(workflow.steps).toHaveLength(1);
+        expect(workflow.steps[0].mcp).toBe('generate_text');
+        expect(workflow.steps[0].args).toMatchObject({
+          prompt: '写一份会议纪要',
+          model: 'deepseek-v3.2',
+        });
       });
     });
 
@@ -242,7 +265,7 @@ describe('workflow-converter', () => {
 
       expect(workflow.scenarioType).toBe('agent_flow');
       expect(workflow.steps).toHaveLength(1);
-      expect(workflow.steps[0].id).toBe('step-analyze');
+      expect(workflow.steps[0].id).toMatch(/-step-analyze$/);
       expect(workflow.steps[0].mcp).toBe('ai_analyze');
       expect(workflow.steps[0].status).toBe('pending');
     });
@@ -290,6 +313,7 @@ describe('workflow-converter', () => {
   describe('parseAIResponseToSteps', () => {
     it('应该解析 JSON 格式的 AI 响应', () => {
       const response = JSON.stringify({
+        content: 'analysis',
         next: [
           { mcp: 'generate_image', args: { prompt: 'test' }, description: '生成图片' },
           { mcp: 'add_text', args: { text: 'hello' }, description: '添加文字' },
@@ -310,6 +334,7 @@ describe('workflow-converter', () => {
 
 \`\`\`json
 {
+  "content": "analysis",
   "next": [
     { "mcp": "generate_video", "args": { "prompt": "sunset" }, "description": "生成视频" }
   ]
@@ -327,6 +352,7 @@ describe('workflow-converter', () => {
 
     it('应该为步骤生成正确的 ID', () => {
       const response = JSON.stringify({
+        content: 'analysis',
         next: [
           { mcp: 'step1', args: {}, description: 'Step 1' },
           { mcp: 'step2', args: {}, description: 'Step 2' },
@@ -341,6 +367,7 @@ describe('workflow-converter', () => {
 
     it('应该使用 existingStepCount 计算步骤 ID', () => {
       const response = JSON.stringify({
+        content: 'analysis',
         next: [{ mcp: 'new_step', args: {}, description: 'New Step' }],
       });
 
@@ -351,6 +378,7 @@ describe('workflow-converter', () => {
 
     it('应该为解析的步骤设置 pending 状态', () => {
       const response = JSON.stringify({
+        content: 'analysis',
         next: [{ mcp: 'test', args: {}, description: 'Test' }],
       });
 
