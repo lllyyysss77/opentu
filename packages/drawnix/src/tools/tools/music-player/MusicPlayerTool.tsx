@@ -451,7 +451,18 @@ export const MusicPlayerTool: React.FC = () => {
               <button
                 type="button"
                 className="music-player-tool__action-btn music-player-tool__action-btn--ghost"
-                onClick={() => toolWindowService.minimizeTool(MUSIC_PLAYER_TOOL_ID)}
+                onPointerDown={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                }}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  // 延后一帧最小化，避免底层 popup-toolbar 接到同一次点击造成误暂停。
+                  requestAnimationFrame(() => {
+                    toolWindowService.minimizeTool(MUSIC_PLAYER_TOOL_ID);
+                  });
+                }}
                 aria-label="切回播放控件"
                 data-tooltip="切回播放控件"
               >
