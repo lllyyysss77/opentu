@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Input, Dialog } from 'tdesign-react';
-import { Pause, Play, Search, Minimize2, Music4, SkipBack, SkipForward, Heart, Plus, ListMusic } from 'lucide-react';
+import { Pause, Play, Search, Minimize2, Music4, SkipBack, SkipForward } from 'lucide-react';
 import { useAssets } from '../../../contexts/AssetContext';
 import { useAudioPlaylists } from '../../../contexts/AudioPlaylistContext';
 import { AssetType } from '../../../types/asset.types';
 import { AUDIO_PLAYLIST_ALL_ID } from '../../../types/audio-playlist.types';
 import { AudioCover } from '../../../components/shared/AudioCover';
+import { AudioPlaylistTabs } from '../../../components/shared/AudioPlaylistTabs';
 import { AudioTrackList } from '../../../components/shared/AudioTrackList';
 import { AudioTrackContextMenu } from '../../../components/shared/AudioTrackContextMenu';
 import { useCanvasAudioPlayback } from '../../../hooks/useCanvasAudioPlayback';
@@ -32,6 +33,8 @@ export const MusicPlayerTool: React.FC = () => {
     playlistItems,
     favoriteAssetIds,
     createPlaylist,
+    renamePlaylist,
+    deletePlaylist,
     addAssetToPlaylist,
     removeAssetFromPlaylist,
     toggleFavorite,
@@ -48,13 +51,17 @@ export const MusicPlayerTool: React.FC = () => {
     assetId: string;
   } | null>(null);
   const [pendingAssetId, setPendingAssetId] = useState<string | null>(null);
+  const [playlistDialogMode, setPlaylistDialogMode] = useState<'create' | 'rename'>('create');
+  const [editingPlaylistId, setEditingPlaylistId] = useState<string | null>(null);
 
   useEffect(() => {
     void loadAssets();
   }, [loadAssets]);
 
   useEffect(() => {
-    const closeMenu = () => setContextMenu(null);
+    const closeMenu = () => {
+      setContextMenu(null);
+    };
     document.addEventListener('click', closeMenu);
     document.addEventListener('scroll', closeMenu, true);
     return () => {
@@ -194,8 +201,20 @@ export const MusicPlayerTool: React.FC = () => {
   const openCreatePlaylistDialog = (assetId?: string) => {
     setPendingAssetId(assetId || null);
     setPlaylistName('');
+    setPlaylistDialogMode('create');
+    setEditingPlaylistId(null);
     setCreateDialogVisible(true);
     setContextMenu(null);
+    setPlaylistContextMenu(null);
+  };
+
+  const openRenamePlaylistDialog = (playlistId: string, name: string) => {
+    setPendingAssetId(null);
+    setPlaylistDialogMode('rename');
+    setEditingPlaylistId(playlistId);
+    setPlaylistName(name);
+    setCreateDialogVisible(true);
+    setPlaylistContextMenu(null);
   };
 
   return (
@@ -288,35 +307,17 @@ export const MusicPlayerTool: React.FC = () => {
             />
           </div>
 
-          <div className="music-player-tool__playlists">
-            <button
-              type="button"
-              className={`music-player-tool__playlist-chip ${selectedPlaylistId === AUDIO_PLAYLIST_ALL_ID ? 'music-player-tool__playlist-chip--active' : ''}`}
-              onClick={() => setSelectedPlaylistId(AUDIO_PLAYLIST_ALL_ID)}
-            >
-              <ListMusic size={14} />
-              <span>全部音频</span>
-            </button>
-            {playlists.map((playlist) => (
-              <button
-                key={playlist.id}
-                type="button"
-                className={`music-player-tool__playlist-chip ${selectedPlaylistId === playlist.id ? 'music-player-tool__playlist-chip--active' : ''}`}
-                onClick={() => setSelectedPlaylistId(playlist.id)}
-              >
-                {playlist.id === 'favorites' ? <Heart size={14} /> : <ListMusic size={14} />}
-                <span>{playlist.name}</span>
-                <span className="music-player-tool__playlist-count">{(playlistItems[playlist.id] || []).length}</span>
-              </button>
-            ))}
-            <button
-              type="button"
-              className="music-player-tool__playlist-create"
-              onClick={() => setCreateDialogVisible(true)}
-            >
-              <Plus size={14} />
-            </button>
-          </div>
+          <AudioPlaylistTabs
+            className="music-player-tool__playlists"
+            selectedPlaylistId={selectedPlaylistId}
+            allCount={assets.filter((asset) => asset.type === AssetType.AUDIO).length}
+            playlists={playlists}
+            playlistItems={playlistItems}
+            onSelect={setSelectedPlaylistId}
+            onCreate={() => openCreatePlaylistDialog()}
+            onRename={(playlist) => openRenamePlaylistDialog(playlist.id, playlist.name)}
+            onDelete={(playlist) => void deletePlaylist(playlist.id)}
+          />
         </>
       ) : null}
 
@@ -411,21 +412,35 @@ export const MusicPlayerTool: React.FC = () => {
 
       <Dialog
         visible={createDialogVisible}
-        header="新建播放列表"
-        onClose={() => setCreateDialogVisible(false)}
+        header={playlistDialogMode === 'rename' ? '重命名播放列表' : '新建播放列表'}
+        onClose={() => {
+          setCreateDialogVisible(false);
+          setPendingAssetId(null);
+          setEditingPlaylistId(null);
+          setPlaylistDialogMode('create');
+        }}
         onConfirm={async () => {
-          const playlist = await createPlaylist(playlistName);
-          if (pendingAssetId) {
-            await addAssetToPlaylist(pendingAssetId, playlist.id);
+          if (playlistDialogMode === 'rename' && editingPlaylistId) {
+            await renamePlaylist(editingPlaylistId, playlistName);
+          } else {
+            const playlist = await createPlaylist(playlistName);
+            if (pendingAssetId) {
+              await addAssetToPlaylist(pendingAssetId, playlist.id);
+            }
+            setSelectedPlaylistId(playlist.id);
           }
-          setSelectedPlaylistId(playlist.id);
           setCreateDialogVisible(false);
           setPlaylistName('');
           setPendingAssetId(null);
+          setEditingPlaylistId(null);
+          setPlaylistDialogMode('create');
         }}
         onCancel={() => {
           setCreateDialogVisible(false);
           setPendingAssetId(null);
+          setEditingPlaylistId(null);
+          setPlaylistDialogMode('create');
+          setPlaylistName('');
         }}
         confirmBtn="确定"
         cancelBtn="取消"
@@ -434,6 +449,7 @@ export const MusicPlayerTool: React.FC = () => {
           value={playlistName}
           onChange={(value) => setPlaylistName(String(value))}
           placeholder="请输入播放列表名称"
+          autofocus
         />
       </Dialog>
 

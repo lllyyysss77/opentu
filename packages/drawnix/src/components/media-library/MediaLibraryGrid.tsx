@@ -32,7 +32,6 @@ import {
   CloudUpload,
   Heart,
   ListMusic,
-  Pencil,
 } from 'lucide-react';
 import JSZip from 'jszip';
 import { 
@@ -48,6 +47,7 @@ import { MediaLibraryEmpty } from './MediaLibraryEmpty';
 import { ViewModeToggle } from './ViewModeToggle';
 import { UnifiedMediaViewer, type MediaItem as UnifiedMediaItem } from '../shared/media-preview';
 import { ImageEditor } from '../image-editor';
+import { AudioPlaylistTabs } from '../shared/AudioPlaylistTabs';
 import type { MediaLibraryGridProps, ViewMode, SortOption, Asset } from '../../types/asset.types';
 import { AssetType, AssetSource } from '../../types/asset.types';
 import { useDrawnix } from '../../hooks/use-drawnix';
@@ -62,7 +62,6 @@ import { openMusicPlayerToolAndPlay } from '../../services/tool-launch-service';
 import { TaskStatus, TaskType } from '../../types/task.types';
 import {
   AUDIO_PLAYLIST_ALL_ID,
-  AUDIO_PLAYLIST_FAVORITES_ID,
   type AudioPlaylist,
 } from '../../types/audio-playlist.types';
 import './MediaLibraryGrid.scss';
@@ -199,11 +198,6 @@ export function MediaLibraryGrid({
     y: number;
     asset: Asset;
   } | null>(null);
-  const [playlistContextMenu, setPlaylistContextMenu] = useState<{
-    x: number;
-    y: number;
-    playlist: AudioPlaylist;
-  } | null>(null);
   const [playlistDialog, setPlaylistDialog] = useState<{
     mode: 'create' | 'rename' | 'create-and-add';
     playlistId?: string;
@@ -237,7 +231,6 @@ export function MediaLibraryGrid({
   useEffect(() => {
     const closeMenus = () => {
       setAssetContextMenu(null);
-      setPlaylistContextMenu(null);
     };
     document.addEventListener('click', closeMenus);
     document.addEventListener('scroll', closeMenus, true);
@@ -325,7 +318,6 @@ export function MediaLibraryGrid({
     };
   }, [assets, filters, selectedPlaylistId, getPlaylistAssetIds]);
 
-  const audioPlaylists = useMemo(() => playlists, [playlists]);
   const currentPlaylistAssetIds = useMemo(
     () => new Set(selectedPlaylistId ? getPlaylistAssetIds(selectedPlaylistId) : []),
     [getPlaylistAssetIds, selectedPlaylistId]
@@ -782,17 +774,6 @@ export function MediaLibraryGrid({
     });
   }, []);
 
-  const openPlaylistContextMenu = useCallback((playlist: AudioPlaylist, event: React.MouseEvent) => {
-    event.preventDefault();
-    event.stopPropagation();
-    setAssetContextMenu(null);
-    setPlaylistContextMenu({
-      x: event.clientX,
-      y: event.clientY,
-      playlist,
-    });
-  }, []);
-
   const handleSelectPlaylist = useCallback((playlistId: string | null) => {
     setSelectedPlaylistId(playlistId);
     if (playlistId) {
@@ -804,13 +785,11 @@ export function MediaLibraryGrid({
     setPlaylistNameInput('');
     setPlaylistDialog({ mode, targetAssetId });
     setAssetContextMenu(null);
-    setPlaylistContextMenu(null);
   }, []);
 
   const openRenamePlaylistDialog = useCallback((playlist: AudioPlaylist) => {
     setPlaylistNameInput(playlist.name);
     setPlaylistDialog({ mode: 'rename', playlistId: playlist.id });
-    setPlaylistContextMenu(null);
   }, []);
 
   const handleSubmitPlaylistDialog = useCallback(async () => {
@@ -1178,44 +1157,17 @@ export function MediaLibraryGrid({
         </div>
 
         {(!filters.activeType || filters.activeType === AssetType.AUDIO) && (
-          <div className="media-library-grid__playlist-bar">
-            <button
-              type="button"
-              className={`media-library-grid__playlist-chip ${selectedPlaylistId === AUDIO_PLAYLIST_ALL_ID ? 'media-library-grid__playlist-chip--active' : ''}`}
-              onClick={() => handleSelectPlaylist(AUDIO_PLAYLIST_ALL_ID)}
-            >
-              <ListMusic size={14} />
-              <span>全部音频</span>
-              <span className="media-library-grid__playlist-chip-count">{counts.audio}</span>
-            </button>
-
-            {audioPlaylists.map((playlist) => {
-              const playlistCount = (playlistItems[playlist.id] || []).length;
-              const isFavorites = playlist.id === AUDIO_PLAYLIST_FAVORITES_ID;
-              return (
-                <button
-                  key={playlist.id}
-                  type="button"
-                  className={`media-library-grid__playlist-chip ${selectedPlaylistId === playlist.id ? 'media-library-grid__playlist-chip--active' : ''}`}
-                  onClick={() => handleSelectPlaylist(playlist.id)}
-                  onContextMenu={(event) => openPlaylistContextMenu(playlist, event)}
-                >
-                  {isFavorites ? <Heart size={14} /> : <ListMusic size={14} />}
-                  <span>{playlist.name}</span>
-                  <span className="media-library-grid__playlist-chip-count">{playlistCount}</span>
-                </button>
-              );
-            })}
-
-            <button
-              type="button"
-              className="media-library-grid__playlist-create"
-              onClick={() => openCreatePlaylistDialog('create')}
-            >
-              <Plus size={14} />
-              <span>新建播放列表</span>
-            </button>
-          </div>
+          <AudioPlaylistTabs
+            className="media-library-grid__playlist-bar"
+            selectedPlaylistId={selectedPlaylistId || AUDIO_PLAYLIST_ALL_ID}
+            allCount={counts.audio}
+            playlists={playlists}
+            playlistItems={playlistItems}
+            onSelect={handleSelectPlaylist}
+            onCreate={() => openCreatePlaylistDialog('create')}
+            onRename={openRenamePlaylistDialog}
+            onDelete={(playlist) => void deletePlaylist(playlist.id)}
+          />
         )}
 
         {/* 下载进度条 */}
@@ -1408,7 +1360,7 @@ export function MediaLibraryGrid({
                   previewImageUrl: asset.thumbnail,
                 }));
               const activePlaylist = selectedPlaylistId
-                ? audioPlaylists.find((playlist) => playlist.id === selectedPlaylistId) || null
+                ? playlists.find((playlist) => playlist.id === selectedPlaylistId) || null
                 : null;
               setAssetContextMenu(null);
               await openMusicPlayerToolAndPlay({
@@ -1443,7 +1395,7 @@ export function MediaLibraryGrid({
             <Heart size={14} />
             <span>{favoriteAssetIds.has(assetContextMenu.asset.id) ? '取消收藏' : '加入收藏'}</span>
           </button>
-          {audioPlaylists.map((playlist) => {
+          {playlists.map((playlist) => {
             const exists = (playlistItems[playlist.id] || []).some((item) => item.assetId === assetContextMenu.asset.id);
             return (
               <button
@@ -1482,47 +1434,6 @@ export function MediaLibraryGrid({
             <Plus size={14} />
             <span>新建播放列表并添加</span>
           </button>
-        </div>,
-        document.body
-      )}
-
-      {playlistContextMenu && createPortal(
-        <div
-          className="media-library-grid__context-menu"
-          style={{ top: playlistContextMenu.y, left: playlistContextMenu.x }}
-          onClick={(event) => event.stopPropagation()}
-        >
-          <button
-            type="button"
-            className="media-library-grid__context-item"
-            onClick={() => openCreatePlaylistDialog('create')}
-          >
-            <Plus size={14} />
-            <span>新建播放列表</span>
-          </button>
-          {!playlistContextMenu.playlist.isSystem && (
-            <>
-              <button
-                type="button"
-                className="media-library-grid__context-item"
-                onClick={() => openRenamePlaylistDialog(playlistContextMenu.playlist)}
-              >
-                <Pencil size={14} />
-                <span>重命名</span>
-              </button>
-              <button
-                type="button"
-                className="media-library-grid__context-item media-library-grid__context-item--danger"
-                onClick={() => {
-                  setPlaylistContextMenu(null);
-                  void deletePlaylist(playlistContextMenu.playlist.id);
-                }}
-              >
-                <Trash2 size={14} />
-                <span>删除播放列表</span>
-              </button>
-            </>
-          )}
         </div>,
         document.body
       )}
