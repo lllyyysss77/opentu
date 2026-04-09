@@ -4,6 +4,7 @@ import {
   type CanvasAudioPlaybackSource,
   type CanvasAudioQueueSource,
   type CanvasAudioPlaybackState,
+  type PlaybackMode,
 } from '../services/canvas-audio-playback-service';
 import type { ReadingPlaybackSource } from '../services/reading-playback-source';
 
@@ -61,6 +62,7 @@ export function useCanvasAudioPlaybackControls() {
     resumePlayback: () => canvasAudioPlaybackService.resumePlayback(),
     playPrevious: () => canvasAudioPlaybackService.playPrevious(),
     playNext: () => canvasAudioPlaybackService.playNext(),
+    setPlaybackMode: (mode: PlaybackMode) => canvasAudioPlaybackService.setPlaybackMode(mode),
     seekTo: (time: number) => canvasAudioPlaybackService.seekTo(time),
     seekToReadingSegment: (index: number) => canvasAudioPlaybackService.seekToReadingSegment(index),
     setVolume: (volume: number) => canvasAudioPlaybackService.setVolume(volume),

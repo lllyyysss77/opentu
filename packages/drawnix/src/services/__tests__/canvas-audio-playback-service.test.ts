@@ -1,9 +1,14 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   CanvasAudioPlaybackService,
+  DEFAULT_PLAYBACK_MODE,
   EMPTY_AUDIO_SPECTRUM,
   EMPTY_AUDIO_WAVEFORM,
 } from '../canvas-audio-playback-service';
+
+beforeEach(() => {
+  globalThis.localStorage?.clear?.();
+});
 import { createReadingPlaybackSource } from '../reading-playback-source';
 
 class MockAudioElement extends EventTarget {
@@ -93,6 +98,18 @@ class MockSpeechSynthesis {
 }
 
 describe('CanvasAudioPlaybackService', () => {
+  it('uses sequential as the default playback mode and persists mode changes', () => {
+    const service = new CanvasAudioPlaybackService();
+
+    expect(service.getState().playbackMode).toBe(DEFAULT_PLAYBACK_MODE);
+
+    service.setPlaybackMode('list-loop');
+    expect(service.getState().playbackMode).toBe('list-loop');
+
+    const restoredService = new CanvasAudioPlaybackService();
+    expect(restoredService.getState().playbackMode).toBe('list-loop');
+  });
+
   it('starts playback and stores active metadata for a source', async () => {
     const audio = new MockAudioElement();
     audio.duration = 215;
@@ -348,6 +365,127 @@ describe('CanvasAudioPlaybackService', () => {
     expect(service.getState().volume).toBe(0.35);
   });
 
+  it('stops at queue end in sequential mode when playback ends', async () => {
+    const audio = new MockAudioElement();
+    audio.duration = 180;
+    const service = new CanvasAudioPlaybackService(() => audio as unknown as HTMLAudioElement);
+    const queue = [
+      {
+        elementId: 'audio-node-1',
+        audioUrl: 'https://example.com/audio-1.mp3',
+        title: 'Track One',
+      },
+      {
+        elementId: 'audio-node-2',
+        audioUrl: 'https://example.com/audio-2.mp3',
+        title: 'Track Two',
+      },
+    ];
+
+    service.setQueue(queue);
+    await service.togglePlayback(queue[1]);
+
+    audio.dispatchEvent(new Event('ended'));
+    await Promise.resolve();
+
+    expect(service.getState()).toMatchObject({
+      activeAudioUrl: queue[1].audioUrl,
+      activeQueueIndex: 1,
+      playing: false,
+      currentTime: 180,
+    });
+  });
+
+  it('loops back to the first track in list-loop mode when playback ends', async () => {
+    const audio = new MockAudioElement();
+    const service = new CanvasAudioPlaybackService(() => audio as unknown as HTMLAudioElement);
+    const queue = [
+      {
+        elementId: 'audio-node-1',
+        audioUrl: 'https://example.com/audio-1.mp3',
+        title: 'Track One',
+      },
+      {
+        elementId: 'audio-node-2',
+        audioUrl: 'https://example.com/audio-2.mp3',
+        title: 'Track Two',
+      },
+    ];
+
+    service.setPlaybackMode('list-loop');
+    service.setQueue(queue);
+    await service.togglePlayback(queue[1]);
+
+    audio.dispatchEvent(new Event('ended'));
+    await Promise.resolve();
+
+    expect(service.getState()).toMatchObject({
+      activeAudioUrl: queue[0].audioUrl,
+      activeQueueIndex: 0,
+      playing: true,
+    });
+  });
+
+  it('restarts the same track in single-loop mode when playback ends', async () => {
+    const audio = new MockAudioElement();
+    const service = new CanvasAudioPlaybackService(() => audio as unknown as HTMLAudioElement);
+    const track = {
+      elementId: 'audio-node-1',
+      audioUrl: 'https://example.com/audio-1.mp3',
+      title: 'Track One',
+    };
+
+    service.setPlaybackMode('single-loop');
+    service.setQueue([track]);
+    await service.togglePlayback(track);
+
+    audio.currentTime = 42;
+    audio.dispatchEvent(new Event('ended'));
+    await Promise.resolve();
+
+    expect(audio.currentTime).toBe(0);
+    expect(service.getState()).toMatchObject({
+      activeAudioUrl: track.audioUrl,
+      activeQueueIndex: 0,
+      playing: true,
+      currentTime: 0,
+    });
+  });
+
+  it('uses a different queue item for shuffle auto-advance when possible', async () => {
+    const audio = new MockAudioElement();
+    const service = new CanvasAudioPlaybackService(() => audio as unknown as HTMLAudioElement);
+    const queue = [
+      {
+        elementId: 'audio-node-1',
+        audioUrl: 'https://example.com/audio-1.mp3',
+        title: 'Track One',
+      },
+      {
+        elementId: 'audio-node-2',
+        audioUrl: 'https://example.com/audio-2.mp3',
+        title: 'Track Two',
+      },
+      {
+        elementId: 'audio-node-3',
+        audioUrl: 'https://example.com/audio-3.mp3',
+        title: 'Track Three',
+      },
+    ];
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.9);
+
+    service.setPlaybackMode('shuffle');
+    service.setQueue(queue);
+    await service.togglePlayback(queue[0]);
+
+    audio.dispatchEvent(new Event('ended'));
+    await Promise.resolve();
+
+    expect(service.getState().activeAudioUrl).toBe(queue[2].audioUrl);
+    expect(service.getState().activeQueueIndex).toBe(2);
+    randomSpy.mockRestore();
+  });
+
   it('publishes live spectrum and pulse data when audio analysis is available', async () => {
     const audio = new MockAudioElement();
     const audioContext = new MockAudioContext();
@@ -482,5 +620,44 @@ describe('CanvasAudioPlaybackService', () => {
     void service.resumePlayback();
     expect(service.getState().playing).toBe(true);
     expect(speechSynthesis.paused).toBe(false);
+  });
+
+  it('restarts reading from the same source in single-loop mode after the last segment', () => {
+    const audio = new MockAudioElement();
+    const speechSynthesis = new MockSpeechSynthesis();
+    const readingSource = createReadingPlaybackSource({
+      elementId: 'kb-note:2',
+      title: '循环笔记',
+      content: '第一句。第二句。',
+      origin: {
+        kind: 'kb-note',
+        id: '2',
+      },
+    });
+
+    const service = new CanvasAudioPlaybackService(
+      () => audio as unknown as HTMLAudioElement,
+      {
+        speechSynthesis: speechSynthesis as unknown as SpeechSynthesis,
+        utteranceFactory: (text) => ({ text } as SpeechSynthesisUtterance),
+      }
+    );
+
+    service.setPlaybackMode('single-loop');
+    service.toggleReadingPlaybackInQueue(readingSource ? [readingSource][0] : (null as never), readingSource ? [readingSource] : []);
+
+    const firstUtterance = speechSynthesis.utterances[0];
+    firstUtterance?.onend?.(new Event('end') as SpeechSynthesisEvent);
+    const secondUtterance = speechSynthesis.utterances[1];
+    secondUtterance?.onend?.(new Event('end') as SpeechSynthesisEvent);
+
+    expect(speechSynthesis.utterances).toHaveLength(1);
+    expect(speechSynthesis.utterances[0]?.text).toBe(firstUtterance?.text);
+    expect(service.getState()).toMatchObject({
+      activeReadingSourceId: readingSource?.readingSourceId,
+      activeQueueIndex: 0,
+      activeReadingSegmentIndex: 0,
+      playing: true,
+    });
   });
 });

@@ -2,6 +2,7 @@ import {
   DEFAULT_TTS_SETTINGS,
   resolveVoice,
 } from '../hooks/useTextToSpeech';
+import { LS_KEYS } from '../constants/storage-keys';
 import { ttsSettings } from '../utils/settings-manager';
 import type {
   ReadingPlaybackOrigin,
@@ -24,6 +25,49 @@ export type PlaybackQueueSource = 'canvas' | 'playlist' | 'reading';
 export type CanvasAudioQueueSource = PlaybackQueueSource;
 export type PlaybackMediaType = 'audio' | 'reading' | null;
 export type PlaybackQueueItem = CanvasAudioPlaybackSource | ReadingPlaybackSource;
+export type PlaybackMode = 'sequential' | 'list-loop' | 'single-loop' | 'shuffle';
+
+export const DEFAULT_PLAYBACK_MODE: PlaybackMode = 'sequential';
+export const PLAYBACK_MODE_LABELS: Record<PlaybackMode, string> = {
+  sequential: '顺序播放',
+  'list-loop': '列表循环',
+  'single-loop': '单曲循环',
+  shuffle: '随机播放',
+};
+
+function isPlaybackMode(value: string | null | undefined): value is PlaybackMode {
+  return (
+    value === 'sequential'
+    || value === 'list-loop'
+    || value === 'single-loop'
+    || value === 'shuffle'
+  );
+}
+
+function readPersistedPlaybackMode(): PlaybackMode {
+  if (typeof window === 'undefined') {
+    return DEFAULT_PLAYBACK_MODE;
+  }
+
+  try {
+    const stored = window.localStorage.getItem(LS_KEYS.AUDIO_PLAYER_PLAYBACK_MODE);
+    return isPlaybackMode(stored) ? stored : DEFAULT_PLAYBACK_MODE;
+  } catch {
+    return DEFAULT_PLAYBACK_MODE;
+  }
+}
+
+function persistPlaybackMode(mode: PlaybackMode): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(LS_KEYS.AUDIO_PLAYER_PLAYBACK_MODE, mode);
+  } catch {
+    // ignore
+  }
+}
 
 export interface CanvasAudioPlaybackState {
   mediaType: PlaybackMediaType;
@@ -44,6 +88,7 @@ export interface CanvasAudioPlaybackState {
   activePlaylistName?: string;
   queue: PlaybackQueueItem[];
   activeQueueIndex: number;
+  playbackMode: PlaybackMode;
   playing: boolean;
   currentTime: number;
   duration: number;
@@ -73,23 +118,26 @@ export const EMPTY_AUDIO_WAVEFORM = Object.freeze(
   Array.from({ length: ANALYSIS_WAVEFORM_SAMPLE_COUNT }, () => 0)
 );
 
-const INITIAL_STATE: CanvasAudioPlaybackState = {
-  mediaType: null,
-  activeReadingSegmentIndex: -1,
-  readingSegments: [],
-  subtitleMode: 'none',
-  queueSource: 'canvas',
-  queue: [],
-  activeQueueIndex: -1,
-  playing: false,
-  currentTime: 0,
-  duration: 0,
-  volume: DEFAULT_VOLUME,
-  analysisAvailable: false,
-  spectrumLevels: [...EMPTY_AUDIO_SPECTRUM],
-  waveformLevels: [...EMPTY_AUDIO_WAVEFORM],
-  pulseLevel: 0,
-};
+function createInitialState(): CanvasAudioPlaybackState {
+  return {
+    mediaType: null,
+    activeReadingSegmentIndex: -1,
+    readingSegments: [],
+    subtitleMode: 'none',
+    queueSource: 'canvas',
+    queue: [],
+    activeQueueIndex: -1,
+    playbackMode: readPersistedPlaybackMode(),
+    playing: false,
+    currentTime: 0,
+    duration: 0,
+    volume: DEFAULT_VOLUME,
+    analysisAvailable: false,
+    spectrumLevels: [...EMPTY_AUDIO_SPECTRUM],
+    waveformLevels: [...EMPTY_AUDIO_WAVEFORM],
+    pulseLevel: 0,
+  };
+}
 
 interface CanvasAudioPlaybackRuntime {
   audioContextFactory?: () => AudioContext;
@@ -136,7 +184,7 @@ export class CanvasAudioPlaybackService {
   private analysisFrameHandle: number | null = null;
   private lastAnalysisFrameAt = 0;
   private readonly listeners = new Set<PlaybackListener>();
-  private state: CanvasAudioPlaybackState = INITIAL_STATE;
+  private state: CanvasAudioPlaybackState = createInitialState();
   private canvasQueue: CanvasAudioPlaybackSource[] = [];
   private currentReadingSource: ReadingPlaybackSource | null = null;
   private readingVersion = 0;
@@ -384,6 +432,8 @@ export class CanvasAudioPlaybackService {
       duration,
       pulseLevel: 0,
     });
+
+    void this.continueQueueAfterCurrentEnd();
   };
 
   private handleTimeUpdate = (): void => {
@@ -703,10 +753,16 @@ export class CanvasAudioPlaybackService {
     });
   }
 
-  private async startPlayback(source: CanvasAudioPlaybackSource): Promise<void> {
+  private async startPlayback(
+    source: CanvasAudioPlaybackSource,
+    restartFromBeginning = false
+  ): Promise<void> {
     this.stopReadingForAudio();
     const audio = this.ensureAudio();
-    const switchingTrack = this.state.activeAudioUrl !== source.audioUrl || this.state.mediaType !== 'audio';
+    const switchingTrack =
+      restartFromBeginning
+      || this.state.activeAudioUrl !== source.audioUrl
+      || this.state.mediaType !== 'audio';
     const activeQueueIndex = this.findQueueIndex(this.state.queue, source);
 
     if (switchingTrack) {
@@ -828,6 +884,7 @@ export class CanvasAudioPlaybackService {
           currentTime: segment.endMs / 1000,
           activeReadingSegmentIndex: segmentIndex,
         });
+        void this.continueQueueAfterCurrentEnd();
         return;
       }
 
@@ -913,6 +970,86 @@ export class CanvasAudioPlaybackService {
     }
 
     this.startReading(source);
+  }
+
+  setPlaybackMode(mode: PlaybackMode): void {
+    persistPlaybackMode(mode);
+    this.patchState({
+      playbackMode: mode,
+    });
+  }
+
+  private getSequentialQueueIndex(offset: -1 | 1): number {
+    const targetIndex = this.state.activeQueueIndex + offset;
+    if (targetIndex < 0 || targetIndex >= this.state.queue.length) {
+      return -1;
+    }
+
+    return targetIndex;
+  }
+
+  private getNextQueueIndexForAutoAdvance(): number {
+    const { activeQueueIndex, playbackMode, queue } = this.state;
+    if (activeQueueIndex < 0 || queue.length === 0) {
+      return -1;
+    }
+
+    if (playbackMode === 'single-loop') {
+      return activeQueueIndex;
+    }
+
+    if (playbackMode === 'shuffle') {
+      if (queue.length === 1) {
+        return activeQueueIndex;
+      }
+
+      let candidate = activeQueueIndex;
+      let attempts = 0;
+      while (candidate === activeQueueIndex && attempts < 8) {
+        candidate = Math.floor(Math.random() * queue.length);
+        attempts += 1;
+      }
+
+      return candidate === activeQueueIndex
+        ? (activeQueueIndex + 1) % queue.length
+        : candidate;
+    }
+
+    const nextIndex = activeQueueIndex + 1;
+    if (nextIndex < queue.length) {
+      return nextIndex;
+    }
+
+    if (playbackMode === 'list-loop') {
+      return 0;
+    }
+
+    return -1;
+  }
+
+  private async playQueueItemAt(index: number, restartFromBeginning = false): Promise<void> {
+    if (index < 0 || index >= this.state.queue.length) {
+      return;
+    }
+
+    const target = this.state.queue[index];
+    if (isReadingPlaybackSource(target)) {
+      this.startReading(target);
+      return;
+    }
+
+    if (isAudioPlaybackSource(target)) {
+      await this.startPlayback(target, restartFromBeginning);
+    }
+  }
+
+  private async continueQueueAfterCurrentEnd(): Promise<void> {
+    const nextIndex = this.getNextQueueIndexForAutoAdvance();
+    if (nextIndex < 0) {
+      return;
+    }
+
+    await this.playQueueItemAt(nextIndex, nextIndex === this.state.activeQueueIndex);
   }
 
   setCanvasQueue(queue: CanvasAudioPlaybackSource[]): void {
@@ -1047,35 +1184,21 @@ export class CanvasAudioPlaybackService {
   }
 
   async playPrevious(): Promise<void> {
-    const previousIndex = this.state.activeQueueIndex - 1;
-    if (previousIndex < 0 || previousIndex >= this.state.queue.length) {
+    const previousIndex = this.getSequentialQueueIndex(-1);
+    if (previousIndex < 0) {
       return;
     }
 
-    const target = this.state.queue[previousIndex];
-    if (isReadingPlaybackSource(target)) {
-      this.startReading(target);
-      return;
-    }
-    if (isAudioPlaybackSource(target)) {
-      await this.startPlayback(target);
-    }
+    await this.playQueueItemAt(previousIndex);
   }
 
   async playNext(): Promise<void> {
-    const nextIndex = this.state.activeQueueIndex + 1;
-    if (nextIndex < 0 || nextIndex >= this.state.queue.length) {
+    const nextIndex = this.getSequentialQueueIndex(1);
+    if (nextIndex < 0) {
       return;
     }
 
-    const target = this.state.queue[nextIndex];
-    if (isReadingPlaybackSource(target)) {
-      this.startReading(target);
-      return;
-    }
-    if (isAudioPlaybackSource(target)) {
-      await this.startPlayback(target);
-    }
+    await this.playQueueItemAt(nextIndex);
   }
 
   async resumePlayback(): Promise<void> {
@@ -1170,9 +1293,10 @@ export class CanvasAudioPlaybackService {
     }
 
     this.setState({
-      ...INITIAL_STATE,
+      ...createInitialState(),
       queue: this.state.queue,
       volume: this.state.volume,
+      playbackMode: this.state.playbackMode,
       queueSource: this.state.queueSource,
       activePlaylistId: this.state.activePlaylistId,
       activePlaylistName: this.state.activePlaylistName,

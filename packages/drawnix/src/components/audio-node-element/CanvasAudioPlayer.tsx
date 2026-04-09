@@ -1,26 +1,48 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import classNames from 'classnames';
+import { Dropdown } from 'tdesign-react';
 import {
   ChevronDown,
   PanelsTopLeft,
   Pause,
   Play,
+  Repeat,
+  Repeat1,
   SkipBack,
   SkipForward,
+  Shuffle,
   X,
   Rows3,
   Columns3,
+  ListOrdered,
 } from 'lucide-react';
 import { useCanvasAudioPlayback } from '../../hooks/useCanvasAudioPlayback';
 import { useDraggablePosition } from '../../hooks/useDraggablePosition';
 import { LS_KEYS } from '../../constants/storage-keys';
 import { toolWindowService } from '../../services/tool-window-service';
-import { isReadingPlaybackSource } from '../../services/canvas-audio-playback-service';
+import {
+  isReadingPlaybackSource,
+  PLAYBACK_MODE_LABELS,
+  type PlaybackMode,
+} from '../../services/canvas-audio-playback-service';
 import { MUSIC_PLAYER_TOOL_ID } from '../../tools/tool-ids';
 import { AudioCover } from '../shared/AudioCover';
 import { CanvasAudioPlayerVolume } from './CanvasAudioPlayerVolume';
 import { CanvasAudioPlayerPlaylist } from './CanvasAudioPlayerPlaylist';
 import './canvas-audio-player.scss';
+
+const PLAYBACK_MODE_ICONS: Record<PlaybackMode, React.ReactNode> = {
+  sequential: <ListOrdered size={14} />,
+  'list-loop': <Repeat size={14} />,
+  'single-loop': <Repeat1 size={14} />,
+  shuffle: <Shuffle size={14} />,
+};
+
+const PLAYBACK_MODE_OPTIONS = (Object.keys(PLAYBACK_MODE_LABELS) as PlaybackMode[]).map((mode) => ({
+  value: mode,
+  content: PLAYBACK_MODE_LABELS[mode],
+  prefixIcon: PLAYBACK_MODE_ICONS[mode],
+}));
 
 function formatDuration(duration?: number): string {
   if (typeof duration !== 'number' || !Number.isFinite(duration) || duration <= 0) {
@@ -111,6 +133,8 @@ export const CanvasAudioPlayer: React.FC = () => {
   );
   const hasActivePlayback = hasReadingPlayback || !!playback.activeAudioUrl;
   const canSeek = playback.mediaType === 'audio';
+  const playbackModeLabel = PLAYBACK_MODE_LABELS[playback.playbackMode];
+  const playbackModeIcon = PLAYBACK_MODE_ICONS[playback.playbackMode];
 
   const scrubberStyle = {
     '--canvas-audio-progress': `${progress}%`,
@@ -349,6 +373,23 @@ export const CanvasAudioPlayer: React.FC = () => {
         volume={playback.volume}
         onVolumeChange={playback.setVolume}
       />
+
+      <Dropdown
+        options={PLAYBACK_MODE_OPTIONS}
+        trigger="click"
+        placement="bottom"
+        minColumnWidth={132}
+        onClick={(data) => playback.setPlaybackMode(data.value as PlaybackMode)}
+      >
+        <button
+          type="button"
+          className="canvas-audio-player__toggle canvas-audio-player__mode-toggle"
+          aria-label={`切换播放模式，当前${playbackModeLabel}`}
+          data-tooltip={playbackModeLabel}
+        >
+          {playbackModeIcon}
+        </button>
+      </Dropdown>
 
       <button
         type="button"

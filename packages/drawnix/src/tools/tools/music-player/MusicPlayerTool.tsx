@@ -1,6 +1,17 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Input, Dialog } from 'tdesign-react';
-import { Pause, Play, Search, Minimize2, SkipBack, SkipForward } from 'lucide-react';
+import { Input, Dialog, Dropdown } from 'tdesign-react';
+import {
+  Pause,
+  Play,
+  Search,
+  Minimize2,
+  SkipBack,
+  SkipForward,
+  Repeat,
+  Repeat1,
+  Shuffle,
+  ListOrdered,
+} from 'lucide-react';
 import { useAssets } from '../../../contexts/AssetContext';
 import { useAudioPlaylists } from '../../../contexts/AudioPlaylistContext';
 import { AssetType } from '../../../types/asset.types';
@@ -20,7 +31,9 @@ import { useAllTracksPlaybackSources } from '../../../hooks/useAllTracksPlayback
 import { useResolvedAudioDurations } from '../../../hooks/useResolvedAudioDurations';
 import {
   isReadingPlaybackSource,
+  PLAYBACK_MODE_LABELS,
   type PlaybackQueueItem,
+  type PlaybackMode,
 } from '../../../services/canvas-audio-playback-service';
 import { toolWindowService } from '../../../services/tool-window-service';
 import { MUSIC_PLAYER_TOOL_ID } from '../../tool-ids';
@@ -29,6 +42,17 @@ import './music-player-tool.scss';
 
 const DEFAULT_PLAYER_WINDOW_SIZE = { width: 520, height: 640 };
 const SUBTITLE_PLAYER_WINDOW_SIZE = { width: 860, height: 640 };
+const PLAYBACK_MODE_ICONS: Record<PlaybackMode, React.ReactNode> = {
+  sequential: <ListOrdered size={16} />,
+  'list-loop': <Repeat size={16} />,
+  'single-loop': <Repeat1 size={16} />,
+  shuffle: <Shuffle size={16} />,
+};
+const PLAYBACK_MODE_OPTIONS = (Object.keys(PLAYBACK_MODE_LABELS) as PlaybackMode[]).map((mode) => ({
+  value: mode,
+  content: PLAYBACK_MODE_LABELS[mode],
+  prefixIcon: PLAYBACK_MODE_ICONS[mode],
+}));
 
 function formatDuration(duration?: number): string {
   if (typeof duration !== 'number' || !Number.isFinite(duration) || duration <= 0) {
@@ -39,6 +63,28 @@ function formatDuration(duration?: number): string {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
+
+function formatGeneratedTime(createdAt?: number): string {
+  if (typeof createdAt !== 'number' || !Number.isFinite(createdAt) || createdAt <= 0) {
+    return '--:--';
+  }
+
+  return new Date(createdAt).toLocaleString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+}
+
+function formatTrackSubtitle(duration?: number, createdAt?: number): string {
+  const formattedDuration = formatDuration(duration);
+  if (formattedDuration !== '--:--') {
+    return formattedDuration;
+  }
+  return formatGeneratedTime(createdAt);
 }
 
 export const MusicPlayerTool: React.FC = () => {
@@ -126,6 +172,10 @@ export const MusicPlayerTool: React.FC = () => {
       })),
     [audioAssets]
   );
+  const audioAssetById = useMemo(
+    () => new Map(audioAssets.map((asset) => [asset.id, asset])),
+    [audioAssets]
+  );
   const showPlaybackQueue =
     playback.queue.length > 0 && (isReadingMode || !!playback.activeAudioUrl);
   const playbackTabId = playback.activePlaylistId || (
@@ -185,6 +235,14 @@ export const MusicPlayerTool: React.FC = () => {
     [playback.queue]
   );
   const resolvedQueueDurations = useResolvedAudioDurations(audioPlaybackQueue);
+  const audioAssetDurationSources = useMemo(
+    () =>
+      audioAssets.map((asset) => ({
+        audioUrl: asset.url,
+      })),
+    [audioAssets]
+  );
+  const resolvedAudioAssetDurations = useResolvedAudioDurations(audioAssetDurationSources);
 
   const getQueueItemId = (item: PlaybackQueueItem, index: number) =>
     isReadingPlaybackSource(item) ? item.readingSourceId : `${item.audioUrl}-${index}`;
@@ -213,7 +271,10 @@ export const MusicPlayerTool: React.FC = () => {
         return {
           id: getQueueItemId(item, index),
           title: item.title || '未命名音频',
-          subtitle: formatDuration(resolvedQueueDurations.get(item.audioUrl) ?? item.duration),
+          subtitle: formatTrackSubtitle(
+            resolvedQueueDurations.get(item.audioUrl) ?? item.duration,
+            assetId ? audioAssetById.get(assetId)?.createdAt : undefined
+          ),
           previewImageUrl: item.previewImageUrl,
           isActive: index === playback.activeQueueIndex,
           isPlaying: index === playback.activeQueueIndex && playback.playing,
@@ -221,7 +282,7 @@ export const MusicPlayerTool: React.FC = () => {
           canFavorite: !!assetId,
         };
       }),
-    [assets, favoriteAssetIds, playback.activeQueueIndex, playback.playing, playback.queue, resolvedQueueDurations]
+    [audioAssetById, assets, favoriteAssetIds, playback.activeQueueIndex, playback.playing, playback.queue, resolvedQueueDurations]
   );
 
   const handlePlayAsset = async (assetId: string) => {
@@ -310,6 +371,8 @@ export const MusicPlayerTool: React.FC = () => {
     ? `${shouldShowPlaybackQueue ? playback.queue.length : noteMetas.length} 段语音`
     : isAllTracksTab ? `${noteMetas.length} 篇笔记`
       : `${shouldShowPlaybackQueue ? playback.queue.length : audioAssets.length} 首音频`;
+  const playbackModeLabel = PLAYBACK_MODE_LABELS[playback.playbackMode];
+  const playbackModeIcon = PLAYBACK_MODE_ICONS[playback.playbackMode];
 
   const closePlaylistDialog = () => {
     setCreateDialogVisible(false);
@@ -448,6 +511,22 @@ export const MusicPlayerTool: React.FC = () => {
               >
                 <SkipForward size={16} />
               </button>
+              <Dropdown
+                options={PLAYBACK_MODE_OPTIONS}
+                trigger="click"
+                placement="bottom-right"
+                minColumnWidth={132}
+                onClick={(data) => playback.setPlaybackMode(data.value as PlaybackMode)}
+              >
+                <button
+                  type="button"
+                  className="music-player-tool__action-btn"
+                  aria-label={`切换播放模式，当前${playbackModeLabel}`}
+                  data-tooltip={playbackModeLabel}
+                >
+                  {playbackModeIcon}
+                </button>
+              </Dropdown>
               <button
                 type="button"
                 className="music-player-tool__action-btn music-player-tool__action-btn--ghost"
@@ -511,7 +590,10 @@ export const MusicPlayerTool: React.FC = () => {
               audioAssetItems={audioAssets.map((asset) => ({
                 id: asset.id,
                 title: asset.name,
-                subtitle: new Date(asset.createdAt).toLocaleDateString('zh-CN'),
+                subtitle: formatTrackSubtitle(
+                  resolvedAudioAssetDurations.get(asset.url),
+                  asset.createdAt
+                ),
                 previewImageUrl: asset.thumbnail,
                 isActive: activeAssetId === asset.id,
                 isPlaying: activeAssetId === asset.id && playback.playing,

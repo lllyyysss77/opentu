@@ -75,6 +75,8 @@ export const LS_KEYS = {
   AUDIO_PLAYER_POSITION: 'aitu:audio-player-position',
   /** 画布音频播放器布局模式 */
   AUDIO_PLAYER_LAYOUT: 'aitu:audio-player-layout',
+  /** 音频播放器播放模式 */
+  AUDIO_PLAYER_PLAYBACK_MODE: 'aitu:audio-player-playback-mode',
 
   // ---- 废弃键（仅用于迁移读取后删除） ----
   /** @deprecated 旧版本本地数据，迁移后删除 */
