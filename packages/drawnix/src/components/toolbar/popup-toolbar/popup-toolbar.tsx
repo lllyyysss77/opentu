@@ -145,7 +145,6 @@ export const PopupToolbar = () => {
   // 初始化全局鼠标位置跟踪
   useGlobalMousePosition();
   const playback = useCanvasAudioPlayback();
-  const previousSpeechSelectionKeyRef = useRef<string>('');
   const activeReadingSourceId = playback.mediaType === 'reading'
     ? playback.activeReadingSourceId
     : undefined;
@@ -168,17 +167,6 @@ export const PopupToolbar = () => {
     : language === 'zh'
       ? '语音朗读'
       : 'Read aloud';
-
-  useEffect(() => {
-    if (
-      playback.mediaType === 'reading' &&
-      previousSpeechSelectionKeyRef.current &&
-      previousSpeechSelectionKeyRef.current !== speechSelectionKey
-    ) {
-      playback.stopPlayback();
-    }
-    previousSpeechSelectionKeyRef.current = speechSelectionKey;
-  }, [playback, speechSelectionKey]);
 
   useEffect(() => {
     if (selectedElements.length === 0 || movingOrDragging) {
