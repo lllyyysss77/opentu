@@ -18,8 +18,9 @@ export interface AudioTrackListItem {
 interface AudioTrackListProps {
   items: AudioTrackListItem[];
   onSelect: (item: AudioTrackListItem) => void;
-  onContextMenu?: (item: AudioTrackListItem, event: React.MouseEvent<HTMLButtonElement>) => void;
+  onContextMenu?: (item: AudioTrackListItem, event: React.MouseEvent<HTMLDivElement>) => void;
   onToggleFavorite?: (item: AudioTrackListItem) => void;
+  onTogglePlayback?: (item: AudioTrackListItem) => void;
   showFavoriteButton?: boolean;
   showPlaybackIndicator?: boolean;
   className?: string;
@@ -31,6 +32,7 @@ export const AudioTrackList: React.FC<AudioTrackListProps> = ({
   onSelect,
   onContextMenu,
   onToggleFavorite,
+  onTogglePlayback,
   showFavoriteButton = false,
   showPlaybackIndicator = false,
   className,
@@ -39,14 +41,21 @@ export const AudioTrackList: React.FC<AudioTrackListProps> = ({
   return (
     <div className={classNames('audio-track-list', className)}>
       {items.map((item) => (
-        <button
+        <div
           key={item.id}
-          type="button"
+          role="button"
+          tabIndex={0}
           className={classNames('audio-track-list__item', itemClassName, {
             'audio-track-list__item--active': item.isActive,
           })}
           onClick={() => onSelect(item)}
           onContextMenu={(event) => onContextMenu?.(item, event)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              onSelect(item);
+            }
+          }}
         >
           <div className="audio-track-list__cover">
             <AudioCover
@@ -80,13 +89,18 @@ export const AudioTrackList: React.FC<AudioTrackListProps> = ({
                 </button>
               ) : null}
               {showPlaybackIndicator ? (
-                <div className="audio-track-list__status">
+                <button
+                  type="button"
+                  className="audio-track-list__status"
+                  onClick={() => onTogglePlayback?.(item)}
+                  aria-label={item.isPlaying ? '暂停播放' : '开始播放'}
+                >
                   {item.isPlaying ? <Pause size={16} /> : <Play size={16} />}
-                </div>
+                </button>
               ) : null}
             </div>
           ) : null}
-        </button>
+        </div>
       ))}
     </div>
   );

@@ -2,6 +2,9 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Dialog, Input } from 'tdesign-react';
 import { AudioTrackList } from '../shared/AudioTrackList';
 import { AudioTrackContextMenu } from '../shared/AudioTrackContextMenu';
+import { useAssets } from '../../contexts/AssetContext';
+import { useResolvedAudioDurations } from '../../hooks/useResolvedAudioDurations';
+import { AssetType } from '../../types/asset.types';
 import { useAudioPlaylists } from '../../contexts/AudioPlaylistContext';
 import { AUDIO_PLAYLIST_ALL_ID } from '../../types/audio-playlist.types';
 import type { CanvasAudioPlaybackSource, CanvasAudioQueueSource } from '../../services/canvas-audio-playback-service';
@@ -41,6 +44,7 @@ export const CanvasAudioPlayerPlaylist: React.FC<CanvasAudioPlayerPlaylistProps>
   activePlaylistId,
   onSelect,
 }) => {
+  const { assets } = useAssets();
   const {
     playlists,
     playlistItems,
@@ -71,6 +75,22 @@ export const CanvasAudioPlayerPlaylist: React.FC<CanvasAudioPlayerPlaylistProps>
 
   const selectedPlaylistId =
     queueSource === 'playlist' && activePlaylistId ? activePlaylistId : AUDIO_PLAYLIST_ALL_ID;
+  const resolvedDurations = useResolvedAudioDurations(queue);
+  const resolveAssetId = (item?: CanvasAudioPlaybackSource): string | null => {
+    const directAssetId = getAssetIdFromSource(item);
+    if (directAssetId) {
+      return directAssetId;
+    }
+
+    if (!item?.audioUrl) {
+      return null;
+    }
+
+    const matchedAsset = assets.find(
+      (asset) => asset.type === AssetType.AUDIO && asset.url === item.audioUrl
+    );
+    return matchedAsset?.id || null;
+  };
   const currentPlaylistAssetIds = useMemo(
     () => new Set(
       selectedPlaylistId !== AUDIO_PLAYLIST_ALL_ID
@@ -82,14 +102,14 @@ export const CanvasAudioPlayerPlaylist: React.FC<CanvasAudioPlayerPlaylistProps>
   return (
     <div className="canvas-audio-player__playlist">
       <AudioTrackList
-        className="canvas-audio-player__playlist-list"
+        className="canvas-audio-player__playlist-list audio-track-list--queue"
         items={queue.map((item, index) => {
-          const assetId = getAssetIdFromSource(item);
+          const assetId = resolveAssetId(item);
 
           return {
             id: `${item.audioUrl}-${index}`,
             title: item.title || '未命名音频',
-            subtitle: formatDuration(item.duration),
+            subtitle: formatDuration(resolvedDurations.get(item.audioUrl) ?? item.duration),
             previewImageUrl: item.previewImageUrl,
             isActive: index === activeQueueIndex,
             isPlaying: index === activeQueueIndex,
@@ -105,7 +125,7 @@ export const CanvasAudioPlayerPlaylist: React.FC<CanvasAudioPlayerPlaylistProps>
         }}
         onContextMenu={(selectedItem, event) => {
           const nextItem = queue.find((item, index) => `${item.audioUrl}-${index}` === selectedItem.id);
-          const assetId = getAssetIdFromSource(nextItem);
+          const assetId = resolveAssetId(nextItem);
           if (!assetId) {
             return;
           }
@@ -119,9 +139,15 @@ export const CanvasAudioPlayerPlaylist: React.FC<CanvasAudioPlayerPlaylistProps>
         }}
         onToggleFavorite={(selectedItem) => {
           const nextItem = queue.find((item, index) => `${item.audioUrl}-${index}` === selectedItem.id);
-          const assetId = getAssetIdFromSource(nextItem);
+          const assetId = resolveAssetId(nextItem);
           if (assetId) {
             void toggleFavorite(assetId);
+          }
+        }}
+        onTogglePlayback={(selectedItem) => {
+          const nextItem = queue.find((item, index) => `${item.audioUrl}-${index}` === selectedItem.id);
+          if (nextItem) {
+            onSelect(nextItem);
           }
         }}
         showFavoriteButton

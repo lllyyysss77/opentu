@@ -28,24 +28,5 @@
 }
 
 .canvas-audio-player__playlist-list {
-  gap: 10px;
   min-width: 0;
-}
-
-.canvas-audio-player__playlist-list .audio-track-list__item {
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.9);
-  min-width: 0;
-}
-
-.canvas-audio-player__playlist-list .audio-track-list__item--active {
-  background: rgba(219, 234, 254, 0.72);
-}
-
-.canvas-audio-player__playlist-list .audio-track-list__title {
-  font-size: 14px;
-}
-
-.canvas-audio-player__playlist-list .audio-track-list__subtitle {
-  font-weight: 600;
 }
