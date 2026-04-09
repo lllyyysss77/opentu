@@ -975,6 +975,33 @@ export const WinBoxWindow: React.FC<WinBoxWindowProps> = ({
     }
   }, [autoMaximize]);
 
+  // 监听尺寸约束变化，动态调整窗口大小
+  useEffect(() => {
+    if (!winboxRef.current || !visible || splitSideRef.current) {
+      return;
+    }
+
+    const nextWidth =
+      typeof width === 'number' ? width : winboxRef.current.width;
+    const nextHeight =
+      typeof height === 'number' ? height : winboxRef.current.height;
+
+    if (
+      typeof nextWidth !== 'number' ||
+      typeof nextHeight !== 'number' ||
+      (winboxRef.current.width === nextWidth &&
+        winboxRef.current.height === nextHeight &&
+        winboxRef.current.minwidth === minWidth &&
+        winboxRef.current.minheight === minHeight)
+    ) {
+      return;
+    }
+
+    winboxRef.current.minwidth = minWidth;
+    winboxRef.current.minheight = minHeight;
+    winboxRef.current.resize(nextWidth, nextHeight);
+  }, [height, minHeight, minWidth, visible, width]);
+
   // 使用 Portal 渲染内容到 WinBox 的 .wb-body 中
   // 这样可以保持 React 事件系统正常工作
   return (

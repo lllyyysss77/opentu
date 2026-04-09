@@ -77,6 +77,14 @@ export const CanvasAudioPlayer: React.FC = () => {
   const duration = Number.isFinite(playback.duration) ? playback.duration : 0;
   const currentTimeLabel = formatDuration(currentTime);
   const durationLabel = formatDuration(duration);
+  const activeQueueItem =
+    playback.activeQueueIndex >= 0 ? playback.queue[playback.activeQueueIndex] : null;
+  const resolvedActiveTitle =
+    playback.activeTitle
+    || (isReadingPlaybackSource(activeQueueItem) ? activeQueueItem.title : undefined);
+  const resolvedActivePreviewImageUrl =
+    playback.activePreviewImageUrl
+    || (isReadingPlaybackSource(activeQueueItem) ? activeQueueItem.previewImageUrl : undefined);
   const canPlayPrevious = playback.activeQueueIndex > 0;
   const canPlayNext =
     playback.activeQueueIndex >= 0 &&
@@ -88,18 +96,20 @@ export const CanvasAudioPlayer: React.FC = () => {
     : null;
   const queueLabel = playback.queueSource === 'playlist'
     ? (playback.activePlaylistName || '播放列表')
-    : playback.queueSource === 'reading'
+    : (playback.activePlaylistName || (playback.queueSource === 'reading'
       ? '朗读轨道'
-      : '画布音频';
+      : '画布音频'));
   const subtitle = hasQueueInfo
     ? `${queueLabel} ${playback.activeQueueIndex + 1} / ${playback.queue.length}`
     : queueLabel;
   const mobileSubtitle = queueInfoLabel
     ? `${queueInfoLabel} · ${currentTimeLabel} / ${durationLabel}`
     : `${currentTimeLabel} / ${durationLabel}`;
-  const hasActivePlayback = playback.mediaType === 'reading'
-    ? !!playback.activeReadingSourceId
-    : !!playback.activeAudioUrl;
+  const hasReadingPlayback = playback.queueSource === 'reading' && (
+    !!playback.activeReadingSourceId
+    || (activeQueueItem !== null && isReadingPlaybackSource(activeQueueItem))
+  );
+  const hasActivePlayback = hasReadingPlayback || !!playback.activeAudioUrl;
   const canSeek = playback.mediaType === 'audio';
 
   const scrubberStyle = {
@@ -259,8 +269,8 @@ export const CanvasAudioPlayer: React.FC = () => {
       >
         <div className="canvas-audio-player__cover">
           <AudioCover
-            src={playback.activePreviewImageUrl}
-            alt={playback.activeTitle || 'Audio cover'}
+            src={resolvedActivePreviewImageUrl}
+            alt={resolvedActiveTitle || 'Audio cover'}
             fallbackClassName="canvas-audio-player__cover-fallback"
             iconSize={16}
           />
@@ -268,7 +278,7 @@ export const CanvasAudioPlayer: React.FC = () => {
 
         <div className="canvas-audio-player__meta">
           <div className="canvas-audio-player__title">
-            {playback.activeTitle || '未命名音频'}
+            {resolvedActiveTitle || '未命名音频'}
           </div>
           <div className="canvas-audio-player__subtitle">
             <span className="canvas-audio-player__subtitle-text canvas-audio-player__subtitle-text--desktop">

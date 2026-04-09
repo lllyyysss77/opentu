@@ -13,6 +13,10 @@ import {
   EMPTY_AUDIO_SPECTRUM,
   EMPTY_AUDIO_WAVEFORM,
 } from '../../services/canvas-audio-playback-service';
+import {
+  AUDIO_PLAYLIST_CANVAS_AUDIO_ID,
+  AUDIO_PLAYLIST_CANVAS_AUDIO_LABEL,
+} from '../../types/audio-playlist.types';
 import './audio-node-content.scss';
 
 interface AudioNodeContentProps {
@@ -475,6 +479,8 @@ export const AudioNodeContent: React.FC<AudioNodeContentProps> = ({
 
       await playback.togglePlaybackInQueue(playbackSource, playbackQueue, {
         queueSource: 'canvas',
+        queueId: AUDIO_PLAYLIST_CANVAS_AUDIO_ID,
+        queueName: AUDIO_PLAYLIST_CANVAS_AUDIO_LABEL,
       });
     } catch {
       // Error feedback is surfaced globally from the playback store.

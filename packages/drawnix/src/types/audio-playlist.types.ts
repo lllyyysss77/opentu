@@ -1,6 +1,10 @@
 export const AUDIO_PLAYLIST_FAVORITES_ID = 'favorites';
 export const AUDIO_PLAYLIST_ALL_ID = 'all-audio';
 export const AUDIO_PLAYLIST_ALL_TRACKS_ID = 'all-tracks';
+export const AUDIO_PLAYLIST_CANVAS_AUDIO_ID = 'canvas-audio';
+export const AUDIO_PLAYLIST_CANVAS_READING_ID = 'canvas-reading';
+export const AUDIO_PLAYLIST_CANVAS_AUDIO_LABEL = '画布音频';
+export const AUDIO_PLAYLIST_CANVAS_READING_LABEL = '画布语音';
 
 export interface AudioPlaylist {
   id: string;

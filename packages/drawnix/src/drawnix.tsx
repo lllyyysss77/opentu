@@ -53,6 +53,10 @@ import {
   getCanvasAudioPlaybackQueue,
   isAudioElement,
 } from './data/audio';
+import {
+  AUDIO_PLAYLIST_CANVAS_AUDIO_ID,
+  AUDIO_PLAYLIST_CANVAS_AUDIO_LABEL,
+} from './types/audio-playlist.types';
 import { UnifiedMediaViewer, type MediaItem as UnifiedMediaItem } from './components/shared/media-preview';
 import { PlaitDrawElement } from '@plait/draw';
 import { withTracking } from './plugins/tracking';
@@ -1373,7 +1377,11 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
           void canvasAudioPlaybackService.togglePlaybackInQueue(
             playbackSource,
             getCanvasAudioPlaybackQueue(board.children),
-            { queueSource: 'canvas' }
+            {
+              queueSource: 'canvas',
+              queueId: AUDIO_PLAYLIST_CANVAS_AUDIO_ID,
+              queueName: AUDIO_PLAYLIST_CANVAS_AUDIO_LABEL,
+            }
           ).catch(() => {
             // Error feedback is surfaced from the playback store.
           });

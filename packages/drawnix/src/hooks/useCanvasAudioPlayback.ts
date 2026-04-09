@@ -39,6 +39,8 @@ export function useCanvasAudioPlaybackControls() {
         queueSource?: CanvasAudioQueueSource;
         playlistId?: string;
         playlistName?: string;
+        queueId?: string;
+        queueName?: string;
       }
     ) =>
       canvasAudioPlaybackService.togglePlaybackInQueue(source, queue, options),
@@ -48,9 +50,13 @@ export function useCanvasAudioPlaybackControls() {
       canvasAudioPlaybackService.toggleReadingPlayback(source),
     toggleReadingPlaybackInQueue: (
       source: ReadingPlaybackSource,
-      queue: ReadingPlaybackSource[]
+      queue: ReadingPlaybackSource[],
+      options?: {
+        queueId?: string;
+        queueName?: string;
+      }
     ) =>
-      canvasAudioPlaybackService.toggleReadingPlaybackInQueue(source, queue),
+      canvasAudioPlaybackService.toggleReadingPlaybackInQueue(source, queue, options),
     pausePlayback: () => canvasAudioPlaybackService.pausePlayback(),
     resumePlayback: () => canvasAudioPlaybackService.resumePlayback(),
     playPrevious: () => canvasAudioPlaybackService.playPrevious(),

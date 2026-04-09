@@ -367,6 +367,17 @@ class ToolWindowService {
   }
 
   /**
+   * 更新工具窗口尺寸
+   */
+  updateToolSize(toolId: string, size: { width: number; height: number }): void {
+    const state = this.toolStates.get(toolId);
+    if (!state) return;
+
+    state.size = size;
+    this.notify();
+  }
+
+  /**
    * 检查工具是否已打开窗口（兼容旧 API）
    */
   isToolOpen(toolId: string): boolean {

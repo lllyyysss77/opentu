@@ -15,7 +15,7 @@ export const musicPlayerTool: ToolPluginModule = {
     icon: React.createElement(Music4, { size: 18 }),
     category: ToolCategory.UTILITIES,
     component: 'music-player',
-    defaultWidth: 420,
+    defaultWidth: 520,
     defaultHeight: 640,
   },
   Component: MusicPlayerToolComponent,

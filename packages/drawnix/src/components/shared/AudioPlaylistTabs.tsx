@@ -20,6 +20,12 @@ interface AudioPlaylistTabsProps {
   allCount: number;
   allTracksCount?: number;
   allTracksLabel?: string;
+  tempTabs?: Array<{
+    id: string;
+    label: string;
+    count: number;
+    type: 'audio' | 'reading';
+  }>;
   playlists: AudioPlaylist[];
   playlistItems: Record<string, AudioPlaylistItem[]>;
   onSelect: (playlistId: string) => void;
@@ -36,6 +42,7 @@ export const AudioPlaylistTabs: React.FC<AudioPlaylistTabsProps> = ({
   allCount,
   allTracksCount,
   allTracksLabel = '全部语音',
+  tempTabs = [],
   playlists,
   playlistItems,
   onSelect,
@@ -79,23 +86,18 @@ export const AudioPlaylistTabs: React.FC<AudioPlaylistTabsProps> = ({
     [onCreate, onDelete, onRename]
   );
 
+  const favoritesPlaylist = useMemo(
+    () => playlists.find((playlist) => playlist.id === AUDIO_PLAYLIST_FAVORITES_ID) || null,
+    [playlists]
+  );
+  const customPlaylists = useMemo(
+    () => playlists.filter((playlist) => playlist.id !== AUDIO_PLAYLIST_FAVORITES_ID),
+    [playlists]
+  );
+
   return (
     <>
       <div className={classNames('audio-playlist-tabs', className)}>
-        {typeof allTracksCount === 'number' ? (
-          <button
-            type="button"
-            className={classNames('audio-playlist-tabs__chip', {
-              'audio-playlist-tabs__chip--active': selectedPlaylistId === AUDIO_PLAYLIST_ALL_TRACKS_ID,
-            })}
-            onClick={() => onSelect(AUDIO_PLAYLIST_ALL_TRACKS_ID)}
-          >
-            <BookOpen size={14} />
-            <span>{allTracksLabel}</span>
-            <span className="audio-playlist-tabs__count">{allTracksCount}</span>
-          </button>
-        ) : null}
-
         <button
           type="button"
           className={classNames('audio-playlist-tabs__chip', {
@@ -123,9 +125,60 @@ export const AudioPlaylistTabs: React.FC<AudioPlaylistTabsProps> = ({
           <span className="audio-playlist-tabs__count">{allCount}</span>
         </button>
 
-        {playlists.map((playlist) => {
+        {typeof allTracksCount === 'number' ? (
+          <button
+            type="button"
+            className={classNames('audio-playlist-tabs__chip', {
+              'audio-playlist-tabs__chip--active': selectedPlaylistId === AUDIO_PLAYLIST_ALL_TRACKS_ID,
+            })}
+            onClick={() => onSelect(AUDIO_PLAYLIST_ALL_TRACKS_ID)}
+          >
+            <BookOpen size={14} />
+            <span>{allTracksLabel}</span>
+            <span className="audio-playlist-tabs__count">{allTracksCount}</span>
+          </button>
+        ) : null}
+
+        {favoritesPlaylist ? (
+          <button
+            type="button"
+            className={classNames('audio-playlist-tabs__chip', {
+              'audio-playlist-tabs__chip--active': selectedPlaylistId === favoritesPlaylist.id,
+            })}
+            onClick={() => onSelect(favoritesPlaylist.id)}
+            onContextMenu={
+              manageable
+                ? (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    open(event, favoritesPlaylist);
+                  }
+                : undefined
+            }
+          >
+            <Heart size={14} />
+            <span>{favoritesPlaylist.name}</span>
+            <span className="audio-playlist-tabs__count">{(playlistItems[favoritesPlaylist.id] || []).length}</span>
+          </button>
+        ) : null}
+
+        {tempTabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            className={classNames('audio-playlist-tabs__chip', {
+              'audio-playlist-tabs__chip--active': selectedPlaylistId === tab.id,
+            })}
+            onClick={() => onSelect(tab.id)}
+          >
+            {tab.type === 'reading' ? <BookOpen size={14} /> : <ListMusic size={14} />}
+            <span>{tab.label}</span>
+            <span className="audio-playlist-tabs__count">{tab.count}</span>
+          </button>
+        ))}
+
+        {customPlaylists.map((playlist) => {
           const playlistCount = (playlistItems[playlist.id] || []).length;
-          const isFavorites = playlist.id === AUDIO_PLAYLIST_FAVORITES_ID;
           const isManageable = manageable;
 
           return (
@@ -146,7 +199,7 @@ export const AudioPlaylistTabs: React.FC<AudioPlaylistTabsProps> = ({
                   : undefined
               }
             >
-              {isFavorites ? <Heart size={14} /> : <ListMusic size={14} />}
+              <ListMusic size={14} />
               <span>{playlist.name}</span>
               <span className="audio-playlist-tabs__count">{playlistCount}</span>
             </button>

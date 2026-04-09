@@ -91,6 +91,12 @@ import { getCanvasAudioPlaybackQueue } from '../../../data/audio';
 import { openMusicPlayerToolAndPlay } from '../../../services/tool-launch-service';
 import { useCanvasAudioPlayback } from '../../../hooks/useCanvasAudioPlayback';
 import {
+  AUDIO_PLAYLIST_CANVAS_AUDIO_ID,
+  AUDIO_PLAYLIST_CANVAS_AUDIO_LABEL,
+  AUDIO_PLAYLIST_CANVAS_READING_ID,
+  AUDIO_PLAYLIST_CANVAS_READING_LABEL,
+} from '../../../types/audio-playlist.types';
+import {
   createCanvasReadingPlaybackSource,
   createCanvasReadingPlaybackQueue,
   getCanvasSpeechText,
@@ -778,6 +784,10 @@ export const PopupToolbar = () => {
                   void openMusicPlayerToolAndPlay({
                     source: readingSource,
                     queue: readingQueue.length > 0 ? readingQueue : [readingSource],
+                    queueTab: {
+                      queueId: AUDIO_PLAYLIST_CANVAS_READING_ID,
+                      queueName: AUDIO_PLAYLIST_CANVAS_READING_LABEL,
+                    },
                   });
                 }}
               />
@@ -1469,6 +1479,10 @@ export const PopupToolbar = () => {
                       clipIds: audioElement.clipIds,
                     },
                     queue: getCanvasAudioPlaybackQueue(board.children),
+                    queueTab: {
+                      queueId: AUDIO_PLAYLIST_CANVAS_AUDIO_ID,
+                      queueName: AUDIO_PLAYLIST_CANVAS_AUDIO_LABEL,
+                    },
                   });
                 }}
               />

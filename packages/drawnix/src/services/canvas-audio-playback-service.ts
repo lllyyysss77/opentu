@@ -878,8 +878,8 @@ export class CanvasAudioPlaybackService {
     const activeQueueIndex = this.findQueueIndex(this.state.queue, source);
     this.patchState({
       queueSource: 'reading',
-      activePlaylistId: undefined,
-      activePlaylistName: undefined,
+      activePlaylistId: this.state.activePlaylistId,
+      activePlaylistName: this.state.activePlaylistName,
       activeQueueIndex,
     });
 
@@ -947,13 +947,21 @@ export class CanvasAudioPlaybackService {
       queueSource?: CanvasAudioQueueSource;
       playlistId?: string;
       playlistName?: string;
+      queueId?: string;
+      queueName?: string;
     }
   ): Promise<void> {
     this.setQueue(queue, options);
     await this.togglePlayback(source);
   }
 
-  setReadingQueue(queue: ReadingPlaybackSource[]): void {
+  setReadingQueue(
+    queue: ReadingPlaybackSource[],
+    options?: {
+      queueId?: string;
+      queueName?: string;
+    }
+  ): void {
     const normalizedQueue = this.normalizeQueue(queue);
     const activeSource = this.state.activeReadingSourceId
       ? normalizedQueue.find((item) => item.readingSourceId === this.state.activeReadingSourceId)
@@ -961,8 +969,8 @@ export class CanvasAudioPlaybackService {
 
     this.patchState({
       queueSource: 'reading',
-      activePlaylistId: undefined,
-      activePlaylistName: undefined,
+      activePlaylistId: options?.queueId,
+      activePlaylistName: options?.queueName,
       queue: normalizedQueue,
       activeQueueIndex: activeSource ? this.findQueueIndex(normalizedQueue, activeSource) : -1,
     });
@@ -970,9 +978,13 @@ export class CanvasAudioPlaybackService {
 
   toggleReadingPlaybackInQueue(
     source: ReadingPlaybackSource,
-    queue: ReadingPlaybackSource[]
+    queue: ReadingPlaybackSource[],
+    options?: {
+      queueId?: string;
+      queueName?: string;
+    }
   ): void {
-    this.setReadingQueue(queue);
+    this.setReadingQueue(queue, options);
     this.toggleReadingPlayback(source);
   }
 
@@ -982,6 +994,8 @@ export class CanvasAudioPlaybackService {
       queueSource?: CanvasAudioQueueSource;
       playlistId?: string;
       playlistName?: string;
+      queueId?: string;
+      queueName?: string;
     }
   ): void {
     const normalizedQueue = this.normalizeQueue(queue);
@@ -997,8 +1011,10 @@ export class CanvasAudioPlaybackService {
 
     this.patchState({
       queueSource: options?.queueSource || 'canvas',
-      activePlaylistId: options?.queueSource === 'playlist' ? options.playlistId : undefined,
-      activePlaylistName: options?.queueSource === 'playlist' ? options.playlistName : undefined,
+      activePlaylistId:
+        options?.queueId ?? (options?.queueSource === 'playlist' ? options.playlistId : undefined),
+      activePlaylistName:
+        options?.queueName ?? (options?.queueSource === 'playlist' ? options.playlistName : undefined),
       queue: normalizedQueue,
       activeQueueIndex: activeSource ? this.findQueueIndex(normalizedQueue, activeSource) : -1,
     });

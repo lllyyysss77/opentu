@@ -33,6 +33,10 @@ interface OpenMusicPlayerAndPlayOptions {
     playlistId: string;
     playlistName: string;
   };
+  queueTab?: {
+    queueId: string;
+    queueName: string;
+  };
 }
 
 export async function openMusicPlayerToolAndPlay(
@@ -42,17 +46,20 @@ export async function openMusicPlayerToolAndPlay(
 
   if (options.queue && options.queue.length > 0) {
     if (options.queue.every((item) => isReadingPlaybackSource(item))) {
-      canvasAudioPlaybackService.setReadingQueue(options.queue as ReadingPlaybackSource[]);
+      canvasAudioPlaybackService.setReadingQueue(options.queue as ReadingPlaybackSource[], {
+        queueId: options.queueTab?.queueId,
+        queueName: options.queueTab?.queueName,
+      });
     } else {
       canvasAudioPlaybackService.setQueue(
         options.queue as CanvasAudioPlaybackSource[],
-        options.playlist
-          ? {
-              queueSource: 'playlist',
-              playlistId: options.playlist.playlistId,
-              playlistName: options.playlist.playlistName,
-            }
-          : undefined
+        {
+          queueSource: options.playlist ? 'playlist' : 'canvas',
+          playlistId: options.playlist?.playlistId,
+          playlistName: options.playlist?.playlistName,
+          queueId: options.queueTab?.queueId,
+          queueName: options.queueTab?.queueName,
+        }
       );
     }
   }
