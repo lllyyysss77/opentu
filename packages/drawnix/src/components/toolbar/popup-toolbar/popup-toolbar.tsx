@@ -20,7 +20,7 @@ import {
   Transforms,
   getViewportOrigination,
 } from '@plait/core';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useBoard } from '@plait-board/react-board';
 import { flip, offset, shift, useFloating } from '@floating-ui/react';
 import { Island } from '../../island';
@@ -60,7 +60,7 @@ import { PopupDistributeButton } from './distribute-button';
 import { PopupBooleanButton } from './boolean-button';
 import { TextPropertyPanel } from './text-property-panel';
 import { AIImageIcon, AIVideoIcon, VideoFrameIcon, DuplicateIcon, TrashIcon, SplitImageIcon, DownloadIcon, MergeIcon, VideoMergeIcon } from '../../icons';
-import { Pencil, Presentation, Copy, Play } from 'lucide-react';
+import { Pencil, Presentation, Copy, Play, Volume2, VolumeX } from 'lucide-react';
 import { useDrawnix, DialogType } from '../../../hooks/use-drawnix';
 import { useI18n } from '../../../i18n';
 import { ToolButton } from '../../tool-button';
@@ -89,6 +89,11 @@ import { openCardInKnowledgeBase } from '../../../utils/card-actions';
 import { isAudioNodeElement } from '../../../types/audio-node.types';
 import { getCanvasAudioPlaybackQueue } from '../../../data/audio';
 import { openMusicPlayerToolAndPlay } from '../../../services/tool-launch-service';
+import { useTextToSpeech } from '../../../hooks/useTextToSpeech';
+import {
+  getCanvasSpeechText,
+  type CanvasSpeechTextResult,
+} from './text-to-speech-utils';
 
 export const PopupToolbar = () => {
   const board = useBoard();
@@ -118,6 +123,10 @@ export const PopupToolbar = () => {
   // Frame 幻灯片播放状态
   const [showSlideshow, setShowSlideshow] = useState(false);
   const [slideshowFrameId, setSlideshowFrameId] = useState<string | undefined>();
+  const [speechTextResult, setSpeechTextResult] = useState<CanvasSpeechTextResult>({
+    text: '',
+    source: null,
+  });
 
   // 保存 toolbar 和选中元素的位置信息，用于定位属性面板
   const [toolbarRect, setToolbarRect] = useState<{ top: number; left: number; width: number; height: number } | undefined>();
@@ -126,6 +135,58 @@ export const PopupToolbar = () => {
 
   // 初始化全局鼠标位置跟踪
   useGlobalMousePosition();
+  const { isSpeaking, isPaused, isSupported, speak, pause, resume, stop } =
+    useTextToSpeech();
+  const lastSpokenTextRef = useRef('');
+  const previousSpeechSelectionKeyRef = useRef<string>('');
+  const speechSelectionKey = useMemo(
+    () => selectedElements.map((element) => element.id).sort().join('|'),
+    [selectedElements]
+  );
+  const speechActionLabel = isSpeaking
+    ? isPaused
+      ? language === 'zh'
+        ? '继续朗读'
+        : 'Resume reading'
+      : language === 'zh'
+        ? '暂停朗读'
+        : 'Pause reading'
+    : language === 'zh'
+      ? '语音朗读'
+      : 'Read aloud';
+
+  useEffect(() => {
+    if (
+      isSpeaking &&
+      previousSpeechSelectionKeyRef.current &&
+      previousSpeechSelectionKeyRef.current !== speechSelectionKey
+    ) {
+      stop();
+    }
+    previousSpeechSelectionKeyRef.current = speechSelectionKey;
+  }, [speechSelectionKey, isSpeaking, stop]);
+
+  useEffect(() => {
+    if (selectedElements.length === 0 || movingOrDragging) {
+      setSpeechTextResult((prev) =>
+        prev.text || prev.source ? { text: '', source: null } : prev
+      );
+      return;
+    }
+
+    const updateSpeechText = () => {
+      const next = getCanvasSpeechText(board, selectedElements);
+      setSpeechTextResult((prev) =>
+        prev.text === next.text && prev.source === next.source ? prev : next
+      );
+    };
+
+    updateSpeechText();
+    document.addEventListener('selectionchange', updateSpeechText);
+    return () => {
+      document.removeEventListener('selectionchange', updateSpeechText);
+    };
+  }, [board, speechSelectionKey, movingOrDragging]);
 
   // popup-toolbar 的显示逻辑
   const open =
@@ -173,6 +234,7 @@ export const PopupToolbar = () => {
     hasCardEdit?: boolean; // 是否显示 Card 编辑按钮（打开知识库）
     hasFramePlay?: boolean; // 是否显示 Frame 幻灯片播放按钮
     hasAudioPlayer?: boolean; // 是否显示在音乐播放器中播放按钮
+    hasTextToSpeech?: boolean; // 是否显示语音朗读按钮
   } = {
     fill: 'red',
   };
@@ -374,6 +436,11 @@ export const PopupToolbar = () => {
       isAudioNodeElement(selectedElements[0]) &&
       !PlaitBoard.hasBeenTextEditing(board);
 
+    const hasTextToSpeech =
+      isSupported &&
+      !PlaitBoard.hasBeenTextEditing(board) &&
+      speechTextResult.text.length > 0;
+
     state = {
       ...getElementState(board),
       hasFill,
@@ -403,6 +470,7 @@ export const PopupToolbar = () => {
       hasCardEdit,
       hasFramePlay,
       hasAudioPlayer,
+      hasTextToSpeech,
     };
   }
 
@@ -660,6 +728,43 @@ export const PopupToolbar = () => {
                 key={'prompt'}
                 language={language as 'zh' | 'en'}
                 title={language === 'zh' ? '提示词' : 'Prompts'}
+              />
+            )}
+            {state.hasTextToSpeech && (
+              <ToolButton
+                className="text-to-speech"
+                key="text-to-speech"
+                type="icon"
+                icon={
+                  isSpeaking && !isPaused ? (
+                    <VolumeX size={15} />
+                  ) : (
+                    <Volume2 size={15} />
+                  )
+                }
+                visible={true}
+                selected={isSpeaking && !isPaused}
+                title={speechActionLabel}
+                aria-label={speechActionLabel}
+                data-track="toolbar_click_text_to_speech"
+                onPointerUp={() => {
+                  if (!speechTextResult.text) return;
+                  if (isSpeaking) {
+                    if (lastSpokenTextRef.current !== speechTextResult.text) {
+                      lastSpokenTextRef.current = speechTextResult.text;
+                      speak(speechTextResult.text);
+                      return;
+                    }
+                    if (isPaused) {
+                      resume();
+                    } else {
+                      pause();
+                    }
+                    return;
+                  }
+                  lastSpokenTextRef.current = speechTextResult.text;
+                  speak(speechTextResult.text);
+                }}
               />
             )}
             {/* 属性设置按钮 - 仅在选中包含文本的元素时显示 */}

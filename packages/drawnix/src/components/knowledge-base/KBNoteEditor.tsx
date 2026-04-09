@@ -24,7 +24,7 @@ import {
 import { MarkdownEditor, MarkdownEditorRef } from '../MarkdownEditor';
 import { KBTagSelector } from './KBTagSelector';
 import { McpToolSelector } from './McpToolSelector';
-import { useTextToSpeech } from './useTextToSpeech';
+import { useTextToSpeech } from '../../hooks/useTextToSpeech';
 import { knowledgeBaseService } from '../../services/knowledge-base-service';
 import './knowledge-base-editor.scss';
 import type { KBNote, KBTag, KBTagWithCount } from '../../types/knowledge-base.types';
