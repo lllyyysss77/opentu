@@ -16,7 +16,7 @@ import {
 } from '@plait/core';
 import { isSupportedImageFileType, isSupportedAudioFileType } from '../data/blob';
 import { insertImage, insertImageFromUrlAndSelect } from '../data/image';
-import { insertAudioFromUrl, getAudioFileDuration } from '../data/audio';
+import { insertAudioFromUrl, getAudioFileDuration, extractAudioCoverArt } from '../data/audio';
 import { unifiedCacheService } from '../services/unified-cache-service';
 import { isHitImage, MindElement, ImageData } from '@plait/mind';
 import { ImageViewer } from '../libs/image-viewer';
@@ -137,12 +137,32 @@ export const withImagePlugin = (board: PlaitBoard) => {
           try {
             const assetId = crypto.randomUUID();
             const ext = file.name.split('.').pop() || 'mp3';
+            const title = file.name.replace(/\.[^.]+$/, '');
             const cacheUrl = `/__aitu_cache__/audio/${assetId}.${ext}`;
-            await unifiedCacheService.cacheMediaFromBlob(cacheUrl, file, 'audio', { taskId: assetId });
-            const duration = await getAudioFileDuration(file);
+            await unifiedCacheService.cacheMediaFromBlob(cacheUrl, file, 'audio', {
+              taskId: assetId,
+              name: title,
+            });
+
+            // 并行提取时长和封面
+            const [duration, coverBlob] = await Promise.all([
+              getAudioFileDuration(file),
+              extractAudioCoverArt(file),
+            ]);
+
+            let previewImageUrl: string | undefined;
+            if (coverBlob) {
+              const coverUrl = `/__aitu_cache__/image/${assetId}-cover.png`;
+              await unifiedCacheService.cacheMediaFromBlob(coverUrl, coverBlob, 'image', {
+                taskId: `${assetId}-cover`,
+              });
+              previewImageUrl = coverUrl;
+            }
+
             await insertAudioFromUrl(board, cacheUrl, {
-              title: file.name.replace(/\.[^.]+$/, ''),
+              title,
               duration,
+              previewImageUrl,
             }, point, true);
           } catch (err) {
             console.error('[withImagePlugin] Failed to insert audio from drop:', err);

@@ -453,3 +453,110 @@ export function getAudioFileDuration(file: File): Promise<number | undefined> {
     audio.src = url;
   });
 }
+
+/**
+ * 从音频文件中提取内嵌封面图（ID3v2 APIC frame）
+ * 只读取文件头部，不加载整个文件到内存
+ */
+export async function extractAudioCoverArt(file: File): Promise<Blob | null> {
+  try {
+    // 只读前 512KB，足够覆盖大多数 ID3 标签
+    const headerSize = Math.min(file.size, 512 * 1024);
+    const buffer = await file.slice(0, headerSize).arrayBuffer();
+    const view = new DataView(buffer);
+
+    // 检查 ID3v2 头: "ID3"
+    if (view.byteLength < 10) return null;
+    if (view.getUint8(0) !== 0x49 || view.getUint8(1) !== 0x44 || view.getUint8(2) !== 0x33) {
+      return null;
+    }
+
+    // ID3v2 标签大小（syncsafe integer）
+    const tagSize =
+      ((view.getUint8(6) & 0x7f) << 21) |
+      ((view.getUint8(7) & 0x7f) << 14) |
+      ((view.getUint8(8) & 0x7f) << 7) |
+      (view.getUint8(9) & 0x7f);
+
+    const majorVersion = view.getUint8(3);
+    const end = Math.min(10 + tagSize, view.byteLength);
+    let offset = 10;
+
+    // 跳过扩展头
+    const flags = view.getUint8(5);
+    if (majorVersion >= 3 && (flags & 0x40)) {
+      if (offset + 4 > end) return null;
+      const extSize = view.getUint32(offset);
+      offset += extSize;
+    }
+
+    // 遍历帧查找 APIC
+    while (offset + 10 < end) {
+      const frameId = String.fromCharCode(
+        view.getUint8(offset), view.getUint8(offset + 1),
+        view.getUint8(offset + 2), view.getUint8(offset + 3)
+      );
+
+      if (frameId === '\0\0\0\0') break; // 填充区
+
+      let frameSize: number;
+      if (majorVersion >= 4) {
+        // ID3v2.4: syncsafe integer
+        frameSize =
+          ((view.getUint8(offset + 4) & 0x7f) << 21) |
+          ((view.getUint8(offset + 5) & 0x7f) << 14) |
+          ((view.getUint8(offset + 6) & 0x7f) << 7) |
+          (view.getUint8(offset + 7) & 0x7f);
+      } else {
+        // ID3v2.3: regular integer
+        frameSize = view.getUint32(offset + 4);
+      }
+
+      if (frameSize <= 0 || offset + 10 + frameSize > end) break;
+
+      if (frameId === 'APIC') {
+        const frameData = new Uint8Array(buffer, offset + 10, frameSize);
+        const encoding = frameData[0];
+        let pos = 1;
+
+        // 读取 MIME type（null-terminated ASCII）
+        let mimeType = '';
+        while (pos < frameData.length && frameData[pos] !== 0) {
+          mimeType += String.fromCharCode(frameData[pos]);
+          pos++;
+        }
+        pos++; // 跳过 null terminator
+
+        // 跳过 picture type (1 byte)
+        pos++;
+
+        // 跳过 description（null-terminated，编码决定终止符宽度）
+        if (encoding === 1 || encoding === 2) {
+          // UTF-16: 双字节 null terminator
+          while (pos + 1 < frameData.length && !(frameData[pos] === 0 && frameData[pos + 1] === 0)) {
+            pos += 2;
+          }
+          pos += 2;
+        } else {
+          // Latin-1 / UTF-8: 单字节 null terminator
+          while (pos < frameData.length && frameData[pos] !== 0) {
+            pos++;
+          }
+          pos++;
+        }
+
+        if (pos < frameData.length) {
+          const imageData = frameData.slice(pos);
+          const resolvedMime = mimeType || 'image/jpeg';
+          return new Blob([imageData], { type: resolvedMime });
+        }
+      }
+
+      offset += 10 + frameSize;
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
