@@ -16,7 +16,8 @@ import React, {
   useMemo,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronDown, Plus } from 'lucide-react';
+import { Check, ChevronDown, Copy, Plus } from 'lucide-react';
+import { MessagePlugin } from 'tdesign-react';
 import {
   IMAGE_MODELS,
   getModelConfig,
@@ -34,6 +35,11 @@ import {
   getDiscoveryVendorLabel,
 } from '../shared/ModelVendorBrand';
 import { ModelSourceIcon } from '../shared/ModelSourceIcon';
+import {
+  ContextMenu,
+  useContextMenuState,
+  type ContextMenuEntry,
+} from '../shared';
 import './model-dropdown.scss';
 import { ModelHealthBadge } from '../shared/ModelHealthBadge';
 import { KeyboardDropdown } from './KeyboardDropdown';
@@ -111,6 +117,11 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   const [activeProviderId, setActiveProviderId] = useState<string | null>(null);
   const [activeVendor, setActiveVendor] = useState<string | null>(null);
+  const {
+    contextMenu,
+    open: openContextMenuAt,
+    close: closeContextMenu,
+  } = useContextMenuState<{ modelId: string }>();
   const triggerInputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const providerProfiles = useProviderProfiles();
@@ -254,7 +265,7 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
           fallbackOrderMap: modelOrderMap,
         })
       );
-  }, [models, searchQuery, modelOrderMap, getModelKey]);
+  }, [models, searchQuery, modelOrderMap]);
 
   const displayedModels = useMemo(
     () => (isSearching ? filteredModels : activeCategory?.models || []),
@@ -319,6 +330,15 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
     setActiveVendor(vendorId);
     setHighlightedIndex(0);
   }, []);
+
+  const openContextMenu = useCallback(
+    (event: React.MouseEvent, modelId: string) => {
+      event.preventDefault();
+      event.stopPropagation();
+      openContextMenuAt(event, { modelId });
+    },
+    [openContextMenuAt]
+  );
 
   const handleOpenProviderSettings = useCallback(() => {
     const availableProfiles = providerProfiles.filter(
@@ -403,6 +423,11 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
     selectedVendorHint,
   ]);
 
+  useEffect(() => {
+    if (isOpen) return;
+    closeContextMenu();
+  }, [isOpen, closeContextMenu]);
+
   // 切换下拉菜单
   const handleToggle = useCallback(
     (e?: React.MouseEvent) => {
@@ -441,6 +466,7 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
   // 选择模型
   const handleSelect = useCallback(
     (model: ModelConfig) => {
+      closeContextMenu();
       onSelect(model.id);
       onSelectModel?.(model);
       setIsOpen(false);
@@ -450,8 +476,46 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
         setSearchQuery('');
       }
     },
-    [onSelect, onSelectModel, setIsOpen, variant]
+    [closeContextMenu, onSelect, onSelectModel, setIsOpen, variant]
   );
+
+  const handleCopyModelId = useCallback(
+    async (modelId: string) => {
+      if (!navigator.clipboard?.writeText) {
+        MessagePlugin.warning(
+          language === 'zh' ? '当前环境不支持复制' : 'Clipboard is not supported'
+        );
+        return;
+      }
+
+      try {
+        await navigator.clipboard.writeText(modelId);
+        MessagePlugin.success(
+          language === 'zh' ? '模型名已复制' : 'Model name copied'
+        );
+        closeContextMenu();
+      } catch (error) {
+        console.error('[ModelDropdown] failed to copy model id', error);
+        MessagePlugin.error(language === 'zh' ? '复制失败' : 'Copy failed');
+      }
+    },
+    [closeContextMenu, language]
+  );
+
+  const contextMenuItems = useMemo<ContextMenuEntry<{ modelId: string }>[]>(() => [
+    {
+      key: 'model-id',
+      label: ({ modelId }) => modelId,
+      disabled: true,
+    },
+    { key: 'divider-1', type: 'divider' },
+    {
+      key: 'copy-model-id',
+      label: language === 'zh' ? '复制模型名' : 'Copy model name',
+      icon: <Copy size={14} />,
+      onSelect: ({ modelId }) => handleCopyModelId(modelId),
+    },
+  ], [handleCopyModelId, language]);
 
   const handleOpenKey = useCallback(
     (key: string) => {
@@ -532,7 +596,7 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
           type="button"
           aria-haspopup="listbox"
           aria-expanded={isOpen}
-          title={`${
+          aria-label={`${
             currentModel?.shortLabel || currentModel?.label || selectedModel
           } (↑↓ Tab)`}
           disabled={disabled}
@@ -695,7 +759,7 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
                   type="button"
                   className="model-dropdown__provider-action"
                   onClick={handleOpenProviderSettings}
-                  title={
+                  aria-label={
                     language === 'zh'
                       ? '新增供应商或打开供应商设置'
                       : 'Add provider or open provider settings'
@@ -719,7 +783,11 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
                   </div>
                 ) : null}
 
-                <div className="model-dropdown__list" ref={listRef}>
+                <div
+                  className="model-dropdown__list"
+                  ref={listRef}
+                  onScroll={closeContextMenu}
+                >
                   {displayedModels.length > 0 ? (
                     displayedModels.map((model, index) => {
                       const modelKey = getModelKey(model);
@@ -727,10 +795,6 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
                       const isSelected =
                         modelKey === (selectedSelectionKey || selectedModel);
                       const isHighlighted = index === highlightedIndex;
-                      const displayName = model.shortLabel || model.label;
-                      const showIdTooltip =
-                        displayName !== model.id &&
-                        !displayName.includes(model.id);
                       return (
                         <div
                           key={modelKey}
@@ -743,10 +807,14 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
                               : ''
                           }`}
                           onClick={() => handleSelect(model)}
-                          onMouseEnter={() => setHighlightedIndex(index)}
+                          onMouseEnter={() => {
+                            setHighlightedIndex(index);
+                          }}
+                          onContextMenu={(event) =>
+                            openContextMenu(event, model.id)
+                          }
                           role="option"
                           aria-selected={isSelected}
-                          title={showIdTooltip ? model.id : undefined}
                         >
                           <div className="model-dropdown__item-content">
                             <div className="model-dropdown__item-name">
@@ -814,6 +882,13 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
           >
             {renderTrigger(handleTriggerKeyDown)}
             {isOpen && (isPortalled ? createPortal(menu, document.body) : menu)}
+            {isOpen ? (
+              <ContextMenu
+                state={contextMenu}
+                items={contextMenuItems}
+                onClose={closeContextMenu}
+              />
+            ) : null}
           </div>
         );
       }}

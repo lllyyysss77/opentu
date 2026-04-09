@@ -1,5 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { createPortal } from 'react-dom';
+import React, { useMemo } from 'react';
 import { Heart, ListMusic, Pencil, Plus, Trash2 } from 'lucide-react';
 import classNames from 'classnames';
 import type { AudioPlaylist, AudioPlaylistItem } from '../../types/audio-playlist.types';
@@ -7,6 +6,11 @@ import {
   AUDIO_PLAYLIST_ALL_ID,
   AUDIO_PLAYLIST_FAVORITES_ID,
 } from '../../types/audio-playlist.types';
+import {
+  ContextMenu,
+  useContextMenuState,
+  type ContextMenuEntry,
+} from './ContextMenu';
 import './audio-playlist-tabs.scss';
 
 interface AudioPlaylistTabsProps {
@@ -36,29 +40,39 @@ export const AudioPlaylistTabs: React.FC<AudioPlaylistTabsProps> = ({
   allLabel = '全部音频',
   createLabel = '新建播放列表',
 }) => {
-  const [contextMenu, setContextMenu] = useState<{
-    x: number;
-    y: number;
-    playlist: AudioPlaylist;
-  } | null>(null);
+  const { contextMenu, open, close } = useContextMenuState<AudioPlaylist>();
 
   const manageable = useMemo(
     () => typeof onRename === 'function' || typeof onDelete === 'function',
     [onDelete, onRename]
   );
 
-  useEffect(() => {
-    if (!contextMenu) return;
-
-    const closeMenu = () => setContextMenu(null);
-    document.addEventListener('click', closeMenu);
-    document.addEventListener('scroll', closeMenu, true);
-
-    return () => {
-      document.removeEventListener('click', closeMenu);
-      document.removeEventListener('scroll', closeMenu, true);
-    };
-  }, [contextMenu]);
+  const menuItems = useMemo<ContextMenuEntry<AudioPlaylist>[]>(
+    () => [
+      {
+        key: 'create',
+        label: '新建播放列表',
+        icon: <Plus size={14} />,
+        onSelect: () => onCreate(),
+      },
+      {
+        key: 'rename',
+        label: '重命名',
+        icon: <Pencil size={14} />,
+        disabled: (playlist) => playlist.isSystem || !onRename,
+        onSelect: (playlist) => onRename?.(playlist),
+      },
+      {
+        key: 'delete',
+        label: '删除播放列表',
+        icon: <Trash2 size={14} />,
+        danger: true,
+        disabled: (playlist) => playlist.isSystem || !onDelete,
+        onSelect: (playlist) => onDelete?.(playlist),
+      },
+    ],
+    [onCreate, onDelete, onRename]
+  );
 
   return (
     <>
@@ -74,16 +88,12 @@ export const AudioPlaylistTabs: React.FC<AudioPlaylistTabsProps> = ({
               ? (event) => {
                   event.preventDefault();
                   event.stopPropagation();
-                  setContextMenu({
-                    x: event.clientX,
-                    y: event.clientY,
-                    playlist: {
-                      id: AUDIO_PLAYLIST_ALL_ID,
-                      name: allLabel,
-                      createdAt: 0,
-                      updatedAt: 0,
-                      isSystem: true,
-                    },
+                  open(event, {
+                    id: AUDIO_PLAYLIST_ALL_ID,
+                    name: allLabel,
+                    createdAt: 0,
+                    updatedAt: 0,
+                    isSystem: true,
                   });
                 }
               : undefined
@@ -110,14 +120,10 @@ export const AudioPlaylistTabs: React.FC<AudioPlaylistTabsProps> = ({
               onContextMenu={
                 isManageable
                   ? (event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      setContextMenu({
-                        x: event.clientX,
-                        y: event.clientY,
-                        playlist,
-                      });
-                    }
+                    event.preventDefault();
+                    event.stopPropagation();
+                    open(event, playlist);
+                  }
                   : undefined
               }
             >
@@ -138,55 +144,7 @@ export const AudioPlaylistTabs: React.FC<AudioPlaylistTabsProps> = ({
         </button>
       </div>
 
-      {contextMenu &&
-        createPortal(
-          <div
-            className="audio-playlist-tabs__context-menu"
-            style={{ top: contextMenu.y, left: contextMenu.x }}
-            onClick={(event) => event.stopPropagation()}
-          >
-            <button
-              type="button"
-              className="audio-playlist-tabs__context-item"
-              onClick={() => {
-                setContextMenu(null);
-                onCreate();
-              }}
-            >
-              <Plus size={14} />
-              <span>新建播放列表</span>
-            </button>
-
-            {!contextMenu.playlist.isSystem && onRename ? (
-              <button
-                type="button"
-                className="audio-playlist-tabs__context-item"
-                onClick={() => {
-                  setContextMenu(null);
-                  onRename(contextMenu.playlist);
-                }}
-              >
-                <Pencil size={14} />
-                <span>重命名</span>
-              </button>
-            ) : null}
-
-            {!contextMenu.playlist.isSystem && onDelete ? (
-              <button
-                type="button"
-                className="audio-playlist-tabs__context-item audio-playlist-tabs__context-item--danger"
-                onClick={() => {
-                  setContextMenu(null);
-                  onDelete(contextMenu.playlist);
-                }}
-              >
-                <Trash2 size={14} />
-                <span>删除播放列表</span>
-              </button>
-            ) : null}
-          </div>,
-          document.body
-        )}
+      <ContextMenu state={contextMenu} items={menuItems} onClose={close} />
     </>
   );
 };

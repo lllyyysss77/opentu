@@ -1,7 +1,8 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Dialog, Input } from 'tdesign-react';
 import { AudioTrackList } from '../shared/AudioTrackList';
 import { AudioTrackContextMenu } from '../shared/AudioTrackContextMenu';
+import { useContextMenuState } from '../shared';
 import { useAssets } from '../../contexts/AssetContext';
 import { useResolvedAudioDurations } from '../../hooks/useResolvedAudioDurations';
 import { AssetType } from '../../types/asset.types';
@@ -54,24 +55,14 @@ export const CanvasAudioPlayerPlaylist: React.FC<CanvasAudioPlayerPlaylistProps>
     removeAssetFromPlaylist,
     toggleFavorite,
   } = useAudioPlaylists();
-  const [contextMenu, setContextMenu] = useState<{
-    x: number;
-    y: number;
-    assetId: string;
-  } | null>(null);
+  const {
+    contextMenu,
+    openAt: openContextMenuAt,
+    close: closeContextMenu,
+  } = useContextMenuState<string>();
   const [createDialogVisible, setCreateDialogVisible] = useState(false);
   const [playlistName, setPlaylistName] = useState('');
   const [pendingAssetId, setPendingAssetId] = useState<string | null>(null);
-
-  useEffect(() => {
-    const closeMenu = () => setContextMenu(null);
-    document.addEventListener('click', closeMenu);
-    document.addEventListener('scroll', closeMenu, true);
-    return () => {
-      document.removeEventListener('click', closeMenu);
-      document.removeEventListener('scroll', closeMenu, true);
-    };
-  }, []);
 
   const selectedPlaylistId =
     queueSource === 'playlist' && activePlaylistId ? activePlaylistId : AUDIO_PLAYLIST_ALL_ID;
@@ -131,11 +122,7 @@ export const CanvasAudioPlayerPlaylist: React.FC<CanvasAudioPlayerPlaylistProps>
           }
           event.preventDefault();
           event.stopPropagation();
-          setContextMenu({
-            x: event.clientX,
-            y: event.clientY,
-            assetId,
-          });
+          openContextMenuAt(event.clientX, event.clientY, assetId);
         }}
         onToggleFavorite={(selectedItem) => {
           const nextItem = queue.find((item, index) => `${item.audioUrl}-${index}` === selectedItem.id);
@@ -154,13 +141,21 @@ export const CanvasAudioPlayerPlaylist: React.FC<CanvasAudioPlayerPlaylistProps>
         showPlaybackIndicator
       />
       <AudioTrackContextMenu
-        contextMenu={contextMenu}
+        contextMenu={
+          contextMenu
+            ? {
+                x: contextMenu.x,
+                y: contextMenu.y,
+                assetId: contextMenu.payload,
+              }
+            : null
+        }
         playlists={playlists}
         playlistItems={playlistItems}
         favoriteAssetIds={favoriteAssetIds}
         selectedPlaylistId={selectedPlaylistId === AUDIO_PLAYLIST_ALL_ID ? null : selectedPlaylistId}
         currentPlaylistAssetIds={currentPlaylistAssetIds}
-        onClose={() => setContextMenu(null)}
+        onClose={closeContextMenu}
         onToggleFavorite={(assetId) => void toggleFavorite(assetId)}
         onAddToPlaylist={(assetId, playlistId) => void addAssetToPlaylist(assetId, playlistId)}
         onRemoveFromPlaylist={(assetId, playlistId) => void removeAssetFromPlaylist(assetId, playlistId)}

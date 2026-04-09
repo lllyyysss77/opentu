@@ -1,7 +1,10 @@
 import React from 'react';
-import { createPortal } from 'react-dom';
 import { Heart, ListMusic, Plus, XSquare } from 'lucide-react';
 import type { AudioPlaylist, AudioPlaylistItem } from '../../types/audio-playlist.types';
+import {
+  ContextMenu,
+  type ContextMenuEntry,
+} from './ContextMenu';
 
 interface AudioTrackContextMenuProps {
   contextMenu: {
@@ -38,66 +41,64 @@ export const AudioTrackContextMenu: React.FC<AudioTrackContextMenuProps> = ({
     return null;
   }
 
-  return createPortal(
-    <div
-      className="audio-track-context-menu"
-      style={{ top: contextMenu.y, left: contextMenu.x }}
-      onClick={(event) => event.stopPropagation()}
-    >
-      <button
-        type="button"
-        className="audio-track-context-menu__item"
-        onClick={() => {
-          onClose();
-          onToggleFavorite(contextMenu.assetId);
-        }}
-      >
-        <Heart size={14} />
-        <span>{favoriteAssetIds.has(contextMenu.assetId) ? '取消收藏' : '加入收藏'}</span>
-      </button>
-      {playlists.map((playlist) => {
-        const exists = (playlistItems[playlist.id] || []).some((item) => item.assetId === contextMenu.assetId);
-        return (
-          <button
-            key={playlist.id}
-            type="button"
-            className="audio-track-context-menu__item"
-            disabled={exists}
-            onClick={() => {
-              onClose();
-              onAddToPlaylist(contextMenu.assetId, playlist.id);
-            }}
-          >
-            <ListMusic size={14} />
-            <span>{exists ? `已在 ${playlist.name}` : `添加到 ${playlist.name}`}</span>
-          </button>
-        );
-      })}
-      {selectedPlaylistId && currentPlaylistAssetIds?.has(contextMenu.assetId) && onRemoveFromPlaylist ? (
-        <button
-          type="button"
-          className="audio-track-context-menu__item audio-track-context-menu__item--danger"
-          onClick={() => {
-            onClose();
-            onRemoveFromPlaylist(contextMenu.assetId, selectedPlaylistId);
-          }}
-        >
-          <XSquare size={14} />
-          <span>从当前播放列表移除</span>
-        </button>
-      ) : null}
-      <button
-        type="button"
-        className="audio-track-context-menu__item"
-        onClick={() => {
-          onClose();
-          onCreatePlaylistAndAdd(contextMenu.assetId);
-        }}
-      >
-        <Plus size={14} />
-        <span>新建播放列表并添加</span>
-      </button>
-    </div>,
-    document.body
+  const items: ContextMenuEntry<string>[] = [
+    {
+      key: 'favorite',
+      label: (assetId) => (favoriteAssetIds.has(assetId) ? '取消收藏' : '加入收藏'),
+      icon: <Heart size={14} />,
+      onSelect: (assetId) => onToggleFavorite(assetId),
+    },
+    {
+      key: 'playlist-actions',
+      type: 'submenu',
+      label: '添加到播放列表',
+      icon: <ListMusic size={14} />,
+      children: (assetId) =>
+        playlists.map((playlist) => {
+          const exists = (playlistItems[playlist.id] || []).some(
+            (item) => item.assetId === assetId
+          );
+          return {
+            key: `playlist-${playlist.id}`,
+            label: exists ? `已在 ${playlist.name}` : `添加到 ${playlist.name}`,
+            icon: <ListMusic size={14} />,
+            disabled: exists,
+            onSelect: () => onAddToPlaylist(assetId, playlist.id),
+          };
+        }),
+    },
+  ];
+
+  if (
+    selectedPlaylistId &&
+    currentPlaylistAssetIds?.has(contextMenu.assetId) &&
+    onRemoveFromPlaylist
+  ) {
+    items.push({
+      key: 'remove-from-current',
+      label: '从当前播放列表移除',
+      icon: <XSquare size={14} />,
+      danger: true,
+      onSelect: (assetId) => onRemoveFromPlaylist(assetId, selectedPlaylistId),
+    });
+  }
+
+  items.push({
+    key: 'create-playlist',
+    label: '新建播放列表并添加',
+    icon: <Plus size={14} />,
+    onSelect: (assetId) => onCreatePlaylistAndAdd(assetId),
+  });
+
+  return (
+    <ContextMenu
+      state={{
+        x: contextMenu.x,
+        y: contextMenu.y,
+        payload: contextMenu.assetId,
+      }}
+      items={items}
+      onClose={onClose}
+    />
   );
 };

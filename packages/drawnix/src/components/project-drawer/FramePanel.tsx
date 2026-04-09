@@ -6,7 +6,6 @@
  */
 
 import React, { useMemo, useCallback, useState, useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
 import classNames from 'classnames';
 import { Input, Button, MessagePlugin, Tooltip, Loading } from 'tdesign-react';
 import { SearchIcon, EditIcon, DeleteIcon, ViewListIcon, AddIcon, PlayCircleIcon, ImageIcon, LayersIcon, FileCopyIcon } from 'tdesign-icons-react';
@@ -39,6 +38,11 @@ import { duplicateFrame, focusFrame } from '../../utils/frame-duplicate';
 import { useI18n } from '../../i18n';
 import { DownloadIcon } from '../icons';
 import { exportAllPPTFrames, exportFramesToPPT } from '../../services/ppt/ppt-export-service';
+import {
+  ContextMenu,
+  useContextMenuState,
+  type ContextMenuEntry,
+} from '../shared';
 
 interface FrameInfo {
   frame: PlaitFrame;
@@ -64,12 +68,11 @@ export const FramePanel: React.FC = () => {
   const [generatingImageIds, setGeneratingImageIds] = useState<Set<string>>(new Set());
   const [isGeneratingAll, setIsGeneratingAll] = useState(false);
   const bgFileInputRef = useRef<HTMLInputElement>(null);
-  const [contextMenu, setContextMenu] = useState<{
-    visible: boolean;
-    x: number;
-    y: number;
-    frameInfo: FrameInfo;
-  } | null>(null);
+  const {
+    contextMenu,
+    open: openContextMenu,
+    close: closeContextMenu,
+  } = useContextMenuState<FrameInfo>();
   const [isExportingAllPPT, setIsExportingAllPPT] = useState(false);
   const [exportingFrameId, setExportingFrameId] = useState<string | null>(null);
 
@@ -333,42 +336,18 @@ export const FramePanel: React.FC = () => {
     [getDragProps, rootIndexMap, noop]
   );
 
-  const closeContextMenu = useCallback(() => {
-    setContextMenu(null);
-  }, []);
-
-  useEffect(() => {
-    if (contextMenu?.visible) {
-      const handleClick = () => closeContextMenu();
-      document.addEventListener('click', handleClick);
-      document.addEventListener('contextmenu', handleClick);
-      return () => {
-        document.removeEventListener('click', handleClick);
-        document.removeEventListener('contextmenu', handleClick);
-      };
-    }
-    return undefined;
-  }, [contextMenu?.visible, closeContextMenu]);
-
   const handleContextMenu = useCallback(
     (e: React.MouseEvent, frameInfo: FrameInfo) => {
       e.preventDefault();
       e.stopPropagation();
       setSelectedFrameKey(frameInfo.listKey);
-      setContextMenu({
-        visible: true,
-        x: e.clientX,
-        y: e.clientY,
-        frameInfo,
-      });
+      openContextMenu(e, frameInfo);
     },
-    []
+    [openContextMenu]
   );
 
   const handleContextMenuAction = useCallback(
-    (action: 'rename' | 'duplicate' | 'delete') => {
-      if (!contextMenu) return;
-      const frameInfo = contextMenu.frameInfo;
+    (action: 'rename' | 'duplicate' | 'delete', frameInfo: FrameInfo) => {
       if (action === 'rename') {
         setEditingKey(frameInfo.listKey);
         setEditingName(frameInfo.frame.name);
@@ -381,8 +360,31 @@ export const FramePanel: React.FC = () => {
       }
       closeContextMenu();
     },
-    [contextMenu, handleDelete, handleDuplicate, closeContextMenu]
+    [handleDelete, handleDuplicate, closeContextMenu]
   );
+
+  const contextMenuItems = useMemo<ContextMenuEntry<FrameInfo>[]>(() => [
+    {
+      key: 'rename',
+      label: '重命名',
+      icon: <EditIcon />,
+      onSelect: (frameInfo) => handleContextMenuAction('rename', frameInfo),
+    },
+    {
+      key: 'duplicate',
+      label: '复制',
+      icon: <FileCopyIcon />,
+      onSelect: (frameInfo) => handleContextMenuAction('duplicate', frameInfo),
+    },
+    { key: 'divider-1', type: 'divider' },
+    {
+      key: 'delete',
+      label: '删除',
+      icon: <DeleteIcon />,
+      danger: true,
+      onSelect: (frameInfo) => handleContextMenuAction('delete', frameInfo),
+    },
+  ], [handleContextMenuAction]);
 
   // 统计有配图提示词的 Frame 数量
   const framesWithImagePrompt = useMemo(() => {
@@ -867,32 +869,11 @@ export const FramePanel: React.FC = () => {
         </div>
       )}
 
-      {contextMenu?.visible && createPortal(
-        <div
-          className="project-drawer-context-menu"
-          style={{
-            position: 'fixed',
-            left: contextMenu.x,
-            top: contextMenu.y,
-            zIndex: 10000,
-          }}
-        >
-          <div className="project-drawer-context-menu__item" onClick={() => handleContextMenuAction('rename')}>
-            <EditIcon />
-            <span>重命名</span>
-          </div>
-          <div className="project-drawer-context-menu__item" onClick={() => handleContextMenuAction('duplicate')}>
-            <FileCopyIcon />
-            <span>复制</span>
-          </div>
-          <div className="project-drawer-context-menu__divider" />
-          <div className="project-drawer-context-menu__item project-drawer-context-menu__item--danger" onClick={() => handleContextMenuAction('delete')}>
-            <DeleteIcon />
-            <span>删除</span>
-          </div>
-        </div>,
-        document.body
-      )}
+      <ContextMenu
+        state={contextMenu}
+        items={contextMenuItems}
+        onClose={closeContextMenu}
+      />
 
       {/* 添加 Frame 弹窗 */}
       <AddFrameDialog

@@ -4,7 +4,6 @@
  */
 
 import { useMemo, useState, useCallback, useRef, useEffect, useTransition } from 'react';
-import { createPortal } from 'react-dom';
 import { Loading, Input, Button, Checkbox, Popconfirm, Tooltip, Dialog } from 'tdesign-react';
 import { 
   Search, 
@@ -48,6 +47,11 @@ import { ViewModeToggle } from './ViewModeToggle';
 import { UnifiedMediaViewer, type MediaItem as UnifiedMediaItem } from '../shared/media-preview';
 import { ImageEditor } from '../image-editor';
 import { AudioPlaylistTabs } from '../shared/AudioPlaylistTabs';
+import {
+  ContextMenu,
+  useContextMenuState,
+  type ContextMenuEntry,
+} from '../shared';
 import type { MediaLibraryGridProps, ViewMode, SortOption, Asset } from '../../types/asset.types';
 import { AssetType, AssetSource } from '../../types/asset.types';
 import { useDrawnix } from '../../hooks/use-drawnix';
@@ -193,11 +197,11 @@ export function MediaLibraryGrid({
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncProgress, setSyncProgress] = useState(0); // 0-100
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(null);
-  const [assetContextMenu, setAssetContextMenu] = useState<{
-    x: number;
-    y: number;
-    asset: Asset;
-  } | null>(null);
+  const {
+    contextMenu: assetContextMenu,
+    open: openAssetMenu,
+    close: closeAssetMenu,
+  } = useContextMenuState<Asset>();
   const [playlistDialog, setPlaylistDialog] = useState<{
     mode: 'create' | 'rename' | 'create-and-add';
     playlistId?: string;
@@ -227,18 +231,6 @@ export function MediaLibraryGrid({
       setSelectedPlaylistId(null);
     }
   }, [playlists, selectedPlaylistId]);
-
-  useEffect(() => {
-    const closeMenus = () => {
-      setAssetContextMenu(null);
-    };
-    document.addEventListener('click', closeMenus);
-    document.addEventListener('scroll', closeMenus, true);
-    return () => {
-      document.removeEventListener('click', closeMenus);
-      document.removeEventListener('scroll', closeMenus, true);
-    };
-  }, []);
 
   // 监听媒体同步完成事件，刷新同步状态
   useEffect(() => {
@@ -322,6 +314,111 @@ export function MediaLibraryGrid({
     () => new Set(selectedPlaylistId ? getPlaylistAssetIds(selectedPlaylistId) : []),
     [getPlaylistAssetIds, selectedPlaylistId]
   );
+
+  const assetContextMenuItems = useMemo<ContextMenuEntry<Asset>[]>(() => [
+    {
+      key: 'open-player',
+      label: '在音乐播放器中打开',
+      icon: <Music size={14} />,
+      onSelect: async (asset) => {
+        const audioQueue = filteredResult.assets
+          .filter((item) => item.type === AssetType.AUDIO)
+          .map((item) => ({
+            elementId: `asset:${item.id}`,
+            audioUrl: item.url,
+            title: item.name,
+            previewImageUrl: item.thumbnail,
+          }));
+        const activePlaylist = selectedPlaylistId
+          ? playlists.find((playlist) => playlist.id === selectedPlaylistId) || null
+          : null;
+
+        await openMusicPlayerToolAndPlay({
+          source: {
+            elementId: `asset:${asset.id}`,
+            audioUrl: asset.url,
+            title: asset.name,
+            previewImageUrl: asset.thumbnail,
+          },
+          queue: audioQueue,
+          playlist:
+            activePlaylist && selectedPlaylistId !== AUDIO_PLAYLIST_ALL_ID
+              ? {
+                  playlistId: activePlaylist.id,
+                  playlistName: activePlaylist.name,
+                }
+              : undefined,
+        });
+      },
+    },
+    {
+      key: 'favorite',
+      label: (asset) => (favoriteAssetIds.has(asset.id) ? '取消收藏' : '加入收藏'),
+      icon: <Heart size={14} />,
+      onSelect: (asset) => {
+        if (asset.type === AssetType.AUDIO) {
+          void toggleFavorite(asset.id);
+        }
+      },
+    },
+    {
+      key: 'playlist-actions',
+      type: 'submenu',
+      label: '添加到播放列表',
+      icon: <ListMusic size={14} />,
+      children: (asset) =>
+        playlists.map((playlist) => {
+          const exists = (playlistItems[playlist.id] || []).some(
+            (item) => item.assetId === asset.id
+          );
+          return {
+            key: `playlist-${playlist.id}`,
+            label: exists ? `已在 ${playlist.name}` : `添加到 ${playlist.name}`,
+            icon: <ListMusic size={14} />,
+            disabled: exists,
+            onSelect: () => {
+              void addAssetToPlaylist(asset.id, playlist.id);
+            },
+          };
+        }),
+    },
+    {
+      key: 'remove-current',
+      label: '从当前播放列表移除',
+      icon: <XSquare size={14} />,
+      danger: true,
+      disabled: (asset) =>
+        !selectedPlaylistId ||
+        selectedPlaylistId === AUDIO_PLAYLIST_ALL_ID ||
+        !currentPlaylistAssetIds.has(asset.id),
+      onSelect: (asset) => {
+        if (selectedPlaylistId && selectedPlaylistId !== AUDIO_PLAYLIST_ALL_ID) {
+          void removeAssetFromPlaylist(asset.id, selectedPlaylistId);
+        }
+      },
+    },
+    {
+      key: 'create-playlist',
+      label: '新建播放列表并添加',
+      icon: <Plus size={14} />,
+      onSelect: (asset) => {
+        setPlaylistNameInput('');
+        setPlaylistDialog({ mode: 'create-and-add', targetAssetId: asset.id });
+        closeAssetMenu();
+      },
+    },
+  ], [
+    addAssetToPlaylist,
+    closeAssetMenu,
+    currentPlaylistAssetIds,
+    favoriteAssetIds,
+    filteredResult.assets,
+    playlists,
+    playlistItems,
+    removeAssetFromPlaylist,
+    selectedPlaylistId,
+    toggleFavorite,
+  ]);
 
   // 视图模式切换处理 - 带防抖和过渡动画，并持久化到 localStorage
   const handleViewModeChange = useCallback((mode: ViewMode) => {
@@ -766,13 +863,8 @@ export function MediaLibraryGrid({
     if (asset.type !== AssetType.AUDIO) return;
     event.preventDefault();
     event.stopPropagation();
-    setPlaylistContextMenu(null);
-    setAssetContextMenu({
-      x: event.clientX,
-      y: event.clientY,
-      asset,
-    });
-  }, []);
+    openAssetMenu(event, asset);
+  }, [openAssetMenu]);
 
   const handleSelectPlaylist = useCallback((playlistId: string | null) => {
     setSelectedPlaylistId(playlistId);
@@ -784,8 +876,8 @@ export function MediaLibraryGrid({
   const openCreatePlaylistDialog = useCallback((mode: 'create' | 'create-and-add', targetAssetId?: string) => {
     setPlaylistNameInput('');
     setPlaylistDialog({ mode, targetAssetId });
-    setAssetContextMenu(null);
-  }, []);
+    closeAssetMenu();
+  }, [closeAssetMenu]);
 
   const openRenamePlaylistDialog = useCallback((playlist: AudioPlaylist) => {
     setPlaylistNameInput(playlist.name);
@@ -1341,102 +1433,11 @@ export function MediaLibraryGrid({
         />
       )}
 
-      {assetContextMenu && createPortal(
-        <div
-          className="media-library-grid__context-menu"
-          style={{ top: assetContextMenu.y, left: assetContextMenu.x }}
-          onClick={(event) => event.stopPropagation()}
-        >
-          <button
-            type="button"
-            className="media-library-grid__context-item"
-            onClick={async () => {
-              const audioQueue = filteredResult.assets
-                .filter((asset) => asset.type === AssetType.AUDIO)
-                .map((asset) => ({
-                  elementId: `asset:${asset.id}`,
-                  audioUrl: asset.url,
-                  title: asset.name,
-                  previewImageUrl: asset.thumbnail,
-                }));
-              const activePlaylist = selectedPlaylistId
-                ? playlists.find((playlist) => playlist.id === selectedPlaylistId) || null
-                : null;
-              setAssetContextMenu(null);
-              await openMusicPlayerToolAndPlay({
-                source: {
-                  elementId: `asset:${assetContextMenu.asset.id}`,
-                  audioUrl: assetContextMenu.asset.url,
-                  title: assetContextMenu.asset.name,
-                  previewImageUrl: assetContextMenu.asset.thumbnail,
-                },
-                queue: audioQueue,
-                playlist:
-                  activePlaylist && selectedPlaylistId !== AUDIO_PLAYLIST_ALL_ID
-                    ? {
-                        playlistId: activePlaylist.id,
-                        playlistName: activePlaylist.name,
-                      }
-                    : undefined,
-              });
-            }}
-          >
-            <Music size={14} />
-            <span>在音乐播放器中打开</span>
-          </button>
-          <button
-            type="button"
-            className="media-library-grid__context-item"
-            onClick={() => {
-              setAssetContextMenu(null);
-              void handleToggleFavorite(assetContextMenu.asset);
-            }}
-          >
-            <Heart size={14} />
-            <span>{favoriteAssetIds.has(assetContextMenu.asset.id) ? '取消收藏' : '加入收藏'}</span>
-          </button>
-          {playlists.map((playlist) => {
-            const exists = (playlistItems[playlist.id] || []).some((item) => item.assetId === assetContextMenu.asset.id);
-            return (
-              <button
-                key={playlist.id}
-                type="button"
-                className="media-library-grid__context-item"
-                onClick={() => {
-                  setAssetContextMenu(null);
-                  void addAssetToPlaylist(assetContextMenu.asset.id, playlist.id);
-                }}
-                disabled={exists}
-              >
-                <ListMusic size={14} />
-                <span>{exists ? `已在 ${playlist.name}` : `添加到 ${playlist.name}`}</span>
-              </button>
-            );
-          })}
-          {selectedPlaylistId && selectedPlaylistId !== AUDIO_PLAYLIST_ALL_ID && currentPlaylistAssetIds.has(assetContextMenu.asset.id) && (
-            <button
-              type="button"
-              className="media-library-grid__context-item media-library-grid__context-item--danger"
-              onClick={() => {
-                setAssetContextMenu(null);
-                void removeAssetFromPlaylist(assetContextMenu.asset.id, selectedPlaylistId);
-              }}
-            >
-              <XSquare size={14} />
-              <span>从当前播放列表移除</span>
-            </button>
-          )}
-          <button
-            type="button"
-            className="media-library-grid__context-item"
-            onClick={() => openCreatePlaylistDialog('create-and-add', assetContextMenu.asset.id)}
-          >
-            <Plus size={14} />
-            <span>新建播放列表并添加</span>
-          </button>
-        </div>,
-        document.body
-      )}
+      <ContextMenu
+        state={assetContextMenu}
+        items={assetContextMenuItems}
+        onClose={closeAssetMenu}
+      />
 
       <Dialog
         visible={!!playlistDialog}
