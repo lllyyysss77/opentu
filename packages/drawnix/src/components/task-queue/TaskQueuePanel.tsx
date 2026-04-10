@@ -487,11 +487,13 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
       const chatResponse =
         task.type === TaskType.CHAT ? task.result?.chatResponse : undefined;
       if (chatResponse?.trim()) {
+        const promptLabel = (task.params.prompt || '').slice(0, 20) || undefined;
         await executeCanvasInsertion({
           items: [
             {
               type: 'text',
               content: chatResponse,
+              label: promptLabel,
             },
           ],
         });
@@ -519,11 +521,16 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
         MessagePlugin.success('视频已插入到白板');
       } else if (task.type === TaskType.AUDIO) {
         if (isLyricsTask(task)) {
+          const lyricsLabel = getLyricsTitle(
+            taskResult,
+            task.params.title || task.params.prompt
+          ) || (task.params.prompt || '').slice(0, 20) || undefined;
           await executeCanvasInsertion({
             items: [
               {
                 type: 'text',
                 content: formatLyricsForCanvas(task),
+                label: lyricsLabel,
                 metadata: {
                   title: getLyricsTitle(
                     taskResult,
@@ -589,11 +596,13 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
         );
       } else if (task.type === TaskType.CHAT) {
         const chatResponse = taskResult.chatResponse || '';
+        const promptLabel = (task.params.prompt || '').slice(0, 20) || undefined;
         await executeCanvasInsertion({
           items: [
             {
               type: 'text',
               content: chatResponse,
+              label: promptLabel,
             },
           ],
         });

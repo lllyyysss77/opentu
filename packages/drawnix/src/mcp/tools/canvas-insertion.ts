@@ -213,8 +213,16 @@ function groupItems(items: InsertionItem[]): InsertionItem[][] {
 async function insertTextToCanvas(
   board: PlaitBoard,
   text: string,
-  point: Point
+  point: Point,
+  title?: string
 ): Promise<{ width: number; height: number }> {
+  // 有 title 时，直接以 Card 方式插入（跳过 Markdown 检测）
+  if (title) {
+    const cardWidth = Math.round(window.innerWidth * 0.5);
+    insertCardsToCanvas(board, [{ title, body: text }], point, cardWidth);
+    return { width: cardWidth, height: 120 };
+  }
+
   // 尝试解析为 Markdown Card 块
   const cardBlocks = parseMarkdownToCards(text);
   if (cardBlocks && cardBlocks.length > 0) {
@@ -449,7 +457,7 @@ async function executeCanvasInsertion(params: CanvasInsertionParams): Promise<MC
         // console.log(`[CanvasInsertion] Inserting item type: ${item.type}, point:`, point, 'content:', item.content?.substring(0, 80));
 
         if (item.type === 'text') {
-          await insertTextToCanvas(board, item.content, point);
+          await insertTextToCanvas(board, item.content, point, item.label);
           currentY += itemSize.height + verticalGap;
         } else if (item.type === 'image') {
           // console.log(`[CanvasInsertion] Calling insertImageToCanvas with dimensions:`, item.dimensions);
@@ -483,7 +491,7 @@ async function executeCanvasInsertion(params: CanvasInsertionParams): Promise<MC
           const point: Point = [currentX, currentY];
 
           if (item.type === 'text') {
-            const size = await insertTextToCanvas(board, item.content, point);
+            const size = await insertTextToCanvas(board, item.content, point, item.label);
             maxHeight = Math.max(maxHeight, size.height);
             currentX += size.width + horizontalGap;
           } else if (item.type === 'image') {

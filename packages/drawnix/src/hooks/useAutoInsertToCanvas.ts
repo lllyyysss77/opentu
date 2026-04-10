@@ -38,7 +38,7 @@ import {
   type TaskParams,
 } from '../services/media-result-handler';
 import { insertMediaIntoFrame } from '../utils/frame-insertion-utils';
-import { formatLyricsForCanvas, isLyricsTask } from '../utils/lyrics-task-utils';
+import { formatLyricsForCanvas, getLyricsTitle, isLyricsTask } from '../utils/lyrics-task-utils';
 
 /**
  * 配置项
@@ -356,7 +356,12 @@ export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): v
             } else if (type === 'image' && allUrls.length > 1) {
               await insertImageGroup(allUrls, insertionPoint, dimensions);
             } else if (type === 'text') {
-              await quickInsert('text', allUrls[0], insertionPoint);
+              const lyricsLabel = getLyricsTitle(task.result, task.params.title || task.params.prompt)
+                || (task.params.prompt || '').slice(0, 20) || undefined;
+              await executeCanvasInsertion({
+                items: [{ type: 'text', content: allUrls[0], label: lyricsLabel }],
+                startPoint: insertionPoint,
+              });
             } else if (type === 'audio' && allUrls.length > 1) {
               const groupId = `audio-group-${task.id}`;
               await executeCanvasInsertion({
@@ -479,6 +484,8 @@ export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): v
                   items: inserts.map(({ task }) => ({
                     type: 'text',
                     content: formatLyricsForCanvas(task),
+                    label: getLyricsTitle(task.result, task.params.title || task.params.prompt)
+                      || (task.params.prompt || '').slice(0, 20) || undefined,
                     groupId: `lyrics-group-${firstInsertTask.id}`,
                   })),
                   startPoint: insertionPoint,
@@ -618,11 +625,13 @@ export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): v
 
       // 检查是否为灵感图任务（需要在宫格图之前检查）
       if (task.type === TaskType.CHAT) {
+        const promptLabel = (task.params.prompt || '').slice(0, 20) || undefined;
         executeCanvasInsertion({
           items: [
             {
               type: 'text',
               content: task.result?.chatResponse || '',
+              label: promptLabel,
             },
           ],
         })
