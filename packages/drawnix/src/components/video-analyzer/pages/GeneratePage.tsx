@@ -5,6 +5,8 @@
 import React, { useState, useCallback, useRef } from 'react';
 import type { AnalysisRecord, VideoShot } from '../types';
 import { aspectRatioToVideoSize } from '../types';
+import { findBestDuration } from '../../../utils/segment-plan';
+import { getVideoModelConfig } from '../../../constants/video-model-config';
 import { mcpRegistry } from '../../../mcp/registry';
 import { updateRecord } from '../storage';
 import { ShotCard } from '../components/ShotCard';
@@ -68,7 +70,8 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
     await ensureBatchId();
     const size = aspectRatioToVideoSize(aspectRatio);
     const dur = shot.duration ?? Math.round(shot.endTime - shot.startTime);
-    const seconds = String(Math.min(Math.max(dur, 5), 10));
+    const cfg = getVideoModelConfig(videoModel);
+    const seconds = String(findBestDuration(dur, cfg.durationOptions));
     await mcpRegistry.executeTool(
       { name: 'generate_video', arguments: { prompt, size, seconds, count: 1, batchId, model: videoModel } },
       { mode: 'queue' }
@@ -97,7 +100,8 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
       const prompt = shot.video_prompt || shot.visual_prompt;
       if (!prompt) continue;
       const dur = shot.duration ?? Math.round(shot.endTime - shot.startTime);
-      const seconds = String(Math.min(Math.max(dur, 5), 10));
+      const cfg = getVideoModelConfig(videoModel);
+      const seconds = String(findBestDuration(dur, cfg.durationOptions));
       await mcpRegistry.executeTool(
         { name: 'generate_video', arguments: { prompt, size, seconds, count: 1, batchId, model: videoModel } },
         { mode: 'queue' }

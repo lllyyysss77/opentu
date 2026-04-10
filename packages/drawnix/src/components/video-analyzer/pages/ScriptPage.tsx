@@ -15,6 +15,8 @@ import { ModelDropdown } from '../../ai-input-bar/ModelDropdown';
 import { useSelectableModels } from '../../../hooks/use-runtime-models';
 import { VIDEO_MODEL_CONFIGS } from '../../../constants/video-model-config';
 import type { VideoModel } from '../../../types/video.types';
+import { computeSegmentPlan, type SegmentPlan } from '../../../utils/segment-plan';
+import { getVideoModelConfig } from '../../../constants/video-model-config';
 
 const STORAGE_KEY_SCRIPT_MODEL = 'video-analyzer:script-model';
 const STORAGE_KEY_VIDEO_MODEL = 'video-analyzer:video-model';
@@ -85,6 +87,13 @@ export const ScriptPage: React.FC<ScriptPageProps> = ({
     return durations.length > 0 ? Math.max(...durations) : parseInt(cfg.defaultDuration, 10) || 10;
   }, [videoModel]);
 
+  // 分段计划（智能适配固定/可变时长模型）
+  const segmentPlan = useMemo((): SegmentPlan => {
+    const cfg = getVideoModelConfig(videoModel);
+    const targetDur = productInfo.targetDuration || record.analysis.totalDuration;
+    return computeSegmentPlan(targetDur, cfg.durationOptions);
+  }, [videoModel, productInfo.targetDuration, record.analysis.totalDuration]);
+
   // 表单变化时自动保存到 IndexedDB（防抖 500ms）
   const saveTimerRef = useRef<ReturnType<typeof setTimeout>>();
   useEffect(() => {
@@ -126,7 +135,16 @@ export const ScriptPage: React.FC<ScriptPageProps> = ({
       })));
 
       const targetDur = productInfo.targetDuration || record.analysis.totalDuration;
-      const segmentCount = Math.ceil(targetDur / maxSegmentDuration);
+      const { segments, actualTotal, isFixed, overflow } = segmentPlan;
+      const segmentCount = segments.length;
+
+      const durationInfo = isFixed
+        ? `当前视频模型（${videoModel}）为固定时长模型，每段固定 ${segments[0]} 秒。
+实际可用视频总时长：${actualTotal} 秒（${segmentCount} 段 × ${segments[0]} 秒/段）${overflow > 0 ? `，比目标 ${targetDur} 秒多出 ${overflow} 秒` : ''}。
+请按 ${actualTotal} 秒总时长分配内容节奏。`
+        : `目标视频总时长：${targetDur} 秒。
+分段方案：${segments.map((d, i) => `第${i + 1}段 ${d}s`).join('、')}，实际总时长 ${actualTotal} 秒。
+每个镜头的 duration 必须等于对应段的可用时长。`;
 
       const prompt = `你是一个短视频脚本改编专家。请基于以下原始视频脚本，为新商品改编脚本。
 
@@ -143,23 +161,30 @@ ${originalShots}
 - 品类：${productInfo.category || '未指定'}
 - 商品名称：${productInfo.name || '未指定'}
 - 核心卖点：${productInfo.sellingPoints || '未指定'}
-- 目标视频总时长：${targetDur}秒
 
 视频生成约束：
 - 使用的视频模型：${videoModel}
-- 单个视频片段最大时长：${maxSegmentDuration}秒
-- 预计需要 ${segmentCount} 个视频片段拼接成完整视频
-- 每个镜头的 duration 必须 ≤ ${maxSegmentDuration}秒，如果某个镜头内容需要更长时间，请拆分成多个连续镜头
+- ${durationInfo}
+- 需要 ${segmentCount} 个视频片段拼接成完整视频
 
 改编要求：
 1. **description（画面描述）**：将画面中的原商品替换为新商品"${productInfo.name || '新商品'}"，场景和构图保持类似风格，但主体、文字、道具等要匹配新商品
 2. **script（口播文案）**：以主角第一人称口述的方式撰写，语气自然、有感染力，像真人在镜头前说话，内容围绕新商品的卖点展开
 3. **visual_prompt（图片提示词）**：英文，替换主体为新商品，保持原始画面风格
 4. **video_prompt（视频提示词）**：英文，替换主体为新商品，保持原始运镜和动态风格
-5. **时长分配**：目标总时长为 ${targetDur} 秒，每个镜头 duration ≤ ${maxSegmentDuration}秒，所有镜头时长之和等于 ${targetDur} 秒。根据需要增减镜头数量。
-6. **camera_movement（运镜方式）**：根据新内容适当调整
+5. **camera_movement（运镜方式）**：根据新内容适当调整
 
-返回一个 JSON 数组，每个元素包含：id、startTime、endTime、duration、description、script、visual_prompt、video_prompt、camera_movement、label、type 字段。
+拼接衔接要求（极其重要！）：
+1. 视觉锚点：相邻镜头之间必须有一个共同的视觉元素（同一商品、同一场景、同一手部动作），确保画面连贯
+2. 运镜方向延续：如果一个镜头结尾是向右平移(pan right)，下一个镜头开头应继续向右或保持静止，不能突然反向
+3. 色调一致性：所有镜头统一使用相同的色调和光线风格
+4. 动作连贯：如果一个镜头结尾主体正在做某个动作，下一个镜头开头要延续这个动作
+
+每个镜头的额外输出字段：
+- **transition_hint**：到下一个镜头的转场方式，从 'cut'(硬切)、'dissolve'(交叉溶解)、'match_cut'(匹配切)、'fade_to_black'(淡出到黑) 中选择。同场景内推荐 'cut'，跨场景推荐 'dissolve'，最后一个镜头设为 'fade_to_black'
+- **end_frame_description**：本镜头结尾画面的精确描述（英文），具体描述主体位置、动作状态、背景元素
+
+返回一个 JSON 数组，每个元素包含：id、startTime、endTime、duration、description、script、visual_prompt、video_prompt、camera_movement、label、type、transition_hint、end_frame_description 字段。
 只返回 JSON 数组，不要 markdown 格式。`;
 
       const messages: GeminiMessage[] = [{ role: 'user', content: [{ type: 'text', text: prompt }] }];
@@ -193,7 +218,7 @@ ${originalShots}
     } finally {
       setRewriting(false);
     }
-  }, [record, productInfo, shots, saveShots]);
+  }, [record, productInfo, shots, saveShots, segmentPlan, videoModel, scriptModel]);
 
   const handleInsertScripts = useCallback(async () => {
     await quickInsert('text', formatShotsMarkdown(shots, record.analysis, productInfo));
@@ -238,6 +263,11 @@ ${originalShots}
             placeholder="选择视频模型"
           />
           <span className="va-model-hint">单段≤{maxSegmentDuration}s</span>
+          {segmentPlan.isFixed && segmentPlan.overflow > 0 && (
+            <span className="va-duration-overflow">
+              实际 {segmentPlan.actualTotal}s（+{segmentPlan.overflow}s）
+            </span>
+          )}
         </div>
         <button className="va-analyze-btn" onClick={handleRewrite} disabled={rewriting}>
           {rewriting ? 'AI 改编中...' : 'AI 改编脚本'}
@@ -260,6 +290,10 @@ ${originalShots}
               <textarea className="va-edit-textarea" rows={2} value={shot.visual_prompt || ''} onChange={e => handleShotFieldChange(shot.id, 'visual_prompt', e.target.value)} />
               <label className="va-edit-label">视频 Prompt</label>
               <textarea className="va-edit-textarea" rows={2} value={shot.video_prompt || ''} onChange={e => handleShotFieldChange(shot.id, 'video_prompt', e.target.value)} />
+              <label className="va-edit-label">转场方式</label>
+              <ComboInput value={shot.transition_hint || ''} onChange={v => handleShotFieldChange(shot.id, 'transition_hint', v)} options={['cut', 'dissolve', 'match_cut', 'fade_to_black']} placeholder="选择转场方式" />
+              <label className="va-edit-label">尾帧描述</label>
+              <textarea className="va-edit-textarea" rows={2} value={shot.end_frame_description || ''} onChange={e => handleShotFieldChange(shot.id, 'end_frame_description', e.target.value)} placeholder="本镜头结尾画面的英文描述..." />
             </div>
           </ShotCard>
         ))}

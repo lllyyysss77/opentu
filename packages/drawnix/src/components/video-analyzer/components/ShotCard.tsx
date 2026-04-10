@@ -6,6 +6,22 @@ import React from 'react';
 import type { VideoShot } from '../types';
 import { SHOT_TYPE_COLORS } from '../types';
 
+/** 转场 icon */
+const TRANSITION_ICONS: Record<string, string> = {
+  cut: '✂️',
+  dissolve: '🔀',
+  match_cut: '🔗',
+  fade_to_black: '⬛',
+};
+
+/** 转场中文标签 */
+const TRANSITION_LABELS: Record<string, string> = {
+  cut: '硬切',
+  dissolve: '溶解',
+  match_cut: '匹配切',
+  fade_to_black: '淡出',
+};
+
 interface ShotCardProps {
   shot: VideoShot;
   index: number;
@@ -27,6 +43,11 @@ export const ShotCard: React.FC<ShotCardProps> = ({ shot, index, compact, action
       <span className="va-shot-time">
         #{index + 1} · {shot.startTime}s - {shot.endTime}s
       </span>
+      {shot.transition_hint && (
+        <span className="va-shot-transition">
+          {TRANSITION_ICONS[shot.transition_hint] || '→'} {TRANSITION_LABELS[shot.transition_hint] || shot.transition_hint}
+        </span>
+      )}
     </div>
     {!compact && (
       <>

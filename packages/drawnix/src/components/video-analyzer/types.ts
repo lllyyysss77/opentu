@@ -73,6 +73,8 @@ export function formatShotsMarkdown(
       s.camera_movement ? `\n**运镜：** ${s.camera_movement}` : '',
       s.visual_prompt ? `\n**图片 Prompt：** ${s.visual_prompt}` : '',
       s.video_prompt ? `\n**视频 Prompt：** ${s.video_prompt}` : '',
+      s.transition_hint ? `\n**转场：** ${s.transition_hint}` : '',
+      s.end_frame_description ? `\n**尾帧描述：** ${s.end_frame_description}` : '',
     ];
     return lines.filter(Boolean).join('\n');
   }).join('\n\n---\n\n');

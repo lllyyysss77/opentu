@@ -379,6 +379,21 @@
   color: var(--td-text-color-secondary, #999);
 }
 
+.va-shot-transition {
+  font-size: 11px;
+  color: #8B5CF6;
+  background: rgba(139, 92, 246, 0.08);
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-left: auto;
+}
+
+.va-duration-overflow {
+  font-size: 11px;
+  color: #F59E0B;
+  margin-left: 4px;
+}
+
 .va-shot-desc {
   margin: 0 0 4px;
   font-size: 12px;
