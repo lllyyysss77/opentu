@@ -413,6 +413,13 @@
   color: var(--td-text-color-placeholder, #999);
 }
 
+.va-shot-prompt {
+  font-size: 11px;
+  color: var(--td-text-color-placeholder, #999);
+  margin: 2px 0;
+  word-break: break-all;
+}
+
 .va-shot-actions {
   display: flex;
   gap: 6px;
@@ -547,6 +554,26 @@
   input { text-align: center; }
 }
 
+.va-form-select {
+  padding: 4px 6px;
+  border: 1px solid var(--td-border-level-1-color, #ddd);
+  border-radius: 4px;
+  font-size: 12px;
+  background: var(--td-bg-color-container, #fff);
+  color: var(--td-text-color-primary, #333);
+  outline: none;
+
+  &:focus { border-color: rgba(243, 156, 18, 0.5); }
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+}
+
+.va-segment-duration-select {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
 // ComboInput
 .va-combo {
   position: relative;
@@ -623,6 +650,24 @@
   font-size: 12px;
   font-weight: 500;
   color: var(--td-text-color-secondary, #666);
+}
+
+.va-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.va-section-action {
+  border: 1px solid var(--td-border-level-1-color, #ddd);
+  background: transparent;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  color: var(--td-text-color-secondary, #666);
+
+  &:hover { color: #F39C12; border-color: rgba(243, 156, 18, 0.5); }
 }
 
 // Product images (GeneratePage)

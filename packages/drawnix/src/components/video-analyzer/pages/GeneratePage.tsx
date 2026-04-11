@@ -1,15 +1,19 @@
 /**
- * 素材生成页 - 商品图上传 + 批量图片/视频生成
+ * 素材生成页 - 参考图 + 模型选择 + 批量图片/视频生成
  */
 
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import type { AnalysisRecord, VideoShot } from '../types';
 import { aspectRatioToVideoSize } from '../types';
-import { findBestDuration } from '../../../utils/segment-plan';
 import { getVideoModelConfig } from '../../../constants/video-model-config';
 import { mcpRegistry } from '../../../mcp/registry';
 import { updateRecord } from '../storage';
 import { ShotCard } from '../components/ShotCard';
+import { buildVideoPrompt } from '../utils';
+import { ReferenceImageUpload } from '../../ttd-dialog/shared';
+import type { ReferenceImage } from '../../ttd-dialog/shared';
+import { ModelDropdown } from '../../ai-input-bar/ModelDropdown';
+import { useSelectableModels } from '../../../hooks/use-runtime-models';
 
 interface GeneratePageProps {
   record: AnalysisRecord;
@@ -25,10 +29,31 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
   const shots = record.editedShots || record.analysis.shots;
   const aspectRatio = record.analysis.aspect_ratio || '16x9';
   const batchId = record.batchId || `va_${record.id}`;
-  const videoModel = record.productInfo?.videoModel || 'veo3';
 
-  const [productImages, setProductImages] = useState<string[]>([]);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [refImages, setRefImages] = useState<ReferenceImage[]>([]);
+  const imageModels = useSelectableModels('image');
+  const videoModels = useSelectableModels('video');
+  const [imageModel, setImageModel] = useState('');
+  const [videoModel, setVideoModelState] = useState(
+    () => record.productInfo?.videoModel || 'veo3'
+  );
+  const [segmentDuration, setSegmentDuration] = useState<number>(
+    () => record.productInfo?.segmentDuration || parseInt(getVideoModelConfig(record.productInfo?.videoModel || 'veo3').defaultDuration, 10) || 8
+  );
+
+  // 视频模型时长选项
+  const durationOptions = useMemo(() => {
+    return getVideoModelConfig(videoModel).durationOptions;
+  }, [videoModel]);
+
+  const setVideoModel = useCallback((model: string) => {
+    setVideoModelState(model);
+    const cfg = getVideoModelConfig(model);
+    setSegmentDuration(parseInt(cfg.defaultDuration, 10) || 8);
+  }, []);
+
+  // 参考图 URL 列表（用于传给生成接口）
+  const refImageUrls = useMemo(() => refImages.map(img => img.url).filter(Boolean), [refImages]);
 
   // 确保 batchId 已保存
   const ensureBatchId = useCallback(async () => {
@@ -39,16 +64,6 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
     }
   }, [record, batchId, onRecordUpdate, onRecordsChange]);
 
-  // 商品图上传
-  const handleProductImageUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files) return;
-    Array.from(files).forEach(file => {
-      const url = URL.createObjectURL(file);
-      setProductImages(prev => [...prev, url]);
-    });
-  }, []);
-
   // 单镜头生成图片
   const handleShotGenerateImage = useCallback(async (shot: VideoShot) => {
     if (!shot.visual_prompt) return;
@@ -56,27 +71,29 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
     await mcpRegistry.executeTool(
       { name: 'generate_image', arguments: {
         prompt: shot.visual_prompt, count: 1, size: aspectRatio,
-        referenceImages: productImages.length > 0 ? productImages : undefined,
+        referenceImages: refImageUrls.length > 0 ? refImageUrls : undefined,
         batchId,
+        ...(imageModel ? { model: imageModel } : {}),
       }},
       { mode: 'queue' }
     );
-  }, [aspectRatio, productImages, batchId, ensureBatchId]);
+  }, [aspectRatio, refImageUrls, batchId, ensureBatchId, imageModel]);
 
   // 单镜头生成视频
   const handleShotGenerateVideo = useCallback(async (shot: VideoShot) => {
-    const prompt = shot.video_prompt || shot.visual_prompt;
+    const prompt = buildVideoPrompt(shot);
     if (!prompt) return;
     await ensureBatchId();
     const size = aspectRatioToVideoSize(aspectRatio);
-    const dur = shot.duration ?? Math.round(shot.endTime - shot.startTime);
-    const cfg = getVideoModelConfig(videoModel);
-    const seconds = String(findBestDuration(dur, cfg.durationOptions));
+    const seconds = String(segmentDuration);
     await mcpRegistry.executeTool(
-      { name: 'generate_video', arguments: { prompt, size, seconds, count: 1, batchId, model: videoModel } },
+      { name: 'generate_video', arguments: {
+        prompt, size, seconds, count: 1, batchId, model: videoModel,
+        referenceImages: refImageUrls.length > 0 ? refImageUrls : undefined,
+      }},
       { mode: 'queue' }
     );
-  }, [aspectRatio, batchId, videoModel, ensureBatchId]);
+  }, [aspectRatio, batchId, videoModel, ensureBatchId, segmentDuration, refImageUrls]);
 
   // 批量生成
   const handleGenerateAllImages = useCallback(async () => {
@@ -85,44 +102,78 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
       await mcpRegistry.executeTool(
         { name: 'generate_image', arguments: {
           prompt: shot.visual_prompt, count: 1, size: aspectRatio,
-          referenceImages: productImages.length > 0 ? productImages : undefined,
+          referenceImages: refImageUrls.length > 0 ? refImageUrls : undefined,
           batchId,
+          ...(imageModel ? { model: imageModel } : {}),
         }},
         { mode: 'queue' }
       );
     }
-  }, [shots, aspectRatio, productImages, batchId, ensureBatchId]);
+  }, [shots, aspectRatio, refImageUrls, batchId, ensureBatchId, imageModel]);
 
   const handleGenerateAllVideos = useCallback(async () => {
     await ensureBatchId();
     const size = aspectRatioToVideoSize(aspectRatio);
+    const seconds = String(segmentDuration);
     for (const shot of shots) {
-      const prompt = shot.video_prompt || shot.visual_prompt;
+      const prompt = buildVideoPrompt(shot);
       if (!prompt) continue;
-      const dur = shot.duration ?? Math.round(shot.endTime - shot.startTime);
-      const cfg = getVideoModelConfig(videoModel);
-      const seconds = String(findBestDuration(dur, cfg.durationOptions));
       await mcpRegistry.executeTool(
-        { name: 'generate_video', arguments: { prompt, size, seconds, count: 1, batchId, model: videoModel } },
+        { name: 'generate_video', arguments: {
+          prompt, size, seconds, count: 1, batchId, model: videoModel,
+          referenceImages: refImageUrls.length > 0 ? refImageUrls : undefined,
+        }},
         { mode: 'queue' }
       );
     }
-  }, [shots, aspectRatio, batchId, videoModel, ensureBatchId]);
+  }, [shots, aspectRatio, batchId, videoModel, ensureBatchId, segmentDuration, refImageUrls]);
 
   return (
     <div className="va-page">
-      {/* 商品图上传 */}
-      <div className="va-product-images">
-        <div className="va-section-title">商品参考图（可选）</div>
-        <div className="va-image-row">
-          {productImages.map((url, i) => (
-            <div key={i} className="va-thumb">
-              <img src={url} alt={`商品图${i + 1}`} />
-              <button className="va-thumb-remove" onClick={() => setProductImages(prev => prev.filter((_, j) => j !== i))}>×</button>
-            </div>
-          ))}
-          <button className="va-thumb-add" onClick={() => fileInputRef.current?.click()}>+</button>
-          <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handleProductImageUpload} style={{ display: 'none' }} />
+      {/* 参考图 */}
+      <ReferenceImageUpload
+        images={refImages}
+        onImagesChange={setRefImages}
+        multiple
+        label="参考图 (可选)"
+      />
+
+      {/* 模型选择 */}
+      <div className="va-product-form">
+        <div className="va-model-select">
+          <label className="va-model-label">图片模型</label>
+          <ModelDropdown
+            variant="form"
+            selectedModel={imageModel}
+            onSelect={setImageModel}
+            models={imageModels}
+            placement="down"
+            placeholder="选择图片模型"
+          />
+        </div>
+        <div className="va-model-select">
+          <label className="va-model-label">视频模型</label>
+          <ModelDropdown
+            variant="form"
+            selectedModel={videoModel}
+            onSelect={setVideoModel}
+            models={videoModels}
+            placement="down"
+            placeholder="选择视频模型"
+          />
+          <div className="va-segment-duration-select">
+            <label className="va-model-label">单段</label>
+            <select
+              className="va-form-select"
+              value={String(segmentDuration)}
+              onChange={e => setSegmentDuration(parseInt(e.target.value, 10))}
+              disabled={durationOptions.length <= 1}
+            >
+              {durationOptions.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 
@@ -138,7 +189,7 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
                 {shot.visual_prompt && (
                   <button onClick={() => handleShotGenerateImage(shot)}>生成图片</button>
                 )}
-                {(shot.video_prompt || shot.visual_prompt) && (
+                {(shot.description || shot.video_prompt || shot.visual_prompt) && (
                   <button onClick={() => handleShotGenerateVideo(shot)}>生成视频</button>
                 )}
               </>

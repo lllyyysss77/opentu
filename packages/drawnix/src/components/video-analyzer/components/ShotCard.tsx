@@ -56,6 +56,15 @@ export const ShotCard: React.FC<ShotCardProps> = ({ shot, index, compact, action
         {shot.camera_movement && (
           <span className="va-shot-camera">运镜: {shot.camera_movement}</span>
         )}
+        {shot.visual_prompt && (
+          <p className="va-shot-prompt">图片 Prompt: {shot.visual_prompt}</p>
+        )}
+        {shot.video_prompt && (
+          <p className="va-shot-prompt">视频 Prompt: {shot.video_prompt}</p>
+        )}
+        {shot.end_frame_description && (
+          <p className="va-shot-prompt">尾帧描述: {shot.end_frame_description}</p>
+        )}
       </>
     )}
     {children}

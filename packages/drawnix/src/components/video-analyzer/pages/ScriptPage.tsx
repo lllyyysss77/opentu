@@ -4,7 +4,7 @@
 
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import type { AnalysisRecord, ProductInfo, VideoShot } from '../types';
-import { formatShotsMarkdown } from '../types';
+import { formatShotsMarkdown, migrateProductInfo } from '../types';
 import { quickInsert } from '../../../mcp/tools/canvas-insertion';
 import { sendChatWithGemini } from '../../../utils/gemini-api/services';
 import type { GeminiMessage } from '../../../utils/gemini-api/types';
@@ -13,8 +13,6 @@ import { ShotCard } from '../components/ShotCard';
 import { ComboInput } from '../components/ComboInput';
 import { ModelDropdown } from '../../ai-input-bar/ModelDropdown';
 import { useSelectableModels } from '../../../hooks/use-runtime-models';
-import { VIDEO_MODEL_CONFIGS } from '../../../constants/video-model-config';
-import type { VideoModel } from '../../../types/video.types';
 import { computeSegmentPlan, type SegmentPlan } from '../../../utils/segment-plan';
 import { getVideoModelConfig } from '../../../constants/video-model-config';
 
@@ -53,8 +51,11 @@ export const ScriptPage: React.FC<ScriptPageProps> = ({
   onRecordsChange,
   onNext,
 }) => {
-  const [productInfo, setProductInfo] = useState<ProductInfo>(
-    record.productInfo || { name: '', category: '', sellingPoints: '', targetDuration: record.analysis.totalDuration }
+  const [productInfo, setProductInfo] = useState<ProductInfo>(() =>
+    migrateProductInfo(
+      record.productInfo || { prompt: '' },
+      record.analysis.totalDuration
+    )
   );
   const [shots, setShots] = useState<VideoShot[]>(
     record.editedShots || [...record.analysis.shots]
@@ -76,23 +77,33 @@ export const ScriptPage: React.FC<ScriptPageProps> = ({
   const setVideoModel = useCallback((model: string) => {
     setVideoModelState(model);
     localStorage.setItem(STORAGE_KEY_VIDEO_MODEL, model);
-    setProductInfo(p => ({ ...p, videoModel: model }));
+    const cfg = getVideoModelConfig(model);
+    const defaultDur = parseInt(cfg.defaultDuration, 10) || 8;
+    setProductInfo(p => ({ ...p, videoModel: model, segmentDuration: defaultDur }));
   }, []);
 
-  // 获取视频模型的最大单段时长
-  const maxSegmentDuration = useMemo(() => {
-    const cfg = VIDEO_MODEL_CONFIGS[videoModel as VideoModel];
-    if (!cfg) return 10;
-    const durations = cfg.durationOptions.map(o => parseInt(o.value, 10)).filter(n => !isNaN(n));
-    return durations.length > 0 ? Math.max(...durations) : parseInt(cfg.defaultDuration, 10) || 10;
+  // 当前视频模型的可用时长选项
+  const durationOptions = useMemo(() => {
+    const cfg = getVideoModelConfig(videoModel);
+    return cfg.durationOptions;
   }, [videoModel]);
 
-  // 分段计划（智能适配固定/可变时长模型）
-  const segmentPlan = useMemo((): SegmentPlan => {
+  // 用户选择的单段时长（默认取模型的 defaultDuration）
+  const selectedSegmentDuration = useMemo(() => {
+    if (productInfo.segmentDuration) {
+      const valid = durationOptions.some(o => parseInt(o.value, 10) === productInfo.segmentDuration);
+      if (valid) return productInfo.segmentDuration;
+    }
     const cfg = getVideoModelConfig(videoModel);
+    return parseInt(cfg.defaultDuration, 10) || 8;
+  }, [productInfo.segmentDuration, durationOptions, videoModel]);
+
+  // 分段计划（基于用户选择的单段时长）
+  const segmentPlan = useMemo((): SegmentPlan => {
     const targetDur = productInfo.targetDuration || record.analysis.totalDuration;
-    return computeSegmentPlan(targetDur, cfg.durationOptions);
-  }, [videoModel, productInfo.targetDuration, record.analysis.totalDuration]);
+    const singleOption = [{ label: `${selectedSegmentDuration}秒`, value: String(selectedSegmentDuration) }];
+    return computeSegmentPlan(targetDur, singleOption);
+  }, [selectedSegmentDuration, productInfo.targetDuration, record.analysis.totalDuration]);
 
   // 表单变化时自动保存到 IndexedDB（防抖 500ms）
   const saveTimerRef = useRef<ReturnType<typeof setTimeout>>();
@@ -119,8 +130,8 @@ export const ScriptPage: React.FC<ScriptPageProps> = ({
   }, [shots, saveShots]);
 
   const handleRewrite = useCallback(async () => {
-    if (!productInfo.name && !productInfo.category) {
-      setError('请至少填写商品名称或品类');
+    if (!productInfo.prompt?.trim()) {
+      setError('请填写提示词');
       return;
     }
     setRewriting(true);
@@ -146,7 +157,7 @@ export const ScriptPage: React.FC<ScriptPageProps> = ({
 分段方案：${segments.map((d, i) => `第${i + 1}段 ${d}s`).join('、')}，实际总时长 ${actualTotal} 秒。
 每个镜头的 duration 必须等于对应段的可用时长。`;
 
-      const prompt = `你是一个短视频脚本改编专家。请基于以下原始视频脚本，为新商品改编脚本。
+      const prompt = `你是一个短视频脚本改编专家。请基于以下原始视频脚本，改编脚本。
 
 原始视频信息：
 - 总时长：${record.analysis.totalDuration}秒
@@ -157,21 +168,19 @@ export const ScriptPage: React.FC<ScriptPageProps> = ({
 原始镜头脚本：
 ${originalShots}
 
-新商品信息：
-- 品类：${productInfo.category || '未指定'}
-- 商品名称：${productInfo.name || '未指定'}
-- 核心卖点：${productInfo.sellingPoints || '未指定'}
+用户提示词：
+${productInfo.prompt || '未指定'}
 
 视频生成约束：
 - 使用的视频模型：${videoModel}
 - ${durationInfo}
 - 需要 ${segmentCount} 个视频片段拼接成完整视频
 
-改编要求：
-1. **description（画面描述）**：将画面中的原商品替换为新商品"${productInfo.name || '新商品'}"，场景和构图保持类似风格，但主体、文字、道具等要匹配新商品
-2. **script（口播文案）**：以主角第一人称口述的方式撰写，语气自然、有感染力，像真人在镜头前说话，内容围绕新商品的卖点展开
-3. **visual_prompt（图片提示词）**：英文，替换主体为新商品，保持原始画面风格
-4. **video_prompt（视频提示词）**：英文，替换主体为新商品，保持原始运镜和动态风格
+改编要求（所有字段必须使用与用户提示词相同的语言）：
+1. **description（画面描述）**：根据用户提示词"${productInfo.prompt || ''}"改编画面内容，详细描述场景、人物、动作、光线、色调
+2. **script（口播文案）**：以主角第一人称口述的方式撰写，语气自然、有感染力，像真人在镜头前说话，内容围绕提示词展开
+3. **visual_prompt（图片提示词）**：详细的画面静态描述，用于图片生成
+4. **video_prompt（视频提示词）**：在画面描述基础上加入动态元素和运镜指令，用于视频生成
 5. **camera_movement（运镜方式）**：根据新内容适当调整
 
 拼接衔接要求（极其重要！）：
@@ -182,7 +191,9 @@ ${originalShots}
 
 每个镜头的额外输出字段：
 - **transition_hint**：到下一个镜头的转场方式，从 'cut'(硬切)、'dissolve'(交叉溶解)、'match_cut'(匹配切)、'fade_to_black'(淡出到黑) 中选择。同场景内推荐 'cut'，跨场景推荐 'dissolve'，最后一个镜头设为 'fade_to_black'
-- **end_frame_description**：本镜头结尾画面的精确描述（英文），具体描述主体位置、动作状态、背景元素
+- **end_frame_description**：本镜头结尾画面的精确描述，具体描述主体位置、动作状态、背景元素
+
+重要：所有字段的值必须使用与用户提示词相同的语言，保持语言一致性。
 
 返回一个 JSON 数组，每个元素包含：id、startTime、endTime、duration、description、script、visual_prompt、video_prompt、camera_movement、label、type、transition_hint、end_frame_description 字段。
 只返回 JSON 数组，不要 markdown 格式。`;
@@ -226,15 +237,17 @@ ${originalShots}
 
   return (
     <div className="va-page">
-      {/* 商品信息 */}
+      {/* 提示词 + 参数 */}
       <div className="va-product-form">
+        <textarea
+          className="va-form-textarea"
+          placeholder="描述你想要的视频内容，如：拖鞋，生活用品，主打防滑..."
+          rows={3}
+          value={productInfo.prompt}
+          onChange={e => setProductInfo(p => ({ ...p, prompt: e.target.value }))}
+        />
         <div className="va-form-row">
-          <input className="va-form-input" placeholder="商品名称" value={productInfo.name} onChange={e => setProductInfo(p => ({ ...p, name: e.target.value }))} />
-          <input className="va-form-input" placeholder="品类" value={productInfo.category} onChange={e => setProductInfo(p => ({ ...p, category: e.target.value }))} />
-        </div>
-        <div className="va-form-row">
-          <textarea className="va-form-textarea" placeholder="核心卖点..." rows={2} value={productInfo.sellingPoints} onChange={e => setProductInfo(p => ({ ...p, sellingPoints: e.target.value }))} style={{ flex: 1 }} />
-          <div className="va-duration-input">
+          <div className="va-duration-input" style={{ width: 'auto', flex: 1 }}>
             <label className="va-edit-label">视频时长(秒)</label>
             <input className="va-form-input" type="number" min={5} max={300} value={productInfo.targetDuration ?? record.analysis.totalDuration} onChange={e => setProductInfo(p => ({ ...p, targetDuration: Number(e.target.value) || undefined }))} />
           </div>
@@ -262,8 +275,20 @@ ${originalShots}
             disabled={rewriting}
             placeholder="选择视频模型"
           />
-          <span className="va-model-hint">单段≤{maxSegmentDuration}s</span>
-          {segmentPlan.isFixed && segmentPlan.overflow > 0 && (
+          <div className="va-segment-duration-select">
+            <label className="va-model-label">单段</label>
+            <select
+              className="va-form-select"
+              value={String(selectedSegmentDuration)}
+              onChange={e => setProductInfo(p => ({ ...p, segmentDuration: parseInt(e.target.value, 10) }))}
+              disabled={durationOptions.length <= 1}
+            >
+              {durationOptions.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
+          {segmentPlan.overflow > 0 && (
             <span className="va-duration-overflow">
               实际 {segmentPlan.actualTotal}s（+{segmentPlan.overflow}s）
             </span>

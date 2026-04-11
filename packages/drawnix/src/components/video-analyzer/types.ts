@@ -9,15 +9,35 @@ export type { VideoAnalysisData, VideoShot };
 /** 页面标识 */
 export type PageId = 'analyze' | 'script' | 'generate' | 'history';
 
-/** 商品信息 */
+/** 商品信息 / 改编提示词 */
 export interface ProductInfo {
-  name: string;
-  category: string;
-  sellingPoints: string;
+  /** 用户提示词（合并了原 name/category/sellingPoints） */
+  prompt: string;
   /** 目标视频时长（秒），默认为原视频时长 */
   targetDuration?: number;
   /** 视频生成模型 ID */
   videoModel?: string;
+  /** 用户选择的单段时长（秒），来自视频模型的 durationOptions */
+  segmentDuration?: number;
+
+  /** @deprecated use prompt */
+  name?: string;
+  /** @deprecated use prompt */
+  category?: string;
+  /** @deprecated use prompt */
+  sellingPoints?: string;
+}
+
+/** 将旧格式 ProductInfo 迁移为新格式（幂等） */
+export function migrateProductInfo(raw: Partial<ProductInfo>, fallbackDuration: number): ProductInfo {
+  if (raw.prompt !== undefined) {
+    return { prompt: raw.prompt, targetDuration: raw.targetDuration ?? fallbackDuration, videoModel: raw.videoModel, segmentDuration: raw.segmentDuration };
+  }
+  const parts: string[] = [];
+  if (raw.name) parts.push(raw.name);
+  if (raw.category) parts.push(raw.category);
+  if (raw.sellingPoints) parts.push(raw.sellingPoints);
+  return { prompt: parts.join('，'), targetDuration: raw.targetDuration ?? fallbackDuration, videoModel: raw.videoModel, segmentDuration: raw.segmentDuration };
 }
 
 /** 分析记录（持久化到 IndexedDB） */
@@ -80,9 +100,7 @@ export function formatShotsMarkdown(
   }).join('\n\n---\n\n');
 
   const headerParts = [`# 视频脚本`];
-  if (productInfo?.name) headerParts.push(`\n**商品：** ${productInfo.name}`);
-  if (productInfo?.category) headerParts.push(` | **品类：** ${productInfo.category}`);
-  if (productInfo?.sellingPoints) headerParts.push(` | **卖点：** ${productInfo.sellingPoints}`);
+  if (productInfo?.prompt) headerParts.push(`\n**提示词：** ${productInfo.prompt}`);
   const dur = productInfo?.targetDuration || analysis.totalDuration;
   headerParts.push(`\n**时长：** ${dur}s | **画面比例：** ${analysis.aspect_ratio || '16x9'}`);
   if (analysis.video_style) headerParts.push(` | **风格：** ${analysis.video_style}`);
