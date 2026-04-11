@@ -295,9 +295,10 @@ export const Drawnix: React.FC<DrawnixProps> = ({
   useEffect(() => {
     if (board) {
       board.appState = appState;
+      (board as any).__setAppState = stableSetAppState;
       boardRef.current = board;
     }
-  }, [board, appState]);
+  }, [board, appState, stableSetAppState]);
 
   // Initialize asset integration service on mount
   useEffect(() => {

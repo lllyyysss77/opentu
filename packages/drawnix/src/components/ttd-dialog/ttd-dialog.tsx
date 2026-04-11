@@ -735,6 +735,7 @@ const TTDDialogComponent = ({
               selectedModelRef={selectedImageModelRef}
               onModelChange={handleImageModelChange}
               onModelRefChange={handleImageModelRefChange}
+              externalBatchId={appState.dialogInitialData?.batchId}
             />
           ))}
       </WinBoxWindow>

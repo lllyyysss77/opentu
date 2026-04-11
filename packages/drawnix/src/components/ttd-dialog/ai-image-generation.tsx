@@ -80,6 +80,8 @@ interface AIImageGenerationProps {
   selectedModelRef?: ModelRef | null;
   onModelChange?: (value: string) => void;
   onModelRefChange?: (value: ModelRef | null) => void;
+  /** 外部传入的 batchId，用于任务关联（如视频分析器帧生成） */
+  externalBatchId?: string;
 }
 
 const AIImageGeneration = ({
@@ -96,6 +98,7 @@ const AIImageGeneration = ({
   selectedModelRef,
   onModelChange,
   onModelRefChange,
+  externalBatchId,
 }: AIImageGenerationProps = {}) => {
   const imageModels = useSelectableModels('image');
   const initialRoute = resolveInvocationRoute('image');
@@ -648,7 +651,7 @@ const AIImageGeneration = ({
         uploadedImages: convertedImages,
         autoInsertToCanvas: getAutoInsertValue(LS_KEYS.AI_IMAGE_AUTO_INSERT),
         // 始终包含 batchId 以跳过重复检测
-        batchId: `image_single_${Date.now()}`,
+        batchId: externalBatchId || `image_single_${Date.now()}`,
         batchIndex: 1,
         batchTotal: 1,
         targetFrameId,

@@ -44,6 +44,20 @@ const CAMERA_MOVEMENT_OPTIONS = [
   '第一人称 (POV)',
 ];
 
+const SPEECH_RELATION_OPTIONS = [
+  { label: '无 (none)', value: 'none' },
+  { label: '仅旁白 (narration_only)', value: 'narration_only' },
+  { label: '仅对白 (dialogue_only)', value: 'dialogue_only' },
+  { label: '旁白+对白 (both)', value: 'both' },
+];
+
+const TRANSITION_OPTIONS = [
+  { label: '硬切 (cut)', value: 'cut' },
+  { label: '溶解 (dissolve)', value: 'dissolve' },
+  { label: '匹配切 (match_cut)', value: 'match_cut' },
+  { label: '淡出到黑 (fade_to_black)', value: 'fade_to_black' },
+];
+
 interface ScriptPageProps {
   record: AnalysisRecord;
   onRecordUpdate: (record: AnalysisRecord) => void;
@@ -170,11 +184,10 @@ export const ScriptPage: React.FC<ScriptPageProps> = ({
         id: s.id, label: s.label, type: s.type,
         startTime: s.startTime, endTime: s.endTime, duration: s.duration,
         description: s.description,
-        narration: s.narration || s.script,
+        narration: s.narration,
         dialogue: s.dialogue || '',
-        dialogue_speakers: s.dialogue_speakers || s.script_speaker,
+        dialogue_speakers: s.dialogue_speakers,
         speech_relation: s.speech_relation || 'none',
-        visual_prompt: s.visual_prompt,
         first_frame_prompt: s.first_frame_prompt,
         last_frame_prompt: s.last_frame_prompt,
         camera_movement: s.camera_movement,
@@ -214,15 +227,12 @@ ${productInfo.prompt || '未指定'}
 改编要求（所有字段必须使用与用户提示词相同的语言）：
 1. **description（画面描述）**：根据用户提示词"${productInfo.prompt || ''}"改编画面内容，详细描述场景、人物、动作、光线、色调
 2. **narration（旁白）**：画外音/解说词，无旁白则为空字符串
-3. **dialogue（角色说话）**：角色台词，无角色说话则为空字符串；多角色请按“角色名: 台词”分行输出
-4. **dialogue_speakers（对白角色）**：单角色填角色名，多角色用“角色A|角色B”按发言顺序列出；无对白填空字符串
+3. **dialogue（角色说话）**：角色台词，无角色说话则为空字符串；多角色请按”角色名: 台词”分行输出
+4. **dialogue_speakers（对白角色）**：单角色填角色名，多角色用”角色A|角色B”按发言顺序列出；无对白填空字符串
 5. **speech_relation（旁白与对白关系）**：必须是 'none' | 'narration_only' | 'dialogue_only' | 'both' 之一，并与 narration/dialogue 是否为空严格一致
-6. **script（兼容字段）**：值等于 narration
-7. **script_speaker（兼容字段）**：值等于 dialogue_speakers
-8. **first_frame_prompt（首帧图片提示词）**：用于生成镜头开场画面，需精确描述主体位置、动作起始状态、构图、光线与背景
-9. **last_frame_prompt（尾帧图片提示词）**：用于生成镜头结尾画面，需精确描述主体位置、动作定格状态、构图、光线与背景
-10. **visual_prompt（通用图片提示词）**：兼容字段，可复用首帧画面信息
-11. **camera_movement（运镜方式）**：根据新内容适当调整
+6. **first_frame_prompt（首帧图片提示词）**：用于生成镜头开场画面，需精确描述主体位置、动作起始状态、构图、光线与背景
+7. **last_frame_prompt（尾帧图片提示词）**：用于生成镜头结尾画面，需精确描述主体位置、动作定格状态、构图、光线与背景
+8. **camera_movement（运镜方式）**：根据新内容适当调整
 
 拼接衔接要求（极其重要！）：
 1. 视觉锚点：相邻镜头之间必须有一个共同的视觉元素（同一商品、同一场景、同一手部动作），确保画面连贯
@@ -232,12 +242,10 @@ ${productInfo.prompt || '未指定'}
 
 每个镜头的额外输出字段：
 - **transition_hint**：到下一个镜头的转场方式，从 'cut'(硬切)、'dissolve'(交叉溶解)、'match_cut'(匹配切)、'fade_to_black'(淡出到黑) 中选择。同场景内推荐 'cut'，跨场景推荐 'dissolve'，最后一个镜头设为 'fade_to_black'
-- **end_frame_description**：本镜头结尾画面的精确描述，具体描述主体位置、动作状态、背景元素
 
 重要：所有字段的值必须使用与用户提示词相同的语言，保持语言一致性。
 
-禁止生成 video_prompt 字段。
-返回一个 JSON 数组，每个元素包含：id、startTime、endTime、duration、description、narration、dialogue、dialogue_speakers、speech_relation、script、script_speaker、first_frame_prompt、last_frame_prompt、visual_prompt、camera_movement、label、type、transition_hint、end_frame_description 字段。
+返回一个 JSON 数组，每个元素包含：id、startTime、endTime、duration、description、narration、dialogue、dialogue_speakers、speech_relation、first_frame_prompt、last_frame_prompt、camera_movement、label、type、transition_hint 字段。
 只返回 JSON 数组，不要 markdown 格式。`;
 
       const messages: GeminiMessage[] = [{ role: 'user', content: [{ type: 'text', text: prompt }] }];
@@ -357,25 +365,21 @@ ${productInfo.prompt || '未指定'}
               <label className="va-edit-label">画面描述</label>
               <textarea className="va-edit-textarea" rows={2} value={shot.description || ''} onChange={e => handleShotFieldChange(shot.id, 'description', e.target.value)} />
               <label className="va-edit-label">旁白</label>
-              <textarea className="va-edit-textarea" rows={2} value={shot.narration || shot.script || ''} onChange={e => handleShotFieldChange(shot.id, 'narration', e.target.value)} />
+              <textarea className="va-edit-textarea" rows={2} value={shot.narration || ''} onChange={e => handleShotFieldChange(shot.id, 'narration', e.target.value)} />
               <label className="va-edit-label">角色说话</label>
-              <textarea className="va-edit-textarea" rows={2} value={shot.dialogue || ''} onChange={e => handleShotFieldChange(shot.id, 'dialogue', e.target.value)} placeholder="多角色时按“角色名: 台词”分行" />
+              <textarea className="va-edit-textarea" rows={2} value={shot.dialogue || ''} onChange={e => handleShotFieldChange(shot.id, 'dialogue', e.target.value)} placeholder={'多角色时按"角色名: 台词"分行'} />
               <label className="va-edit-label">对白角色</label>
-              <input className="va-form-input" type="text" value={shot.dialogue_speakers || shot.script_speaker || ''} onChange={e => handleShotFieldChange(shot.id, 'dialogue_speakers', e.target.value)} placeholder="如：主讲人 或 主讲人|顾客" />
+              <input className="va-form-input" type="text" value={shot.dialogue_speakers || ''} onChange={e => handleShotFieldChange(shot.id, 'dialogue_speakers', e.target.value)} placeholder="如：主讲人 或 主讲人|顾客" />
               <label className="va-edit-label">旁白/对白关系</label>
-              <ComboInput value={shot.speech_relation || ''} onChange={v => handleShotFieldChange(shot.id, 'speech_relation', v)} options={['none', 'narration_only', 'dialogue_only', 'both']} placeholder="选择关系" />
+              <ComboInput value={shot.speech_relation || ''} onChange={v => handleShotFieldChange(shot.id, 'speech_relation', v)} options={SPEECH_RELATION_OPTIONS} placeholder="选择关系" />
               <label className="va-edit-label">运镜方式</label>
               <ComboInput value={shot.camera_movement || ''} onChange={v => handleShotFieldChange(shot.id, 'camera_movement', v)} options={CAMERA_MOVEMENT_OPTIONS} placeholder="选择或输入运镜方式" />
-              <label className="va-edit-label">图片 Prompt</label>
-              <textarea className="va-edit-textarea" rows={2} value={shot.visual_prompt || ''} onChange={e => handleShotFieldChange(shot.id, 'visual_prompt', e.target.value)} />
-              <label className="va-edit-label">首帧图片 Prompt</label>
+              <label className="va-edit-label">首帧 Prompt</label>
               <textarea className="va-edit-textarea" rows={2} value={shot.first_frame_prompt || ''} onChange={e => handleShotFieldChange(shot.id, 'first_frame_prompt', e.target.value)} />
-              <label className="va-edit-label">尾帧图片 Prompt</label>
+              <label className="va-edit-label">尾帧 Prompt</label>
               <textarea className="va-edit-textarea" rows={2} value={shot.last_frame_prompt || ''} onChange={e => handleShotFieldChange(shot.id, 'last_frame_prompt', e.target.value)} />
               <label className="va-edit-label">转场方式</label>
-              <ComboInput value={shot.transition_hint || ''} onChange={v => handleShotFieldChange(shot.id, 'transition_hint', v)} options={['cut', 'dissolve', 'match_cut', 'fade_to_black']} placeholder="选择转场方式" />
-              <label className="va-edit-label">尾帧描述</label>
-              <textarea className="va-edit-textarea" rows={2} value={shot.end_frame_description || ''} onChange={e => handleShotFieldChange(shot.id, 'end_frame_description', e.target.value)} placeholder="本镜头结尾画面的英文描述..." />
+              <ComboInput value={shot.transition_hint || ''} onChange={v => handleShotFieldChange(shot.id, 'transition_hint', v)} options={TRANSITION_OPTIONS} placeholder="选择转场方式" />
             </div>
           </ShotCard>
         ))}

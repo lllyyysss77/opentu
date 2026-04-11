@@ -105,15 +105,14 @@ export function formatShotsMarkdown(
       ``,
       `**画面描述：** ${s.description || '-'}`,
       ``,
-      `**旁白：** ${s.narration || s.script || '-'}`,
+      `**旁白：** ${s.narration || '-'}`,
       s.dialogue ? `\n**角色对白：** ${s.dialogue}` : '',
-      (s.dialogue_speakers || s.script_speaker) ? `\n**对白角色：** ${s.dialogue_speakers || s.script_speaker}` : '',
+      s.dialogue_speakers ? `\n**对白角色：** ${s.dialogue_speakers}` : '',
       s.speech_relation ? `\n**语音关系：** ${s.speech_relation}` : '',
       s.camera_movement ? `\n**运镜：** ${s.camera_movement}` : '',
-      s.visual_prompt ? `\n**图片 Prompt：** ${s.visual_prompt}` : '',
-      s.video_prompt ? `\n**视频 Prompt：** ${s.video_prompt}` : '',
+      s.first_frame_prompt ? `\n**首帧 Prompt：** ${s.first_frame_prompt}` : '',
+      s.last_frame_prompt ? `\n**尾帧 Prompt：** ${s.last_frame_prompt}` : '',
       s.transition_hint ? `\n**转场：** ${s.transition_hint}` : '',
-      s.end_frame_description ? `\n**尾帧描述：** ${s.end_frame_description}` : '',
     ];
     return lines.filter(Boolean).join('\n');
   }).join('\n\n---\n\n');
