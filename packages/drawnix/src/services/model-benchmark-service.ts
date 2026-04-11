@@ -26,6 +26,8 @@ import {
   type BenchmarkRankingMode,
 } from './model-benchmark-pure';
 
+export type { BenchmarkModality, BenchmarkRankingMode };
+
 const STORAGE_KEY = 'aitu:model-benchmark:sessions';
 const MAX_SESSIONS = 12;
 const MAX_PERSISTED_TEXT_LENGTH = 4000;
@@ -64,6 +66,7 @@ export interface ModelBenchmarkPreview {
   format?: string;
   duration?: number | null;
   title?: string;
+  rawData?: any;
 }
 
 export interface ModelBenchmarkEntry extends ModelBenchmarkTarget {
@@ -190,10 +193,10 @@ function trimSessions(
 }
 
 function createSessionTitle(
-  modality: BenchmarkModality,
-  compareMode: BenchmarkCompareMode,
+  input: CreateBenchmarkSessionInput,
   createdAt: number
 ): string {
+  const { modality, compareMode, targets } = input;
   const modalityLabel =
     modality === 'text'
       ? '文本'
@@ -202,18 +205,22 @@ function createSessionTitle(
       : modality === 'video'
       ? '视频'
       : '音频';
-  const modeLabel =
-    compareMode === 'cross-provider'
-      ? '同模型跨供应商'
-      : compareMode === 'cross-model'
-      ? '同供应商跨模型'
-      : '自定义批测';
+
+  let subject = '';
+  if (compareMode === 'cross-provider' && targets.length > 0) {
+    subject = targets[0].modelLabel;
+  } else if (compareMode === 'cross-model' && targets.length > 0) {
+    subject = targets[0].profileName;
+  } else {
+    subject = '自定义批测';
+  }
+
   const timeLabel = new Date(createdAt).toLocaleTimeString('zh-CN', {
     hour: '2-digit',
     minute: '2-digit',
-    second: '2-digit',
   });
-  return `${modeLabel} · ${modalityLabel} · ${timeLabel}`;
+
+  return `${subject} · ${modalityLabel} · ${timeLabel}`;
 }
 
 function createEntryFromTarget(
@@ -271,6 +278,7 @@ async function executeTextBenchmark(
     firstResponseAt,
     text,
     title: text.slice(0, 32),
+    rawData: response,
   };
 }
 
@@ -317,6 +325,7 @@ async function executeImageBenchmark(
     url: result.url,
     urls: result.urls,
     format: result.format,
+    rawData: result.raw,
   };
 }
 
@@ -363,6 +372,7 @@ async function executeVideoBenchmark(
     url: result.url,
     format: result.format,
     duration: result.duration,
+    rawData: result.raw,
   };
 }
 
@@ -412,6 +422,7 @@ async function executeAudioBenchmark(
     duration: result.duration,
     title: result.title,
     text: result.resultKind === 'lyrics' ? result.lyricsText : undefined,
+    rawData: result.raw,
   };
 }
 
@@ -503,6 +514,21 @@ class ModelBenchmarkService {
     return this.state$.value;
   }
 
+  getLatestEntryStatus(
+    profileId: string,
+    modelId: string
+  ): BenchmarkEntryStatus | null {
+    const key = buildSelectionKey(profileId, modelId);
+    for (const session of this.state$.value.sessions) {
+      for (const entry of session.entries) {
+        if (entry.selectionKey === key && entry.status !== 'pending') {
+          return entry.status;
+        }
+      }
+    }
+    return null;
+  }
+
   setActiveSession(sessionId: string | null) {
     this.mutate((state) => ({
       ...state,
@@ -514,11 +540,7 @@ class ModelBenchmarkService {
     const createdAt = Date.now();
     const session: ModelBenchmarkSession = {
       id: generateTaskId(),
-      title: createSessionTitle(
-        input.modality,
-        input.compareMode,
-        createdAt
-      ),
+      title: createSessionTitle(input, createdAt),
       modality: input.modality,
       compareMode: input.compareMode,
       promptPresetId: input.promptPresetId,
