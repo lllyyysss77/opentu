@@ -60,6 +60,7 @@ import {
 import { UnifiedMediaViewer, type MediaItem as UnifiedMediaItem } from './components/shared/media-preview';
 import { PlaitDrawElement } from '@plait/draw';
 import { withTracking } from './plugins/tracking';
+import { withUnknownElementFallback } from './plugins/with-unknown-element-fallback';
 import { withTool } from './plugins/with-tool';
 import { withToolFocus } from './plugins/with-tool-focus';
 import { withToolResize } from './plugins/with-tool-resize';
@@ -782,6 +783,7 @@ export const Drawnix: React.FC<DrawnixProps> = ({
     withLassoSelection, // 套索选择 - 自由路径框选元素
     withLockedElement, // 锁定元素 - 阻止选中和移动被锁定的元素
     withTracking,
+    withUnknownElementFallback, // 必须最后 — 捕获未知元素类型避免崩溃
   ];
 
   const containerRef = useRef<HTMLDivElement>(null);
