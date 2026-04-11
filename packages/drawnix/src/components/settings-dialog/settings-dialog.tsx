@@ -1786,7 +1786,7 @@ export const SettingsDialog = ({
                 </label>
                 <Tooltip
                   content={
-                    <div style={{ maxWidth: 300 }}>
+                    <div style={{ maxWidth: 480 }}>
                       您可以从以下地址获取 API Key:
                       <br />
                       <a
@@ -1808,9 +1808,10 @@ export const SettingsDialog = ({
                           width: '100%',
                           paddingTop: '56.25%',
                           marginTop: 8,
-                          borderRadius: 4,
+                          borderRadius: 8,
                           overflow: 'hidden',
                           backgroundColor: '#000',
+                          boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
                         }}
                       >
                         <iframe
