@@ -4,7 +4,7 @@
 
 import React, { useState, useCallback, useMemo } from 'react';
 import type { AnalysisRecord, VideoShot } from '../types';
-import { aspectRatioToVideoSize } from '../types';
+import { aspectRatioToVideoSize, migrateProductInfo } from '../types';
 import { getVideoModelConfig } from '../../../constants/video-model-config';
 import { mcpRegistry } from '../../../mcp/registry';
 import { updateRecord } from '../storage';
@@ -14,17 +14,28 @@ import { ReferenceImageUpload } from '../../ttd-dialog/shared';
 import type { ReferenceImage } from '../../ttd-dialog/shared';
 import { ModelDropdown } from '../../ai-input-bar/ModelDropdown';
 import { useSelectableModels } from '../../../hooks/use-runtime-models';
+import { getSelectionKey } from '../../../utils/model-selection';
+import type { ModelRef } from '../../../utils/settings-manager';
+import {
+  readStoredModelSelection,
+  writeStoredModelSelection,
+} from '../utils';
+
+const STORAGE_KEY_IMAGE_MODEL = 'video-analyzer:image-model';
+const STORAGE_KEY_VIDEO_MODEL = 'video-analyzer:video-model';
 
 interface GeneratePageProps {
   record: AnalysisRecord;
   onRecordUpdate: (record: AnalysisRecord) => void;
   onRecordsChange: (records: AnalysisRecord[]) => void;
+  onRestart?: () => void;
 }
 
 export const GeneratePage: React.FC<GeneratePageProps> = ({
   record,
   onRecordUpdate,
   onRecordsChange,
+  onRestart,
 }) => {
   const shots = record.editedShots || record.analysis.shots;
   const aspectRatio = record.analysis.aspect_ratio || '16x9';
@@ -33,9 +44,24 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
   const [refImages, setRefImages] = useState<ReferenceImage[]>([]);
   const imageModels = useSelectableModels('image');
   const videoModels = useSelectableModels('video');
-  const [imageModel, setImageModel] = useState('');
+  const [imageModel, setImageModelState] = useState(
+    () => readStoredModelSelection(STORAGE_KEY_IMAGE_MODEL, '').modelId
+  );
+  const [imageModelRef, setImageModelRef] = useState<ModelRef | null>(
+    () => readStoredModelSelection(STORAGE_KEY_IMAGE_MODEL, '').modelRef
+  );
   const [videoModel, setVideoModelState] = useState(
-    () => record.productInfo?.videoModel || 'veo3'
+    () =>
+      record.productInfo?.videoModel ||
+      readStoredModelSelection(STORAGE_KEY_VIDEO_MODEL, 'veo3').modelId
+  );
+  const [videoModelRef, setVideoModelRef] = useState<ModelRef | null>(
+    () =>
+      record.productInfo?.videoModelRef ||
+      readStoredModelSelection(
+        STORAGE_KEY_VIDEO_MODEL,
+        record.productInfo?.videoModel || 'veo3'
+      ).modelRef
   );
   const [segmentDuration, setSegmentDuration] = useState<number>(
     () => record.productInfo?.segmentDuration || parseInt(getVideoModelConfig(record.productInfo?.videoModel || 'veo3').defaultDuration, 10) || 8
@@ -46,11 +72,32 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
     return getVideoModelConfig(videoModel).durationOptions;
   }, [videoModel]);
 
-  const setVideoModel = useCallback((model: string) => {
-    setVideoModelState(model);
-    const cfg = getVideoModelConfig(model);
-    setSegmentDuration(parseInt(cfg.defaultDuration, 10) || 8);
+  const setImageModel = useCallback((model: string, modelRef?: ModelRef | null) => {
+    setImageModelState(model);
+    setImageModelRef(modelRef || null);
+    writeStoredModelSelection(STORAGE_KEY_IMAGE_MODEL, model, modelRef);
   }, []);
+
+  const setVideoModel = useCallback((model: string, modelRef?: ModelRef | null) => {
+    setVideoModelState(model);
+    setVideoModelRef(modelRef || null);
+    writeStoredModelSelection(STORAGE_KEY_VIDEO_MODEL, model, modelRef);
+    const cfg = getVideoModelConfig(model);
+    const nextSegmentDuration = parseInt(cfg.defaultDuration, 10) || 8;
+    setSegmentDuration(nextSegmentDuration);
+
+    const nextProductInfo = {
+      ...migrateProductInfo(record.productInfo || { prompt: '' }, record.analysis.totalDuration),
+      videoModel: model,
+      videoModelRef: modelRef || null,
+      segmentDuration: nextSegmentDuration,
+    };
+
+    void updateRecord(record.id, { productInfo: nextProductInfo }).then(updated => {
+      onRecordsChange(updated);
+      onRecordUpdate({ ...record, productInfo: nextProductInfo });
+    });
+  }, [record, onRecordUpdate, onRecordsChange]);
 
   // 参考图 URL 列表（用于传给生成接口）
   const refImageUrls = useMemo(() => refImages.map(img => img.url).filter(Boolean), [refImages]);
@@ -69,15 +116,15 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
     if (!shot.visual_prompt) return;
     await ensureBatchId();
     await mcpRegistry.executeTool(
-      { name: 'generate_image', arguments: {
-        prompt: shot.visual_prompt, count: 1, size: aspectRatio,
-        referenceImages: refImageUrls.length > 0 ? refImageUrls : undefined,
-        batchId,
-        ...(imageModel ? { model: imageModel } : {}),
-      }},
+        { name: 'generate_image', arguments: {
+          prompt: shot.visual_prompt, count: 1, size: aspectRatio,
+          referenceImages: refImageUrls.length > 0 ? refImageUrls : undefined,
+          batchId,
+          ...(imageModel ? { model: imageModel, modelRef: imageModelRef } : {}),
+        }},
       { mode: 'queue' }
     );
-  }, [aspectRatio, refImageUrls, batchId, ensureBatchId, imageModel]);
+  }, [aspectRatio, refImageUrls, batchId, ensureBatchId, imageModel, imageModelRef]);
 
   // 单镜头生成视频
   const handleShotGenerateVideo = useCallback(async (shot: VideoShot) => {
@@ -89,11 +136,12 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
     await mcpRegistry.executeTool(
       { name: 'generate_video', arguments: {
         prompt, size, seconds, count: 1, batchId, model: videoModel,
+        modelRef: videoModelRef,
         referenceImages: refImageUrls.length > 0 ? refImageUrls : undefined,
       }},
       { mode: 'queue' }
     );
-  }, [aspectRatio, batchId, videoModel, ensureBatchId, segmentDuration, refImageUrls]);
+  }, [aspectRatio, batchId, videoModel, videoModelRef, ensureBatchId, segmentDuration, refImageUrls]);
 
   // 批量生成
   const handleGenerateAllImages = useCallback(async () => {
@@ -104,12 +152,12 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
           prompt: shot.visual_prompt, count: 1, size: aspectRatio,
           referenceImages: refImageUrls.length > 0 ? refImageUrls : undefined,
           batchId,
-          ...(imageModel ? { model: imageModel } : {}),
+          ...(imageModel ? { model: imageModel, modelRef: imageModelRef } : {}),
         }},
         { mode: 'queue' }
       );
     }
-  }, [shots, aspectRatio, refImageUrls, batchId, ensureBatchId, imageModel]);
+  }, [shots, aspectRatio, refImageUrls, batchId, ensureBatchId, imageModel, imageModelRef]);
 
   const handleGenerateAllVideos = useCallback(async () => {
     await ensureBatchId();
@@ -121,12 +169,13 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
       await mcpRegistry.executeTool(
         { name: 'generate_video', arguments: {
           prompt, size, seconds, count: 1, batchId, model: videoModel,
+          modelRef: videoModelRef,
           referenceImages: refImageUrls.length > 0 ? refImageUrls : undefined,
         }},
         { mode: 'queue' }
       );
     }
-  }, [shots, aspectRatio, batchId, videoModel, ensureBatchId, segmentDuration, refImageUrls]);
+  }, [shots, aspectRatio, batchId, videoModel, videoModelRef, ensureBatchId, segmentDuration, refImageUrls]);
 
   return (
     <div className="va-page">
@@ -145,6 +194,7 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
           <ModelDropdown
             variant="form"
             selectedModel={imageModel}
+            selectedSelectionKey={getSelectionKey(imageModel, imageModelRef)}
             onSelect={setImageModel}
             models={imageModels}
             placement="down"
@@ -156,6 +206,7 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
           <ModelDropdown
             variant="form"
             selectedModel={videoModel}
+            selectedSelectionKey={getSelectionKey(videoModel, videoModelRef)}
             onSelect={setVideoModel}
             models={videoModels}
             placement="down"
@@ -200,6 +251,7 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
 
       {/* 批量操作 */}
       <div className="va-page-actions">
+        {onRestart && <button onClick={onRestart}>重新分析</button>}
         <button onClick={handleGenerateAllImages}>全部→生成图片</button>
         <button onClick={handleGenerateAllVideos}>全部→生成视频</button>
       </div>

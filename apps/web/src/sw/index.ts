@@ -813,6 +813,14 @@ function isFontRequest(url: URL, request: Request): boolean {
   return fontExtensions.test(url.pathname) || request.destination === 'font';
 }
 
+// 检查是否为 Gemini generateContent 系列请求
+function isGenerateContentRequest(url: URL): boolean {
+  return (
+    url.pathname.includes(':generateContent') ||
+    url.pathname.includes(':streamGenerateContent')
+  );
+}
+
 // 从IndexedDB恢复失败域名列表
 async function loadFailedDomains(): Promise<void> {
   try {
@@ -2461,6 +2469,20 @@ sw.addEventListener('fetch', (event: FetchEvent) => {
   // 对于其他请求（如 XHR/API 请求），在调试模式下拦截以记录日志
   // 非调试模式下让浏览器直接处理
   if (debugModeEnabled) {
+    // generateContent 长请求可能持续数分钟，调试模式下不应由 SW 读取请求/响应体，
+    // 否则会放大长请求和流式请求的失败风险。
+    if (isGenerateContentRequest(url)) {
+      addDebugLog({
+        type: 'fetch',
+        url: event.request.url,
+        method: event.request.method,
+        requestType: 'xhr',
+        details: `Skipped SW debug interception for generateContent request (${event.request.method})`,
+        duration: 0,
+      });
+      return;
+    }
+
     const debugId = addDebugLog({
       type: 'fetch',
       url: event.request.url,

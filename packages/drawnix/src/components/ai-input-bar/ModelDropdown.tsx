@@ -51,6 +51,8 @@ import { compareModelsByDisplayPriority } from '../../utils/model-sort';
 import {
   LEGACY_DEFAULT_PROVIDER_PROFILE_ID,
   TUZI_ORIGINAL_PROVIDER_PROFILE_ID,
+  createModelRef,
+  type ModelRef,
 } from '../../utils/settings-manager';
 
 const SETTINGS_PROVIDER_NAV_EVENT = 'aitu:settings:provider-nav';
@@ -125,7 +127,7 @@ export interface ModelDropdownProps {
   /** 当前选中的唯一选择键（支持区分同模型不同供应商来源） */
   selectedSelectionKey?: string | null;
   /** 选择模型回调 */
-  onSelect: (modelId: string) => void;
+  onSelect: (modelId: string, modelRef?: ModelRef | null) => void;
   /** 选择完整模型配置回调 */
   onSelectModel?: (model: ModelConfig) => void;
   /** 语言 */
@@ -552,7 +554,7 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
   const handleSelect = useCallback(
     (model: ModelConfig) => {
       closeContextMenu();
-      onSelect(model.id);
+      onSelect(model.id, createModelRef(model.sourceProfileId || null, model.id));
       onSelectModel?.(model);
       setIsOpen(false);
       if (variant === 'form') {

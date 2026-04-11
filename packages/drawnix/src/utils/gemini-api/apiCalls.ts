@@ -21,6 +21,8 @@ type GoogleInlineData = {
   data?: string;
 };
 
+const MIN_GENERATE_CONTENT_TIMEOUT_MS = 11 * 60 * 1000;
+
 function isGoogleGenerateContentProtocol(config: GeminiConfig): boolean {
   return config.protocol === 'google.generateContent';
 }
@@ -66,6 +68,42 @@ function buildGoogleEndpoint(config: GeminiConfig, model: string, stream: boolea
   }
 
   return `/v1beta/models/${model}:streamGenerateContent`;
+}
+
+function createTimeoutSignal(
+  upstreamSignal: AbortSignal | undefined,
+  timeoutMs: number
+): {
+  signal: AbortSignal;
+  didTimeout: () => boolean;
+  cleanup: () => void;
+} {
+  const controller = new AbortController();
+  let didTimeout = false;
+
+  const abortFromUpstream = () => {
+    controller.abort();
+  };
+
+  if (upstreamSignal?.aborted) {
+    controller.abort();
+  } else if (upstreamSignal) {
+    upstreamSignal.addEventListener('abort', abortFromUpstream, { once: true });
+  }
+
+  const timeoutId = setTimeout(() => {
+    didTimeout = true;
+    controller.abort();
+  }, timeoutMs);
+
+  return {
+    signal: controller.signal,
+    didTimeout: () => didTimeout,
+    cleanup: () => {
+      clearTimeout(timeoutId);
+      upstreamSignal?.removeEventListener('abort', abortFromUpstream);
+    },
+  };
 }
 
 function blobToDataUrl(blob: Blob): Promise<string> {
@@ -311,23 +349,11 @@ export async function callGoogleGenerateContentRaw(
   });
 
   const providerContext = buildProviderContext(config);
-  const timeoutMs =
-    config.timeout ||
-    (options.stream ? DEFAULT_CONFIG.timeout : DEFAULT_CONFIG.timeout);
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(new Error('Timeout')), timeoutMs);
-  if (options.signal) {
-    if (options.signal.aborted) {
-      clearTimeout(timeoutId);
-      controller.abort(options.signal.reason);
-    } else {
-      options.signal.addEventListener('abort', () => {
-        clearTimeout(timeoutId);
-        controller.abort(options.signal?.reason);
-      });
-    }
-  }
+  const timeoutMs = Math.max(
+    config.timeout || 0,
+    MIN_GENERATE_CONTENT_TIMEOUT_MS
+  );
+  const timeoutControl = createTimeoutSignal(options.signal, timeoutMs);
 
   try {
     const response = await providerTransport.send(providerContext, {
@@ -339,10 +365,8 @@ export async function callGoogleGenerateContentRaw(
       },
       query: options.stream ? { alt: 'sse' } : undefined,
       body: JSON.stringify(requestBody),
-      signal: controller.signal,
+      signal: timeoutControl.signal,
     });
-
-    clearTimeout(timeoutId);
 
     if (!response.ok) {
       const duration = Date.now() - startTime;
@@ -444,9 +468,19 @@ export async function callGoogleGenerateContentRaw(
       ],
     };
   } catch (error) {
-    clearTimeout(timeoutId);
     const duration = Date.now() - startTime;
-    const errorMessage = error instanceof Error ? error.message : String(error);
+    const normalizedError =
+      timeoutControl.didTimeout() &&
+      error instanceof Error &&
+      error.name === 'AbortError'
+        ? new Error(
+            `generateContent 请求超时（>${Math.floor(timeoutMs / 60000)} 分钟）`
+          )
+        : error;
+    const errorMessage =
+      normalizedError instanceof Error
+        ? normalizedError.message
+        : String(normalizedError);
     analytics.trackAPICallFailure({
       endpoint,
       model,
@@ -454,7 +488,9 @@ export async function callGoogleGenerateContentRaw(
       error: errorMessage,
       stream: options.stream,
     });
-    throw error;
+    throw normalizedError;
+  } finally {
+    timeoutControl.cleanup();
   }
 }
 

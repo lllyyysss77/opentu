@@ -15,6 +15,12 @@ import { ModelDropdown } from '../../ai-input-bar/ModelDropdown';
 import { useSelectableModels } from '../../../hooks/use-runtime-models';
 import { computeSegmentPlan, type SegmentPlan } from '../../../utils/segment-plan';
 import { getVideoModelConfig } from '../../../constants/video-model-config';
+import { getSelectionKey } from '../../../utils/model-selection';
+import type { ModelRef } from '../../../utils/settings-manager';
+import {
+  readStoredModelSelection,
+  writeStoredModelSelection,
+} from '../utils';
 
 const STORAGE_KEY_SCRIPT_MODEL = 'video-analyzer:script-model';
 const STORAGE_KEY_VIDEO_MODEL = 'video-analyzer:video-model';
@@ -63,23 +69,46 @@ export const ScriptPage: React.FC<ScriptPageProps> = ({
   const [rewriting, setRewriting] = useState(false);
   const [error, setError] = useState('');
   const [scriptModel, setScriptModelState] = useState(
-    () => localStorage.getItem(STORAGE_KEY_SCRIPT_MODEL) || DEFAULT_SCRIPT_MODEL
+    () => readStoredModelSelection(STORAGE_KEY_SCRIPT_MODEL, DEFAULT_SCRIPT_MODEL).modelId
   );
-  const setScriptModel = useCallback((model: string) => {
+  const [scriptModelRef, setScriptModelRef] = useState<ModelRef | null>(
+    () => readStoredModelSelection(STORAGE_KEY_SCRIPT_MODEL, DEFAULT_SCRIPT_MODEL).modelRef
+  );
+  const setScriptModel = useCallback((model: string, modelRef?: ModelRef | null) => {
     setScriptModelState(model);
-    localStorage.setItem(STORAGE_KEY_SCRIPT_MODEL, model);
+    setScriptModelRef(modelRef || null);
+    writeStoredModelSelection(STORAGE_KEY_SCRIPT_MODEL, model, modelRef);
   }, []);
   const textModels = useSelectableModels('text');
   const videoModels = useSelectableModels('video');
   const [videoModel, setVideoModelState] = useState(
-    () => record.productInfo?.videoModel || localStorage.getItem(STORAGE_KEY_VIDEO_MODEL) || DEFAULT_VIDEO_MODEL
+    () =>
+      record.productInfo?.videoModel ||
+      readStoredModelSelection(
+        STORAGE_KEY_VIDEO_MODEL,
+        DEFAULT_VIDEO_MODEL
+      ).modelId
   );
-  const setVideoModel = useCallback((model: string) => {
+  const [videoModelRef, setVideoModelRef] = useState<ModelRef | null>(
+    () =>
+      record.productInfo?.videoModelRef ||
+      readStoredModelSelection(
+        STORAGE_KEY_VIDEO_MODEL,
+        record.productInfo?.videoModel || DEFAULT_VIDEO_MODEL
+      ).modelRef
+  );
+  const setVideoModel = useCallback((model: string, modelRef?: ModelRef | null) => {
     setVideoModelState(model);
-    localStorage.setItem(STORAGE_KEY_VIDEO_MODEL, model);
+    setVideoModelRef(modelRef || null);
+    writeStoredModelSelection(STORAGE_KEY_VIDEO_MODEL, model, modelRef);
     const cfg = getVideoModelConfig(model);
     const defaultDur = parseInt(cfg.defaultDuration, 10) || 8;
-    setProductInfo(p => ({ ...p, videoModel: model, segmentDuration: defaultDur }));
+    setProductInfo(p => ({
+      ...p,
+      videoModel: model,
+      videoModelRef: modelRef || null,
+      segmentDuration: defaultDur,
+    }));
   }, []);
 
   // 当前视频模型的可用时长选项
@@ -199,7 +228,12 @@ ${productInfo.prompt || '未指定'}
 只返回 JSON 数组，不要 markdown 格式。`;
 
       const messages: GeminiMessage[] = [{ role: 'user', content: [{ type: 'text', text: prompt }] }];
-      const response = await sendChatWithGemini(messages, undefined, undefined, scriptModel);
+      const response = await sendChatWithGemini(
+        messages,
+        undefined,
+        undefined,
+        scriptModelRef || scriptModel
+      );
       const text = response.choices?.[0]?.message?.content;
       if (!text) throw new Error('AI 未返回有效响应');
 
@@ -229,7 +263,7 @@ ${productInfo.prompt || '未指定'}
     } finally {
       setRewriting(false);
     }
-  }, [record, productInfo, shots, saveShots, segmentPlan, videoModel, scriptModel]);
+  }, [record, productInfo, shots, saveShots, segmentPlan, videoModel, scriptModel, scriptModelRef]);
 
   const handleInsertScripts = useCallback(async () => {
     await quickInsert('text', formatShotsMarkdown(shots, record.analysis, productInfo));
@@ -257,6 +291,7 @@ ${productInfo.prompt || '未指定'}
           <ModelDropdown
             variant="form"
             selectedModel={scriptModel}
+            selectedSelectionKey={getSelectionKey(scriptModel, scriptModelRef)}
             onSelect={setScriptModel}
             models={textModels}
             placement="down"
@@ -269,6 +304,7 @@ ${productInfo.prompt || '未指定'}
           <ModelDropdown
             variant="form"
             selectedModel={videoModel}
+            selectedSelectionKey={getSelectionKey(videoModel, videoModelRef)}
             onSelect={setVideoModel}
             models={videoModels}
             placement="down"

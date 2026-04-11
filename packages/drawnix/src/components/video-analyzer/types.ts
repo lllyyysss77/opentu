@@ -3,6 +3,7 @@
  */
 
 import type { VideoAnalysisData, VideoShot } from '../../mcp/tools/video-analyze';
+import { createModelRef, type ModelRef } from '../../utils/settings-manager';
 
 export type { VideoAnalysisData, VideoShot };
 
@@ -17,6 +18,8 @@ export interface ProductInfo {
   targetDuration?: number;
   /** 视频生成模型 ID */
   videoModel?: string;
+  /** 视频生成模型引用（用于保留供应商 profileId） */
+  videoModelRef?: ModelRef | null;
   /** 用户选择的单段时长（秒），来自视频模型的 durationOptions */
   segmentDuration?: number;
 
@@ -31,13 +34,25 @@ export interface ProductInfo {
 /** 将旧格式 ProductInfo 迁移为新格式（幂等） */
 export function migrateProductInfo(raw: Partial<ProductInfo>, fallbackDuration: number): ProductInfo {
   if (raw.prompt !== undefined) {
-    return { prompt: raw.prompt, targetDuration: raw.targetDuration ?? fallbackDuration, videoModel: raw.videoModel, segmentDuration: raw.segmentDuration };
+    return {
+      prompt: raw.prompt,
+      targetDuration: raw.targetDuration ?? fallbackDuration,
+      videoModel: raw.videoModel,
+      videoModelRef: createModelRef(raw.videoModelRef?.profileId, raw.videoModelRef?.modelId),
+      segmentDuration: raw.segmentDuration,
+    };
   }
   const parts: string[] = [];
   if (raw.name) parts.push(raw.name);
   if (raw.category) parts.push(raw.category);
   if (raw.sellingPoints) parts.push(raw.sellingPoints);
-  return { prompt: parts.join('，'), targetDuration: raw.targetDuration ?? fallbackDuration, videoModel: raw.videoModel, segmentDuration: raw.segmentDuration };
+  return {
+    prompt: parts.join('，'),
+    targetDuration: raw.targetDuration ?? fallbackDuration,
+    videoModel: raw.videoModel,
+    videoModelRef: createModelRef(raw.videoModelRef?.profileId, raw.videoModelRef?.modelId),
+    segmentDuration: raw.segmentDuration,
+  };
 }
 
 /** 分析记录（持久化到 IndexedDB） */
@@ -47,6 +62,7 @@ export interface AnalysisRecord {
   source: 'upload' | 'youtube';
   sourceLabel: string;
   model: string;
+  modelRef?: ModelRef | null;
   analysis: VideoAnalysisData;
   /** 用户编辑后的脚本 */
   editedShots?: VideoShot[];

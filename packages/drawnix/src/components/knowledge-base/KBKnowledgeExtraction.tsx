@@ -40,7 +40,11 @@ import './knowledge-base-extraction.scss';
 import { Button, MessagePlugin } from 'tdesign-react';
 import { ModelSelector } from '../chat-drawer';
 import MarkdownEditor from '../MarkdownEditor';
-import { createModelRef, type ModelRef } from '../../utils/settings-manager';
+import {
+  createModelRef,
+  resolveInvocationRoute,
+  type ModelRef,
+} from '../../utils/settings-manager';
 
 // 默认使用的模型，避免使用 gpt-5.1 导致 500 错误
 const DEFAULT_MODEL = 'gemini-2.5-flash';
@@ -97,11 +101,14 @@ export const KBKnowledgeExtraction: React.FC<KBKnowledgeExtractionProps> = ({
   onInsertToNote,
   onSaved,
 }) => {
+  const initialRoute = resolveInvocationRoute('text');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
-  const [selectedModel, setSelectedModel] = useState(DEFAULT_MODEL);
+  const [selectedModel, setSelectedModel] = useState(
+    initialRoute.modelId || DEFAULT_MODEL
+  );
   const [selectedModelRef, setSelectedModelRef] = useState<ModelRef | null>(
-    () => createModelRef(null, DEFAULT_MODEL)
+    () => createModelRef(initialRoute.profileId, initialRoute.modelId || DEFAULT_MODEL)
   );
   const [isLoading, setIsLoading] = useState(false);
   const [streamingMsgId, setStreamingMsgId] = useState<string | null>(null);

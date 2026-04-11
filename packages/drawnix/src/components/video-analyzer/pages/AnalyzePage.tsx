@@ -13,6 +13,12 @@ import { useSelectableModels } from '../../../hooks/use-runtime-models';
 import { ShotTimeline } from '../components/ShotTimeline';
 import { ShotCard } from '../components/ShotCard';
 import { addRecord } from '../storage';
+import { getSelectionKey } from '../../../utils/model-selection';
+import type { ModelRef } from '../../../utils/settings-manager';
+import {
+  readStoredModelSelection,
+  writeStoredModelSelection,
+} from '../utils';
 
 type InputMode = 'upload' | 'youtube';
 
@@ -36,11 +42,20 @@ export const AnalyzePage: React.FC<AnalyzePageProps> = ({
   const [youtubeUrl, setYoutubeUrl] = useState('');
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [selectedModel, setSelectedModelState] = useState(
-    () => localStorage.getItem(STORAGE_KEY_MODEL) || DEFAULT_ANALYSIS_MODEL
+    () =>
+      existingRecord?.model ||
+      readStoredModelSelection(STORAGE_KEY_MODEL, DEFAULT_ANALYSIS_MODEL).modelId
   );
-  const setSelectedModel = useCallback((model: string) => {
+  const [selectedModelRef, setSelectedModelRef] = useState<ModelRef | null>(
+    () =>
+      existingRecord?.modelRef ||
+      readStoredModelSelection(STORAGE_KEY_MODEL, DEFAULT_ANALYSIS_MODEL)
+        .modelRef
+  );
+  const setSelectedModel = useCallback((model: string, modelRef?: ModelRef | null) => {
     setSelectedModelState(model);
-    localStorage.setItem(STORAGE_KEY_MODEL, model);
+    setSelectedModelRef(modelRef || null);
+    writeStoredModelSelection(STORAGE_KEY_MODEL, model, modelRef);
   }, []);
   const [analyzing, setAnalyzing] = useState(false);
   const [progress, setProgress] = useState('');
@@ -76,10 +91,15 @@ export const AnalyzePage: React.FC<AnalyzePageProps> = ({
         setProgress('读取视频文件...');
         const part = await buildInlineDataPart(videoFile);
         if (part.type === 'inline_data') {
-          params = { videoData: part.data, mimeType: part.mimeType, model: selectedModel };
+          params = {
+            videoData: part.data,
+            mimeType: part.mimeType,
+            model: selectedModel,
+            modelRef: selectedModelRef,
+          };
         }
       } else if (inputMode === 'youtube' && youtubeUrl) {
-        params = { youtubeUrl, model: selectedModel };
+        params = { youtubeUrl, model: selectedModel, modelRef: selectedModelRef };
       } else {
         setError('请先选择视频文件或输入 YouTube URL');
         setAnalyzing(false);
@@ -100,6 +120,7 @@ export const AnalyzePage: React.FC<AnalyzePageProps> = ({
           source: inputMode,
           sourceLabel: inputMode === 'upload' ? (videoFile?.name || '本地视频') : youtubeUrl,
           model: selectedModel,
+          modelRef: selectedModelRef,
           analysis: analysisData,
           starred: false,
         };
@@ -115,7 +136,7 @@ export const AnalyzePage: React.FC<AnalyzePageProps> = ({
       setAnalyzing(false);
       setProgress('');
     }
-  }, [inputMode, videoFile, youtubeUrl, selectedModel, onComplete, onRecordsChange]);
+  }, [inputMode, videoFile, youtubeUrl, selectedModel, selectedModelRef, onComplete, onRecordsChange]);
 
   const handleInsertAnalysis = useCallback(async () => {
     if (!analysis) return;
@@ -141,7 +162,16 @@ export const AnalyzePage: React.FC<AnalyzePageProps> = ({
           )}
           <div className="va-model-select">
             <label className="va-model-label">分析模型</label>
-            <ModelDropdown variant="form" selectedModel={selectedModel} onSelect={setSelectedModel} models={videoAnalysisModels} placement="down" disabled={analyzing} placeholder="选择多模态模型" />
+            <ModelDropdown
+              variant="form"
+              selectedModel={selectedModel}
+              selectedSelectionKey={getSelectionKey(selectedModel, selectedModelRef)}
+              onSelect={setSelectedModel}
+              models={videoAnalysisModels}
+              placement="down"
+              disabled={analyzing}
+              placeholder="选择多模态模型"
+            />
           </div>
           <button className="va-analyze-btn" onClick={handleAnalyze} disabled={analyzing || (inputMode === 'upload' ? !videoFile : !youtubeUrl)}>
             {analyzing ? progress || '分析中...' : '开始分析'}
