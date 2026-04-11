@@ -3,10 +3,21 @@ import { createPortal } from 'react-dom';
 import 'winbox/dist/css/winbox.min.css';
 import './winbox-custom.scss';
 import { useViewportScale } from '../../hooks/useViewportScale';
+import { Z_INDEX } from '../../constants/z-index';
 
 // 全局存储 WinBox 构造函数
 let WinBoxConstructor: any = null;
 let loadingPromise: Promise<any> | null = null;
+let globalWinBoxZIndexCounter = Z_INDEX.DIALOG_AI_IMAGE;
+let topWinBoxInstanceId: symbol | null = null;
+
+const nextWinBoxZIndex = (minimum = Z_INDEX.DIALOG_AI_IMAGE): number => {
+  globalWinBoxZIndexCounter = Math.max(
+    globalWinBoxZIndexCounter + 1,
+    minimum
+  );
+  return globalWinBoxZIndexCounter;
+};
 
 // 动态加载 WinBox - 使用 Vite 动态导入
 const loadWinBox = async (): Promise<any> => {
@@ -183,10 +194,12 @@ export const WinBoxWindow: React.FC<WinBoxWindowProps> = ({
   zIndex,
   onActivate,
 }) => {
+  const instanceIdRef = useRef(Symbol('winbox-instance'));
   const winboxRef = useRef<any>(null);
   const winboxElementRef = useRef<HTMLDivElement | null>(null); // WinBox 窗口的 DOM 元素
   const onCloseRef = useRef(onClose);
   const onActivateRef = useRef(onActivate);
+  const dynamicZIndexRef = useRef<number>(nextWinBoxZIndex(zIndex));
   // WinBox 的 onclose 只在实例创建时绑定一次，这里用 ref 保持最新回调。
   onCloseRef.current = onClose;
   onActivateRef.current = onActivate;
@@ -439,13 +452,44 @@ export const WinBoxWindow: React.FC<WinBoxWindowProps> = ({
 
   // 处理窗口关闭
   const handleClose = useCallback(() => {
+    if (topWinBoxInstanceId === instanceIdRef.current) {
+      topWinBoxInstanceId = null;
+    }
     onCloseRef.current?.();
     return false; // 返回 false 让 WinBox 不自动销毁，由 React 控制
   }, []);
 
+  const applyResolvedZIndex = useCallback(() => {
+    const wbWindow = winboxElementRef.current;
+    if (!wbWindow) {
+      return;
+    }
+
+    const resolvedZIndex = Math.max(
+      zIndex ?? Z_INDEX.DIALOG_AI_IMAGE,
+      dynamicZIndexRef.current
+    );
+    wbWindow.style.setProperty('--aitu-winbox-z-index', `${resolvedZIndex}`);
+  }, [zIndex]);
+
+  const promoteToFront = useCallback(() => {
+    if (
+      topWinBoxInstanceId === instanceIdRef.current &&
+      dynamicZIndexRef.current >= (zIndex ?? Z_INDEX.DIALOG_AI_IMAGE)
+    ) {
+      applyResolvedZIndex();
+      return;
+    }
+
+    dynamicZIndexRef.current = nextWinBoxZIndex(zIndex);
+    topWinBoxInstanceId = instanceIdRef.current;
+    applyResolvedZIndex();
+  }, [applyResolvedZIndex, zIndex]);
+
   const triggerActivate = useCallback(() => {
+    promoteToFront();
     onActivateRef.current?.();
-  }, []);
+  }, [promoteToFront]);
 
   // 创建或更新窗口
   useEffect(() => {
@@ -845,6 +889,9 @@ export const WinBoxWindow: React.FC<WinBoxWindowProps> = ({
   // 组件卸载时清理
   useEffect(() => {
     return () => {
+      if (topWinBoxInstanceId === instanceIdRef.current) {
+        topWinBoxInstanceId = null;
+      }
       if (winboxRef.current) {
         try {
           // 防止在卸载时触发 onclose 回调
@@ -905,6 +952,7 @@ export const WinBoxWindow: React.FC<WinBoxWindowProps> = ({
         }
         winboxRef.current.show();
         winboxRef.current.focus();
+        promoteToFront();
 
         // 如果是从最小化恢复，播放展开动画
         if (wasMinimized && minimizeTargetSelector) {
@@ -994,18 +1042,8 @@ export const WinBoxWindow: React.FC<WinBoxWindowProps> = ({
   }, [autoMaximize]);
 
   useEffect(() => {
-    const wbWindow = winboxElementRef.current;
-    if (!wbWindow) {
-      return;
-    }
-
-    if (zIndex === undefined) {
-      wbWindow.style.removeProperty('--aitu-winbox-z-index');
-      return;
-    }
-
-    wbWindow.style.setProperty('--aitu-winbox-z-index', `${zIndex}`);
-  }, [zIndex]);
+    applyResolvedZIndex();
+  }, [applyResolvedZIndex]);
 
   useEffect(() => {
     const wbWindow = winboxElementRef.current;
