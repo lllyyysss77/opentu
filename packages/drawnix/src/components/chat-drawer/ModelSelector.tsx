@@ -25,6 +25,7 @@ import {
 import { ModelVendorMark } from '../shared/ModelVendorBrand';
 import { VendorTabPanel, type VendorTab } from '../shared/VendorTabPanel';
 import { ModelHealthBadge } from '../shared/ModelHealthBadge';
+import { useFormattedModelPrice, useModelMeta } from '../../hooks/use-model-pricing';
 import { Z_INDEX } from '../../constants/z-index';
 import { useSelectableModels } from '../../hooks/use-runtime-models';
 import {
@@ -50,6 +51,24 @@ export interface ModelSelectorProps {
 function getProviderLabel(model: ModelConfig): string {
   return model.sourceProfileName || VENDOR_NAMES[model.vendor] || model.id;
 }
+
+const ModelSelectorPriceTag: React.FC<{ model: ModelConfig }> = React.memo(
+  ({ model }) => {
+    const text = useFormattedModelPrice(model.sourceProfileId, model.id);
+    if (!text) return null;
+    return <span className="model-selector__item-price">{text}</span>;
+  }
+);
+
+const ModelDescFallback: React.FC<{ model: ModelConfig }> = React.memo(
+  ({ model }) => {
+    const meta = useModelMeta(model.sourceProfileId, model.id);
+    if (!meta?.description) return null;
+    return (
+      <div className="model-selector__item-desc">{meta.description}</div>
+    );
+  }
+);
 
 function getItemDescription(
   model: ModelConfig,
@@ -366,12 +385,15 @@ export const ModelSelector: React.FC<ModelSelectorProps> = React.memo(
                             </span>
                           ) : null}
                           <ModelHealthBadge modelId={model.id} />
+                          <ModelSelectorPriceTag model={model} />
                         </div>
                         {itemDescription ? (
                           <div className="model-selector__item-desc">
                             {itemDescription}
                           </div>
-                        ) : null}
+                        ) : (
+                          <ModelDescFallback model={model} />
+                        )}
                       </div>
                       {isActive && (
                         <svg

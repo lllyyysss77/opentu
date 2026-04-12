@@ -977,6 +977,12 @@
     color: var(--sd-text);
     font-weight: 600;
     word-break: break-all;
+
+    &--has-desc {
+      text-decoration: underline dotted var(--sd-muted);
+      text-underline-offset: 3px;
+      cursor: help;
+    }
   }
 
   &__model-type-item-vendor {
@@ -1095,6 +1101,27 @@
     border-radius: 18px;
     background: #fffaf0;
     border: 1px solid rgba(245, 158, 11, 0.14);
+  }
+
+  &__pricing-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 0 4px;
+  }
+
+  &__pricing-row {
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+  }
+
+  &__model-price {
+    font-size: 11px;
+    color: var(--sd-muted);
+    white-space: nowrap;
+    margin-left: auto;
+    flex-shrink: 0;
   }
 
   &__compat-title {

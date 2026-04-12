@@ -9,6 +9,7 @@ import { DRAWNIX_SETTINGS_KEY } from '../constants/storage';
 import { configIndexedDBWriter } from './config-indexeddb-writer';
 import type { GeminiConfig } from './gemini-api/types';
 import type { VideoAPIConfig } from './config-indexeddb-writer';
+import type { ProviderPricingCache } from './model-pricing-types';
 import {
   getDefaultAudioModel,
   getDefaultImageModel,
@@ -55,6 +56,9 @@ export interface ProviderProfile {
   extraHeaders?: Record<string, string>;
   enabled: boolean;
   capabilities: ProviderCapabilities;
+  pricingUrl?: string;
+  cnyPerUsd?: number;
+  pricingGroup?: string;
 }
 
 export interface ProviderCatalog {
@@ -99,6 +103,7 @@ export interface AppSettings {
   tts: TtsSettings;
   providerProfiles: ProviderProfile[];
   providerCatalogs: ProviderCatalog[];
+  providerPricingCache: ProviderPricingCache[];
   invocationPresets: InvocationPreset[];
   activePresetId: string;
 }
@@ -153,6 +158,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   },
   providerProfiles: [],
   providerCatalogs: [],
+  providerPricingCache: [],
   invocationPresets: [],
   activePresetId: DEFAULT_INVOCATION_PRESET_ID,
 };
@@ -1670,6 +1676,14 @@ export const providerCatalogsSettings = {
   },
   removeListener: (listener: SettingsListener<ProviderCatalog[]>) => {
     settingsManager.removeListener('providerCatalogs', listener);
+  },
+};
+
+export const providerPricingCacheSettings = {
+  get: () =>
+    settingsManager.getSetting<ProviderPricingCache[]>('providerPricingCache'),
+  update: async (caches: ProviderPricingCache[]) => {
+    await settingsManager.updateSetting('providerPricingCache', caches);
   },
 };
 

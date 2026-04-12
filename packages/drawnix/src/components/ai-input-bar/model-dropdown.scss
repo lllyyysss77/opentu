@@ -458,6 +458,13 @@ $green-health: #10b981;
     white-space: nowrap;
   }
 
+  &__item-price {
+    font-size: 11px;
+    color: $gray-medium;
+    white-space: nowrap;
+    margin-left: auto;
+  }
+
   &__item-check {
     flex-shrink: 0;
     color: $orange-primary;

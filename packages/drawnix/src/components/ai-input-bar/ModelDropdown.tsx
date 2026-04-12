@@ -16,7 +16,7 @@ import React, {
   useMemo,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronDown, Copy, Plus, Search, X } from 'lucide-react';
+import { Check, ChevronDown, Copy, ExternalLink, Plus, Search, X } from 'lucide-react';
 import { MessagePlugin } from 'tdesign-react';
 import {
   IMAGE_MODELS,
@@ -42,6 +42,8 @@ import {
 } from '../shared';
 import './model-dropdown.scss';
 import { ModelHealthBadge } from '../shared/ModelHealthBadge';
+import { useFormattedModelPrice, useModelMeta } from '../../hooks/use-model-pricing';
+import { modelPricingService } from '../../utils/model-pricing-service';
 import { KeyboardDropdown } from './KeyboardDropdown';
 import {
   groupModelsByProvider,
@@ -65,6 +67,24 @@ type ProviderSettingsIntent =
 function normalizeSearchText(value?: string | null): string {
   return (value || '').toLowerCase().replace(/[\s\-_.:/]+/g, '').trim();
 }
+
+const ModelDropdownPriceTag: React.FC<{ model: ModelConfig }> = React.memo(
+  ({ model }) => {
+    const text = useFormattedModelPrice(model.sourceProfileId, model.id);
+    if (!text) return null;
+    return <span className="model-dropdown__item-price">{text}</span>;
+  }
+);
+
+const ModelDropdownDescFallback: React.FC<{ model: ModelConfig }> = React.memo(
+  ({ model }) => {
+    const meta = useModelMeta(model.sourceProfileId, model.id);
+    if (!meta?.description) return null;
+    return (
+      <div className="model-dropdown__item-desc">{meta.description}</div>
+    );
+  }
+);
 
 function fuzzyScore(value: string, query: string): number {
   const rawValue = value.toLowerCase().trim();
@@ -604,6 +624,14 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
     [closeContextMenu, language]
   );
 
+  const getModelDocsUrl = useCallback(
+    (modelId: string): string | undefined => {
+      const model = models.find((m) => m.id === modelId);
+      return modelPricingService.getModelPrice(model?.sourceProfileId, modelId)?.docsUrl;
+    },
+    [models]
+  );
+
   const contextMenuItems = useMemo<ContextMenuEntry<{ modelId: string }>[]>(() => [
     {
       key: 'model-id',
@@ -617,7 +645,17 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
       icon: <Copy size={14} />,
       onSelect: ({ modelId }) => handleCopyModelId(modelId),
     },
-  ], [handleCopyModelId, language]);
+    {
+      key: 'open-docs',
+      label: language === 'zh' ? '查看模型文档' : 'View model docs',
+      icon: <ExternalLink size={14} />,
+      disabled: ({ modelId }) => !getModelDocsUrl(modelId),
+      onSelect: ({ modelId }) => {
+        const url = getModelDocsUrl(modelId);
+        if (url) window.open(url, '_blank', 'noopener');
+      },
+    },
+  ], [handleCopyModelId, getModelDocsUrl, language]);
 
   const handleOpenKey = useCallback(
     (key: string) => {
@@ -980,11 +1018,14 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
                                 </span>
                               )}
                               <ModelHealthBadge modelId={model.id} />
+                              <ModelDropdownPriceTag model={model} />
                             </div>
-                            {model.description && (
+                            {model.description ? (
                               <div className="model-dropdown__item-desc">
                                 {model.description}
                               </div>
+                            ) : (
+                              <ModelDropdownDescFallback model={model} />
                             )}
                           </div>
                           {isSelected && (

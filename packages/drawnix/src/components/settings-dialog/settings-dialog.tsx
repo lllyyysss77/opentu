@@ -1,7 +1,7 @@
 import { useDrawnix } from '../../hooks/use-drawnix';
 import { useDeviceType } from '../../hooks/useDeviceType';
 import './settings-dialog.scss';
-import { useCallback, useDeferredValue, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { memo, useCallback, useDeferredValue, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { MessagePlugin, Tooltip, Switch } from 'tdesign-react';
 import { InfoCircleIcon } from 'tdesign-icons-react';
 import {
@@ -18,6 +18,8 @@ import {
 } from 'lucide-react';
 import { LS_KEYS } from '../../constants/storage-keys';
 import { ModelDiscoveryDialog } from './model-discovery-dialog';
+import { PricingFieldGroup } from './pricing-field-group';
+import { useFormattedModelPrice, useModelMeta } from '../../hooks/use-model-pricing';
 import {
   getDefaultAudioModel,
   getDefaultImageModel,
@@ -117,6 +119,38 @@ const MODEL_GROUP_LABELS: Record<ModelType, string> = {
   audio: '音频模型',
   text: '文本模型',
 };
+
+const ModelPriceLabel = memo(function ModelPriceLabel({
+  profileId,
+  modelId,
+}: {
+  profileId: string;
+  modelId: string;
+}) {
+  const priceText = useFormattedModelPrice(profileId, modelId);
+  if (!priceText) return null;
+  return <span className="settings-dialog__model-price">{priceText}</span>;
+});
+
+const ModelIdWithDesc = memo(function ModelIdWithDesc({
+  profileId,
+  modelId,
+}: {
+  profileId: string;
+  modelId: string;
+}) {
+  const meta = useModelMeta(profileId, modelId);
+  if (!meta?.description) {
+    return <span className="settings-dialog__model-type-item-id">{modelId}</span>;
+  }
+  return (
+    <Tooltip content={meta.description} placement="top" theme="light">
+      <span className="settings-dialog__model-type-item-id settings-dialog__model-type-item-id--has-desc">
+        {modelId}
+      </span>
+    </Tooltip>
+  );
+});
 
 function buildModelSelectionChangeMessage(
   profileName: string,
@@ -1929,6 +1963,11 @@ export const SettingsDialog = ({
           </div>
         </div>
 
+        <PricingFieldGroup
+          profile={selectedProfile}
+          onUpdateProfile={(updater) => updateProfile(selectedProfile.id, updater)}
+        />
+
         {selectedProfile.id === LEGACY_DEFAULT_PROVIDER_PROFILE_ID ? (
           <div className="settings-dialog__section settings-dialog__section--compact">
             <div className="settings-dialog__compat-card">
@@ -2141,12 +2180,11 @@ export const SettingsDialog = ({
                               <ModelVendorMark vendor={model.vendor} size={16} />
                             </span>
                             <div className="settings-dialog__model-type-item-copy">
-                              <span className="settings-dialog__model-type-item-id">
-                                {model.id}
-                              </span>
+                              <ModelIdWithDesc profileId={selectedProfile!.id} modelId={model.id} />
                               <span className="settings-dialog__model-type-item-vendor">
                                 {getDiscoveryVendorLabel(model.vendor)}
                               </span>
+                              <ModelPriceLabel profileId={selectedProfile!.id} modelId={model.id} />
                             </div>
                             <div className="settings-dialog__model-type-item-btns">
                               {(() => {

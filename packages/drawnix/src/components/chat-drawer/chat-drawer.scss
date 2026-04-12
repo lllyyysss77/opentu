@@ -1999,6 +1999,13 @@ $drawer-input-height: 160px;
     line-height: 1.5;
   }
 
+  &__item-price {
+    font-size: 11px;
+    color: var(--td-text-color-placeholder);
+    white-space: nowrap;
+    margin-left: auto;
+  }
+
   // Badges
   &__badges {
     display: flex;
