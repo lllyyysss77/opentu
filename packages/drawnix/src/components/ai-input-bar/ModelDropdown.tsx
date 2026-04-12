@@ -632,30 +632,55 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
     [models]
   );
 
-  const contextMenuItems = useMemo<ContextMenuEntry<{ modelId: string }>[]>(() => [
-    {
-      key: 'model-id',
-      label: ({ modelId }) => modelId,
-      disabled: true,
+  const getModelDescription = useCallback(
+    (modelId: string): string | undefined => {
+      const model = models.find((m) => m.id === modelId);
+      if (model?.description) return model.description;
+      if (!model?.sourceProfileId) return undefined;
+      return modelPricingService.getModelPrice(model.sourceProfileId, modelId)?.description;
     },
-    { key: 'divider-1', type: 'divider' },
-    {
-      key: 'copy-model-id',
-      label: language === 'zh' ? '复制模型名' : 'Copy model name',
-      icon: <Copy size={14} />,
-      onSelect: ({ modelId }) => handleCopyModelId(modelId),
+    [models]
+  );
+
+  const buildContextMenuItems = useCallback(
+    ({ modelId }: { modelId: string }): ContextMenuEntry<{ modelId: string }>[] => {
+      const desc = getModelDescription(modelId);
+      const items: ContextMenuEntry<{ modelId: string }>[] = [
+        { key: 'model-id', label: modelId, disabled: true },
+      ];
+      if (desc) {
+        items.push({
+          key: 'model-desc',
+          label: (
+            <span style={{ fontSize: 11, color: 'var(--td-text-color-placeholder)', whiteSpace: 'normal', lineHeight: 1.4, display: 'block', maxWidth: 260 }}>
+              {desc.length > 80 ? desc.slice(0, 80) + '…' : desc}
+            </span>
+          ),
+          disabled: true,
+        });
+      }
+      items.push(
+        { key: 'divider-1', type: 'divider' },
+        {
+          key: 'copy-model-id',
+          label: language === 'zh' ? '复制模型名' : 'Copy model name',
+          icon: <Copy size={14} />,
+          onSelect: ({ modelId: id }) => handleCopyModelId(id),
+        },
+      );
+      const docsUrl = getModelDocsUrl(modelId);
+      if (docsUrl) {
+        items.push({
+          key: 'open-docs',
+          label: language === 'zh' ? '查看模型文档' : 'View model docs',
+          icon: <ExternalLink size={14} />,
+          onSelect: () => window.open(docsUrl, '_blank', 'noopener'),
+        });
+      }
+      return items;
     },
-    {
-      key: 'open-docs',
-      label: language === 'zh' ? '查看模型文档' : 'View model docs',
-      icon: <ExternalLink size={14} />,
-      disabled: ({ modelId }) => !getModelDocsUrl(modelId),
-      onSelect: ({ modelId }) => {
-        const url = getModelDocsUrl(modelId);
-        if (url) window.open(url, '_blank', 'noopener');
-      },
-    },
-  ], [handleCopyModelId, getModelDocsUrl, language]);
+    [getModelDescription, getModelDocsUrl, handleCopyModelId, language]
+  );
 
   const handleOpenKey = useCallback(
     (key: string) => {
@@ -1063,7 +1088,7 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
             {isOpen ? (
               <ContextMenu
                 state={contextMenu}
-                items={contextMenuItems}
+                items={buildContextMenuItems}
                 onClose={closeContextMenu}
               />
             ) : null}
