@@ -1,6 +1,34 @@
 {
   "versions": [
     {
+      "version": "0.6.19",
+      "date": "2026-04-12",
+      "changes": {
+        "features": [
+          "增强错误处理与iframe测试支持",
+          "音乐播放器支持知识库语音快捷操作",
+          "右键菜单动态展示模型描述和文档链接",
+          "集成供应商模型价格信息展示",
+          "优化画布 Markdown 卡片与知识库联动",
+          "增加内置模型推荐分并统一排序",
+          "多选框增加全选/清除，修复测试本组模型数不一致",
+          "更新默认模型至 Gemini 3.1 Pro Preview 并改进模型基准测试",
+          "模型测试历史会话增加搜索与模态筛选"
+        ],
+        "fixes": [
+          "防白屏 — 全局错误边界 + 统一错误恢复 UI + 日志导出",
+          "统一播放器速率控制并隔离播放缓存音频",
+          "收敛 AI 媒体缓存语义与远程缓存去重",
+          "补齐任务队列归档提示与历史数量",
+          "override TDesign Tooltip default max-width to display larger video",
+          "修复GitHub同步上下文未提供时的错误处理"
+        ],
+        "improvements": []
+      },
+      "type": "patch",
+      "highlights": "增强错误处理与iframe测试支持"
+    },
+    {
       "version": "0.6.18",
       "date": "2026-04-11",
       "changes": {
@@ -968,7 +996,7 @@
       "changes": {
         "features": [
           "点击画板自动关闭项目抽屉和工具箱抽屉",
-          "update Opentu labels and model hints"
+          "update OpenTu labels and model hints"
         ],
         "fixes": [
           "修复图片覆盖保存时缩放比例计算错误"

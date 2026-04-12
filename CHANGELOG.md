@@ -1,3 +1,38 @@
+## 0.6.19 (2026-04-12)
+
+### 🚀 Features
+
+- 增强错误处理与iframe测试支持 ([f4682ff8](https://github.com/ljquan/aitu/commit/f4682ff8))
+- 音乐播放器支持知识库语音快捷操作 ([e53e6846](https://github.com/ljquan/aitu/commit/e53e6846))
+- 右键菜单动态展示模型描述和文档链接 ([563376e1](https://github.com/ljquan/aitu/commit/563376e1))
+- 集成供应商模型价格信息展示 ([8c011dbd](https://github.com/ljquan/aitu/commit/8c011dbd))
+- 优化画布 Markdown 卡片与知识库联动 ([c04b9efd](https://github.com/ljquan/aitu/commit/c04b9efd))
+- 增加内置模型推荐分并统一排序 ([bb65488e](https://github.com/ljquan/aitu/commit/bb65488e))
+- 多选框增加全选/清除，修复测试本组模型数不一致 ([2ede78a7](https://github.com/ljquan/aitu/commit/2ede78a7))
+- 更新默认模型至 Gemini 3.1 Pro Preview 并改进模型基准测试 ([3cce05df](https://github.com/ljquan/aitu/commit/3cce05df))
+- 模型测试历史会话增加搜索与模态筛选 ([522b6c5d](https://github.com/ljquan/aitu/commit/522b6c5d))
+
+### 🩹 Fixes
+
+- 防白屏 — 全局错误边界 + 统一错误恢复 UI + 日志导出 ([6be795c9](https://github.com/ljquan/aitu/commit/6be795c9))
+- 统一播放器速率控制并隔离播放缓存音频 ([5334ca60](https://github.com/ljquan/aitu/commit/5334ca60))
+- 收敛 AI 媒体缓存语义与远程缓存去重 ([a35370f8](https://github.com/ljquan/aitu/commit/a35370f8))
+- 补齐任务队列归档提示与历史数量 ([e8fb08d7](https://github.com/ljquan/aitu/commit/e8fb08d7))
+- override TDesign Tooltip default max-width to display larger video ([1c9c73c5](https://github.com/ljquan/aitu/commit/1c9c73c5))
+- 修复GitHub同步上下文未提供时的错误处理 ([eaf6a41d](https://github.com/ljquan/aitu/commit/eaf6a41d))
+
+### 🔧 Chores
+
+- style: 提升右键菜单 disabled 项可读性 ([91add984](https://github.com/ljquan/aitu/commit/91add984))
+- style: fix config dashboard layout responsiveness in narrow container ([cf92bb0f](https://github.com/ljquan/aitu/commit/cf92bb0f))
+- style: optimize model benchmark layout for smaller screens ([b5e36a01](https://github.com/ljquan/aitu/commit/b5e36a01))
+- style: increase API Key tooltip width for better video visibility ([6688fb4c](https://github.com/ljquan/aitu/commit/6688fb4c))
+- style: optimize settings layout and model selection UI ([b99baa5b](https://github.com/ljquan/aitu/commit/b99baa5b))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+
 ## 0.6.18 (2026-04-11)
 
 ### 🚀 Features
