@@ -46,3 +46,6 @@ export type {
 
 // Export external skill service
 export { externalSkillService } from './services/external-skill-service';
+
+// Export unified log service (for error log export)
+export { unifiedLogService } from './services/unified-log-service';
