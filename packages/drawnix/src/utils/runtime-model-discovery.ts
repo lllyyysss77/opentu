@@ -47,6 +47,12 @@ export interface RuntimeModelDiscoveryState {
   error: string | null;
 }
 
+export interface RuntimeModelSelectionChange {
+  models: ModelConfig[];
+  addedModelIds: string[];
+  removedModelIds: string[];
+}
+
 interface LegacyPersistedRuntimeModelDiscoveryState {
   sourceBaseUrl: string;
   signature: string;
@@ -1253,15 +1259,27 @@ class RuntimeModelDiscoveryStore {
   applySelection(
     profileId = LEGACY_DEFAULT_PROVIDER_PROFILE_ID,
     modelIds: string[]
-  ): ModelConfig[] {
+  ): RuntimeModelSelectionChange {
     const state = this.getCatalogState(profileId);
+    const previousSelectedModelIds = normalizeSelectedModelIds(
+      state.discoveredModels,
+      state.selectedModelIds
+    );
     const selectedModelIds = normalizeSelectedModelIds(
       state.discoveredModels,
       modelIds
     );
+    const previousSelectedSet = new Set(previousSelectedModelIds);
+    const nextSelectedSet = new Set(selectedModelIds);
     const models = buildSelectedModels(
       state.discoveredModels,
       selectedModelIds
+    );
+    const addedModelIds = selectedModelIds.filter(
+      (modelId) => !previousSelectedSet.has(modelId)
+    );
+    const removedModelIds = previousSelectedModelIds.filter(
+      (modelId) => !nextSelectedSet.has(modelId)
     );
 
     this.setCatalogState(profileId, {
@@ -1272,7 +1290,11 @@ class RuntimeModelDiscoveryStore {
       error: null,
     });
 
-    return models;
+    return {
+      models,
+      addedModelIds,
+      removedModelIds,
+    };
   }
 
   clear(profileId = LEGACY_DEFAULT_PROVIDER_PROFILE_ID): void {

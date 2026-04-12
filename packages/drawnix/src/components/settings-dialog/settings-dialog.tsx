@@ -19,7 +19,6 @@ import {
 import { LS_KEYS } from '../../constants/storage-keys';
 import { ModelDiscoveryDialog } from './model-discovery-dialog';
 import {
-  ALL_MODELS,
   getDefaultAudioModel,
   getDefaultImageModel,
   getDefaultTextModel,
@@ -118,6 +117,29 @@ const MODEL_GROUP_LABELS: Record<ModelType, string> = {
   audio: '音频模型',
   text: '文本模型',
 };
+
+function buildModelSelectionChangeMessage(
+  profileName: string,
+  addedCount: number,
+  removedCount: number,
+  nextSelectedCount: number
+): string | null {
+  if (addedCount === 0 && removedCount === 0) {
+    return null;
+  }
+
+  if (nextSelectedCount === 0 && removedCount > 0) {
+    return `已清空 ${profileName} 的已添加模型`;
+  }
+
+  if (addedCount > 0 && removedCount > 0) {
+    return `已更新 ${profileName} 的模型（新增 ${addedCount} 个，移除 ${removedCount} 个）`;
+  }
+  if (addedCount > 0) {
+    return `已为 ${profileName} 添加 ${addedCount} 个模型`;
+  }
+  return `已从 ${profileName} 移除 ${removedCount} 个模型`;
+}
 
 const MODEL_SUMMARY_GROUP_ORDER: ModelType[] = ['text', 'image', 'video', 'audio'];
 
@@ -1135,15 +1157,21 @@ export const SettingsDialog = ({
     }
   };
 
-  const handleApplySelectedModels = (selectedModelIds: string[]) => {
+  const handleApplySelectedModels = (
+    selectedModelIds: string[],
+    options?: {
+      successMessage?: string;
+    }
+  ) => {
     if (!selectedProfile) {
       return;
     }
 
-    const selectedModels = runtimeModelDiscovery.applySelection(
+    const selectionChange = runtimeModelDiscovery.applySelection(
       selectedProfile.id,
       selectedModelIds
     );
+    const selectedModels = selectionChange.models;
 
     if (selectedProfile.id === LEGACY_DEFAULT_PROVIDER_PROFILE_ID) {
       const nextImageModels = selectedModels.filter(
@@ -1185,16 +1213,27 @@ export const SettingsDialog = ({
       }
     }
 
-    MessagePlugin.success(
-      selectedModels.length > 0
-        ? `已为 ${selectedProfile.name} 添加 ${selectedModels.length} 个模型`
-        : `已清空 ${selectedProfile.name} 的已添加模型`
-    );
+    const successMessage =
+      options?.successMessage ||
+      buildModelSelectionChangeMessage(
+        selectedProfile.name,
+        selectionChange.addedModelIds.length,
+        selectionChange.removedModelIds.length,
+        selectedModels.length
+      );
+
+    if (successMessage) {
+      MessagePlugin.success(successMessage);
+    }
     setDiscoveryDialogOpen(false);
   };
 
   const handleRemoveModel = (modelId: string) => {
     if (!selectedProfile) return;
+    if (!runtimeState.selectedModelIds.includes(modelId)) {
+      MessagePlugin.warning('该模型不是当前分组动态添加的模型，无法在此移除');
+      return;
+    }
     const nextIds = runtimeState.selectedModelIds.filter(
       (id) => id !== modelId
     );
@@ -1939,11 +1978,7 @@ export const SettingsDialog = ({
       runtimeState.status !== 'loading';
     const isDefaultProvider =
       selectedProfile?.id === LEGACY_DEFAULT_PROVIDER_PROFILE_ID;
-    const displayModels = dedupeModelsByTypeAndId(
-      isDefaultProvider
-        ? [...runtimeState.models, ...ALL_MODELS]
-        : runtimeState.models
-    );
+    const displayModels = dedupeModelsByTypeAndId(runtimeState.models);
     const vendorPriorityMap = new Map(
       DISCOVERY_VENDOR_ORDER.map((vendor, index) => [vendor, index])
     );
@@ -2086,6 +2121,9 @@ export const SettingsDialog = ({
                     <div className="settings-dialog__model-type-list">
                       {models.map((model) => {
                         const palette = getModelVendorPalette(model.vendor);
+                        const canRemoveModel =
+                          !isDefaultProvider ||
+                          runtimeState.selectedModelIds.includes(model.id);
 
                         return (
                           <div
@@ -2155,17 +2193,19 @@ export const SettingsDialog = ({
                               >
                                 <FlaskConical size={14} />
                               </button>
-                              <button
-                                type="button"
-                                className="settings-dialog__model-icon-btn settings-dialog__model-icon-btn--delete"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  handleRemoveModel(model.id);
-                                }}
-                                title="移除此模型"
-                              >
-                                <Trash2 size={14} />
-                              </button>
+                              {canRemoveModel ? (
+                                <button
+                                  type="button"
+                                  className="settings-dialog__model-icon-btn settings-dialog__model-icon-btn--delete"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    handleRemoveModel(model.id);
+                                  }}
+                                  title="移除此模型"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              ) : null}
                             </div>
                           </div>
                         );

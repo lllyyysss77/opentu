@@ -164,25 +164,11 @@ export const CHAT_MODELS: ChatModel[] = [
     maxTokens: 2000000,
   },
   {
-    id: 'gemini-2.5-pro',
-    name: 'Gemini 2.5 Pro',
-    description: '专业版模型',
-    provider: ModelProvider.GOOGLE,
-    maxTokens: 2000000,
-  },
-  {
     id: 'gemini-2.5-pro-all',
     name: 'Gemini 2.5 Pro All',
     description: '全功能版本',
     provider: ModelProvider.GOOGLE,
     maxTokens: 2000000,
-  },
-  {
-    id: 'gemini-2.5-flash',
-    name: 'Gemini 2.5 Flash',
-    description: '快速模型',
-    provider: ModelProvider.GOOGLE,
-    maxTokens: 1000000,
   },
   // DeepSeek Models
   {
@@ -254,14 +240,6 @@ export const CHAT_MODELS: ChatModel[] = [
     maxTokens: 128000,
   },
   // Qwen Models
-  {
-    id: 'qwen3-235b-a22b',
-    name: 'Qwen3 235B',
-    description: '通义千问 3 旗舰模型',
-    provider: ModelProvider.QWEN,
-    badges: ['NEW'],
-    maxTokens: 128000,
-  },
   // Doubao Models
   {
     id: 'doubao-seed-1-6-thinking-250715',

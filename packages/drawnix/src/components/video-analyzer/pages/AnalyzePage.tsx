@@ -22,7 +22,7 @@ import {
 
 type InputMode = 'upload' | 'youtube';
 
-const DEFAULT_ANALYSIS_MODEL = 'gemini-2.5-flash';
+const DEFAULT_ANALYSIS_MODEL = 'gemini-3.1-pro-preview';
 const STORAGE_KEY_MODEL = 'video-analyzer:model';
 
 function formatSize(bytes: number): string {

@@ -144,7 +144,7 @@ async function buildGenerateContentConfig(
   const config: GeminiConfig = {
     apiKey: route.apiKey,
     baseUrl: route.baseUrl,
-    modelName: model || route.modelId || 'gemini-2.5-flash',
+    modelName: model || route.modelId || 'gemini-3.1-pro-preview',
     authType: plan?.provider.authType || 'bearer',
     providerType: plan?.provider.providerType || 'custom',
     extraHeaders: plan?.provider.extraHeaders,

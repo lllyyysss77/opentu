@@ -47,7 +47,8 @@ export type BenchmarkSessionStatus =
   | 'draft'
   | 'running'
   | 'completed'
-  | 'partial';
+  | 'partial'
+  | 'failed';
 
 export interface ModelBenchmarkTarget {
   profileId: string;
@@ -682,10 +683,12 @@ class ModelBenchmarkService {
         if (session.id !== sessionId) {
           return session;
         }
-        const hasFailed = session.entries.some((entry) => entry.status === 'failed');
+        const failedCount = session.entries.filter((entry) => entry.status === 'failed').length;
+        const allFailed = failedCount === session.entries.length;
+        const hasFailed = failedCount > 0;
         return {
           ...session,
-          status: hasFailed ? 'partial' : 'completed',
+          status: allFailed ? 'failed' : hasFailed ? 'partial' : 'completed',
           updatedAt: Date.now(),
         };
       }),

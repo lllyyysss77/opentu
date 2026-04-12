@@ -47,7 +47,7 @@ import {
 } from '../../utils/settings-manager';
 
 // 默认使用的模型，避免使用 gpt-5.1 导致 500 错误
-const DEFAULT_MODEL = 'gemini-2.5-flash';
+const DEFAULT_MODEL = 'gemini-3.1-pro-preview';
 
 function formatExtractionResultToMarkdown(
   result: KnowledgeExtractionResult

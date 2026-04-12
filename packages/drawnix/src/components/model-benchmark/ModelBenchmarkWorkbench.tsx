@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState, startTransition } from 'react';
 import type { Subscription } from 'rxjs';
-import { Select, Input, InputNumber, MessagePlugin, Tooltip } from 'tdesign-react';
+import { Select, Input, MessagePlugin, Tooltip } from 'tdesign-react';
 import {
   DeleteIcon,
   SearchIcon,
@@ -79,6 +79,7 @@ const SESSION_STATUS_LABELS: Record<string, string> = {
   running: '测试中',
   completed: '已完成',
   partial: '部分失败',
+  failed: '全部失败',
 };
 
 const ENTRY_STATUS_LABELS: Record<string, string> = {
@@ -242,6 +243,36 @@ function formatDuration(ms: number | null): string {
   return `${(ms / 1000).toFixed(ms >= 10000 ? 1 : 2)}s`;
 }
 
+function getSessionModelLabels(session: ModelBenchmarkSession): string[] {
+  const entriesByModelId = new Map<
+    string,
+    {
+      modelId: string;
+      modelLabel: string;
+    }
+  >();
+
+  session.entries.forEach((entry) => {
+    const modelId = entry.modelId?.trim();
+    const modelLabel = entry.modelLabel?.trim();
+    if (modelId && modelLabel && !entriesByModelId.has(modelId)) {
+      entriesByModelId.set(modelId, {
+        modelId,
+        modelLabel,
+      });
+    }
+  });
+
+  const labelCounts = new Map<string, number>();
+  entriesByModelId.forEach(({ modelLabel }) => {
+    labelCounts.set(modelLabel, (labelCounts.get(modelLabel) || 0) + 1);
+  });
+
+  return Array.from(entriesByModelId.values()).map(({ modelId, modelLabel }) =>
+    (labelCounts.get(modelLabel) || 0) > 1 ? `${modelLabel} · ${modelId}` : modelLabel
+  );
+}
+
 function getSessionSummary(session: ModelBenchmarkSession | null) {
   if (!session) {
     return {
@@ -267,15 +298,12 @@ function getProfileModels(
   profileId: string,
   modality: BenchmarkModality
 ): ModelConfig[] {
-  const models =
-    profileId === LEGACY_DEFAULT_PROVIDER_PROFILE_ID
-      ? runtimeModelDiscovery.getProfilePreferredModels(profileId, modality)
-      : runtimeModelDiscovery
-          .getState(profileId)
-          .models.filter((model) => model.type === modality);
+  const models = runtimeModelDiscovery
+    .getState(profileId)
+    .models.filter((model) => model.type === modality);
   const deduped = new Map<string, ModelConfig>();
   models.forEach((model) => {
-    if (model.type === modality && !deduped.has(model.id)) {
+    if (!deduped.has(model.id)) {
       deduped.set(model.id, model);
     }
   });
@@ -624,11 +652,8 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
       badgeLabel: ENTRY_STATUS_LABELS.pending,
     }));
   }, [activeSession, isQueuePreviewBoundToActiveSession, resolvedTargets]);
-  const displayedSession =
-    activeSession && isQueuePreviewBoundToActiveSession ? activeSession : null;
-  const displayedSessionSummary = displayedSession
-    ? sessionSummary
-    : getSessionSummary(null);
+  const displayedSession = activeSession;
+  const displayedSessionSummary = displayedSession ? sessionSummary : getSessionSummary(null);
   const displayedSortedEntries = displayedSession ? sortedEntries : [];
   const queuePreviewTotal = queuePreviewEntries.length;
   const queuePreviewTargets = queuePreviewEntries.slice(0, QUEUE_PREVIEW_LIMIT);
@@ -821,6 +846,10 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
     } else if (nextCompareMode === 'cross-model' && initialRequest.modelId) {
       // cross-model：只选目标模型，不全选
       setSelectedModelIds([initialRequest.modelId]);
+    } else if (nextCompareMode === 'cross-model' && !initialRequest.modelId && effectiveProfileId) {
+      // cross-model 无 modelId（测试本组）：全选该 profile 下的所有模型
+      const allModels = getProfileModels(effectiveProfileId, nextModality);
+      setSelectedModelIds(allModels.map((m) => m.id));
     } else if (nextCompareMode === 'custom' && requestedCustomKey) {
       setSelectedCustomKeys([requestedCustomKey]);
     }
@@ -1490,36 +1519,44 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
         </div>
         <div className="model-benchmark__session-list">
           {filteredSessions.length > 0 ? (
-            filteredSessions.map((session) => (
-              <div key={session.id} className="model-benchmark__session-row">
-                <button
-                  type="button"
-                  className={`model-benchmark__session-item ${
-                    session.id === storeState.activeSessionId
-                      ? 'model-benchmark__session-item--active'
-                      : ''
-                  }`}
-                  onClick={() => modelBenchmarkService.setActiveSession(session.id)}
-                >
-                  <span className="model-benchmark__session-title">
-                    {session.title}
-                  </span>
-                  <span className="model-benchmark__session-meta">
-                    {MODE_LABELS[session.compareMode]} · {session.entries.length} 个目标 ·{' '}
-                    {SESSION_STATUS_LABELS[session.status]}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  className="model-benchmark__session-delete"
-                  onClick={() => modelBenchmarkService.removeSession(session.id)}
-                  aria-label={`删除会话 ${session.title}`}
-                  title="删除会话"
-                >
-                  <DeleteIcon />
-                </button>
-              </div>
-            ))
+            filteredSessions.map((session) => {
+              const modelLabels = getSessionModelLabels(session);
+              return (
+                <div key={session.id} className="model-benchmark__session-row">
+                  <button
+                    type="button"
+                    className={`model-benchmark__session-item ${
+                      session.id === storeState.activeSessionId
+                        ? 'model-benchmark__session-item--active'
+                        : ''
+                    }`}
+                    onClick={() => modelBenchmarkService.setActiveSession(session.id)}
+                  >
+                    <span className="model-benchmark__session-title">
+                      {session.title}
+                    </span>
+                    <span className="model-benchmark__session-models">
+                      {modelLabels.length > 0
+                        ? modelLabels.join(' / ')
+                        : '暂无模型信息'}
+                    </span>
+                    <span className="model-benchmark__session-meta">
+                      {MODE_LABELS[session.compareMode]} · {session.entries.length} 个目标 ·{' '}
+                      {SESSION_STATUS_LABELS[session.status]}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="model-benchmark__session-delete"
+                    onClick={() => modelBenchmarkService.removeSession(session.id)}
+                    aria-label={`删除会话 ${session.title}`}
+                    title="删除会话"
+                  >
+                    <DeleteIcon />
+                  </button>
+                </div>
+              );
+            })
           ) : (
             <div className="model-benchmark__session-empty">
               {storeState.sessions.length === 0 ? '暂无历史会话' : '没有匹配的历史会话'}
@@ -1671,7 +1708,9 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
                     />
                   ) : null}
                 </div>
+              </div>
 
+              <div className="model-benchmark__config-actions">
                 <div className="model-benchmark__prompt-area">
                   <textarea
                     value={prompt}
@@ -1679,23 +1718,21 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
                     placeholder="在此输入测试提示词..."
                   />
                 </div>
-              </div>
-
-              <div className="model-benchmark__config-actions">
-                <div className="model-benchmark__concurrency">
-                  <span>最大并发:</span>
-                  <InputNumber
-                    min={1}
-                    max={10}
-                    size="small"
-                    value={concurrency}
-                    onChange={(v) => setConcurrency(Number(v) || 1)}
-                  />
-                </div>
-                <div className="model-benchmark__composer-hint">
-                  提示：多选框中已选中的项目即为本次待测试的队列。
-                </div>
-                <div className="model-benchmark__start-btn-wrap">
+                <div className="model-benchmark__action-row-inline">
+                  <div className="model-benchmark__concurrency">
+                    <span>最大并发:</span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      aria-label="最大并发"
+                      value={concurrency}
+                      onChange={(event) => {
+                        const digitsOnly = event.target.value.replace(/\D/g, '');
+                        const nextValue = Number(digitsOnly);
+                        setConcurrency(Math.min(10, Math.max(1, nextValue || 1)));
+                      }}
+                    />
+                  </div>
                   <button
                     type="button"
                     className="model-benchmark__primary-button"
@@ -1719,32 +1756,20 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
                 {displayedSession ? MODE_LABELS[displayedSession.compareMode] : 'Result Board'}
               </div>
               <h3>{displayedSession ? displayedSession.title : '还没有测试结果'}</h3>
-              <p className="model-benchmark__main-desc">
-                {displayedSession
-                  ? '结果按当前排序方式重排，支持继续人工打分、收藏和淘汰。'
-                  : '请先在左侧明确范围，或直接点击历史会话查看以往结果。'}
-              </p>
+              {displayedSession ? (
+                <p className="model-benchmark__main-desc">
+                  {displayedSessionSummary.total} 个目标
+                  {displayedSessionSummary.completed > 0 ? `，${displayedSessionSummary.completed} 成功` : ''}
+                  {displayedSessionSummary.failed > 0 ? `，${displayedSessionSummary.failed} 失败` : ''}
+                  {' · '}{SESSION_STATUS_LABELS[displayedSession.status]}
+                  {' · '}{RANKING_LABELS[displayedSession.rankingMode]}
+                </p>
+              ) : (
+                <p className="model-benchmark__main-desc">
+                  请先在上方明确范围，或点击历史会话查看以往结果。
+                </p>
+              )}
             </div>
-            {displayedSession ? (
-              <div className="model-benchmark__summary-strip">
-                <div className="model-benchmark__summary-card">
-                  <strong>{displayedSessionSummary.total}</strong>
-                  <span>总目标</span>
-                </div>
-                <div className="model-benchmark__summary-card">
-                  <strong>{displayedSessionSummary.completed}</strong>
-                  <span>成功</span>
-                </div>
-                <div className="model-benchmark__summary-card">
-                  <strong>{displayedSessionSummary.failed}</strong>
-                  <span>失败</span>
-                </div>
-                <div className="model-benchmark__summary-card">
-                  <strong>{RANKING_LABELS[displayedSession.rankingMode]}</strong>
-                  <span>{SESSION_STATUS_LABELS[displayedSession.status]}</span>
-                </div>
-              </div>
-            ) : null}
           </div>
 
           {displayedSession ? (
@@ -1753,16 +1778,22 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
                 <section className="model-benchmark__spotlight">
                   <div className="model-benchmark__spotlight-copy">
                     <div className="model-benchmark__eyebrow">当前第一名</div>
-                    <h4>{topEntry.modelLabel}</h4>
+                    <h4>
+                      {displayedSession.compareMode === 'cross-provider'
+                        ? topEntry.profileName
+                        : topEntry.modelLabel}
+                    </h4>
                     <p>
-                      来自 {topEntry.profileName}，首响 {formatDuration(topEntry.firstResponseMs)}
-                      ，总耗时 {formatDuration(topEntry.totalDurationMs)}。
+                      {displayedSession.compareMode === 'cross-provider'
+                        ? `${topEntry.modelLabel}，`
+                        : `来自 ${topEntry.profileName}，`}
+                      首响 {formatDuration(topEntry.firstResponseMs)}
+                      ，总耗时 {formatDuration(topEntry.totalDurationMs)}
                     </p>
                   </div>
                   <div className="model-benchmark__spotlight-meta">
-                    <span>{MODALITY_LABELS[topEntry.modality]}</span>
-                    <span>{topEntry.favorite ? '已收藏' : '可继续观察'}</span>
-                    <span>{topEntry.userScore ? `${topEntry.userScore} 分` : '待人工打分'}</span>
+                    {topEntry.userScore ? <span>{topEntry.userScore} 分</span> : null}
+                    {topEntry.favorite ? <span>已收藏</span> : null}
                   </div>
                 </section>
               ) : null}
