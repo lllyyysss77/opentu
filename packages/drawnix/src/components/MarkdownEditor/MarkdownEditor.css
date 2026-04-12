@@ -168,6 +168,51 @@
   line-height: 1.6;
 }
 
+.collimind-markdown-editor.card-markdown-viewer .ProseMirror h1,
+.collimind-markdown-editor.card-markdown-viewer .ProseMirror h2,
+.collimind-markdown-editor.card-markdown-viewer .ProseMirror h3,
+.collimind-markdown-editor.card-markdown-viewer .ProseMirror h4 {
+  line-height: 1.28;
+  margin: 0.45em 0 0.3em;
+  letter-spacing: -0.01em;
+}
+
+.collimind-markdown-editor.card-markdown-viewer .ProseMirror h1 {
+  font-size: 1.9em;
+  font-weight: 700;
+}
+
+.collimind-markdown-editor.card-markdown-viewer .ProseMirror h2 {
+  font-size: 1.5em;
+  font-weight: 700;
+}
+
+.collimind-markdown-editor.card-markdown-viewer .ProseMirror h3 {
+  font-size: 1.22em;
+  font-weight: 650;
+}
+
+.collimind-markdown-editor.card-markdown-viewer .ProseMirror h4 {
+  font-size: 1.08em;
+  font-weight: 650;
+}
+
+.collimind-markdown-editor.card-markdown-viewer .ProseMirror > :first-child {
+  margin-top: 0;
+}
+
+.collimind-markdown-editor.card-markdown-viewer .ProseMirror p,
+.collimind-markdown-editor.card-markdown-viewer .ProseMirror ul,
+.collimind-markdown-editor.card-markdown-viewer .ProseMirror ol,
+.collimind-markdown-editor.card-markdown-viewer .ProseMirror blockquote,
+.collimind-markdown-editor.card-markdown-viewer .ProseMirror pre {
+  margin: 0.3em 0;
+}
+
+.collimind-markdown-editor.card-markdown-viewer .ProseMirror li + li {
+  margin-top: 0.12em;
+}
+
 /* ---- 只读模式：隐藏工具栏，禁用交互 ---- */
 .collimind-markdown-editor.card-markdown-viewer[data-readonly="true"] .milkdown-block-handle,
 .collimind-markdown-editor.card-markdown-viewer[data-readonly="true"] .crepe-toolbar,

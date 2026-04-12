@@ -444,6 +444,7 @@ setOutputType((note.metadata?.outputType as 'image' | 'text' | 'video' | 'ppt' |
           placeholder="开始写点什么..."
           showModeSwitch={!readOnly}
           readOnly={readOnly}
+          className="kb-note-markdown"
         />
       </div>
 

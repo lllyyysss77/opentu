@@ -5,6 +5,7 @@
  * Card 在画布上仅作只读展示，编辑通过知识库进行
  */
 import React, { useCallback, useMemo } from 'react';
+import { BookOpen } from 'lucide-react';
 import { MarkdownEditor } from '../MarkdownEditor';
 import {
   getTitleColor,
@@ -94,6 +95,7 @@ export const CardElement: React.FC<CardElementProps> = ({ element }) => {
   const titleColor = getTitleColor(element.fillColor);
   const bodyColor = getBodyColor(element.fillColor);
   const displayBody = useMemo(() => preserveLineBreaks(element.body), [element.body]);
+  const hasKnowledgeBaseLink = !!element.noteId;
 
   const handleWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
     const target = e.currentTarget;
@@ -103,6 +105,18 @@ export const CardElement: React.FC<CardElementProps> = ({ element }) => {
     if (!atTop && !atBottom) {
       e.stopPropagation();
     }
+  }, []);
+
+  const handleOpenKnowledgeBase = useCallback((e: React.MouseEvent | React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!element.noteId) return;
+    window.dispatchEvent(new CustomEvent('kb:open', { detail: { noteId: element.noteId } }));
+  }, [element.noteId]);
+
+  const stopPointerPropagation = useCallback((e: React.MouseEvent | React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
   }, []);
 
   return (
@@ -136,9 +150,47 @@ export const CardElement: React.FC<CardElementProps> = ({ element }) => {
           textOverflow: 'ellipsis',
           cursor: 'move',
           pointerEvents: 'auto',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
         }}
       >
-        {displayTitle}
+        <span
+          style={{
+            flex: 1,
+            minWidth: 0,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
+          {displayTitle}
+        </span>
+        {hasKnowledgeBaseLink && (
+          <button
+            type="button"
+            title="打开知识库笔记"
+            aria-label="打开知识库笔记"
+            onMouseDown={stopPointerPropagation}
+            onPointerDown={stopPointerPropagation}
+            onClick={handleOpenKnowledgeBase}
+            style={{
+              width: 24,
+              height: 24,
+              padding: 0,
+              border: 'none',
+              borderRadius: 6,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'rgba(255,255,255,0.16)',
+              color: '#fff',
+              cursor: 'pointer',
+              flexShrink: 0,
+            }}
+          >
+            <BookOpen size={14} />
+          </button>
+        )}
       </div>
       <div
         ref={(el) => {
