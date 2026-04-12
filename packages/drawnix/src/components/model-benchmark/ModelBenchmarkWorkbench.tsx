@@ -1,7 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState, startTransition } from 'react';
 import type { Subscription } from 'rxjs';
-import { Select, InputNumber, MessagePlugin, Tooltip } from 'tdesign-react';
-import { DeleteIcon } from 'tdesign-icons-react';
+import { Select, Input, InputNumber, MessagePlugin, Tooltip } from 'tdesign-react';
+import {
+  DeleteIcon,
+  SearchIcon,
+  ViewListIcon,
+  ImageIcon,
+  VideoIcon,
+  TextboxIcon,
+} from 'tdesign-icons-react';
+import { Music4 } from 'lucide-react';
 import { downloadFromBlob } from '@aitu/utils';
 import { useAtomValue } from 'jotai';
 import {
@@ -51,6 +59,8 @@ const MODE_LABELS: Record<BenchmarkCompareMode, string> = {
   'cross-model': '多模型批测',
   custom: '自定义测试',
 };
+
+type SessionModalityFilter = 'all' | BenchmarkModality;
 
 const MODE_DESCRIPTIONS: Record<BenchmarkCompareMode, string> = {
   'cross-provider': '锁定一个模型，横向比较不同供应商的稳定性、速度和效果差异。',
@@ -311,6 +321,9 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
   const [concurrency, setConcurrency] = useState(2);
   const [isExportingExcel, setIsExportingExcel] = useState(false);
   const [rankingMode, setRankingMode] = useState<BenchmarkRankingMode>('speed');
+  const [sessionSearchQuery, setSessionSearchQuery] = useState('');
+  const [sessionModalityFilter, setSessionModalityFilter] =
+    useState<SessionModalityFilter>('all');
   const launchSignatureRef = useRef<string>('');
   const launchGuardRef = useRef(false);
   const pickerAnchorRef = useRef<string | null>(null);
@@ -489,6 +502,31 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
       ) || null
     );
   }, [storeState.activeSessionId, storeState.sessions]);
+
+  const filteredSessions = useMemo(() => {
+    return storeState.sessions.filter((session) => {
+      if (
+        sessionModalityFilter !== 'all' &&
+        session.modality !== sessionModalityFilter
+      ) {
+        return false;
+      }
+
+      return matchesQuery(sessionSearchQuery, [
+        session.title,
+        session.prompt,
+        MODE_LABELS[session.compareMode],
+        MODALITY_LABELS[session.modality],
+        ...session.entries.flatMap((entry) => [
+          entry.profileName,
+          entry.profileId,
+          entry.modelLabel,
+          entry.modelId,
+          entry.vendor,
+        ]),
+      ]);
+    });
+  }, [sessionModalityFilter, sessionSearchQuery, storeState.sessions]);
 
   useEffect(() => {
     if (!activeSession) {
@@ -1395,6 +1433,17 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
     label: `${target.profileName} · ${target.modelLabel}`,
     value: target.profileId,
   }));
+  const sessionModalityTabs: Array<{
+    label: string;
+    value: SessionModalityFilter;
+    icon: React.ReactNode;
+  }> = [
+    { label: '全部', value: 'all', icon: <ViewListIcon size={14} /> },
+    { label: '图片', value: 'image', icon: <ImageIcon size="14px" /> },
+    { label: '视频', value: 'video', icon: <VideoIcon size="14px" /> },
+    { label: '音频', value: 'audio', icon: <Music4 size={14} strokeWidth={1.9} /> },
+    { label: '文本', value: 'text', icon: <TextboxIcon size="14px" /> },
+  ];
 
   return (
     <div className="model-benchmark">
@@ -1410,37 +1459,72 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
             {isExportingExcel ? '导出中...' : '导出 Excel'}
           </button>
         </div>
+        <div className="model-benchmark__sidebar-filters">
+          <Input
+            value={sessionSearchQuery}
+            onChange={setSessionSearchQuery}
+            placeholder="搜索会话 / 模型 / 供应商"
+            prefixIcon={<SearchIcon />}
+            size="small"
+            clearable
+          />
+          <div className="model-benchmark__sidebar-tabs">
+            {sessionModalityTabs.map((tab) => (
+              <Tooltip key={tab.value} content={tab.label} theme="light">
+                <button
+                  type="button"
+                  className={
+                    sessionModalityFilter === tab.value
+                      ? 'model-benchmark__sidebar-tab model-benchmark__sidebar-tab--active'
+                      : 'model-benchmark__sidebar-tab'
+                  }
+                  onClick={() => setSessionModalityFilter(tab.value)}
+                  aria-label={tab.label}
+                  title={tab.label}
+                >
+                  {tab.icon}
+                </button>
+              </Tooltip>
+            ))}
+          </div>
+        </div>
         <div className="model-benchmark__session-list">
-          {storeState.sessions.map((session) => (
-            <div key={session.id} className="model-benchmark__session-row">
-              <button
-                type="button"
-                className={`model-benchmark__session-item ${
-                  session.id === storeState.activeSessionId
-                    ? 'model-benchmark__session-item--active'
-                    : ''
-                }`}
-                onClick={() => modelBenchmarkService.setActiveSession(session.id)}
-              >
-                <span className="model-benchmark__session-title">
-                  {session.title}
-                </span>
-                <span className="model-benchmark__session-meta">
-                  {session.entries.length} 个目标 ·{' '}
-                  {SESSION_STATUS_LABELS[session.status]}
-                </span>
-              </button>
-              <button
-                type="button"
-                className="model-benchmark__session-delete"
-                onClick={() => modelBenchmarkService.removeSession(session.id)}
-                aria-label={`删除会话 ${session.title}`}
-                title="删除会话"
-              >
-                <DeleteIcon />
-              </button>
+          {filteredSessions.length > 0 ? (
+            filteredSessions.map((session) => (
+              <div key={session.id} className="model-benchmark__session-row">
+                <button
+                  type="button"
+                  className={`model-benchmark__session-item ${
+                    session.id === storeState.activeSessionId
+                      ? 'model-benchmark__session-item--active'
+                      : ''
+                  }`}
+                  onClick={() => modelBenchmarkService.setActiveSession(session.id)}
+                >
+                  <span className="model-benchmark__session-title">
+                    {session.title}
+                  </span>
+                  <span className="model-benchmark__session-meta">
+                    {MODE_LABELS[session.compareMode]} · {session.entries.length} 个目标 ·{' '}
+                    {SESSION_STATUS_LABELS[session.status]}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="model-benchmark__session-delete"
+                  onClick={() => modelBenchmarkService.removeSession(session.id)}
+                  aria-label={`删除会话 ${session.title}`}
+                  title="删除会话"
+                >
+                  <DeleteIcon />
+                </button>
+              </div>
+            ))
+          ) : (
+            <div className="model-benchmark__session-empty">
+              {storeState.sessions.length === 0 ? '暂无历史会话' : '没有匹配的历史会话'}
             </div>
-          ))}
+          )}
         </div>
       </aside>
 
@@ -1454,11 +1538,7 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
                     <button
                       key={value}
                       type="button"
-                      className={
-                        modality === value
-                          ? 'model-benchmark__modality-tabs--active'
-                          : ''
-                      }
+                      className={modality === value ? 'active' : ''}
                       onClick={() => setModality(value)}
                     >
                       {MODALITY_LABELS[value]}
@@ -1477,11 +1557,7 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
                     >
                       <button
                         type="button"
-                        className={
-                          compareMode === value
-                            ? 'model-benchmark__mode-selector--active'
-                            : ''
-                        }
+                        className={compareMode === value ? 'active' : ''}
                         onClick={() =>
                           setCompareMode(value as BenchmarkCompareMode)
                         }
