@@ -13,6 +13,8 @@ import { useAudioPlaylists } from '../../contexts/AudioPlaylistContext';
 import {
   AUDIO_PLAYLIST_ALL_ID,
   AUDIO_PLAYLIST_ALL_TRACKS_ID,
+  getAudioPlaylistItemRefKey,
+  type AudioPlaylistItemRef,
 } from '../../types/audio-playlist.types';
 import {
   isReadingPlaybackSource,
@@ -82,7 +84,7 @@ export const CanvasAudioPlayerPlaylist: React.FC<CanvasAudioPlayerPlaylistProps>
     contextMenu,
     openAt: openContextMenuAt,
     close: closeContextMenu,
-  } = useContextMenuState<string>();
+  } = useContextMenuState<AudioPlaylistItemRef>();
   const [createDialogVisible, setCreateDialogVisible] = useState(false);
   const [playlistName, setPlaylistName] = useState('');
   const [pendingAssetId, setPendingAssetId] = useState<string | null>(null);
@@ -111,10 +113,12 @@ export const CanvasAudioPlayerPlaylist: React.FC<CanvasAudioPlayerPlaylistProps>
     );
     return matchedAsset?.id || null;
   };
-  const currentPlaylistAssetIds = useMemo(
+  const currentPlaylistItemKeys = useMemo(
     () => new Set(
       selectedPlaylistId !== AUDIO_PLAYLIST_ALL_ID
-        ? (playlistItems[selectedPlaylistId] || []).map((item) => item.assetId)
+        ? (playlistItems[selectedPlaylistId] || [])
+          .map((item) => item.assetId ? getAudioPlaylistItemRefKey({ kind: 'asset', assetId: item.assetId }) : null)
+          .filter((item): item is string => !!item)
         : []
     ),
     [playlistItems, selectedPlaylistId]
@@ -281,7 +285,7 @@ export const CanvasAudioPlayerPlaylist: React.FC<CanvasAudioPlayerPlaylistProps>
           }
           event.preventDefault();
           event.stopPropagation();
-          openContextMenuAt(event.clientX, event.clientY, assetId);
+          openContextMenuAt(event.clientX, event.clientY, { kind: 'asset', assetId });
         }}
         onToggleFavorite={(selectedItem) => {
           const nextItem = audioQueue.find((item, index) => `${item.audioUrl}-${index}` === selectedItem.id);
@@ -306,7 +310,7 @@ export const CanvasAudioPlayerPlaylist: React.FC<CanvasAudioPlayerPlaylistProps>
             ? {
                 x: contextMenu.x,
                 y: contextMenu.y,
-                assetId: contextMenu.payload,
+                item: contextMenu.payload,
               }
             : null
         }
@@ -314,13 +318,24 @@ export const CanvasAudioPlayerPlaylist: React.FC<CanvasAudioPlayerPlaylistProps>
         playlistItems={playlistItems}
         favoriteAssetIds={favoriteAssetIds}
         selectedPlaylistId={selectedPlaylistId === AUDIO_PLAYLIST_ALL_ID ? null : selectedPlaylistId}
-        currentPlaylistAssetIds={currentPlaylistAssetIds}
+        currentPlaylistItemKeys={currentPlaylistItemKeys}
         onClose={closeContextMenu}
         onToggleFavorite={(assetId) => void toggleFavorite(assetId)}
-        onAddToPlaylist={(assetId, playlistId) => void addAssetToPlaylist(assetId, playlistId)}
-        onRemoveFromPlaylist={(assetId, playlistId) => void removeAssetFromPlaylist(assetId, playlistId)}
-        onCreatePlaylistAndAdd={(assetId) => {
-          setPendingAssetId(assetId);
+        onAddToPlaylist={(item, playlistId) => {
+          if (item.kind === 'asset') {
+            void addAssetToPlaylist(item.assetId, playlistId);
+          }
+        }}
+        onRemoveFromPlaylist={(item, playlistId) => {
+          if (item.kind === 'asset') {
+            void removeAssetFromPlaylist(item.assetId, playlistId);
+          }
+        }}
+        onCreatePlaylistAndAdd={(item) => {
+          if (item.kind !== 'asset') {
+            return;
+          }
+          setPendingAssetId(item.assetId);
           setPlaylistName('');
           setCreateDialogVisible(true);
         }}

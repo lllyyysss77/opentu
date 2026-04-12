@@ -12,8 +12,13 @@ import type {
   AudioPlaylist,
   AudioPlaylistContextValue,
   AudioPlaylistItem,
+  AudioPlaylistItemRef,
 } from '../types/audio-playlist.types';
-import { AUDIO_PLAYLIST_FAVORITES_ID } from '../types/audio-playlist.types';
+import {
+  AUDIO_PLAYLIST_FAVORITES_ID,
+  getAudioPlaylistItemRef,
+  isAudioPlaylistAssetItemRef,
+} from '../types/audio-playlist.types';
 
 const AudioPlaylistContext = createContext<AudioPlaylistContextValue | null>(null);
 
@@ -95,9 +100,21 @@ export const AudioPlaylistProvider: React.FC<{ children: React.ReactNode }> = ({
     [runAndReload]
   );
 
+  const addItemToPlaylist = useCallback(
+    async (item: AudioPlaylistItemRef, playlistId: string) =>
+      runAndReload(() => audioPlaylistService.addItemToPlaylist(item, playlistId), '已添加到播放列表'),
+    [runAndReload]
+  );
+
   const removeAssetFromPlaylist = useCallback(
     async (assetId: string, playlistId: string) =>
       runAndReload(() => audioPlaylistService.removeAssetFromPlaylist(assetId, playlistId), '已从播放列表移除'),
+    [runAndReload]
+  );
+
+  const removeItemFromPlaylist = useCallback(
+    async (item: AudioPlaylistItemRef, playlistId: string) =>
+      runAndReload(() => audioPlaylistService.removeItemFromPlaylist(item, playlistId), '已从播放列表移除'),
     [runAndReload]
   );
 
@@ -130,7 +147,13 @@ export const AudioPlaylistProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [loadPlaylists]);
 
   const favoriteAssetIds = useMemo(
-    () => new Set((playlistItems[AUDIO_PLAYLIST_FAVORITES_ID] || []).map((item) => item.assetId)),
+    () =>
+      new Set(
+        (playlistItems[AUDIO_PLAYLIST_FAVORITES_ID] || [])
+          .map((item) => getAudioPlaylistItemRef(item))
+          .filter(isAudioPlaylistAssetItemRef)
+          .map((item) => item.assetId)
+      ),
     [playlistItems]
   );
 
@@ -143,12 +166,22 @@ export const AudioPlaylistProvider: React.FC<{ children: React.ReactNode }> = ({
     createPlaylist,
     renamePlaylist,
     deletePlaylist,
+    addItemToPlaylist,
+    removeItemFromPlaylist,
     addAssetToPlaylist,
     removeAssetFromPlaylist,
     removeAssetFromAllPlaylists,
     toggleFavorite,
     isFavorite: (assetId: string) => favoriteAssetIds.has(assetId),
-    getPlaylistAssetIds: (playlistId: string) => (playlistItems[playlistId] || []).map((item) => item.assetId),
+    getPlaylistAssetIds: (playlistId: string) =>
+      (playlistItems[playlistId] || [])
+        .map((item) => getAudioPlaylistItemRef(item))
+        .filter(isAudioPlaylistAssetItemRef)
+        .map((item) => item.assetId),
+    getPlaylistItemRefs: (playlistId: string) =>
+      (playlistItems[playlistId] || [])
+        .map((item) => getAudioPlaylistItemRef(item))
+        .filter((item): item is AudioPlaylistItemRef => !!item),
   }), [
     loading,
     playlists,
@@ -158,6 +191,8 @@ export const AudioPlaylistProvider: React.FC<{ children: React.ReactNode }> = ({
     createPlaylist,
     renamePlaylist,
     deletePlaylist,
+    addItemToPlaylist,
+    removeItemFromPlaylist,
     addAssetToPlaylist,
     removeAssetFromPlaylist,
     removeAssetFromAllPlaylists,

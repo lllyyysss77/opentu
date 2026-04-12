@@ -1287,7 +1287,7 @@ export class CanvasAudioPlaybackService {
 
   async togglePlaybackInQueue(
     source: CanvasAudioPlaybackSource,
-    queue: CanvasAudioPlaybackSource[],
+    queue: PlaybackQueueItem[],
     options?: {
       queueSource?: CanvasAudioQueueSource;
       playlistId?: string;
@@ -1334,7 +1334,7 @@ export class CanvasAudioPlaybackService {
   }
 
   setQueue(
-    queue: CanvasAudioPlaybackSource[],
+    queue: PlaybackQueueItem[],
     options?: {
       queueSource?: CanvasAudioQueueSource;
       playlistId?: string;
@@ -1345,7 +1345,7 @@ export class CanvasAudioPlaybackService {
   ): void {
     const normalizedQueue = this.normalizeQueue(queue);
     if ((options?.queueSource || 'canvas') === 'canvas') {
-      this.canvasQueue = normalizedQueue;
+      this.canvasQueue = normalizedQueue.filter(isAudioPlaybackSource);
     }
     const activeSource = this.state.activeAudioUrl
       ? {

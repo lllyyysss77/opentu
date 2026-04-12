@@ -23,8 +23,12 @@ import {
   AUDIO_PLAYLIST_CANVAS_AUDIO_LABEL,
   AUDIO_PLAYLIST_CANVAS_READING_ID,
   AUDIO_PLAYLIST_CANVAS_READING_LABEL,
+  getAudioPlaylistItemRefKey,
+  isAudioPlaylistAssetItemRef,
+  type AudioPlaylistItemRef,
 } from '../../../types/audio-playlist.types';
 import { AudioCover } from '../../../components/shared/AudioCover';
+import { type AudioTrackListItem } from '../../../components/shared/AudioTrackList';
 import { AudioPlaylistTabs } from '../../../components/shared/AudioPlaylistTabs';
 import { AudioTrackContextMenu } from '../../../components/shared/AudioTrackContextMenu';
 import { useCanvasAudioPlayback } from '../../../hooks/useCanvasAudioPlayback';
@@ -101,6 +105,10 @@ function formatTrackSubtitle(duration?: number, createdAt?: number): string {
   return formatGeneratedTime(createdAt);
 }
 
+function openKnowledgeBaseNote(noteId: string): void {
+  window.dispatchEvent(new CustomEvent('kb:open', { detail: { noteId } }));
+}
+
 export const MusicPlayerTool: React.FC = () => {
   const { assets, loadAssets } = useAssets();
   const {
@@ -110,14 +118,14 @@ export const MusicPlayerTool: React.FC = () => {
     createPlaylist,
     renamePlaylist,
     deletePlaylist,
-    addAssetToPlaylist,
-    removeAssetFromPlaylist,
+    addItemToPlaylist,
+    removeItemFromPlaylist,
     toggleFavorite,
-    getPlaylistAssetIds,
+    getPlaylistItemRefs,
   } = useAudioPlaylists();
   const playback = useCanvasAudioPlayback();
   const isReadingMode = playback.queueSource === 'reading';
-  const { noteMetas } = useAllTracksPlaybackSources();
+  const { noteMetas, loadReadingSource, buildReadingQueue } = useAllTracksPlaybackSources();
   const [query, setQuery] = useState('');
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<string>(() => {
     if (playback.activePlaylistId) {
@@ -134,9 +142,9 @@ export const MusicPlayerTool: React.FC = () => {
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
-    assetId: string;
+    item: AudioPlaylistItemRef;
   } | null>(null);
-  const [pendingAssetId, setPendingAssetId] = useState<string | null>(null);
+  const [pendingPlaylistItem, setPendingPlaylistItem] = useState<AudioPlaylistItemRef | null>(null);
   const [playlistDialogMode, setPlaylistDialogMode] = useState<'create' | 'rename'>('create');
   const [editingPlaylistId, setEditingPlaylistId] = useState<string | null>(null);
   const previousPlaybackTabIdRef = useRef(playback.activePlaylistId || (
@@ -159,36 +167,35 @@ export const MusicPlayerTool: React.FC = () => {
     };
   }, []);
 
-  const audioAssets = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
-    const selectedIds = new Set(
-      selectedPlaylistId === AUDIO_PLAYLIST_ALL_ID
-        ? assets.filter((asset) => asset.type === AssetType.AUDIO).map((asset) => asset.id)
-        : getPlaylistAssetIds(selectedPlaylistId)
-    );
-
-    return assets
-      .filter((asset) => asset.type === AssetType.AUDIO)
-      .filter((asset) => selectedIds.has(asset.id))
-      .filter((asset) =>
-        normalizedQuery.length === 0 ? true : asset.name.toLowerCase().includes(normalizedQuery)
-      )
-      .sort((left, right) => right.createdAt - left.createdAt);
-  }, [assets, query, selectedPlaylistId, getPlaylistAssetIds]);
-
-  const queue = useMemo(
-    () =>
-      audioAssets.map((asset) => ({
-        elementId: `asset:${asset.id}`,
-        audioUrl: asset.url,
-        title: asset.name,
-        previewImageUrl: asset.thumbnail,
-      })),
-    [audioAssets]
+  const normalizedQuery = query.trim().toLowerCase();
+  const storedAudioAssets = useMemo(
+    () => assets.filter((asset) => asset.type === AssetType.AUDIO),
+    [assets]
   );
-  const audioAssetById = useMemo(
-    () => new Map(audioAssets.map((asset) => [asset.id, asset])),
-    [audioAssets]
+  const assetById = useMemo(
+    () => new Map(storedAudioAssets.map((asset) => [asset.id, asset])),
+    [storedAudioAssets]
+  );
+  const noteMetaById = useMemo(
+    () => new Map(noteMetas.map((meta) => [meta.id, meta])),
+    [noteMetas]
+  );
+  const allAudioAssets = useMemo(
+    () =>
+      storedAudioAssets
+        .filter((asset) =>
+          normalizedQuery.length === 0 ? true : asset.name.toLowerCase().includes(normalizedQuery)
+        )
+        .sort((left, right) => right.createdAt - left.createdAt),
+    [normalizedQuery, storedAudioAssets]
+  );
+  const selectedPlaylistItems = useMemo(
+    () =>
+      selectedPlaylistId !== AUDIO_PLAYLIST_ALL_ID
+      && selectedPlaylistId !== AUDIO_PLAYLIST_ALL_TRACKS_ID
+        ? getPlaylistItemRefs(selectedPlaylistId)
+        : [],
+    [getPlaylistItemRefs, selectedPlaylistId]
   );
   const showPlaybackQueue =
     playback.queue.length > 0 && (isReadingMode || !!playback.activeAudioUrl);
@@ -254,27 +261,42 @@ export const MusicPlayerTool: React.FC = () => {
   }, [playbackTabId, showPlaybackQueue]);
 
   const audioPlaybackQueue = useMemo(
-    () => playback.queue.filter((item): item is typeof queue[number] => !isReadingPlaybackSource(item)),
+    () => playback.queue.filter((item) => !isReadingPlaybackSource(item)),
     [playback.queue]
   );
   const resolvedQueueDurations = useResolvedAudioDurations(audioPlaybackQueue);
   const audioAssetDurationSources = useMemo(
     () =>
-      audioAssets.map((asset) => ({
+      storedAudioAssets.map((asset) => ({
         audioUrl: asset.url,
       })),
-    [audioAssets]
+    [storedAudioAssets]
   );
   const resolvedAudioAssetDurations = useResolvedAudioDurations(audioAssetDurationSources);
 
   const getQueueItemId = (item: PlaybackQueueItem, index: number) =>
     isReadingPlaybackSource(item) ? item.readingSourceId : `${item.audioUrl}-${index}`;
 
+  const buildAudioPlaybackSource = (assetId: string) => {
+    const asset = assetById.get(assetId);
+    if (!asset) {
+      return null;
+    }
+
+    return {
+      elementId: `asset:${asset.id}`,
+      audioUrl: asset.url,
+      title: asset.name,
+      previewImageUrl: asset.thumbnail,
+    };
+  };
+
   const queueListItems = useMemo(
     () =>
       playback.queue.map((item, index) => {
         if (isReadingPlaybackSource(item)) {
           const durationMs = item.segments[item.segments.length - 1]?.endMs || 0;
+          const noteId = item.origin.kind === 'kb-note' ? item.origin.id : undefined;
           return {
             id: getQueueItemId(item, index),
             title: item.title || '朗读轨道',
@@ -283,6 +305,8 @@ export const MusicPlayerTool: React.FC = () => {
             isActive: index === playback.activeQueueIndex,
             isPlaying: index === playback.activeQueueIndex && playback.playing,
             canFavorite: false,
+            noteId,
+            playlistItemRef: noteId ? { kind: 'reading' as const, noteId } : undefined,
           };
         }
 
@@ -296,46 +320,19 @@ export const MusicPlayerTool: React.FC = () => {
           title: item.title || '未命名音频',
           subtitle: formatTrackSubtitle(
             resolvedQueueDurations.get(item.audioUrl) ?? item.duration,
-            assetId ? audioAssetById.get(assetId)?.createdAt : undefined
+            assetId ? assetById.get(assetId)?.createdAt : undefined
           ),
           previewImageUrl: item.previewImageUrl,
           isActive: index === playback.activeQueueIndex,
           isPlaying: index === playback.activeQueueIndex && playback.playing,
           isFavorite: assetId ? favoriteAssetIds.has(assetId) : false,
           canFavorite: !!assetId,
+          assetId: assetId || undefined,
+          playlistItemRef: assetId ? { kind: 'asset' as const, assetId } : undefined,
         };
       }),
-    [audioAssetById, assets, favoriteAssetIds, playback.activeQueueIndex, playback.playing, playback.queue, resolvedQueueDurations]
+    [assetById, assets, favoriteAssetIds, playback.activeQueueIndex, playback.playing, playback.queue, resolvedQueueDurations]
   );
-
-  const handlePlayAsset = async (assetId: string) => {
-    const activeIndex = audioAssets.findIndex((asset) => asset.id === assetId);
-    if (activeIndex === -1) {
-      return;
-    }
-
-    if (selectedPlaylistId !== AUDIO_PLAYLIST_ALL_ID) {
-      const playlist = playlists.find((item) => item.id === selectedPlaylistId);
-      if (playlist) {
-        playback.setPlaylistQueue(queue, {
-          playlistId: playlist.id,
-          playlistName: playlist.name,
-        });
-      } else {
-        playback.setQueue(queue);
-      }
-    } else {
-      playback.setQueue(queue);
-    }
-
-    const asset = audioAssets[activeIndex];
-    await playback.togglePlayback({
-      elementId: `asset:${asset.id}`,
-      audioUrl: asset.url,
-      title: asset.name,
-      previewImageUrl: asset.thumbnail,
-    });
-  };
 
   const handlePlayQueueItem = async (itemId: string) => {
     const selectedItem = playback.queue.find((item, index) => getQueueItemId(item, index) === itemId);
@@ -350,28 +347,29 @@ export const MusicPlayerTool: React.FC = () => {
   };
 
   const activePlaylist = playlists.find((p) => p.id === selectedPlaylistId) || null;
-  const fallbackAsset = audioAssets[0] || null;
-  const currentPlaylistAssetIds = useMemo(
-    () => new Set(selectedPlaylistId !== AUDIO_PLAYLIST_ALL_ID ? getPlaylistAssetIds(selectedPlaylistId) : []),
-    [getPlaylistAssetIds, selectedPlaylistId]
+  const currentPlaylistItemKeys = useMemo(
+    () => new Set(selectedPlaylistItems.map((item) => getAudioPlaylistItemRefKey(item))),
+    [selectedPlaylistItems]
   );
   const activeAsset = useMemo(() => {
     const elementAssetId = playback.activeElementId?.startsWith('asset:')
       ? playback.activeElementId.slice('asset:'.length)
       : null;
     if (elementAssetId) {
-      return audioAssets.find((asset) => asset.id === elementAssetId) || null;
+      return assetById.get(elementAssetId) || null;
     }
 
-    const exactUrlAndTitleMatch = audioAssets.find(
+    const exactUrlAndTitleMatch = storedAudioAssets.find(
       (asset) => asset.url === playback.activeAudioUrl && asset.name === playback.activeTitle
     );
     if (exactUrlAndTitleMatch) {
       return exactUrlAndTitleMatch;
     }
 
-    return audioAssets.find((asset) => asset.url === playback.activeAudioUrl) || null;
-  }, [audioAssets, playback.activeAudioUrl, playback.activeElementId, playback.activeTitle]);
+    return storedAudioAssets.find((asset) => asset.url === playback.activeAudioUrl) || null;
+  }, [assetById, storedAudioAssets, playback.activeAudioUrl, playback.activeElementId, playback.activeTitle]);
+  const activeReadingNoteId =
+    playback.activeReadingOrigin?.kind === 'kb-note' ? playback.activeReadingOrigin.id : null;
   const activeReadingItem = useMemo(
     () =>
       isReadingMode && playback.activeQueueIndex >= 0
@@ -379,8 +377,117 @@ export const MusicPlayerTool: React.FC = () => {
         : null,
     [isReadingMode, playback.activeQueueIndex, playback.queue]
   );
-  const displayAsset = isReadingMode ? null : (activeAsset || fallbackAsset);
   const activeAssetId = activeAsset?.id || null;
+  const allTracksListItems = useMemo<AudioTrackListItem[]>(
+    () =>
+      noteMetas.map((meta) => ({
+        id: `reading:${meta.id}`,
+        title: meta.title || '未命名笔记',
+        subtitle: new Date(meta.updatedAt).toLocaleDateString('zh-CN'),
+        canFavorite: false,
+        noteId: meta.id,
+        playlistItemRef: { kind: 'reading', noteId: meta.id },
+        isActive: activeReadingNoteId === meta.id,
+        isPlaying: activeReadingNoteId === meta.id && playback.playing && playback.mediaType === 'reading',
+      })),
+    [activeReadingNoteId, noteMetas, playback.mediaType, playback.playing]
+  );
+  const allAudioListItems = useMemo<AudioTrackListItem[]>(
+    () =>
+      allAudioAssets.map((asset) => ({
+        id: `asset:${asset.id}`,
+        title: asset.name,
+        subtitle: formatTrackSubtitle(
+          resolvedAudioAssetDurations.get(asset.url),
+          asset.createdAt
+        ),
+        previewImageUrl: asset.thumbnail,
+        isActive: activeAssetId === asset.id,
+        isPlaying: activeAssetId === asset.id && playback.playing && playback.mediaType === 'audio',
+        isFavorite: favoriteAssetIds.has(asset.id),
+        canFavorite: true,
+        assetId: asset.id,
+        playlistItemRef: { kind: 'asset', assetId: asset.id },
+      })),
+    [activeAssetId, allAudioAssets, favoriteAssetIds, playback.mediaType, playback.playing, resolvedAudioAssetDurations]
+  );
+  const playlistListItems = useMemo<AudioTrackListItem[]>(
+    () =>
+      selectedPlaylistItems.flatMap((itemRef) => {
+        if (isAudioPlaylistAssetItemRef(itemRef)) {
+          const asset = assetById.get(itemRef.assetId);
+          if (!asset) {
+            return [];
+          }
+          if (
+            normalizedQuery.length > 0
+            && !asset.name.toLowerCase().includes(normalizedQuery)
+          ) {
+            return [];
+          }
+          return [{
+            id: `asset:${asset.id}`,
+            title: asset.name,
+            subtitle: formatTrackSubtitle(
+              resolvedAudioAssetDurations.get(asset.url),
+              asset.createdAt
+            ),
+            previewImageUrl: asset.thumbnail,
+            isActive: activeAssetId === asset.id,
+            isPlaying: activeAssetId === asset.id && playback.playing && playback.mediaType === 'audio',
+            isFavorite: favoriteAssetIds.has(asset.id),
+            canFavorite: true,
+            assetId: asset.id,
+            playlistItemRef: itemRef,
+          }];
+        }
+
+        const noteMeta = noteMetaById.get(itemRef.noteId);
+        if (!noteMeta) {
+          return [];
+        }
+        if (
+          normalizedQuery.length > 0
+          && !(noteMeta.title || '').toLowerCase().includes(normalizedQuery)
+        ) {
+          return [];
+        }
+        return [{
+          id: `reading:${noteMeta.id}`,
+          title: noteMeta.title || '未命名笔记',
+          subtitle: new Date(noteMeta.updatedAt).toLocaleDateString('zh-CN'),
+          canFavorite: false,
+          noteId: noteMeta.id,
+          playlistItemRef: itemRef,
+          isActive: activeReadingNoteId === noteMeta.id,
+          isPlaying: activeReadingNoteId === noteMeta.id && playback.playing && playback.mediaType === 'reading',
+        }];
+      }),
+    [
+      activeAssetId,
+      activeReadingNoteId,
+      assetById,
+      favoriteAssetIds,
+      normalizedQuery,
+      noteMetaById,
+      playback.mediaType,
+      playback.playing,
+      resolvedAudioAssetDurations,
+      selectedPlaylistItems,
+    ]
+  );
+  const currentListItems = useMemo(() => {
+    if (selectedPlaylistId === AUDIO_PLAYLIST_ALL_TRACKS_ID) {
+      return allTracksListItems;
+    }
+    if (selectedPlaylistId === AUDIO_PLAYLIST_ALL_ID) {
+      return allAudioListItems;
+    }
+    return playlistListItems;
+  }, [allAudioListItems, allTracksListItems, playlistListItems, selectedPlaylistId]);
+  const fallbackTrackItem = currentListItems[0] || null;
+  const fallbackAsset = fallbackTrackItem?.assetId ? assetById.get(fallbackTrackItem.assetId) || null : null;
+  const displayAsset = isReadingMode ? null : (activeAsset || fallbackAsset);
   const resolvedPreviewImageUrl = isReadingMode
     ? (isReadingPlaybackSource(activeReadingItem) ? activeReadingItem.previewImageUrl : playback.activePreviewImageUrl)
     : (playback.activePreviewImageUrl || displayAsset?.thumbnail);
@@ -390,23 +497,99 @@ export const MusicPlayerTool: React.FC = () => {
   const listHeaderTitle = shouldShowPlaybackQueue
     ? currentQueueTitle
     : isAllTracksTab ? '全部语音' : (activePlaylist?.name || '素材库音频');
-  const activeAssetCountLabel = isReadingMode
-    ? `${shouldShowPlaybackQueue ? playback.queue.length : noteMetas.length} 段语音`
-    : isAllTracksTab ? `${noteMetas.length} 篇笔记`
-      : `${shouldShowPlaybackQueue ? playback.queue.length : audioAssets.length} 首音频`;
+  const activeAssetCountLabel = shouldShowPlaybackQueue
+    ? `${playback.queue.length} 项内容`
+    : isAllTracksTab
+      ? `${currentListItems.length} 篇笔记`
+      : selectedPlaylistId === AUDIO_PLAYLIST_ALL_ID
+        ? `${currentListItems.length} 首音频`
+        : `${currentListItems.length} 项内容`;
   const playbackModeLabel = PLAYBACK_MODE_LABELS[playback.playbackMode];
   const playbackModeIcon = PLAYBACK_MODE_ICONS[playback.playbackMode];
+
+  const buildPlaylistQueue = async (items: AudioPlaylistItemRef[]): Promise<PlaybackQueueItem[]> => {
+    const queueItems = await Promise.all(
+      items.map(async (itemRef) => {
+        if (isAudioPlaylistAssetItemRef(itemRef)) {
+          return buildAudioPlaybackSource(itemRef.assetId);
+        }
+        return loadReadingSource(itemRef.noteId);
+      })
+    );
+
+    return queueItems.filter((item): item is PlaybackQueueItem => !!item);
+  };
+
+  const handlePlayListItem = async (item: AudioTrackListItem) => {
+    const itemRef = item.playlistItemRef;
+    if (!itemRef) {
+      return;
+    }
+
+    if (isAudioPlaylistAssetItemRef(itemRef)) {
+      const source = buildAudioPlaybackSource(itemRef.assetId);
+      if (!source) {
+        return;
+      }
+
+      if (selectedPlaylistId === AUDIO_PLAYLIST_ALL_ID) {
+        playback.setQueue(
+          allAudioAssets.flatMap((asset) => {
+            const playbackSource = buildAudioPlaybackSource(asset.id);
+            return playbackSource ? [playbackSource] : [];
+          })
+        );
+      } else {
+        const playlistQueue = await buildPlaylistQueue(selectedPlaylistItems);
+        playback.setQueue(playlistQueue, {
+          queueSource: 'playlist',
+          playlistId: activePlaylist?.id,
+          playlistName: activePlaylist?.name,
+        });
+      }
+
+      await playback.togglePlayback(source);
+      return;
+    }
+
+    let source = await loadReadingSource(itemRef.noteId);
+    if (!source) {
+      return;
+    }
+
+    if (selectedPlaylistId === AUDIO_PLAYLIST_ALL_TRACKS_ID) {
+      const readingQueue = await buildReadingQueue(itemRef.noteId);
+      playback.setReadingQueue(readingQueue);
+      source = readingQueue.find((queueItem) => queueItem.origin.kind === 'kb-note' && queueItem.origin.id === itemRef.noteId) || source;
+    } else {
+      const playlistQueue = await buildPlaylistQueue(selectedPlaylistItems);
+      playback.setQueue(playlistQueue, {
+        queueSource: 'playlist',
+        playlistId: activePlaylist?.id,
+        playlistName: activePlaylist?.name,
+      });
+      const matchedSource = playlistQueue.find(
+        (queueItem): queueItem is typeof source =>
+          isReadingPlaybackSource(queueItem)
+          && queueItem.origin.kind === 'kb-note'
+          && queueItem.origin.id === itemRef.noteId
+      );
+      source = matchedSource || source;
+    }
+
+    playback.toggleReadingPlayback(source);
+  };
 
   const closePlaylistDialog = () => {
     setCreateDialogVisible(false);
     setPlaylistName('');
-    setPendingAssetId(null);
+    setPendingPlaylistItem(null);
     setEditingPlaylistId(null);
     setPlaylistDialogMode('create');
   };
 
-  const openCreatePlaylistDialog = (assetId?: string) => {
-    setPendingAssetId(assetId || null);
+  const openCreatePlaylistDialog = (item?: AudioPlaylistItemRef) => {
+    setPendingPlaylistItem(item || null);
     setPlaylistName('');
     setPlaylistDialogMode('create');
     setEditingPlaylistId(null);
@@ -415,7 +598,7 @@ export const MusicPlayerTool: React.FC = () => {
   };
 
   const openRenamePlaylistDialog = (playlistId: string, name: string) => {
-    setPendingAssetId(null);
+    setPendingPlaylistItem(null);
     setPlaylistDialogMode('rename');
     setEditingPlaylistId(playlistId);
     setPlaylistName(name);
@@ -460,7 +643,7 @@ export const MusicPlayerTool: React.FC = () => {
             <div className="music-player-tool__now-playing-cover">
               <AudioCover
                 src={resolvedPreviewImageUrl}
-                alt={isReadingMode ? '当前朗读' : displayAsset?.name || '当前音频'}
+                alt={isReadingMode ? '当前朗读' : displayAsset?.name || fallbackTrackItem?.title || '当前音频'}
                 fallbackClassName="music-player-tool__now-playing-cover music-player-tool__now-playing-cover--fallback"
                 iconSize={22}
               />
@@ -470,7 +653,7 @@ export const MusicPlayerTool: React.FC = () => {
               <div className="music-player-tool__title">
                 {isReadingMode
                   ? (playback.activeTitle || (isReadingPlaybackSource(activeReadingItem) ? activeReadingItem.title : '未选择朗读'))
-                  : (playback.activeTitle || displayAsset?.name || '未选择音频')}
+                  : (playback.activeTitle || displayAsset?.name || fallbackTrackItem?.title || '未选择音频')}
               </div>
               <div className="music-player-tool__subtitle">
                 {playback.activePlaylistName || (
@@ -505,8 +688,8 @@ export const MusicPlayerTool: React.FC = () => {
                     void playback.resumePlayback();
                   } else if (playback.activeAudioUrl) {
                     void playback.resumePlayback();
-                  } else if (fallbackAsset) {
-                    void handlePlayAsset(fallbackAsset.id);
+                  } else if (fallbackTrackItem) {
+                    void handlePlayListItem(fallbackTrackItem);
                   } else {
                     return;
                   }
@@ -514,7 +697,7 @@ export const MusicPlayerTool: React.FC = () => {
                 disabled={
                   isReadingMode
                     ? !playback.activeReadingSourceId
-                    : !playback.activeAudioUrl && !fallbackAsset
+                    : !playback.activeAudioUrl && !fallbackTrackItem
                 }
                 aria-label={playback.playing ? '暂停' : '播放'}
                 data-tooltip={playback.playing ? '暂停' : '播放'}
@@ -609,7 +792,7 @@ export const MusicPlayerTool: React.FC = () => {
                 value={query}
                 onChange={(value) => setQuery(String(value))}
                 prefixIcon={<Search size={14} />}
-                placeholder="搜索素材库音频"
+                placeholder={selectedPlaylistId === AUDIO_PLAYLIST_ALL_ID ? '搜索素材库音频' : '搜索当前播放列表'}
                 clearable
               />
             </div>
@@ -623,35 +806,22 @@ export const MusicPlayerTool: React.FC = () => {
           <div className="music-player-tool__list">
             <MusicPlayerQueueList
               showPlaybackQueue={shouldShowPlaybackQueue}
-              isReadingMode={isReadingMode}
-              isAllTracksTab={isAllTracksTab}
               queueListItems={queueListItems}
-              audioAssetItems={audioAssets.map((asset) => ({
-                id: asset.id,
-                title: asset.name,
-                subtitle: formatTrackSubtitle(
-                  resolvedAudioAssetDurations.get(asset.url),
-                  asset.createdAt
-                ),
-                previewImageUrl: asset.thumbnail,
-                isActive: activeAssetId === asset.id,
-                isPlaying: activeAssetId === asset.id && playback.playing,
-                isFavorite: favoriteAssetIds.has(asset.id),
-                canFavorite: true,
-              }))}
-              queue={playback.queue}
-              assets={assets}
-              activeReadingSourceId={playback.activeReadingSourceId}
-              playing={playback.playing}
-              getQueueItemId={getQueueItemId}
+              listItems={currentListItems}
+              emptyLabel={
+                selectedPlaylistId === AUDIO_PLAYLIST_ALL_TRACKS_ID
+                  ? '知识库还没有笔记'
+                  : selectedPlaylistId === AUDIO_PLAYLIST_ALL_ID
+                    ? '当前列表里还没有音频'
+                    : '当前播放列表里还没有内容'
+              }
               onPlayQueueItem={(itemId) => void handlePlayQueueItem(itemId)}
-              onPlayAsset={(assetId) => void handlePlayAsset(assetId)}
-              onContextMenu={(assetId, x, y) =>
-                setContextMenu({ x, y, assetId })
+              onPlayListItem={(item) => void handlePlayListItem(item)}
+              onContextMenu={(item, x, y) =>
+                setContextMenu({ x, y, item })
               }
               onToggleFavorite={(assetId) => void toggleFavorite(assetId)}
-              onSetReadingQueue={playback.setReadingQueue}
-              onToggleReadingPlayback={playback.toggleReadingPlayback}
+              onOpenKnowledgeBase={openKnowledgeBaseNote}
             />
           </div>
         </div>
@@ -691,8 +861,8 @@ export const MusicPlayerTool: React.FC = () => {
             await renamePlaylist(editingPlaylistId, playlistName);
           } else {
             const playlist = await createPlaylist(playlistName);
-            if (pendingAssetId) {
-              await addAssetToPlaylist(pendingAssetId, playlist.id);
+            if (pendingPlaylistItem) {
+              await addItemToPlaylist(pendingPlaylistItem, playlist.id);
             }
             setSelectedPlaylistId(playlist.id);
           }
@@ -716,12 +886,12 @@ export const MusicPlayerTool: React.FC = () => {
         playlistItems={playlistItems}
         favoriteAssetIds={favoriteAssetIds}
         selectedPlaylistId={selectedPlaylistId === AUDIO_PLAYLIST_ALL_ID ? null : selectedPlaylistId}
-        currentPlaylistAssetIds={currentPlaylistAssetIds}
+        currentPlaylistItemKeys={currentPlaylistItemKeys}
         onClose={() => setContextMenu(null)}
         onToggleFavorite={(assetId) => void toggleFavorite(assetId)}
-        onAddToPlaylist={(assetId, playlistId) => void addAssetToPlaylist(assetId, playlistId)}
-        onRemoveFromPlaylist={(assetId, playlistId) => void removeAssetFromPlaylist(assetId, playlistId)}
-        onCreatePlaylistAndAdd={(assetId) => openCreatePlaylistDialog(assetId)}
+        onAddToPlaylist={(item, playlistId) => void addItemToPlaylist(item, playlistId)}
+        onRemoveFromPlaylist={(item, playlistId) => void removeItemFromPlaylist(item, playlistId)}
+        onCreatePlaylistAndAdd={(item) => openCreatePlaylistDialog(item)}
       />
     </div>
   );

@@ -1,8 +1,13 @@
 import localforage from 'localforage';
 import {
   AUDIO_PLAYLIST_FAVORITES_ID,
+  createAudioPlaylistItem,
+  getAudioPlaylistItemRef,
+  isAudioPlaylistAssetItemRef,
+  isSameAudioPlaylistItemRef,
   type AudioPlaylist,
   type AudioPlaylistItem,
+  type AudioPlaylistItemRef,
 } from '../types/audio-playlist.types';
 
 const PLAYLIST_META_STORE = 'audio_playlists';
@@ -163,7 +168,10 @@ class AudioPlaylistService {
     await this.playlistItemsStore!.removeItem(playlistId);
   }
 
-  async addAssetToPlaylist(assetId: string, playlistId: string): Promise<void> {
+  async addItemToPlaylist(
+    itemRef: AudioPlaylistItemRef,
+    playlistId: string
+  ): Promise<void> {
     this.ensureInitialized();
     const playlist = await this.playlistStore!.getItem<AudioPlaylist>(
       playlistId
@@ -171,18 +179,51 @@ class AudioPlaylistService {
     if (!playlist) {
       throw new Error('播放列表不存在');
     }
+    if (playlistId === AUDIO_PLAYLIST_FAVORITES_ID && !isAudioPlaylistAssetItemRef(itemRef)) {
+      throw new Error('收藏仅支持音频素材');
+    }
+
     const items = await this.getPlaylistItems(playlistId);
-    if (items.some((item) => item.assetId === assetId)) {
+    if (
+      items.some((item) => {
+        const existingRef = getAudioPlaylistItemRef(item);
+        return existingRef ? isSameAudioPlaylistItemRef(existingRef, itemRef) : false;
+      })
+    ) {
       return;
     }
+
     const nextItems: AudioPlaylistItem[] = [
-      {
-        playlistId,
-        assetId,
-        addedAt: this.getNow(),
-      },
+      createAudioPlaylistItem(playlistId, itemRef, this.getNow()),
       ...items,
     ];
+    await this.playlistItemsStore!.setItem(playlistId, nextItems);
+    await this.playlistStore!.setItem(playlistId, {
+      ...playlist,
+      updatedAt: this.getNow(),
+    });
+  }
+
+  async addAssetToPlaylist(assetId: string, playlistId: string): Promise<void> {
+    await this.addItemToPlaylist({ kind: 'asset', assetId }, playlistId);
+  }
+
+  async removeItemFromPlaylist(
+    itemRef: AudioPlaylistItemRef,
+    playlistId: string
+  ): Promise<void> {
+    this.ensureInitialized();
+    const playlist = await this.playlistStore!.getItem<AudioPlaylist>(
+      playlistId
+    );
+    if (!playlist) {
+      return;
+    }
+    const items = await this.getPlaylistItems(playlistId);
+    const nextItems = items.filter((item) => {
+      const existingRef = getAudioPlaylistItemRef(item);
+      return existingRef ? !isSameAudioPlaylistItemRef(existingRef, itemRef) : true;
+    });
     await this.playlistItemsStore!.setItem(playlistId, nextItems);
     await this.playlistStore!.setItem(playlistId, {
       ...playlist,
@@ -194,20 +235,7 @@ class AudioPlaylistService {
     assetId: string,
     playlistId: string
   ): Promise<void> {
-    this.ensureInitialized();
-    const playlist = await this.playlistStore!.getItem<AudioPlaylist>(
-      playlistId
-    );
-    if (!playlist) {
-      return;
-    }
-    const items = await this.getPlaylistItems(playlistId);
-    const nextItems = items.filter((item) => item.assetId !== assetId);
-    await this.playlistItemsStore!.setItem(playlistId, nextItems);
-    await this.playlistStore!.setItem(playlistId, {
-      ...playlist,
-      updatedAt: this.getNow(),
-    });
+    await this.removeItemFromPlaylist({ kind: 'asset', assetId }, playlistId);
   }
 
   async removeAssetFromAllPlaylists(assetId: string): Promise<void> {
@@ -221,15 +249,21 @@ class AudioPlaylistService {
 
   async toggleFavorite(assetId: string): Promise<boolean> {
     const items = await this.getPlaylistItems(AUDIO_PLAYLIST_FAVORITES_ID);
-    const exists = items.some((item) => item.assetId === assetId);
+    const exists = items.some((item) => {
+      const ref = getAudioPlaylistItemRef(item);
+      return ref ? isSameAudioPlaylistItemRef(ref, { kind: 'asset', assetId }) : false;
+    });
     if (exists) {
-      await this.removeAssetFromPlaylist(
-        assetId,
+      await this.removeItemFromPlaylist(
+        { kind: 'asset', assetId },
         AUDIO_PLAYLIST_FAVORITES_ID
       );
       return false;
     }
-    await this.addAssetToPlaylist(assetId, AUDIO_PLAYLIST_FAVORITES_ID);
+    await this.addItemToPlaylist(
+      { kind: 'asset', assetId },
+      AUDIO_PLAYLIST_FAVORITES_ID
+    );
     return true;
   }
 }

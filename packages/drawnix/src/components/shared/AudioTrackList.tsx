@@ -1,7 +1,8 @@
 import React from 'react';
 import classNames from 'classnames';
-import { Heart, Pause, Play } from 'lucide-react';
+import { BookOpen, Heart, Pause, Play } from 'lucide-react';
 import { AudioCover } from './AudioCover';
+import type { AudioPlaylistItemRef } from '../../types/audio-playlist.types';
 import './audio-track-list.scss';
 
 export interface AudioTrackListItem {
@@ -13,6 +14,9 @@ export interface AudioTrackListItem {
   isPlaying?: boolean;
   isFavorite?: boolean;
   canFavorite?: boolean;
+  assetId?: string;
+  noteId?: string;
+  playlistItemRef?: AudioPlaylistItemRef;
 }
 
 interface AudioTrackListProps {
@@ -25,6 +29,7 @@ interface AudioTrackListProps {
   showPlaybackIndicator?: boolean;
   className?: string;
   itemClassName?: string;
+  onOpenKnowledgeBase?: (noteId: string) => void;
 }
 
 export const AudioTrackList: React.FC<AudioTrackListProps> = ({
@@ -37,6 +42,7 @@ export const AudioTrackList: React.FC<AudioTrackListProps> = ({
   showPlaybackIndicator = false,
   className,
   itemClassName,
+  onOpenKnowledgeBase,
 }) => {
   return (
     <div className={classNames('audio-track-list', className)}>
@@ -76,6 +82,17 @@ export const AudioTrackList: React.FC<AudioTrackListProps> = ({
               onClick={(event) => event.stopPropagation()}
               onPointerDown={(event) => event.stopPropagation()}
             >
+              {item.noteId && onOpenKnowledgeBase ? (
+                <button
+                  type="button"
+                  className="audio-track-list__action-btn"
+                  onClick={() => onOpenKnowledgeBase(item.noteId!)}
+                  aria-label="打开知识库笔记"
+                  title="打开知识库笔记"
+                >
+                  <BookOpen size={14} />
+                </button>
+              ) : null}
               {showFavoriteButton && item.canFavorite !== false ? (
                 <button
                   type="button"

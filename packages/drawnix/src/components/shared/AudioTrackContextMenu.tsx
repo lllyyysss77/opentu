@@ -1,6 +1,15 @@
 import React from 'react';
 import { Heart, ListMusic, Plus, XSquare } from 'lucide-react';
-import type { AudioPlaylist, AudioPlaylistItem } from '../../types/audio-playlist.types';
+import type {
+  AudioPlaylist,
+  AudioPlaylistItem,
+  AudioPlaylistItemRef,
+} from '../../types/audio-playlist.types';
+import {
+  getAudioPlaylistItemRef,
+  getAudioPlaylistItemRefKey,
+  isAudioPlaylistAssetItemRef,
+} from '../../types/audio-playlist.types';
 import {
   ContextMenu,
   type ContextMenuEntry,
@@ -10,18 +19,18 @@ interface AudioTrackContextMenuProps {
   contextMenu: {
     x: number;
     y: number;
-    assetId: string;
+    item: AudioPlaylistItemRef;
   } | null;
   playlists: AudioPlaylist[];
   playlistItems: Record<string, AudioPlaylistItem[]>;
   favoriteAssetIds: Set<string>;
   selectedPlaylistId?: string | null;
-  currentPlaylistAssetIds?: Set<string>;
+  currentPlaylistItemKeys?: Set<string>;
   onClose: () => void;
   onToggleFavorite: (assetId: string) => void;
-  onAddToPlaylist: (assetId: string, playlistId: string) => void;
-  onRemoveFromPlaylist?: (assetId: string, playlistId: string) => void;
-  onCreatePlaylistAndAdd: (assetId: string) => void;
+  onAddToPlaylist: (item: AudioPlaylistItemRef, playlistId: string) => void;
+  onRemoveFromPlaylist?: (item: AudioPlaylistItemRef, playlistId: string) => void;
+  onCreatePlaylistAndAdd: (item: AudioPlaylistItemRef) => void;
 }
 
 export const AudioTrackContextMenu: React.FC<AudioTrackContextMenuProps> = ({
@@ -30,7 +39,7 @@ export const AudioTrackContextMenu: React.FC<AudioTrackContextMenuProps> = ({
   playlistItems,
   favoriteAssetIds,
   selectedPlaylistId,
-  currentPlaylistAssetIds,
+  currentPlaylistItemKeys,
   onClose,
   onToggleFavorite,
   onAddToPlaylist,
@@ -41,37 +50,42 @@ export const AudioTrackContextMenu: React.FC<AudioTrackContextMenuProps> = ({
     return null;
   }
 
-  const items: ContextMenuEntry<string>[] = [
-    {
+  const items: ContextMenuEntry<AudioPlaylistItemRef>[] = [];
+
+  if (isAudioPlaylistAssetItemRef(contextMenu.item)) {
+    items.push({
       key: 'favorite',
-      label: (assetId) => (favoriteAssetIds.has(assetId) ? '取消收藏' : '加入收藏'),
+      label: (item) => (favoriteAssetIds.has(item.assetId) ? '取消收藏' : '加入收藏'),
       icon: <Heart size={14} />,
-      onSelect: (assetId) => onToggleFavorite(assetId),
-    },
+      onSelect: (item) => onToggleFavorite(item.assetId),
+    });
+  }
+
+  items.push(
     {
       key: 'playlist-actions',
       type: 'submenu',
       label: '添加到播放列表',
       icon: <ListMusic size={14} />,
-      children: (assetId) =>
+      children: (itemRef) =>
         playlists.map((playlist) => {
-          const exists = (playlistItems[playlist.id] || []).some(
-            (item) => item.assetId === assetId
-          );
+          const exists = (playlistItems[playlist.id] || [])
+            .map((item) => getAudioPlaylistItemRef(item))
+            .some((item) => item ? getAudioPlaylistItemRefKey(item) === getAudioPlaylistItemRefKey(itemRef) : false);
           return {
             key: `playlist-${playlist.id}`,
             label: exists ? `已在 ${playlist.name}` : `添加到 ${playlist.name}`,
             icon: <ListMusic size={14} />,
             disabled: exists,
-            onSelect: () => onAddToPlaylist(assetId, playlist.id),
+            onSelect: () => onAddToPlaylist(itemRef, playlist.id),
           };
         }),
     },
-  ];
+  );
 
   if (
     selectedPlaylistId &&
-    currentPlaylistAssetIds?.has(contextMenu.assetId) &&
+    currentPlaylistItemKeys?.has(getAudioPlaylistItemRefKey(contextMenu.item)) &&
     onRemoveFromPlaylist
   ) {
     items.push({
@@ -79,7 +93,7 @@ export const AudioTrackContextMenu: React.FC<AudioTrackContextMenuProps> = ({
       label: '从当前播放列表移除',
       icon: <XSquare size={14} />,
       danger: true,
-      onSelect: (assetId) => onRemoveFromPlaylist(assetId, selectedPlaylistId),
+      onSelect: (item) => onRemoveFromPlaylist(item, selectedPlaylistId),
     });
   }
 
@@ -87,7 +101,7 @@ export const AudioTrackContextMenu: React.FC<AudioTrackContextMenuProps> = ({
     key: 'create-playlist',
     label: '新建播放列表并添加',
     icon: <Plus size={14} />,
-    onSelect: (assetId) => onCreatePlaylistAndAdd(assetId),
+    onSelect: (item) => onCreatePlaylistAndAdd(item),
   });
 
   return (
@@ -95,7 +109,7 @@ export const AudioTrackContextMenu: React.FC<AudioTrackContextMenuProps> = ({
       state={{
         x: contextMenu.x,
         y: contextMenu.y,
-        payload: contextMenu.assetId,
+        payload: contextMenu.item,
       }}
       items={items}
       onClose={onClose}

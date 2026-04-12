@@ -5,6 +5,7 @@ import {
   type CanvasAudioQueueSource,
   type CanvasAudioPlaybackState,
   type PlaybackMode,
+  type PlaybackQueueItem,
   type PlaybackRateMediaType,
 } from '../services/canvas-audio-playback-service';
 import type { ReadingPlaybackSource } from '../services/reading-playback-source';
@@ -21,8 +22,17 @@ export function useCanvasAudioPlaybackSelector<T>(
 
 export function useCanvasAudioPlaybackControls() {
   return useMemo(() => ({
-    setQueue: (queue: CanvasAudioPlaybackSource[]) =>
-      canvasAudioPlaybackService.setQueue(queue),
+    setQueue: (
+      queue: PlaybackQueueItem[],
+      options?: {
+        queueSource?: CanvasAudioQueueSource;
+        playlistId?: string;
+        playlistName?: string;
+        queueId?: string;
+        queueName?: string;
+      }
+    ) =>
+      canvasAudioPlaybackService.setQueue(queue, options),
     setReadingQueue: (queue: ReadingPlaybackSource[]) =>
       canvasAudioPlaybackService.setReadingQueue(queue),
     setPlaylistQueue: (
@@ -36,7 +46,7 @@ export function useCanvasAudioPlaybackControls() {
       }),
     togglePlaybackInQueue: (
       source: CanvasAudioPlaybackSource,
-      queue: CanvasAudioPlaybackSource[],
+      queue: PlaybackQueueItem[],
       options?: {
         queueSource?: CanvasAudioQueueSource;
         playlistId?: string;
