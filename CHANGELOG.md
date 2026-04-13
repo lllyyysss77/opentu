@@ -1,3 +1,19 @@
+## 0.6.24 (2026-04-13)
+
+### 🩹 Fixes
+
+- 收口 AI 视频弹窗受控模型同步环 ([6c1b074e](https://github.com/ljquan/aitu/commit/6c1b074e))
+- 移除视频尺寸 Select 以绕开 TDesign Option 更新环 ([40d2a72c](https://github.com/ljquan/aitu/commit/40d2a72c))
+- 补充 AI 视频弹窗调试标记并稳定图片标签依赖 ([33d9420e](https://github.com/ljquan/aitu/commit/33d9420e))
+
+### 🔧 Chores
+
+- 补充 AI 视频弹窗关键状态链路调试日志 ([316e3555](https://github.com/ljquan/aitu/commit/316e3555))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+
 ## 0.6.23 (2026-04-13)
 
 ### 🩹 Fixes

@@ -1,8 +1,10 @@
 {
-  "version": "0.6.23",
-  "buildTime": "2026-04-13T08:34:15.289Z",
+  "version": "0.6.24",
+  "buildTime": "2026-04-13T09:30:04.140Z",
   "gitCommit": "unknown",
   "changelog": [
-    "收口 iframe 下 AI 视频弹窗的剩余更新环"
+    "移除视频尺寸 Select 以绕开 TDesign Option 更新环",
+    "补充 AI 视频弹窗调试标记并稳定图片标签依赖",
+    "收口 AI 视频弹窗受控模型同步环"
   ]
 }

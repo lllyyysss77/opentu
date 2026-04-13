@@ -1,6 +1,23 @@
 {
   "versions": [
     {
+      "version": "0.6.24",
+      "date": "2026-04-13",
+      "changes": {
+        "features": [],
+        "fixes": [
+          "收口 AI 视频弹窗受控模型同步环",
+          "移除视频尺寸 Select 以绕开 TDesign Option 更新环",
+          "补充 AI 视频弹窗调试标记并稳定图片标签依赖"
+        ],
+        "improvements": [
+          "补充 AI 视频弹窗关键状态链路调试日志"
+        ]
+      },
+      "type": "patch",
+      "highlights": "收口 AI 视频弹窗受控模型同步环"
+    },
+    {
       "version": "0.6.23",
       "date": "2026-04-13",
       "changes": {
