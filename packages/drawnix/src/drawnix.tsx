@@ -909,12 +909,14 @@ export const Drawnix: React.FC<DrawnixProps> = ({
                         onCreateProjectForMemory={handleCreateProjectForMemory}
                         currentBoardId={currentBoardId}
                       />
-                      <Suspense fallback={null}>
-                        <MediaLibraryModal
-                          isOpen={mediaLibraryOpen}
-                          onClose={() => setMediaLibraryOpen(false)}
-                        />
-                      </Suspense>
+                      {mediaLibraryOpen && (
+                        <Suspense fallback={null}>
+                          <MediaLibraryModal
+                            isOpen={mediaLibraryOpen}
+                            onClose={() => setMediaLibraryOpen(false)}
+                          />
+                        </Suspense>
+                      )}
                         </DrawnixContext.Provider>
                       </WorkflowProvider>
                     </ChatDrawerProvider>
@@ -1651,12 +1653,14 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
             onBoardSwitch={onBoardSwitch}
           />
         </Suspense>
-        <Suspense fallback={null}>
-          <ToolboxDrawer
-            isOpen={toolboxDrawerOpen}
-            onOpenChange={setToolboxDrawerOpen}
-          />
-        </Suspense>
+        {toolboxDrawerOpen && (
+          <Suspense fallback={null}>
+            <ToolboxDrawer
+              isOpen={toolboxDrawerOpen}
+              onOpenChange={setToolboxDrawerOpen}
+            />
+          </Suspense>
+        )}
       </div>
     </div>
   );

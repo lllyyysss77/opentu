@@ -3429,13 +3429,15 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
           </div>
         </div>
 
-        <MediaLibraryModal
-          isOpen={showMediaLibrary}
-          onClose={() => setShowMediaLibrary(false)}
-          mode={SelectionMode.SELECT}
-          filterType={AssetType.IMAGE}
-          onSelect={handleMediaLibrarySelect}
-        />
+        {showMediaLibrary && (
+          <MediaLibraryModal
+            isOpen={showMediaLibrary}
+            onClose={() => setShowMediaLibrary(false)}
+            mode={SelectionMode.SELECT}
+            filterType={AssetType.IMAGE}
+            onSelect={handleMediaLibrarySelect}
+          />
+        )}
       </div>
     );
   }

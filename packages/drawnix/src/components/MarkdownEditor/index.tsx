@@ -465,7 +465,7 @@ export const MarkdownEditor = memo(forwardRef<MarkdownEditorRef, MarkdownEditorP
           />
         )}
 
-        {canUseAssetLibraryImagePicker && (
+        {canUseAssetLibraryImagePicker && isImageAssetLibraryOpen && (
           <MediaLibraryModal
             isOpen={isImageAssetLibraryOpen}
             onClose={() => {

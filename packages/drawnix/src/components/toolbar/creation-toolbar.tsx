@@ -789,7 +789,7 @@ export const CreationToolbar: React.FC<ToolbarSectionProps> = ({
   );
 
   // 素材库弹窗
-  const mediaLibraryModal = (
+  const mediaLibraryModal = mediaLibraryOpen ? (
     <MediaLibraryModal
       isOpen={mediaLibraryOpen}
       onClose={handleCloseMediaLibrary}
@@ -797,7 +797,7 @@ export const CreationToolbar: React.FC<ToolbarSectionProps> = ({
       onSelect={handleInsertAsset}
       selectButtonText="插入"
     />
-  );
+  ) : null;
 
   if (embedded) {
     return (

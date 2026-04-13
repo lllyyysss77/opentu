@@ -485,13 +485,15 @@ setOutputType((note.metadata?.outputType as 'image' | 'text' | 'video' | 'ppt' |
         </div>
       )}
 
-      <MediaLibraryModal
-        isOpen={isMediaLibraryOpen}
-        onClose={() => setIsMediaLibraryOpen(false)}
-        mode={SelectionMode.SELECT}
-        onSelect={handleInsertAsset}
-        selectButtonText="插入到笔记"
-      />
+      {isMediaLibraryOpen && (
+        <MediaLibraryModal
+          isOpen={isMediaLibraryOpen}
+          onClose={() => setIsMediaLibraryOpen(false)}
+          mode={SelectionMode.SELECT}
+          onSelect={handleInsertAsset}
+          selectButtonText="插入到笔记"
+        />
+      )}
     </div>
   );
 };

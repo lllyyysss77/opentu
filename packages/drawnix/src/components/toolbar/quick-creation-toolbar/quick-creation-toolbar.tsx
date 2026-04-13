@@ -406,15 +406,17 @@ export const QuickCreationToolbar: React.FC<QuickCreationToolbarProps> = ({
       </Island>
 
       {/* 素材库弹窗 */}
-      <MediaLibraryModal
-        isOpen={mediaLibraryOpen}
-        onClose={() => {
-          setMediaLibraryOpen(false);
-        }}
-        mode={SelectionMode.SELECT}
-        onSelect={handleInsertAsset}
-        selectButtonText={t('toolbar.insert' as any) || '插入'}
-      />
+      {mediaLibraryOpen && (
+        <MediaLibraryModal
+          isOpen={mediaLibraryOpen}
+          onClose={() => {
+            setMediaLibraryOpen(false);
+          }}
+          mode={SelectionMode.SELECT}
+          onSelect={handleInsertAsset}
+          selectButtonText={t('toolbar.insert' as any) || '插入'}
+        />
+      )}
     </>
   );
 };

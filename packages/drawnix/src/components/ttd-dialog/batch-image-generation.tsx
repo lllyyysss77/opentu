@@ -3402,16 +3402,18 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
       </Dialog>
 
       {/* 素材库选择弹窗 */}
-      <MediaLibraryModal
-        isOpen={showMediaLibrary}
-        onClose={() => {
-          setShowMediaLibrary(false);
-          setMediaLibraryTargetRow(null);
-        }}
-        mode={SelectionMode.SELECT}
-        filterType={AssetType.IMAGE}
-        onSelect={handleMediaLibrarySelect}
-      />
+      {showMediaLibrary && (
+        <MediaLibraryModal
+          isOpen={showMediaLibrary}
+          onClose={() => {
+            setShowMediaLibrary(false);
+            setMediaLibraryTargetRow(null);
+          }}
+          mode={SelectionMode.SELECT}
+          filterType={AssetType.IMAGE}
+          onSelect={handleMediaLibrarySelect}
+        />
+      )}
     </div>
   );
 };
