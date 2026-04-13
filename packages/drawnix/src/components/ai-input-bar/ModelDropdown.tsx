@@ -529,9 +529,13 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
       }
     }
 
-    // 确保 activeVendor 有效
-    if (activeProvider) {
-      const validVendors = activeProvider.vendorCategories.map(
+    // 确保 activeVendor 有效（内联计算 activeProvider 避免循环依赖）
+    const currentProvider =
+      providerGroups.find((g) => g.providerId === activeProviderId) ||
+      providerGroups[0] ||
+      null;
+    if (currentProvider) {
+      const validVendors = currentProvider.vendorCategories.map(
         (c) => c.vendor
       );
       if (!activeVendor || !validVendors.includes(activeVendor as ModelVendor)) {
@@ -541,7 +545,6 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
   }, [
     providerGroups,
     activeProviderId,
-    activeProvider,
     activeVendor,
     isSearching,
     selectedProviderHint,

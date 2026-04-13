@@ -331,8 +331,18 @@ const AIImageGeneration = ({
       currentModelRef
     );
     if (!matchedModel) {
-      setCurrentModel(visibleImageModels[0].id);
-      setCurrentModelRef(getModelRefFromConfig(visibleImageModels[0]));
+      const fallback = visibleImageModels[0];
+      setCurrentModel(fallback.id);
+      // 避免每次创建新对象引用导致级联重渲染
+      const nextRef = getModelRefFromConfig(fallback);
+      setCurrentModelRef(prev => {
+        if (prev && nextRef &&
+            prev.profileId === nextRef.profileId &&
+            prev.modelId === nextRef.modelId) {
+          return prev;
+        }
+        return nextRef;
+      });
     }
   }, [currentModel, currentModelRef, visibleImageModels]);
 
@@ -352,9 +362,15 @@ const AIImageGeneration = ({
         selectedModel,
         selectedModelRef
       );
-      setCurrentModelRef(
-        getModelRefFromConfig(matchedModel) || selectedModelRef || null
-      );
+      const nextRef = getModelRefFromConfig(matchedModel) || selectedModelRef || null;
+      setCurrentModelRef(prev => {
+        if (prev && nextRef &&
+            prev.profileId === nextRef.profileId &&
+            prev.modelId === nextRef.modelId) {
+          return prev;
+        }
+        return nextRef;
+      });
     }
   }, [
     currentModel,
