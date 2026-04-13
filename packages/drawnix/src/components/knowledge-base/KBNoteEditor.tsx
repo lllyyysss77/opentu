@@ -12,6 +12,7 @@ import {
   Volume2,
   VolumeX,
   Download,
+  Paperclip,
   ChevronDown,
   ChevronRight,
   Globe,
@@ -22,13 +23,17 @@ import {
   Lock,
 } from 'lucide-react';
 import { MarkdownEditor, MarkdownEditorRef } from '../MarkdownEditor';
+import { MediaLibraryModal } from '../media-library';
 import { KBTagSelector } from './KBTagSelector';
 import { McpToolSelector } from './McpToolSelector';
 import { useCanvasAudioPlayback } from '../../hooks/useCanvasAudioPlayback';
 import { knowledgeBaseService } from '../../services/knowledge-base-service';
 import { openMusicPlayerToolAndPlay } from '../../services/tool-launch-service';
 import { createReadingPlaybackSource } from '../../services/reading-playback-source';
+import { buildAssetEmbedMarkdown } from '../../utils/markdown-asset-embeds';
 import './knowledge-base-editor.scss';
+import type { Asset } from '../../types/asset.types';
+import { SelectionMode } from '../../types/asset.types';
 import type { KBNote, KBTag, KBTagWithCount } from '../../types/knowledge-base.types';
 
 interface KBNoteEditorProps {
@@ -66,6 +71,7 @@ export const KBNoteEditor: React.FC<KBNoteEditorProps> = ({
 }) => {
   const [title, setTitle] = useState('');
   const [metadataCollapsed, setMetadataCollapsed] = useState(false);
+  const [isMediaLibraryOpen, setIsMediaLibraryOpen] = useState(false);
   /** DSL 解析状态：null=不显示, true=符合规范, false=不符合规范 */
   const [isDSLContent, setIsDSLContent] = useState<boolean | null>(null);
   const dslCheckTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -238,6 +244,16 @@ setOutputType((note.metadata?.outputType as 'image' | 'text' | 'video' | 'ppt' |
     URL.revokeObjectURL(url);
   }, [note]);
 
+  const handleOpenMediaLibrary = useCallback(() => {
+    if (readOnly) return;
+    setIsMediaLibraryOpen(true);
+  }, [readOnly]);
+
+  const handleInsertAsset = useCallback((asset: Asset) => {
+    editorRef.current?.insertMarkdown(buildAssetEmbedMarkdown(asset));
+    setIsMediaLibraryOpen(false);
+  }, []);
+
   // 清理定时器
   useEffect(() => {
     return () => {
@@ -311,6 +327,15 @@ setOutputType((note.metadata?.outputType as 'image' | 'text' | 'video' | 'ppt' |
           >
             <Download size={14} />
           </button>
+          {!readOnly && (
+            <button
+              className="kb-note-editor__action-btn"
+              onClick={handleOpenMediaLibrary}
+              title="插入素材"
+            >
+              <Paperclip size={14} />
+            </button>
+          )}
         </div>
       </div>
 
@@ -444,6 +469,8 @@ setOutputType((note.metadata?.outputType as 'image' | 'text' | 'video' | 'ppt' |
           placeholder="开始写点什么..."
           showModeSwitch={!readOnly}
           readOnly={readOnly}
+          enableAssetEmbeds={true}
+          enableAssetLibraryImagePicker={!readOnly}
           className="kb-note-markdown"
         />
       </div>
@@ -457,6 +484,14 @@ setOutputType((note.metadata?.outputType as 'image' | 'text' | 'video' | 'ppt' |
           }
         </div>
       )}
+
+      <MediaLibraryModal
+        isOpen={isMediaLibraryOpen}
+        onClose={() => setIsMediaLibraryOpen(false)}
+        mode={SelectionMode.SELECT}
+        onSelect={handleInsertAsset}
+        selectButtonText="插入到笔记"
+      />
     </div>
   );
 };

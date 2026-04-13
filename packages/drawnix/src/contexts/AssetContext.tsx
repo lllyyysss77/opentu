@@ -13,6 +13,7 @@ import {
   useState,
   useCallback,
   useMemo,
+  useRef,
   ReactNode,
   useEffect,
 } from 'react';
@@ -20,7 +21,10 @@ import { MessagePlugin } from 'tdesign-react';
 import { assetStorageService } from '../services/asset-storage-service';
 import { taskQueueService } from '../services/task-queue';
 import { taskStorageReader } from '../services/task-storage-reader';
-import { unifiedCacheService } from '../services/unified-cache-service';
+import {
+  unifiedCacheService,
+  type CachedMedia,
+} from '../services/unified-cache-service';
 import { getStorageStatus } from '../utils/storage-quota';
 import { getAssetSizeFromCache } from '../hooks/useAssetSize';
 import type {
@@ -35,6 +39,7 @@ import { AssetType as AssetTypeEnum, AssetSource as AssetSourceEnum, DEFAULT_FIL
 import { TaskStatus, TaskType } from '../types/task.types';
 import { AssetContext } from './asset-context-instance';
 import { audioPlaylistService } from '../services/audio-playlist-service';
+import { setGlobalAssetMap } from '../stores/asset-map-store';
 import {
   getAssetContentHash,
   getLocalAssetGroupKey,
@@ -67,9 +72,11 @@ interface CacheAssetTaskContext {
   completedTaskUrls: Set<string>;
 }
 
-function isPlaybackCachePollution(item: {
-  metadata?: { source?: string; name?: string };
-}, filename: string, isAudio: boolean): boolean {
+function isPlaybackCachePollution(
+  item: Pick<CachedMedia, 'metadata'>,
+  filename: string,
+  isAudio: boolean
+): boolean {
   if (!isAudio) {
     return false;
   }
@@ -202,6 +209,9 @@ export function AssetProvider({ children }: AssetProviderProps) {
   // 同步状态 - 已同步到 Gist 的 URL 集合
   const [syncedUrls, setSyncedUrls] = useState<Set<string>>(new Set());
 
+  // ref 供初始化 effect 延迟调用 loadAssets
+  const loadAssetsRef = useRef<(() => void) | null>(null);
+
   /**
    * Initialize service on mount
    * 组件挂载时初始化服务
@@ -211,6 +221,8 @@ export function AssetProvider({ children }: AssetProviderProps) {
       try {
         await assetStorageService.initialize();
         await audioPlaylistService.initialize();
+        // 初始化完成后自动加载资产到 global store，供画布卡片等脱离 Context 的组件使用
+        loadAssetsRef.current?.();
       } catch (err) {
         console.error('Failed to initialize asset storage service:', err);
         const error = err as Error;
@@ -495,6 +507,9 @@ export function AssetProvider({ children }: AssetProviderProps) {
       setLoading(false);
     }
   }, [taskToAsset, getAssetsFromCacheStorage]);
+
+  // 供初始化 effect 延迟调用
+  loadAssetsRef.current = loadAssets;
 
   /**
    * Check Storage Quota
@@ -963,6 +978,11 @@ export function AssetProvider({ children }: AssetProviderProps) {
       // 不设置错误状态，同步状态加载失败不影响主功能
     }
   }, []);
+
+  // 同步 assets 到模块级 store，供 CardElement 等脱离 Context 的组件使用
+  useEffect(() => {
+    setGlobalAssetMap(new Map(assets.map((a) => [a.id, a])));
+  }, [assets]);
 
   // Context value
   const value = useMemo<AssetContextValue>(

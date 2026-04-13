@@ -36,7 +36,7 @@ function preserveLineBreaks(text: string): string {
       result.push(line);
       continue;
     }
-    // 空行、标题、列表、引用、已有硬换行 → 不处理
+    // 空行、标题、列表、引用、已有硬换行、图片/素材引用 → 不处理
     const trimmed = line.trimEnd();
     if (
       trimmed === '' ||
@@ -44,6 +44,7 @@ function preserveLineBreaks(text: string): string {
       /^[-*+]\s/.test(trimmed) ||
       /^\d+\.\s/.test(trimmed) ||
       /^\s*>/.test(trimmed) ||
+      /^!\[.*\]\(.*\)/.test(trimmed) ||
       trimmed.endsWith('  ')
     ) {
       result.push(line);
@@ -211,6 +212,7 @@ export const CardElement: React.FC<CardElementProps> = ({ element }) => {
           markdown={displayBody}
           readOnly={true}
           showModeSwitch={false}
+          enableAssetEmbeds={true}
           className="card-markdown-viewer"
         />
       </div>

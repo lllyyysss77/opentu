@@ -8,6 +8,7 @@ import { PlaitBoard, PlaitElement, CoreTransforms } from '@plait/core';
 import { PlaitDrawElement } from '@plait/draw';
 import {
   ASSET_LIBRARY_URL_PREFIX,
+  CACHE_URL_PREFIX,
   isVirtualMediaUrl,
 } from './virtual-media-url';
 
