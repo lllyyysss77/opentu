@@ -1,3 +1,20 @@
+## 0.6.21 (2026-04-13)
+
+### 🚀 Features
+
+- 知识库素材嵌入 — Milkdown 自定义节点插件 ([fec0e2a9](https://github.com/ljquan/aitu/commit/fec0e2a9))
+
+### 🩹 Fixes
+
+- 修复媒体库弹窗条件渲染和音频封面URL处理 ([d13e108b](https://github.com/ljquan/aitu/commit/d13e108b))
+- 收口关闭态工具箱与素材库弹窗挂载，修复用户页 Hook 崩溃 ([45bfddb3](https://github.com/ljquan/aitu/commit/45bfddb3))
+- iframe 环境下打开 AI 图片生成弹窗 Maximum update depth exceeded ([8c5a11fc](https://github.com/ljquan/aitu/commit/8c5a11fc))
+- 避免 Milkdown 在 editorView 缺失时读取 markdown ([0d04c261](https://github.com/ljquan/aitu/commit/0d04c261))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+
 ## 0.6.20 (2026-04-13)
 
 ### 🚀 Features
