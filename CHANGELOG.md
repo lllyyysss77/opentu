@@ -1,3 +1,13 @@
+## 0.6.23 (2026-04-13)
+
+### 🩹 Fixes
+
+- 收口 iframe 下 AI 视频弹窗的剩余更新环 ([58bfc2a0](https://github.com/ljquan/aitu/commit/58bfc2a0))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+
 ## 0.6.22 (2026-04-13)
 
 ### 🩹 Fixes
