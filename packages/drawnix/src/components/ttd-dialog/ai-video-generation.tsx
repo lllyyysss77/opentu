@@ -134,6 +134,13 @@ function isAIVideoDebugEnabled(): boolean {
   }
 }
 
+function logAIVideoTrace(
+  label: string,
+  payload?: Record<string, unknown>
+): void {
+  console.warn(`[AIVideoGeneration][trace] ${label}`, payload || {});
+}
+
 interface AIVideoGenerationProps {
   initialPrompt?: string;
   initialImage?: ImageFile; // 保留单图片支持（向后兼容）
@@ -439,21 +446,58 @@ const AIVideoGeneration = ({
 
   const { language } = useI18n();
   const { createTask } = useTaskQueue();
+  const renderCountRef = React.useRef(0);
+  renderCountRef.current += 1;
+  logAIVideoTrace('render', {
+    renderCount: renderCountRef.current,
+    currentModel,
+    currentModelRef,
+    currentSelectionKey: getSelectionKey(currentModel, currentModelRef),
+    selectedModel,
+    selectedModelRef,
+    selectedSelectionKey: selectedModel
+      ? getSelectionKey(selectedModel, selectedModelRef)
+      : null,
+    duration,
+    size,
+    effectiveDuration,
+    effectiveSize,
+    videoSelectedParams,
+    allSelectedImagesCount: allSelectedImages.length,
+    uploadedImagesCount: uploadedImages.length,
+    storyboardEnabled,
+    storyboardScenesCount: storyboardScenes.length,
+  });
 
   // Sync model from global settings changes (from header dropdown)
   useEffect(() => {
     const handleSettingsChange = (newSettings: any) => {
       const newModel = newSettings.videoModelName || 'veo3';
       if (newModel !== currentModel) {
+        logAIVideoTrace('settings-change -> update currentModel', {
+          currentModel,
+          currentModelRef,
+          newModel,
+        });
         setCurrentModel(newModel);
         const matchedModel = findMatchingSelectableModel(
           visibleVideoModels,
           newModel,
           currentModelRef
         );
-        setCurrentModelRef(getModelRefFromConfig(matchedModel) || null);
+        const nextModelRef = getModelRefFromConfig(matchedModel) || null;
+        logAIVideoTrace('settings-change -> update currentModelRef', {
+          matchedModelId: matchedModel?.id || null,
+          nextModelRef,
+        });
+        setCurrentModelRef(nextModelRef);
       }
     };
+    logAIVideoTrace('register settings listener', {
+      currentModel,
+      currentModelRef,
+      visibleVideoModelsCount: visibleVideoModels.length,
+    });
     geminiSettings.addListener(handleSettingsChange);
     return () => geminiSettings.removeListener(handleSettingsChange);
   }, [currentModel, currentModelRef, visibleVideoModels]);
@@ -466,6 +510,12 @@ const AIVideoGeneration = ({
       currentModelRef
     );
     if (!matchedModel) {
+      logAIVideoTrace('visible models reconcile', {
+        currentModel,
+        currentModelRef,
+        fallbackModel: visibleVideoModels[0]?.id || null,
+        fallbackModelRef: getModelRefFromConfig(visibleVideoModels[0]),
+      });
       setCurrentModel(visibleVideoModels[0].id);
       setCurrentModelRef(getModelRefFromConfig(visibleVideoModels[0]));
     }
@@ -481,15 +531,27 @@ const AIVideoGeneration = ({
     const nextSelectionKey = getSelectionKey(selectedModel, selectedModelRef);
 
     if (currentSelectionKey !== nextSelectionKey) {
+      logAIVideoTrace('selectedModel prop sync', {
+        currentSelectionKey,
+        nextSelectionKey,
+        currentModel,
+        currentModelRef,
+        selectedModel,
+        selectedModelRef,
+      });
       setCurrentModel(selectedModel);
       const matchedModel = findMatchingSelectableModel(
         visibleVideoModels,
         selectedModel,
         selectedModelRef
       );
-      setCurrentModelRef(
-        getModelRefFromConfig(matchedModel) || selectedModelRef || null
-      );
+      const nextModelRef =
+        getModelRefFromConfig(matchedModel) || selectedModelRef || null;
+      logAIVideoTrace('selectedModel prop sync -> setCurrentModelRef', {
+        matchedModelId: matchedModel?.id || null,
+        nextModelRef,
+      });
+      setCurrentModelRef(nextModelRef);
     }
   }, [
     currentModel,
@@ -507,6 +569,7 @@ const AIVideoGeneration = ({
   useEffect(() => {
     if (isEditMode) {
       // In edit mode, don't reset parameters automatically
+      logAIVideoTrace('skip reset parameters because edit mode is active');
       setIsEditMode(false);
       return;
     }
@@ -530,6 +593,13 @@ const AIVideoGeneration = ({
     )
       ? scopedPreferences.size
       : scopedModelConfig.defaultSize;
+    logAIVideoTrace('restore scoped preferences', {
+      currentModel,
+      currentModelRef,
+      scopedPreferences,
+      nextDuration,
+      nextSize,
+    });
     setVideoSelectedParams((prev) =>
       areStringMapsEqual(prev, scopedPreferences.extraParams)
         ? prev
@@ -555,6 +625,11 @@ const AIVideoGeneration = ({
           )
         : [];
 
+    logAIVideoTrace('reconcile uploaded images', {
+      allSelectedImagesCount: allSelectedImages.length,
+      nextUploadedImagesCount: nextUploadedImages.length,
+      imageUploadConfig,
+    });
     setUploadedImages((prev) =>
       areUploadedImagesEqual(prev, nextUploadedImages) ? prev : nextUploadedImages
     );
@@ -566,6 +641,13 @@ const AIVideoGeneration = ({
   ]);
 
   useEffect(() => {
+    logAIVideoTrace('persist preferences', {
+      currentModel,
+      currentModelRef,
+      effectiveDuration,
+      effectiveSize,
+      videoSelectedParams,
+    });
     saveAIVideoToolPreferences({
       currentModel,
       currentSelectionKey: getSelectionKey(currentModel, currentModelRef),
@@ -653,11 +735,24 @@ const AIVideoGeneration = ({
     // Skip if we've already processed these exact props
     if (processedPropsRef.current === propsKey) {
       // console.log('AIVideoGeneration - skipping duplicate props processing');
+      logAIVideoTrace('skip initial props processing: duplicate propsKey', {
+        propsKey,
+      });
       return;
     }
 
     // console.log('AIVideoGeneration - processing new props:', { propsKey });
     processedPropsRef.current = propsKey;
+    logAIVideoTrace('process initial props', {
+      propsKey,
+      initialPrompt,
+      initialDuration,
+      initialModel,
+      initialSize,
+      initialResultUrl,
+      initialImagesCount: initialImages?.length || 0,
+      hasInitialImage: Boolean(initialImage),
+    });
 
     setPrompt(initialPrompt);
 
