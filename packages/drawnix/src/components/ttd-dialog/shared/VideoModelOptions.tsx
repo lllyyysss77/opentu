@@ -6,7 +6,7 @@
  */
 
 import React from 'react';
-import { Select, Radio } from 'tdesign-react';
+import { Radio } from 'tdesign-react';
 import type { VideoModel, VideoModelConfig } from '../../../types/video.types';
 import { getVideoModelConfig } from '../../../constants/video-model-config';
 import './VideoModelOptions.scss';
@@ -44,9 +44,8 @@ export const VideoModelOptions: React.FC<VideoModelOptionsProps> = ({
     value: opt.value,
   }));
 
-  // Convert size options to Select format
-  const sizeSelectOptions = sizeOptions.map(opt => ({
-    label: `${opt.label} (${opt.value})`,
+  const sizeRadioOptions = sizeOptions.map(opt => ({
+    label: opt.label,
     value: opt.value,
   }));
 
@@ -89,19 +88,30 @@ export const VideoModelOptions: React.FC<VideoModelOptionsProps> = ({
       <div className="video-model-options__row">
         <label className="video-model-options__label">尺寸</label>
         <div className="video-model-options__control">
-          <Select
-            value={normalizedSize}
-            onChange={(value) => {
-              const nextValue = value as string;
-              if (nextValue !== normalizedSize) {
-                onSizeChange(nextValue);
-              }
-            }}
-            disabled={disabled}
-            size="small"
-            options={sizeSelectOptions}
-            style={{ width: '200px' }}
-          />
+          {sizeOptions.length === 1 ? (
+            <span className="video-model-options__fixed-value">
+              {sizeOptions[0].label}
+            </span>
+          ) : (
+            <Radio.Group
+              value={normalizedSize}
+              onChange={(value) => {
+                const nextValue = value as string;
+                if (nextValue !== normalizedSize) {
+                  onSizeChange(nextValue);
+                }
+              }}
+              disabled={disabled}
+              variant="default-filled"
+              size="small"
+            >
+              {sizeRadioOptions.map(opt => (
+                <Radio.Button key={opt.value} value={opt.value}>
+                  {opt.label}
+                </Radio.Button>
+              ))}
+            </Radio.Group>
+          )}
         </div>
       </div>
     </div>
