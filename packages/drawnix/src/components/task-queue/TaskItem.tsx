@@ -73,6 +73,35 @@ function getVideoAnalyzerAction(task: Task): 'analyze' | 'rewrite' | null {
   return action === 'analyze' || action === 'rewrite' ? action : null;
 }
 
+function getVideoAnalyzerSubtitle(task: Task): string | null {
+  const action = getVideoAnalyzerAction(task);
+  if (action === 'analyze') {
+    const sourceLabel = normalizeNestedString(task.params.videoAnalyzerSourceLabel);
+    return sourceLabel || null;
+  }
+
+  if (action === 'rewrite') {
+    const prompt = normalizeNestedString(task.params.prompt);
+    if (!prompt) {
+      return null;
+    }
+    return prompt.replace(/^改编脚本：\s*/, '');
+  }
+
+  return null;
+}
+
+function getVideoAnalyzerTypeTag(task: Task): string | null {
+  const action = getVideoAnalyzerAction(task);
+  if (action === 'analyze') {
+    return '视频分析';
+  }
+  if (action === 'rewrite') {
+    return '脚本改编';
+  }
+  return null;
+}
+
 export interface TaskItemProps {
   /** The task to display */
   task: Task;
@@ -214,6 +243,8 @@ export const TaskItem: React.FC<TaskItemProps> = React.memo(({
   const lyricsPreview = getLyricsPreview(lyricsText);
   const lyricsTags = getLyricsTags(task.result);
   const videoAnalyzerAction = getVideoAnalyzerAction(task);
+  const videoAnalyzerSubtitle = getVideoAnalyzerSubtitle(task);
+  const videoAnalyzerTypeTag = getVideoAnalyzerTypeTag(task);
   const displayPrompt = isCharacterTask
     ? isCompleted && task.result?.characterUsername
       ? `@${task.result.characterUsername}`
@@ -503,6 +534,11 @@ export const TaskItem: React.FC<TaskItemProps> = React.memo(({
           <div className="task-item__prompt" title={task.params.prompt}>
             {displayPrompt}
           </div>
+          {isChatTask && videoAnalyzerSubtitle && (
+            <div className="task-item__subtitle" title={videoAnalyzerSubtitle}>
+              {videoAnalyzerSubtitle}
+            </div>
+          )}
         </div>
 
         {/* Info Area - Meta & Actions */}
@@ -520,6 +556,9 @@ export const TaskItem: React.FC<TaskItemProps> = React.memo(({
                   <Tag variant="outline" className="task-item__model-tag">
                     {task.params.model}
                   </Tag>
+                )}
+                {isChatTask && videoAnalyzerTypeTag && (
+                  <Tag variant="outline">{videoAnalyzerTypeTag}</Tag>
                 )}
                 {isKlingVideoTask && klingModelVersion && (
                   <Tag variant="outline">{klingModelVersion}</Tag>

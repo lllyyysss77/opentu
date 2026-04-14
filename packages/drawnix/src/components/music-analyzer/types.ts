@@ -1,4 +1,7 @@
-import type { MusicAnalysisData } from '../../services/music-analysis-service';
+import {
+  normalizeMusicAnalysisData,
+  type MusicAnalysisData,
+} from '../../services/music-analysis-service';
 import { createModelRef, type ModelRef } from '../../utils/settings-manager';
 
 export type { MusicAnalysisData };
@@ -83,34 +86,39 @@ export function readModelRef(
 }
 
 export function formatMusicAnalysisMarkdown(analysis: MusicAnalysisData): string {
+  const normalized = normalizeMusicAnalysisData(analysis);
   const lines = [
     '# 音频分析结果',
     '',
-    `**语言：** ${analysis.language || '-'}`,
-    `**情绪：** ${analysis.mood || '-'}`,
-    `**风格标签：** ${analysis.genreTags.join(', ') || '-'}`,
-    `**结构标签：** ${analysis.structure.join(' ') || '-'}`,
+    `**语言：** ${normalized.language || '-'}`,
+    `**情绪：** ${normalized.mood || '-'}`,
+    `**风格标签：** ${normalized.genreTags.join(', ') || '-'}`,
+    `**结构标签：** ${normalized.structure.join(' ') || '-'}`,
   ];
 
-  if (analysis.hook) {
-    lines.push(`**Hook：** ${analysis.hook}`);
+  if (normalized.hook) {
+    lines.push(`**Hook：** ${normalized.hook}`);
   }
 
-  lines.push('', '## 摘要', analysis.summary || '-');
-  lines.push('', '## 改写建议', analysis.lyricRewriteBrief || '-');
+  lines.push('', '## 摘要', normalized.summary || '-');
+  lines.push('', '## 改写建议', normalized.lyricRewriteBrief || '-');
 
-  if (analysis.titleSuggestions.length > 0) {
+  if (normalized.titleSuggestions.length > 0) {
     lines.push('', '## 标题建议');
-    analysis.titleSuggestions.forEach((item) => {
+    normalized.titleSuggestions.forEach((item) => {
       lines.push(`- ${item}`);
     });
   }
 
-  if (analysis.sunoTitle || analysis.sunoStyleTags.length > 0 || analysis.sunoLyricsDraft) {
+  if (
+    normalized.sunoTitle ||
+    normalized.sunoStyleTags.length > 0 ||
+    normalized.sunoLyricsDraft
+  ) {
     lines.push('', '## Suno 生成建议');
-    lines.push(`**推荐标题：** ${analysis.sunoTitle || '-'}`);
-    lines.push(`**推荐风格：** ${analysis.sunoStyleTags.join(', ') || '-'}`);
-    lines.push('', analysis.sunoLyricsDraft || '-');
+    lines.push(`**推荐标题：** ${normalized.sunoTitle || '-'}`);
+    lines.push(`**推荐风格：** ${normalized.sunoStyleTags.join(', ') || '-'}`);
+    lines.push('', normalized.sunoLyricsDraft || '-');
   }
 
   return lines.join('\n');

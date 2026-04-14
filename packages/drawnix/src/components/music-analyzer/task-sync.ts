@@ -8,7 +8,10 @@ import type {
 } from './types';
 import { addRecord, loadRecords, updateRecord } from './storage';
 import { parseLyricsRewriteResult, addLyricsVersionToRecord, createLyricsVersion } from './utils';
-import type { MusicAnalysisData } from '../../services/music-analysis-service';
+import {
+  normalizeMusicAnalysisData,
+  type MusicAnalysisData,
+} from '../../services/music-analysis-service';
 
 type MusicAnalyzerTaskAction = 'analyze' | 'rewrite' | 'lyrics-gen';
 
@@ -24,14 +27,14 @@ function getTaskChatResponse(task: Task): string {
 function parseAnalysisResult(task: Task): MusicAnalysisData {
   const structured = task.result?.analysisData;
   if (structured && typeof structured === 'object') {
-    return structured as MusicAnalysisData;
+    return normalizeMusicAnalysisData(structured);
   }
 
   const raw = getTaskChatResponse(task);
   if (!raw) {
     throw new Error('分析任务缺少结果内容');
   }
-  return JSON.parse(raw) as MusicAnalysisData;
+  return normalizeMusicAnalysisData(JSON.parse(raw));
 }
 
 function getTaskSourceSnapshot(task: Task): MusicAnalysisSourceSnapshot | null {

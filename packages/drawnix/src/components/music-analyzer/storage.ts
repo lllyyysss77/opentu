@@ -1,13 +1,32 @@
 import { kvStorageService } from '../../services/kv-storage-service';
 import { unifiedCacheService } from '../../services/unified-cache-service';
+import { normalizeMusicAnalysisData } from '../../services/music-analysis-service';
 import type { MusicAnalysisRecord } from './types';
 
 const STORAGE_KEY = 'music-analyzer:records';
 const MAX_RECORDS = 50;
 
+function normalizeStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => String(item || '').trim())
+    .filter(Boolean);
+}
+
+function normalizeRecord(record: MusicAnalysisRecord): MusicAnalysisRecord {
+  return {
+    ...record,
+    analysis: record.analysis ? normalizeMusicAnalysisData(record.analysis) : record.analysis,
+    styleTags: record.styleTags ? normalizeStringList(record.styleTags) : record.styleTags,
+  };
+}
+
 export async function loadRecords(): Promise<MusicAnalysisRecord[]> {
   const records = await kvStorageService.get<MusicAnalysisRecord[]>(STORAGE_KEY);
-  return records || [];
+  return Array.isArray(records) ? records.map(normalizeRecord) : [];
 }
 
 export async function saveRecords(records: MusicAnalysisRecord[]): Promise<void> {

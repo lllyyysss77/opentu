@@ -1,6 +1,6 @@
 {
   "version": "0.6.25",
-  "buildTime": "2026-04-14T01:27:35.523Z",
+  "buildTime": "2026-04-14T04:14:02.141Z",
   "gitCommit": "unknown",
   "changelog": [
     "统一主应用和 sw-debug 的备份恢复核心逻辑",

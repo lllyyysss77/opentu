@@ -144,7 +144,7 @@ function normalizeStringArray(value: unknown, wrapMetaTags = false): string[] {
     });
 }
 
-function normalizeAnalysisData(raw: any): MusicAnalysisData {
+export function normalizeMusicAnalysisData(raw: unknown): MusicAnalysisData {
   return {
     summary: String(raw?.summary || '').trim(),
     language: String(raw?.language || '').trim(),
@@ -206,7 +206,7 @@ export async function executeMusicAnalysis(
 
     for (const jsonStr of jsonObjects) {
       try {
-        const parsed = normalizeAnalysisData(JSON.parse(jsonStr));
+        const parsed = normalizeMusicAnalysisData(JSON.parse(jsonStr));
         if (
           parsed.summary ||
           parsed.genreTags.length > 0 ||

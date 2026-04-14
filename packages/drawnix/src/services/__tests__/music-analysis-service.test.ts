@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { executeMusicAnalysis } from '../music-analysis-service';
+import {
+  executeMusicAnalysis,
+  normalizeMusicAnalysisData,
+} from '../music-analysis-service';
 
 vi.mock('../../utils/settings-manager', () => ({
   settingsManager: {
@@ -98,5 +101,28 @@ describe('music-analysis-service', () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toContain('JSON');
+  });
+
+  it('normalizes legacy analysis payloads with missing array fields', () => {
+    expect(
+      normalizeMusicAnalysisData({
+        summary: '老数据',
+        structure: ['Verse', '[Chorus]'],
+        titleSuggestions: undefined,
+        sunoStyleTags: undefined,
+      })
+    ).toEqual({
+      summary: '老数据',
+      language: '',
+      mood: '',
+      genreTags: [],
+      structure: ['[Verse]', '[Chorus]'],
+      hook: undefined,
+      lyricRewriteBrief: '',
+      titleSuggestions: [],
+      sunoTitle: '',
+      sunoStyleTags: [],
+      sunoLyricsDraft: '',
+    });
   });
 });

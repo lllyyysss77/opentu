@@ -252,8 +252,8 @@ export const AnalyzePage: React.FC<AnalyzePageProps> = ({
         setProgress('缓存视频文件...');
         const sourceSnapshot = await cacheVideoSource(videoFile);
         params = {
-          videoCacheUrl: sourceSnapshot.cacheUrl,
-          mimeType: sourceSnapshot.mimeType,
+          videoCacheUrl: sourceSnapshot.type === 'upload' ? sourceSnapshot.cacheUrl : undefined,
+          ...(sourceSnapshot.type === 'upload' ? { mimeType: sourceSnapshot.mimeType } : {}),
           model: selectedModel,
           modelRef: selectedModelRef,
           taskLabel: `分析视频：${videoFile.name || '本地视频'}`,

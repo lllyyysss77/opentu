@@ -18,7 +18,10 @@ import {
   readStoredModelSelection,
   writeStoredModelSelection,
 } from '../utils';
-import { DEFAULT_MUSIC_ANALYSIS_PROMPT } from '../../../services/music-analysis-service';
+import {
+  DEFAULT_MUSIC_ANALYSIS_PROMPT,
+  normalizeMusicAnalysisData,
+} from '../../../services/music-analysis-service';
 import { getDefaultAudioModel } from '../../../constants/model-config';
 
 const DEFAULT_ANALYSIS_MODEL = 'gemini-2.5-pro';
@@ -136,10 +139,17 @@ export const CreatePage: React.FC<CreatePageProps> = ({
       setSelectedModelState(existingRecord.analysisModel || DEFAULT_ANALYSIS_MODEL);
       setSelectedModelRef(existingRecord.analysisModelRef || null);
       setCreationPrompt(existingRecord.creationPrompt || '');
-      setAnalysisTitle(existingRecord.title || existingRecord.analysis?.sunoTitle || '');
-      setAnalysisStyleTags((existingRecord.styleTags || existingRecord.analysis?.sunoStyleTags || existingRecord.analysis?.genreTags || []).join(', '));
+      const analysis = existingRecord.analysis
+        ? normalizeMusicAnalysisData(existingRecord.analysis)
+        : null;
+      setAnalysisTitle(existingRecord.title || analysis?.sunoTitle || '');
+      setAnalysisStyleTags(
+        (existingRecord.styleTags || analysis?.sunoStyleTags || analysis?.genreTags || []).join(
+          ', '
+        )
+      );
       setAnalysisLyricsDraft(
-        existingRecord.lyricsDraft || existingRecord.analysis?.sunoLyricsDraft || ''
+        existingRecord.lyricsDraft || analysis?.sunoLyricsDraft || ''
       );
       setError('');
 
@@ -199,6 +209,11 @@ export const CreatePage: React.FC<CreatePageProps> = ({
   const sunoLyricsModels = useMemo(
     () => audioModels.filter((item) => /suno/i.test(item.id)),
     [audioModels]
+  );
+  const normalizedAnalysis = useMemo(
+    () =>
+      existingRecord?.analysis ? normalizeMusicAnalysisData(existingRecord.analysis) : null,
+    [existingRecord?.analysis]
   );
 
   // ── reference 模式：文件选择 ──
@@ -358,9 +373,9 @@ export const CreatePage: React.FC<CreatePageProps> = ({
   }, [pendingLyricsGenTaskId, onLyricsReady]);
 
   const handleInsertAnalysis = useCallback(async () => {
-    if (!existingRecord?.analysis) return;
-    await quickInsert('text', formatMusicAnalysisMarkdown(existingRecord.analysis));
-  }, [existingRecord]);
+    if (!normalizedAnalysis) return;
+    await quickInsert('text', formatMusicAnalysisMarkdown(normalizedAnalysis));
+  }, [normalizedAnalysis]);
 
   return (
     <div className="ma-create-page">
@@ -481,7 +496,7 @@ export const CreatePage: React.FC<CreatePageProps> = ({
       {lyricsGenProgress && <div className="ma-progress">{lyricsGenProgress}</div>}
 
       {/* 分析摘要（reference 模式已有 record 时） */}
-      {existingRecord?.analysis && mode === 'reference' && (
+      {normalizedAnalysis && mode === 'reference' && (
         <div className="ma-card">
           <button
             className="ma-section-toggle"
@@ -492,27 +507,27 @@ export const CreatePage: React.FC<CreatePageProps> = ({
           </button>
           {analysisSummaryOpen && (
             <div className="ma-analysis-summary">
-              <p>{existingRecord.analysis.summary}</p>
+              <p>{normalizedAnalysis.summary}</p>
               <div className="ma-chip-row">
-                <span className="ma-chip">{existingRecord.analysis.language || '未知语言'}</span>
-                <span className="ma-chip">{existingRecord.analysis.mood || '未知情绪'}</span>
-                {existingRecord.analysis.genreTags.map((tag) => (
+                <span className="ma-chip">{normalizedAnalysis.language || '未知语言'}</span>
+                <span className="ma-chip">{normalizedAnalysis.mood || '未知情绪'}</span>
+                {normalizedAnalysis.genreTags.map((tag) => (
                   <span key={tag} className="ma-chip ma-chip--accent">{tag}</span>
                 ))}
               </div>
               <div className="ma-tag-row">
-                {existingRecord.analysis.structure.map((tag) => (
+                {normalizedAnalysis.structure.map((tag) => (
                   <code key={tag}>{tag}</code>
                 ))}
               </div>
-              {existingRecord.analysis.titleSuggestions.length > 0 && (
+              {normalizedAnalysis.titleSuggestions.length > 0 && (
                 <div className="ma-suggestions">
-                  推荐标题：{existingRecord.analysis.titleSuggestions.join(' / ')}
+                  推荐标题：{normalizedAnalysis.titleSuggestions.join(' / ')}
                 </div>
               )}
-              {(existingRecord.analysis.sunoTitle ||
-                existingRecord.analysis.sunoStyleTags.length > 0 ||
-                existingRecord.analysis.sunoLyricsDraft) && (
+              {(normalizedAnalysis.sunoTitle ||
+                normalizedAnalysis.sunoStyleTags.length > 0 ||
+                normalizedAnalysis.sunoLyricsDraft) && (
                 <div className="ma-suno-summary">
                   <div className="ma-suno-summary__title">Suno 生成草稿</div>
                   <div className="ma-suno-summary__form">
