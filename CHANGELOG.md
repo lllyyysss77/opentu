@@ -1,3 +1,28 @@
+## 0.6.26 (2026-04-14)
+
+### 🚀 Features
+
+- 新增爆款音乐生成工具 ([9e5bd769](https://github.com/ljquan/aitu/commit/9e5bd769))
+- 历史关联任务展开、生成回填、风格传递与脚本版本优化 ([d914bc12](https://github.com/ljquan/aitu/commit/d914bc12))
+- 支持工具弹窗多窗口实例 ([247a9ff2](https://github.com/ljquan/aitu/commit/247a9ff2))
+- 脚本版本管理，支持多版本切换 ([790e8272](https://github.com/ljquan/aitu/commit/790e8272))
+- 优化视频分析与脚本改编交互 ([bc82abc6](https://github.com/ljquan/aitu/commit/bc82abc6))
+- 视频分析任务接入队列并优化结果插入 ([0cfcb25c](https://github.com/ljquan/aitu/commit/0cfcb25c))
+- 上传视频分析后自动提取首帧图片 ([c50dec54](https://github.com/ljquan/aitu/commit/c50dec54))
+
+### 🩹 Fixes
+
+- 修复音乐分析器兼容性并完善工作流展示 ([6cde07e0](https://github.com/ljquan/aitu/commit/6cde07e0))
+- 统一持久化删除的二次确认 ([c717d30f](https://github.com/ljquan/aitu/commit/c717d30f))
+- 统一确认弹窗与媒体预览提示词交互 ([4b007267](https://github.com/ljquan/aitu/commit/4b007267))
+- 批量生成使用每个镜头独立的 batchId ([f593eef3](https://github.com/ljquan/aitu/commit/f593eef3))
+- 修复 Markdown 卡片初始化阶段的 Milkdown editorView 异常 ([8badb0c7](https://github.com/ljquan/aitu/commit/8badb0c7))
+- 在爆款视频分析页提示 gemini-mix 分组 ([55815a81](https://github.com/ljquan/aitu/commit/55815a81))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+
 ## 0.6.25 (2026-04-14)
 
 ### 🩹 Fixes
