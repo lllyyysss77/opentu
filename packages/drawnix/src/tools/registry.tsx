@@ -10,6 +10,7 @@ import {
   modelBenchmarkTool,
   ModelBenchmarkToolComponent,
 } from './tools/model-benchmark';
+import { musicAnalyzerTool, MusicAnalyzerToolComponent } from './tools/music-analyzer';
 import { videoAnalyzerTool, VideoAnalyzerToolComponent } from './tools/video-analyzer';
 
 export interface ToolPluginModule {
@@ -25,6 +26,7 @@ const BUILT_IN_TOOL_PLUGINS: ToolPluginModule[] = [
   modelBenchmarkTool,
   knowledgeBaseTool,
   musicPlayerTool,
+  musicAnalyzerTool,
   videoAnalyzerTool,
 ];
 
@@ -33,6 +35,7 @@ const INTERNAL_COMPONENTS = new Map<string, React.ComponentType<any>>([
   ['model-benchmark', ModelBenchmarkToolComponent],
   ['knowledge-base', KnowledgeBaseToolComponent],
   ['music-player', MusicPlayerToolComponent],
+  ['music-analyzer', MusicAnalyzerToolComponent],
   ['video-analyzer', VideoAnalyzerToolComponent],
 ]);
 
