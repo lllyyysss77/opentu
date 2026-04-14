@@ -1,3 +1,19 @@
+## 0.6.25 (2026-04-14)
+
+### 🩹 Fixes
+
+- 修正视频分析中内联数据的MIME类型 ([55e6b903](https://github.com/ljquan/aitu/commit/55e6b903))
+- 防止生成任务重复调用大模型 API ([f381d800](https://github.com/ljquan/aitu/commit/f381d800))
+- 统一主应用和 sw-debug 的备份恢复核心逻辑 ([3c359631](https://github.com/ljquan/aitu/commit/3c359631))
+
+### 🔧 Chores
+
+- 更新应用版本并移除AI视频调试代码 ([9628c9ad](https://github.com/ljquan/aitu/commit/9628c9ad))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+
 ## 0.6.24 (2026-04-13)
 
 ### 🩹 Fixes

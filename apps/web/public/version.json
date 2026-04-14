@@ -1,10 +1,10 @@
 {
-  "version": "0.6.24",
-  "buildTime": "2026-04-13T09:30:06.963Z",
+  "version": "0.6.25",
+  "buildTime": "2026-04-14T01:27:35.523Z",
   "gitCommit": "unknown",
   "changelog": [
-    "移除视频尺寸 Select 以绕开 TDesign Option 更新环",
-    "补充 AI 视频弹窗调试标记并稳定图片标签依赖",
-    "收口 AI 视频弹窗受控模型同步环"
+    "统一主应用和 sw-debug 的备份恢复核心逻辑",
+    "修正视频分析中内联数据的MIME类型",
+    "防止生成任务重复调用大模型 API"
   ]
 }
