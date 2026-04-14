@@ -1,7 +1,12 @@
 import type { Task } from '../../types/task.types';
 import type { AnalysisRecord, AnalysisSourceSnapshot, VideoAnalysisData } from './types';
 import { addRecord, loadRecords, updateRecord } from './storage';
-import { applyRewriteShotUpdates, parseRewriteShotUpdates } from './utils';
+import {
+  addVersionToRecord,
+  applyRewriteShotUpdates,
+  createScriptVersion,
+  parseRewriteShotUpdates,
+} from './utils';
 
 type VideoAnalyzerTaskAction = 'analyze' | 'rewrite';
 
@@ -126,8 +131,13 @@ export async function syncVideoAnalyzerTask(task: Task): Promise<{
         const baseShots = target.editedShots || target.analysis.shots;
         return applyRewriteShotUpdates(baseShots, updates);
       })();
+
+  const versionLabel = `AI 改编 #${(target.scriptVersions?.length || 0) + 1}`;
+  const version = createScriptVersion(editedShots, versionLabel, target.productInfo?.prompt);
+  const versionPatch = addVersionToRecord(target, version);
+
   const nextRecords = await updateRecord(recordId, {
-    editedShots,
+    ...versionPatch,
     pendingRewriteTaskId: null,
   });
   const updatedRecord =

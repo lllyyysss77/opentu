@@ -68,6 +68,18 @@ export function migrateProductInfo(raw: Partial<ProductInfo>, fallbackDuration: 
   };
 }
 
+/** 脚本版本快照 */
+export interface ScriptVersion {
+  id: string;
+  createdAt: number;
+  /** 版本标签，如 "AI 改编 #1" */
+  label: string;
+  /** 该版本使用的提示词 */
+  prompt?: string;
+  /** 该版本的镜头列表（深拷贝，各版本独立） */
+  shots: VideoShot[];
+}
+
 /** 分析记录（持久化到 IndexedDB） */
 export interface AnalysisRecord {
   id: string;
@@ -90,6 +102,10 @@ export interface AnalysisRecord {
   pendingRewriteTaskId?: string | null;
   /** 是否收藏 */
   starred: boolean;
+  /** 脚本版本历史（最新在前，最多 10 个） */
+  scriptVersions?: ScriptVersion[];
+  /** 当前活跃的脚本版本 ID */
+  activeVersionId?: string;
 }
 
 /** 镜头类型颜色映射 */

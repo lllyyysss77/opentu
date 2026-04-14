@@ -1,4 +1,4 @@
-import type { ProductInfo, VideoAnalysisData, VideoShot } from './types';
+import type { AnalysisRecord, ProductInfo, ScriptVersion, VideoAnalysisData, VideoShot } from './types';
 import { createModelRef, type ModelRef } from '../../utils/settings-manager';
 import { computeSegmentPlan } from '../../utils/segment-plan';
 import { getVideoModelConfig } from '../../constants/video-model-config';
@@ -220,4 +220,63 @@ export function writeStoredModelSelection(
       profileId: modelRef?.profileId || null,
     })
   );
+}
+
+// ── 脚本版本管理 ──
+
+const MAX_SCRIPT_VERSIONS = 10;
+
+/** 从当前 shots 创建一个版本快照 */
+export function createScriptVersion(
+  shots: VideoShot[],
+  label: string,
+  prompt?: string
+): ScriptVersion {
+  return {
+    id: crypto.randomUUID(),
+    createdAt: Date.now(),
+    label,
+    prompt,
+    shots: structuredClone(shots),
+  };
+}
+
+/** 将新版本追加到记录，同时更新 editedShots + activeVersionId，返回 patch */
+export function addVersionToRecord(
+  record: AnalysisRecord,
+  version: ScriptVersion
+): Partial<AnalysisRecord> {
+  const versions = [version, ...(record.scriptVersions || [])].slice(0, MAX_SCRIPT_VERSIONS);
+  return {
+    scriptVersions: versions,
+    activeVersionId: version.id,
+    editedShots: version.shots,
+  };
+}
+
+/** 切换到指定版本，返回 record patch；版本不存在返回 null */
+export function switchToVersion(
+  record: AnalysisRecord,
+  versionId: string
+): Partial<AnalysisRecord> | null {
+  const version = record.scriptVersions?.find(v => v.id === versionId);
+  if (!version) return null;
+  return {
+    activeVersionId: versionId,
+    editedShots: version.shots,
+  };
+}
+
+/** 更新 editedShots 时同步更新 scriptVersions 中活跃版本的 shots */
+export function updateActiveShotsInRecord(
+  record: AnalysisRecord,
+  updatedShots: VideoShot[]
+): Partial<AnalysisRecord> {
+  const patch: Partial<AnalysisRecord> = { editedShots: updatedShots };
+  if (record.activeVersionId && record.scriptVersions) {
+    patch.scriptVersions = record.scriptVersions.map(v =>
+      v.id === record.activeVersionId ? { ...v, shots: updatedShots } : v
+    );
+  }
+  return patch;
 }

@@ -21,6 +21,7 @@ import { taskQueueService } from '../../../services/task-queue';
 import {
   readStoredModelSelection,
   writeStoredModelSelection,
+  updateActiveShotsInRecord,
 } from '../utils';
 
 const STORAGE_KEY_IMAGE_MODEL = 'video-analyzer:image-model';
@@ -150,7 +151,7 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
       const updatedShots = currentShots.map(s =>
         s.id === shotId ? { ...s, [field]: resultUrl } : s
       );
-      void updateRecord(currentRecord.id, { editedShots: updatedShots }).then(updated => {
+      void updateRecord(currentRecord.id, updateActiveShotsInRecord(currentRecord, updatedShots)).then(updated => {
         onRecordsChange(updated);
         onRecordUpdate({ ...currentRecord, editedShots: updatedShots });
       });
@@ -226,7 +227,7 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
     const updatedShots = currentShots.map(s =>
       s.id === shotId ? { ...s, [field]: undefined } : s
     );
-    void updateRecord(record.id, { editedShots: updatedShots }).then(updated => {
+    void updateRecord(record.id, updateActiveShotsInRecord(record, updatedShots)).then(updated => {
       onRecordsChange(updated);
       onRecordUpdate({ ...record, editedShots: updatedShots });
     });

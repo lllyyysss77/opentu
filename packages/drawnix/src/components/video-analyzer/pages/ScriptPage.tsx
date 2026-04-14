@@ -19,6 +19,8 @@ import {
   readStoredModelSelection,
   writeStoredModelSelection,
   buildScriptRewritePrompt,
+  switchToVersion,
+  updateActiveShotsInRecord,
 } from '../utils';
 import { taskQueueService } from '../../../services/task-queue';
 import { TaskType } from '../../../types/task.types';
@@ -88,6 +90,8 @@ export const ScriptPage: React.FC<ScriptPageProps> = ({
   );
   const [rewriteProgress, setRewriteProgress] = useState('');
   const [error, setError] = useState('');
+  const [versionMenuOpen, setVersionMenuOpen] = useState(false);
+  const versionMenuRef = useRef<HTMLDivElement>(null);
   const [scriptModel, setScriptModelState] = useState(
     () => readStoredModelSelection(STORAGE_KEY_SCRIPT_MODEL, DEFAULT_SCRIPT_MODEL).modelId
   );
@@ -162,8 +166,8 @@ export const ScriptPage: React.FC<ScriptPageProps> = ({
       )
     );
     setShots(record.editedShots || [...record.analysis.shots]);
-    setPendingRewriteTaskId(record.pendingRewriteTaskId || null);
-    setRewriteProgress('');
+    setPendingRewriteTaskId(prev => record.pendingRewriteTaskId ?? prev ?? null);
+    setRewriteProgress(prev => (record.pendingRewriteTaskId ? prev : ''));
   }, [record]);
 
   // 表单变化时自动保存到 IndexedDB（防抖 500ms）
@@ -173,17 +177,23 @@ export const ScriptPage: React.FC<ScriptPageProps> = ({
     saveTimerRef.current = setTimeout(async () => {
       const updated = await updateRecord(record.id, { productInfo });
       onRecordsChange(updated);
-      onRecordUpdate({ ...record, productInfo });
+      onRecordUpdate({ ...record, productInfo, pendingRewriteTaskId });
     }, 500);
     return () => clearTimeout(saveTimerRef.current);
-  }, [productInfo]); // 只依赖 productInfo，避免循环
+  }, [productInfo, pendingRewriteTaskId]); // 只跟随表单和挂起任务状态
 
   const saveShots = useCallback(async (newShots: VideoShot[]) => {
     setShots(newShots);
-    const updated = await updateRecord(record.id, { editedShots: newShots, productInfo });
+    const shotsPatch = updateActiveShotsInRecord(record, newShots);
+    const updated = await updateRecord(record.id, { ...shotsPatch, productInfo });
     onRecordsChange(updated);
-    onRecordUpdate({ ...record, editedShots: newShots, productInfo });
-  }, [record, productInfo, onRecordUpdate, onRecordsChange]);
+    onRecordUpdate({
+      ...record,
+      ...shotsPatch,
+      productInfo,
+      pendingRewriteTaskId,
+    });
+  }, [record, productInfo, pendingRewriteTaskId, onRecordUpdate, onRecordsChange]);
 
   const handleShotFieldChange = useCallback((shotId: string, field: keyof VideoShot, value: string) => {
     const newShots = shots.map(s => s.id === shotId ? { ...s, [field]: value } : s);
@@ -197,6 +207,7 @@ export const ScriptPage: React.FC<ScriptPageProps> = ({
     }
     setRewriting(true);
     setError('');
+    setRewriteProgress('AI 改编中 0%');
     try {
       const actualPrompt = buildScriptRewritePrompt({
         recordAnalysis: record.analysis,
@@ -216,6 +227,7 @@ export const ScriptPage: React.FC<ScriptPageProps> = ({
         TaskType.CHAT
       );
       setPendingRewriteTaskId(task.id);
+      setRewriteProgress(`AI 改编中 ${Math.round(task.progress ?? 0)}%`);
       const updated = await updateRecord(record.id, {
         pendingRewriteTaskId: task.id,
       });
@@ -231,6 +243,11 @@ export const ScriptPage: React.FC<ScriptPageProps> = ({
   useEffect(() => {
     if (!pendingRewriteTaskId) {
       return;
+    }
+
+    const currentTask = taskQueueService.getTask(pendingRewriteTaskId);
+    if (typeof currentTask?.progress === 'number') {
+      setRewriteProgress(`AI 改编中 ${Math.round(currentTask.progress)}%`);
     }
 
     const subscription = taskQueueService.observeTaskUpdates().subscribe(event => {
@@ -277,6 +294,28 @@ export const ScriptPage: React.FC<ScriptPageProps> = ({
   const handleInsertScripts = useCallback(async () => {
     await quickInsert('text', formatShotsMarkdown(shots, record.analysis, productInfo));
   }, [shots, productInfo, record]);
+
+  const handleSwitchVersion = useCallback(async (versionId: string) => {
+    const patch = switchToVersion(record, versionId);
+    if (!patch) return;
+    setVersionMenuOpen(false);
+    setShots(patch.editedShots!);
+    const updated = await updateRecord(record.id, patch);
+    onRecordsChange(updated);
+    onRecordUpdate({ ...record, ...patch });
+  }, [record, onRecordUpdate, onRecordsChange]);
+
+  // 点击外部关闭版本菜单
+  useEffect(() => {
+    if (!versionMenuOpen) return;
+    const handleClick = (e: MouseEvent) => {
+      if (versionMenuRef.current && !versionMenuRef.current.contains(e.target as Node)) {
+        setVersionMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [versionMenuOpen]);
 
   return (
     <div className="va-page">
@@ -339,9 +378,36 @@ export const ScriptPage: React.FC<ScriptPageProps> = ({
             </span>
           )}
         </div>
-        <button className="va-analyze-btn" onClick={handleRewrite} disabled={rewriting || !!pendingRewriteTaskId}>
-          {rewriting || pendingRewriteTaskId ? rewriteProgress || 'AI 改编中...' : 'AI 改编脚本'}
-        </button>
+        <div className="va-version-row">
+          <button className="va-analyze-btn" onClick={handleRewrite} disabled={rewriting || !!pendingRewriteTaskId} style={{ flex: 1 }}>
+            {rewriting || pendingRewriteTaskId ? rewriteProgress || 'AI 改编中...' : 'AI 改编脚本'}
+          </button>
+          {record.scriptVersions && record.scriptVersions.length > 0 && (
+            <div className="va-version-select" ref={versionMenuRef}>
+              <button
+                className="va-version-btn"
+                onClick={() => setVersionMenuOpen(v => !v)}
+              >
+                {record.scriptVersions.find(v => v.id === record.activeVersionId)?.label || `v${record.scriptVersions.length}`} ▾
+              </button>
+              {versionMenuOpen && (
+                <div className="va-version-menu">
+                  {record.scriptVersions.map(v => (
+                    <div
+                      key={v.id}
+                      className={`va-version-item ${v.id === record.activeVersionId ? 'active' : ''}`}
+                      onClick={() => handleSwitchVersion(v.id)}
+                    >
+                      <span>{v.label}</span>
+                      {v.prompt && <span className="va-version-prompt">{v.prompt.length > 30 ? v.prompt.slice(0, 30) + '...' : v.prompt}</span>}
+                      <span className="va-version-time">{v.shots.length} 镜头 · {new Date(v.createdAt).toLocaleTimeString()}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
         {error && <div className="va-error">{error}</div>}
       </div>
 
