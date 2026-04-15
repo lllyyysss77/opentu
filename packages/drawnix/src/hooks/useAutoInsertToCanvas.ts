@@ -15,6 +15,7 @@ import { useEffect, useRef } from 'react';
 import type { Point } from '@plait/core';
 import { getTaskQueueService } from '../services/task-queue';
 import { workflowCompletionService } from '../services/workflow-completion-service';
+import { resolveAudioResultUrls } from '../services/audio-task-result-utils';
 import { Task, TaskStatus, TaskType } from '../types/task.types';
 import {
   executeCanvasInsertion,
@@ -291,11 +292,14 @@ export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): v
                 : type === 'text'
                 ? undefined
                 : parseSizeToPixels(task.params.size);
-            const metadata =
+            const audioMetadata =
               type === 'audio'
                 ? {
                     title: task.result?.title || task.params.title,
-                    duration: task.result?.duration,
+                    duration:
+                      typeof task.result?.clips?.[0]?.duration === 'number'
+                        ? task.result.clips[0]!.duration || undefined
+                        : task.result?.duration,
                     previewImageUrl: task.result?.previewImageUrl,
                     tags:
                       typeof task.params.tags === 'string'
@@ -309,14 +313,20 @@ export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): v
                     providerTaskId:
                       task.result?.providerTaskId || task.remoteId,
                     clipId:
-                      task.result?.primaryClipId || task.result?.clipIds?.[0],
+                      task.result?.primaryClipId ||
+                      task.result?.clips?.[0]?.clipId ||
+                      task.result?.clips?.[0]?.id ||
+                      task.result?.clipIds?.[0],
                     clipIds: task.result?.clipIds,
                   }
                 : undefined;
+            const metadata = type === 'audio' ? audioMetadata : undefined;
             // 展开多图：优先使用 urls 数组
             const allUrls =
               type === 'text'
                 ? [formatLyricsForCanvas(task)]
+                : type === 'audio'
+                ? resolveAudioResultUrls(task.result)
                 : task.result?.urls?.length
                 ? task.result.urls
                 : [url as string];
@@ -338,16 +348,25 @@ export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): v
                   metadata:
                     type === 'audio'
                       ? {
-                          ...metadata,
+                          ...audioMetadata,
                           title:
                             task.result?.clips?.[index]?.title ||
                             (allUrls.length > 1
-                              ? `${metadata?.title || task.params.title || 'Audio'} ${index + 1}`
-                              : metadata?.title),
+                              ? `${audioMetadata?.title || task.params.title || 'Audio'} ${index + 1}`
+                              : audioMetadata?.title),
+                          previewImageUrl:
+                            task.result?.clips?.[index]?.imageLargeUrl ||
+                            task.result?.clips?.[index]?.imageUrl ||
+                            audioMetadata?.previewImageUrl,
+                          duration:
+                            typeof task.result?.clips?.[index]?.duration === 'number'
+                              ? task.result.clips[index]!.duration || undefined
+                              : audioMetadata?.duration,
                           clipId:
                             task.result?.clips?.[index]?.clipId ||
+                            task.result?.clips?.[index]?.id ||
                             task.result?.clipIds?.[index] ||
-                            metadata?.clipId,
+                            audioMetadata?.clipId,
                         }
                       : undefined,
                 })),
@@ -371,16 +390,25 @@ export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): v
                   groupId,
                   dimensions,
                   metadata: {
-                    ...metadata,
+                    ...audioMetadata,
                     title:
                       task.result?.clips?.[index]?.title ||
                       (allUrls.length > 1
-                        ? `${metadata?.title || task.params.title || 'Audio'} ${index + 1}`
-                        : metadata?.title),
+                        ? `${audioMetadata?.title || task.params.title || 'Audio'} ${index + 1}`
+                        : audioMetadata?.title),
+                    previewImageUrl:
+                      task.result?.clips?.[index]?.imageLargeUrl ||
+                      task.result?.clips?.[index]?.imageUrl ||
+                      audioMetadata?.previewImageUrl,
+                    duration:
+                      typeof task.result?.clips?.[index]?.duration === 'number'
+                        ? task.result.clips[index]!.duration || undefined
+                        : audioMetadata?.duration,
                     clipId:
                       task.result?.clips?.[index]?.clipId ||
+                      task.result?.clips?.[index]?.id ||
                       task.result?.clipIds?.[index] ||
-                      metadata?.clipId,
+                      audioMetadata?.clipId,
                   },
                 })),
                 startPoint: insertionPoint,
@@ -398,9 +426,63 @@ export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): v
               ? inserts.map(({ task }) => formatLyricsForCanvas(task))
               : inserts
                   .flatMap(({ task }) =>
-                    task.result?.urls?.length ? task.result.urls : [task.result?.url]
+                    firstInsertTask.type === TaskType.AUDIO
+                      ? resolveAudioResultUrls(task.result)
+                      : task.result?.urls?.length
+                      ? task.result.urls
+                      : [task.result?.url]
                   )
                   .filter((url): url is string => !!url);
+            const audioGroupItems =
+              firstInsertTask.type === TaskType.AUDIO
+                ? inserts.flatMap(({ task }) => {
+                    const taskUrls = resolveAudioResultUrls(task.result);
+                    const taskBaseMetadata = {
+                      title: task.result?.title || task.params.title,
+                      duration:
+                        typeof task.result?.clips?.[0]?.duration === 'number'
+                          ? task.result.clips[0]!.duration || undefined
+                          : task.result?.duration,
+                      previewImageUrl: task.result?.previewImageUrl,
+                      tags:
+                        typeof task.params.tags === 'string'
+                          ? task.params.tags
+                          : undefined,
+                      mv:
+                        typeof task.params.mv === 'string'
+                          ? task.params.mv
+                          : undefined,
+                      prompt: task.params.prompt,
+                      providerTaskId:
+                        task.result?.providerTaskId || task.remoteId,
+                      clipIds: task.result?.clipIds,
+                    };
+
+                    return taskUrls.map((resultUrl, index) => ({
+                      url: resultUrl,
+                      metadata: {
+                        ...taskBaseMetadata,
+                        title:
+                          task.result?.clips?.[index]?.title ||
+                          (taskUrls.length > 1
+                            ? `${taskBaseMetadata.title || task.params.title || 'Audio'} ${index + 1}`
+                            : taskBaseMetadata.title),
+                        previewImageUrl:
+                          task.result?.clips?.[index]?.imageLargeUrl ||
+                          task.result?.clips?.[index]?.imageUrl ||
+                          taskBaseMetadata.previewImageUrl,
+                        duration:
+                          typeof task.result?.clips?.[index]?.duration === 'number'
+                            ? task.result.clips[index]!.duration || undefined
+                            : taskBaseMetadata.duration,
+                        clipId:
+                          task.result?.clips?.[index]?.clipId ||
+                          task.result?.clips?.[index]?.id ||
+                          task.result?.clipIds?.[index],
+                      },
+                    }));
+                  })
+                : [];
 
             if (urls.length === 0) {
               // console.log(`[AutoInsert] No valid URLs in group, skipping`);
@@ -427,28 +509,6 @@ export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): v
                 : type === 'text'
                 ? undefined
                 : parseSizeToPixels(firstInsertTask.params.size);
-            const baseMetadata =
-              type === 'audio'
-                ? {
-                    title:
-                      firstInsertTask.result?.title || firstInsertTask.params.title,
-                    duration: firstInsertTask.result?.duration,
-                    previewImageUrl: firstInsertTask.result?.previewImageUrl,
-                    tags:
-                      typeof firstInsertTask.params.tags === 'string'
-                        ? firstInsertTask.params.tags
-                        : undefined,
-                    mv:
-                      typeof firstInsertTask.params.mv === 'string'
-                        ? firstInsertTask.params.mv
-                        : undefined,
-                    prompt: firstInsertTask.params.prompt,
-                    providerTaskId:
-                      firstInsertTask.result?.providerTaskId ||
-                      firstInsertTask.remoteId,
-                    clipIds: firstInsertTask.result?.clipIds,
-                  }
-                : undefined;
 
             // console.log(`[AutoInsert] Inserting group of ${urls.length} ${type}s`);
 
@@ -462,15 +522,7 @@ export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): v
                   metadata:
                     type === 'audio'
                       ? {
-                          ...baseMetadata,
-                          title:
-                            firstInsertTask.result?.clips?.[index]?.title ||
-                            (urls.length > 1
-                              ? `${baseMetadata?.title || firstInsertTask.params.title || 'Audio'} ${index + 1}`
-                              : baseMetadata?.title),
-                          clipId:
-                            firstInsertTask.result?.clips?.[index]?.clipId ||
-                            firstInsertTask.result?.clipIds?.[index],
+                          ...audioGroupItems[index]?.metadata,
                         }
                       : undefined,
                 })),
@@ -493,23 +545,13 @@ export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): v
               } else if (type === 'audio') {
                 const groupId = `audio-group-${firstInsertTask.id}`;
                 await executeCanvasInsertion({
-                  items: urls.map((resultUrl, index) => ({
+                  items: audioGroupItems.map((item) => ({
                     type: 'audio',
-                    content: resultUrl,
+                    content: item.url,
                     groupId,
                     dimensions,
-                      metadata: {
-                        ...baseMetadata,
-                        title:
-                          firstInsertTask.result?.clips?.[index]?.title ||
-                          (urls.length > 1
-                            ? `${baseMetadata?.title || firstInsertTask.params.title || 'Audio'} ${index + 1}`
-                            : baseMetadata?.title),
-                        clipId:
-                          firstInsertTask.result?.clips?.[index]?.clipId ||
-                          firstInsertTask.result?.clipIds?.[index],
-                      },
-                    })),
+                    metadata: item.metadata,
+                  })),
                   startPoint: insertionPoint,
                 });
               } else {

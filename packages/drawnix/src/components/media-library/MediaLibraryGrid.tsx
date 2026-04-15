@@ -61,9 +61,7 @@ import { insertVideoFromUrl } from '../../data/video';
 import { useGitHubSync } from '../../contexts/GitHubSyncContext';
 import { useAudioPlaylists } from '../../contexts/AudioPlaylistContext';
 import { mediaSyncService } from '../../services/github-sync/media-sync-service';
-import { taskQueueService } from '../../services/task-queue';
 import { openMusicPlayerToolAndPlay } from '../../services/tool-launch-service';
-import { TaskStatus, TaskType } from '../../types/task.types';
 import {
   AUDIO_PLAYLIST_ALL_ID,
   type AudioPlaylist,
@@ -337,7 +335,10 @@ export function MediaLibraryGrid({
             elementId: `asset:${item.id}`,
             audioUrl: item.url,
             title: item.name,
+            duration: item.duration,
             previewImageUrl: item.thumbnail,
+            clipId: item.clipId,
+            providerTaskId: item.providerTaskId,
           }));
         const activePlaylist = selectedPlaylistId
           ? playlists.find((playlist) => playlist.id === selectedPlaylistId) || null
@@ -348,7 +349,10 @@ export function MediaLibraryGrid({
             elementId: `asset:${asset.id}`,
             audioUrl: asset.url,
             title: asset.name,
+            duration: asset.duration,
             previewImageUrl: asset.thumbnail,
+            clipId: asset.clipId,
+            providerTaskId: asset.providerTaskId,
           },
           queue: audioQueue,
           playlist:
@@ -732,16 +736,13 @@ export function MediaLibraryGrid({
     // 收集所有可同步的媒体 URL（排除已同步的）
     const syncableUrls: string[] = [];
     
-    // AI 生成素材：获取已完成任务的 URL（排除已同步）
+    // AI 生成素材：直接同步当前资产 URL（支持一个任务展开多条音频）
     selectedAssets
       .filter(a => a.source === AssetSource.AI_GENERATED)
       .forEach(a => {
-        const task = taskQueueService.getTask(a.id);
-        if (task && task.status === TaskStatus.COMPLETED && task.result?.url) {
-          const syncStatus = mediaSyncService.getUrlSyncStatus(task.result.url);
-          if (syncStatus !== 'synced') {
-            syncableUrls.push(task.result.url);
-          }
+        const syncStatus = mediaSyncService.getUrlSyncStatus(a.url);
+        if (syncStatus !== 'synced') {
+          syncableUrls.push(a.url);
         }
       });
     
@@ -794,15 +795,10 @@ export function MediaLibraryGrid({
   const syncableCount = useMemo(() => {
     const selectedAssets = filteredResult.assets.filter(a => selectedAssetIds.has(a.id));
     
-    // AI 生成素材：检查任务是否存在且已完成，且未同步
+    // AI 生成素材：直接按资产 URL 判断是否可同步
     const aiSyncable = selectedAssets.filter(a => {
       if (a.source !== AssetSource.AI_GENERATED) return false;
-      const task = taskQueueService.getTask(a.id);
-      if (!task) return false;
-      if (task.status !== TaskStatus.COMPLETED) return false;
-      if (!task.result?.url) return false;
-      // 检查是否已同步
-      const syncStatus = mediaSyncService.getUrlSyncStatus(task.result.url);
+      const syncStatus = mediaSyncService.getUrlSyncStatus(a.url);
       return syncStatus !== 'synced';
     }).length;
     

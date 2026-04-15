@@ -39,6 +39,7 @@ import { useGitHubSync } from '../../contexts/GitHubSyncContext';
 import { mediaSyncService } from '../../services/github-sync/media-sync-service';
 import { CloudUploadIcon } from 'tdesign-icons-react';
 import { formatLyricsForCanvas, getLyricsTags, getLyricsTitle, isLyricsTask } from '../../utils/lyrics-task-utils';
+import { resolveAudioResultUrls } from '../../services/audio-task-result-utils';
 import { ConfirmDialog } from '../dialog/ConfirmDialog';
 import './task-queue.scss';
 
@@ -529,10 +530,14 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
           return;
         }
 
-        const urls = taskResult.urls?.length ? taskResult.urls : [taskResult.url];
+        const urls = resolveAudioResultUrls(taskResult);
+        const primaryClipDuration = taskResult.clips?.[0]?.duration;
         const baseMetadata = {
           title: taskResult.title || task.params.title || task.params.prompt,
-          duration: taskResult.duration,
+          duration:
+            typeof primaryClipDuration === 'number'
+              ? primaryClipDuration
+              : taskResult.duration,
           previewImageUrl: taskResult.previewImageUrl,
           tags:
             typeof task.params.tags === 'string'
@@ -544,7 +549,11 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
               : undefined,
           prompt: task.params.prompt,
           providerTaskId: taskResult.providerTaskId || task.remoteId,
-          clipId: taskResult.primaryClipId || taskResult.clipIds?.[0],
+          clipId:
+            taskResult.primaryClipId ||
+            taskResult.clips?.[0]?.clipId ||
+            taskResult.clips?.[0]?.id ||
+            taskResult.clipIds?.[0],
           clipIds: taskResult.clipIds,
         };
 
@@ -565,8 +574,17 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
                 title:
                   taskResult.clips?.[index]?.title ||
                   `${baseMetadata.title || 'Audio'} ${index + 1}`,
+                previewImageUrl:
+                  taskResult.clips?.[index]?.imageLargeUrl ||
+                  taskResult.clips?.[index]?.imageUrl ||
+                  baseMetadata.previewImageUrl,
+                duration:
+                  typeof taskResult.clips?.[index]?.duration === 'number'
+                    ? taskResult.clips[index]!.duration || undefined
+                    : baseMetadata.duration,
                 clipId:
                   taskResult.clips?.[index]?.clipId ||
+                  taskResult.clips?.[index]?.id ||
                   taskResult.clipIds?.[index] ||
                   baseMetadata.clipId,
               },

@@ -13,6 +13,7 @@ import {
 import { analytics } from '../utils/posthog-analytics';
 import { cacheRemoteUrl } from '../services/media-executor/fallback-utils';
 import { isVirtualMediaUrl } from '../utils/virtual-media-url';
+import { createHash, getAudioCacheKeySeed } from './audio-cache-key';
 import {
   AUDIO_NODE_DEFAULT_HEIGHT,
   AUDIO_NODE_DEFAULT_WIDTH,
@@ -103,14 +104,6 @@ function formatAudioDuration(duration?: number): string {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${minutes}:${String(seconds).padStart(2, '0')}`;
-}
-
-function createHash(input: string): number {
-  let hash = 0;
-  for (let index = 0; index < input.length; index++) {
-    hash = (hash * 31 + input.charCodeAt(index)) | 0;
-  }
-  return Math.abs(hash);
 }
 
 function truncateText(value: string, maxLength: number): string {
@@ -390,10 +383,10 @@ export async function insertAudioFromUrl(
   let resolvedAudioUrl = audioUrl;
   if (audioUrl.startsWith('http://') || audioUrl.startsWith('https://')) {
     try {
-      const cacheKeySeed =
-        metadata.providerTaskId ||
-        metadata.clipId ||
-        `audio-${createHash(audioUrl).toString(36)}`;
+      const cacheKeySeed = getAudioCacheKeySeed(audioUrl, {
+        clipId: metadata.clipId,
+        providerTaskId: metadata.providerTaskId,
+      });
       const ext = getFileExtension(audioUrl);
       resolvedAudioUrl = await cacheRemoteUrl(
         audioUrl,

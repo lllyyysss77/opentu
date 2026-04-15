@@ -301,7 +301,10 @@ export const MusicPlayerTool: React.FC<MusicPlayerToolProps> = ({
       elementId: `asset:${asset.id}`,
       audioUrl: asset.url,
       title: asset.name,
+      duration: asset.duration,
       previewImageUrl: asset.thumbnail,
+      clipId: asset.clipId,
+      providerTaskId: asset.providerTaskId,
     };
   };
 
@@ -412,7 +415,7 @@ export const MusicPlayerTool: React.FC<MusicPlayerToolProps> = ({
         id: `asset:${asset.id}`,
         title: asset.name,
         subtitle: formatTrackSubtitle(
-          resolvedAudioAssetDurations.get(asset.url),
+          resolvedAudioAssetDurations.get(asset.url) ?? asset.duration,
           asset.createdAt
         ),
         previewImageUrl: asset.thumbnail,
@@ -443,7 +446,7 @@ export const MusicPlayerTool: React.FC<MusicPlayerToolProps> = ({
             id: `asset:${asset.id}`,
             title: asset.name,
             subtitle: formatTrackSubtitle(
-              resolvedAudioAssetDurations.get(asset.url),
+              resolvedAudioAssetDurations.get(asset.url) ?? asset.duration,
               asset.createdAt
             ),
             previewImageUrl: asset.thumbnail,
