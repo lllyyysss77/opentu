@@ -30,9 +30,30 @@ import { getDefaultAudioModel } from '../../../constants/model-config';
 const DEFAULT_ANALYSIS_MODEL = 'gemini-2.5-pro';
 const STORAGE_KEY_MODEL = 'music-analyzer:model';
 const STORAGE_KEY_LYRICS_MODEL = 'music-analyzer:lyrics-model';
+const STORAGE_KEY_CREATION_PROMPT = 'music-analyzer:creation-prompt';
 
 function formatSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
+}
+
+function readSessionPrompt(): string {
+  try {
+    return sessionStorage.getItem(STORAGE_KEY_CREATION_PROMPT) || '';
+  } catch {
+    return '';
+  }
+}
+
+function writeSessionPrompt(value: string): void {
+  try {
+    if (value) {
+      sessionStorage.setItem(STORAGE_KEY_CREATION_PROMPT, value);
+      return;
+    }
+    sessionStorage.removeItem(STORAGE_KEY_CREATION_PROMPT);
+  } catch {
+    // noop
+  }
 }
 
 interface CreatePageProps {
@@ -57,7 +78,9 @@ export const CreatePage: React.FC<CreatePageProps> = ({
   );
 
   // ── scratch 模式状态 ──
-  const [creationPrompt, setCreationPrompt] = useState(existingRecord?.creationPrompt || '');
+  const [creationPrompt, setCreationPrompt] = useState(
+    () => existingRecord?.creationPrompt || readSessionPrompt()
+  );
   const [pendingLyricsGenTaskId, setPendingLyricsGenTaskId] = useState<string | null>(
     () => existingRecord?.pendingLyricsGenTaskId || null
   );
@@ -168,6 +191,16 @@ export const CreatePage: React.FC<CreatePageProps> = ({
     void hydrate();
     return () => { disposed = true; };
   }, [existingRecord, pendingAnalyzeTaskId, pendingLyricsGenTaskId]);
+
+  useEffect(() => {
+    if (existingRecord?.source === 'scratch') {
+      writeSessionPrompt(existingRecord.creationPrompt || '');
+      return;
+    }
+    if (!existingRecord) {
+      writeSessionPrompt(creationPrompt);
+    }
+  }, [creationPrompt, existingRecord]);
 
   useEffect(() => {
     if (!existingRecord || mode !== 'reference') {
@@ -530,10 +563,6 @@ export const CreatePage: React.FC<CreatePageProps> = ({
         </>
       )}
 
-      {error && <div className="ma-error">{error}</div>}
-      {progress && <div className="ma-progress">{progress}</div>}
-      {lyricsGenProgress && <div className="ma-progress">{lyricsGenProgress}</div>}
-
       {/* 分析摘要（reference 模式已有 record 时） */}
       {normalizedAnalysis && mode === 'reference' && (
         <div className="ma-card">
@@ -603,6 +632,14 @@ export const CreatePage: React.FC<CreatePageProps> = ({
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {(error || progress || lyricsGenProgress) && (
+        <div className="ma-status-stack">
+          {error && <div className="ma-error">{error}</div>}
+          {progress && <div className="ma-progress">{progress}</div>}
+          {lyricsGenProgress && <div className="ma-progress">{lyricsGenProgress}</div>}
         </div>
       )}
 
