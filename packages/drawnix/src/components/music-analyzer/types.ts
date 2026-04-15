@@ -9,6 +9,7 @@ export type { MusicAnalysisData };
 export type PageId = 'create' | 'lyrics' | 'generate' | 'history';
 
 export type CreationMode = 'scratch' | 'reference';
+export type SunoMusicEditAction = 'generate' | 'continue' | 'infill';
 
 export type MusicAnalysisSourceSnapshot = {
   type: 'upload';
@@ -64,9 +65,13 @@ export interface MusicAnalysisRecord {
   // 批量生成
   generateTaskIds?: string[];
   generatedClips?: GeneratedClip[];
-  // 续写
+  // 音乐编辑动作
+  musicEditAction?: SunoMusicEditAction | null;
+  // 续写 / Infill
   continueFromClipId?: string | null;
   continueAt?: number | null;
+  infillStartS?: number | null;
+  infillEndS?: number | null;
   // 歌词版本管理
   lyricsVersions?: LyricsVersion[];
   activeVersionId?: string;

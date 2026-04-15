@@ -40,6 +40,8 @@ export interface AudioGenerationParams {
   notifyHook?: string;
   continueClipId?: string;
   continueAt?: number;
+  infillStartS?: number;
+  infillEndS?: number;
   params?: Record<string, unknown>;
   taskId?: string;
 }
@@ -94,6 +96,11 @@ interface AudioPollingOptions {
   onProgress?: (progress: number, status?: string) => void;
   onSubmitted?: (taskId: string) => void;
   routeModel?: string | ModelRef | null;
+}
+
+interface ClipIdentifierMemory {
+  byBatchIndex: Map<number, string>;
+  ordered: string[];
 }
 
 function inferAuthType(): ProviderAuthStrategy {
@@ -450,6 +457,64 @@ function resolveClipIdentifier(clip: AudioClipRecord): string | undefined {
   return normalizeOptionalString(clip.clip_id) || normalizeOptionalString(clip.id);
 }
 
+function createClipIdentifierMemory(): ClipIdentifierMemory {
+  return {
+    byBatchIndex: new Map<number, string>(),
+    ordered: [],
+  };
+}
+
+function rememberClipIdentifiers(
+  clips: AudioClipRecord[],
+  memory: ClipIdentifierMemory
+): void {
+  for (const clip of clips) {
+    const clipId = normalizeOptionalString(clip.clip_id);
+    if (!clipId) {
+      continue;
+    }
+
+    if (
+      typeof clip.batch_index === 'number' &&
+      Number.isFinite(clip.batch_index) &&
+      !memory.byBatchIndex.has(clip.batch_index)
+    ) {
+      memory.byBatchIndex.set(clip.batch_index, clipId);
+    }
+
+    if (!memory.ordered.includes(clipId)) {
+      memory.ordered.push(clipId);
+    }
+  }
+}
+
+function applyRememberedClipIdentifiers(
+  clips: AudioClipRecord[],
+  memory: ClipIdentifierMemory
+): AudioClipRecord[] {
+  return clips.map((clip, index) => {
+    if (normalizeOptionalString(clip.clip_id)) {
+      return clip;
+    }
+
+    let rememberedClipId: string | undefined;
+    if (typeof clip.batch_index === 'number' && Number.isFinite(clip.batch_index)) {
+      rememberedClipId = memory.byBatchIndex.get(clip.batch_index);
+    }
+    if (!rememberedClipId) {
+      rememberedClipId = memory.ordered[index];
+    }
+    if (!rememberedClipId) {
+      return clip;
+    }
+
+    return {
+      ...clip,
+      clip_id: rememberedClipId,
+    };
+  });
+}
+
 function normalizeAudioClipResult(
   clip: AudioClipRecord
 ): AudioGenerationClipResult | null {
@@ -526,15 +591,22 @@ function getPrimaryTaskId(payload: any, fallback = ''): string {
 
 function normalizeAudioTaskResponse(
   payload: any,
-  fallbackTaskId = ''
+  fallbackTaskId = '',
+  clipMemory?: ClipIdentifierMemory
 ): AudioTaskResponse {
-  const clips = extractAudioClips(payload).sort((left, right) => {
+  const extractedClips = extractAudioClips(payload).sort((left, right) => {
     const leftIndex =
       typeof left.batch_index === 'number' ? left.batch_index : Number.MAX_SAFE_INTEGER;
     const rightIndex =
       typeof right.batch_index === 'number' ? right.batch_index : Number.MAX_SAFE_INTEGER;
     return leftIndex - rightIndex;
   });
+  if (clipMemory) {
+    rememberClipIdentifiers(extractedClips, clipMemory);
+  }
+  const clips = clipMemory
+    ? applyRememberedClipIdentifiers(extractedClips, clipMemory)
+    : extractedClips;
   const lyrics = extractLyricsPayload(payload);
 
   return {
@@ -615,6 +687,16 @@ function buildMusicSubmitBody(params: AudioGenerationParams): string {
     (typeof params.params?.continueAt === 'number'
       ? params.params.continueAt
       : undefined);
+  const infillStartSValue =
+    params.infillStartS ??
+    (typeof params.params?.infillStartS === 'number'
+      ? params.params.infillStartS
+      : undefined);
+  const infillEndSValue =
+    params.infillEndS ??
+    (typeof params.params?.infillEndS === 'number'
+      ? params.params.infillEndS
+      : undefined);
 
   if (title) {
     body.title = title;
@@ -629,11 +711,17 @@ function buildMusicSubmitBody(params: AudioGenerationParams): string {
     body.continue_at = continueAtValue;
   }
 
-  if ('infillStartS' in (params.params || {})) {
-    body.infill_start_s = params.params?.infillStartS ?? null;
+  if (
+    typeof infillStartSValue === 'number' &&
+    Number.isFinite(infillStartSValue)
+  ) {
+    body.infill_start_s = infillStartSValue;
   }
-  if ('infillEndS' in (params.params || {})) {
-    body.infill_end_s = params.params?.infillEndS ?? null;
+  if (
+    typeof infillEndSValue === 'number' &&
+    Number.isFinite(infillEndSValue)
+  ) {
+    body.infill_end_s = infillEndSValue;
   }
 
   return JSON.stringify(body);
@@ -920,7 +1008,12 @@ class AudioAPIService {
     taskId: string,
     options: AudioPollingOptions = {}
   ): Promise<AudioTaskResponse> {
-    const immediate = await this.queryAudioTask(taskId, options.routeModel);
+    const clipMemory = createClipIdentifierMemory();
+    const immediate = normalizeAudioTaskResponse(
+      (await this.queryAudioTask(taskId, options.routeModel)).raw,
+      taskId,
+      clipMemory
+    );
 
     if (options.onProgress) {
       options.onProgress(immediate.progress || 0, immediate.status);
@@ -936,12 +1029,13 @@ class AudioAPIService {
       throw new Error(immediate.failReason || 'Suno 生成失败');
     }
 
-    return this.pollUntilComplete(taskId, options);
+    return this.pollUntilComplete(taskId, options, clipMemory);
   }
 
   private async pollUntilComplete(
     taskId: string,
-    options: AudioPollingOptions = {}
+    options: AudioPollingOptions = {},
+    clipMemory: ClipIdentifierMemory = createClipIdentifierMemory()
   ): Promise<AudioTaskResponse> {
     const { interval = 5000, maxAttempts = 720, onProgress } = options;
 
@@ -954,7 +1048,8 @@ class AudioAPIService {
       attempts += 1;
 
       try {
-        const result = await this.queryAudioTask(taskId, options.routeModel);
+        const payload = await this.queryAudioTask(taskId, options.routeModel);
+        const result = normalizeAudioTaskResponse(payload.raw, taskId, clipMemory);
         consecutiveErrors = 0;
 
         if (onProgress) {

@@ -223,6 +223,8 @@ export interface AudioGenerationParams {
   mv?: string;
   continueClipId?: string;
   continueAt?: number;
+  infillStartS?: number;
+  infillEndS?: number;
   count?: number;
   batchId?: string;
   batchIndex?: number;

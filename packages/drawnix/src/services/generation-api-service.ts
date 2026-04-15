@@ -539,6 +539,8 @@ class GenerationAPIService {
           notifyHook: params.notifyHook,
           continueClipId: params.continueClipId,
           continueAt: params.continueAt,
+          infillStartS: params.infillStartS,
+          infillEndS: params.infillEndS,
           params: {
             ...(params as any).params,
             signal,

@@ -316,6 +316,61 @@
     gap: 8px;
   }
 
+  .ma-action-toggle {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .ma-action-btn {
+    padding: 8px 12px;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    border-radius: 8px;
+    background: #fff;
+    color: #666;
+    cursor: pointer;
+    font-size: 13px;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+
+    &.active {
+      background: rgba(243, 156, 18, 0.12);
+      color: #c97d0a;
+      font-weight: 600;
+      border-color: rgba(243, 156, 18, 0.3);
+    }
+  }
+
+  .ma-fields-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .ma-fields-grid--triple {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .ma-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+
+    > span {
+      font-size: 12px;
+      font-weight: 600;
+      color: #555;
+    }
+  }
+
+  .ma-hint {
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: rgba(243, 156, 18, 0.08);
+    color: #a86507;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
   .ma-batch-btn {
     flex: 1;
     padding: 8px;
@@ -350,6 +405,11 @@
     border-radius: 8px;
     background: #fff;
     border: 1px solid rgba(0, 0, 0, 0.06);
+
+    &.is-selected {
+      border-color: rgba(243, 156, 18, 0.32);
+      box-shadow: inset 0 0 0 1px rgba(243, 156, 18, 0.18);
+    }
   }
 
   .ma-clip-thumb {
@@ -398,6 +458,28 @@
     height: 28px;
   }
 
+  .ma-clip-actions {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .ma-clip-action-btn {
+    padding: 6px 10px;
+    border: 1px solid rgba(243, 156, 18, 0.24);
+    border-radius: 8px;
+    background: rgba(243, 156, 18, 0.08);
+    color: #c97d0a;
+    cursor: pointer;
+    font-size: 12px;
+    white-space: nowrap;
+
+    &:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+  }
+
   // ── 续写区 ──
   .ma-continue-section {
     display: flex;
@@ -427,5 +509,26 @@
     width: 120px;
     height: 24px;
     flex-shrink: 0;
+  }
+
+  @media (max-width: 900px) {
+    .ma-fields-grid,
+    .ma-fields-grid--triple {
+      grid-template-columns: 1fr;
+    }
+
+    .ma-clip-row {
+      align-items: flex-start;
+      flex-wrap: wrap;
+    }
+
+    .ma-clip-player {
+      width: 100%;
+      flex: none;
+    }
+
+    .ma-clip-actions {
+      width: 100%;
+    }
   }
 }

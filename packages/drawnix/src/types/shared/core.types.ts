@@ -118,6 +118,10 @@ export interface GenerationParams {
   continueClipId?: string;
   /** Continue from timestamp */
   continueAt?: number;
+  /** Infill start timestamp */
+  infillStartS?: number;
+  /** Infill end timestamp */
+  infillEndS?: number;
   /** Style or model to use for generation */
   style?: string;
   /** AI model to use (e.g., 'veo3', 'sora-2') */

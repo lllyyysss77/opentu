@@ -274,6 +274,8 @@ export const sunoAudioAdapter: AudioModelAdapter = {
         notifyHook: request.notifyHook,
         continueClipId: request.continueClipId,
         continueAt: request.continueAt,
+        infillStartS: request.infillStartS,
+        infillEndS: request.infillEndS,
         params: request.params,
       },
       {

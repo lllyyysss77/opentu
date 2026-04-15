@@ -254,6 +254,8 @@ class TaskQueueService {
             notifyHook: task.params.notifyHook,
             continueClipId: task.params.continueClipId,
             continueAt: task.params.continueAt,
+            infillStartS: task.params.infillStartS,
+            infillEndS: task.params.infillEndS,
             params: {
               ...(task.params as any).params,
               onProgress: (progress: number) => {

@@ -87,6 +87,8 @@ export interface AudioGenerationRequest {
   notifyHook?: string;
   continueClipId?: string;
   continueAt?: number;
+  infillStartS?: number;
+  infillEndS?: number;
   params?: Record<string, unknown>;
 }
 

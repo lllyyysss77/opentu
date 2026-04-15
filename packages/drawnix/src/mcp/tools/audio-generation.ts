@@ -26,6 +26,8 @@ export interface AudioGenerationParams {
   continueSource?: 'clip' | 'upload';
   continueClipId?: string;
   continueAt?: number;
+  infillStartS?: number;
+  infillEndS?: number;
   count?: number;
   batchId?: string;
   batchIndex?: number;
@@ -56,6 +58,8 @@ async function executeAsync(params: AudioGenerationParams): Promise<MCPResult> {
       mv: params.mv,
       continueClipId: params.continueClipId,
       continueAt: params.continueAt,
+      infillStartS: params.infillStartS,
+      infillEndS: params.infillEndS,
       params: {
         ...(params.params || {}),
         ...(params.continueSource
@@ -112,6 +116,8 @@ function getAudioQueueConfig(params: AudioGenerationParams) {
       mv: params.mv,
       continueClipId: params.continueClipId,
       continueAt: params.continueAt,
+      infillStartS: params.infillStartS,
+      infillEndS: params.infillEndS,
       ...((params.params || params.continueSource)
         ? {
             params: {
@@ -186,6 +192,14 @@ export const audioGenerationTool: MCPTool = {
       continueAt: {
         type: 'number',
         description: '从第几秒开始续写',
+      },
+      infillStartS: {
+        type: 'number',
+        description: 'Infill 开始秒数',
+      },
+      infillEndS: {
+        type: 'number',
+        description: 'Infill 结束秒数',
       },
     },
     required: ['prompt'],
