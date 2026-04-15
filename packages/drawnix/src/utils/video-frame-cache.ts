@@ -88,6 +88,55 @@ export async function extractFramesFromVideo(
   }
 }
 
+/**
+ * 从视频 URL 提取首帧或尾帧并缓存
+ * @param videoUrl 视频地址（支持 /__aitu_cache__/ 虚拟路径和 http(s) URL）
+ * @param shotId 镜头 ID，用于缓存 key
+ * @param frameType 缓存 key 中的帧类型（决定存储位置）
+ * @param extractPosition 实际提取位置，默认与 frameType 一致
+ * @returns 缓存后的 URL，失败返回 null
+ */
+export async function extractFrameFromUrl(
+  videoUrl: string,
+  shotId: string,
+  frameType: 'first' | 'last',
+  extractPosition?: 'first' | 'last'
+): Promise<string | null> {
+  const position = extractPosition || frameType;
+  const video = document.createElement('video');
+  video.muted = true;
+  video.preload = 'auto';
+  video.crossOrigin = 'anonymous';
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      video.onloadedmetadata = () => resolve();
+      video.onerror = () => reject(new Error('Failed to load video'));
+      video.src = videoUrl;
+    });
+
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d')!;
+    const maxW = 1280;
+    const scale = Math.min(1, maxW / video.videoWidth);
+    canvas.width = Math.round(video.videoWidth * scale);
+    canvas.height = Math.round(video.videoHeight * scale);
+
+    // 首帧取 0.1s（避免纯黑），尾帧取 duration - 0.1s
+    const timestamp = position === 'first'
+      ? Math.min(0.1, video.duration)
+      : Math.max(0, video.duration - 0.1);
+
+    const blob = await seekAndCapture(video, canvas, ctx, timestamp);
+    return await cacheFrameBlob(blob, shotId, frameType);
+  } catch (e) {
+    console.debug('[video-frame-cache] extractFrameFromUrl failed:', e);
+    return null;
+  } finally {
+    video.src = '';
+  }
+}
+
 /** seek 到指定时间并截取当前帧 */
 function seekAndCapture(
   video: HTMLVideoElement,
