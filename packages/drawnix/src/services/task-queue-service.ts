@@ -134,6 +134,7 @@ class TaskQueueService {
   private tasks: Map<string, Task>;
   private taskUpdates$: Subject<TaskEvent>;
   private executingTasks = new Set<string>();
+  private blockedTaskIds = new Set<string>();
 
   private constructor() {
     this.tasks = new Map();
@@ -1098,6 +1099,8 @@ class TaskQueueService {
       }),
     };
 
+    this.blockedTaskIds.delete(task.id);
+
     // Add to queue
     this.tasks.set(task.id, task);
 
@@ -1134,6 +1137,12 @@ class TaskQueueService {
     status: TaskStatus,
     updates?: Partial<Task>
   ): void {
+    if (this.blockedTaskIds.has(taskId) && status !== TaskStatus.CANCELLED) {
+      console.debug(
+        `[TaskQueueService] Ignoring blocked task update: ${taskId} → ${status}`
+      );
+      return;
+    }
     let task = this.tasks.get(taskId);
     if (!task) {
       // Task not in memory — create a minimal entry so the event is still emitted.
@@ -1195,6 +1204,12 @@ class TaskQueueService {
    * @param progress - Progress percentage (0-100)
    */
   updateTaskProgress(taskId: string, progress: number): void {
+    if (this.blockedTaskIds.has(taskId)) {
+      console.debug(
+        `[TaskQueueService] Ignoring blocked task progress update: ${taskId}`
+      );
+      return;
+    }
     const task = this.tasks.get(taskId);
     if (!task) {
       console.warn(`[TaskQueueService] Task ${taskId} not found`);
@@ -1272,6 +1287,7 @@ class TaskQueueService {
       return;
     }
 
+    this.blockedTaskIds.add(taskId);
     this.updateTaskStatus(taskId, TaskStatus.CANCELLED);
     // console.log(`[TaskQueueService] Cancelled task ${taskId}`);
   }
@@ -1300,6 +1316,7 @@ class TaskQueueService {
 
     // Reset task for retry - set to PROCESSING for immediate execution
     const now = Date.now();
+    this.blockedTaskIds.delete(taskId);
     this.updateTaskStatus(taskId, TaskStatus.PROCESSING, {
       error: undefined,
       startedAt: now, // Set new start time
@@ -1339,6 +1356,7 @@ class TaskQueueService {
       return;
     }
 
+    this.blockedTaskIds.add(taskId);
     this.tasks.delete(taskId);
 
     // Delete from IndexedDB
@@ -1374,6 +1392,7 @@ class TaskQueueService {
    * Idempotent: skips if task already exists in memory.
    */
   trackExternalTask(task: Task): void {
+    this.blockedTaskIds.delete(task.id);
     if (this.tasks.has(task.id)) return;
     this.tasks.set(task.id, task);
     this.persistTask(task);
@@ -1386,6 +1405,13 @@ class TaskQueueService {
    * when the executor updates IndexedDB directly.
    */
   syncTaskFromStorage(taskId: string, storageTask: Partial<Task>): void {
+    if (this.blockedTaskIds.has(taskId)) {
+      console.debug(
+        `[TaskQueueService] Ignoring blocked storage sync for task ${taskId}`
+      );
+      return;
+    }
+
     const task = this.tasks.get(taskId);
     if (!task) return;
     if (
@@ -1447,6 +1473,7 @@ class TaskQueueService {
         };
       }
 
+      this.blockedTaskIds.delete(restoredTask.id);
       this.tasks.set(restoredTask.id, restoredTask);
       restoredCount++;
     });
