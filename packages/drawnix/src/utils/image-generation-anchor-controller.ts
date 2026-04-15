@@ -1,0 +1,68 @@
+import type { WorkflowMessageData } from '../types/chat.types';
+import type {
+  ImageGenerationAnchorPhase,
+  ImageGenerationAnchorViewModel,
+  PlaitImageGenerationAnchor,
+} from '../types/image-generation-anchor.types';
+import type { Task } from '../types/task.types';
+import {
+  buildImageGenerationAnchorViewModel,
+  deriveImageGenerationAnchorPhase,
+} from './image-generation-anchor-view-model';
+
+export interface ImageGenerationAnchorControllerOptions {
+  anchor: PlaitImageGenerationAnchor;
+  task?: Task | null;
+  workflow?: WorkflowMessageData | null;
+  postProcessingStatus?: WorkflowMessageData['postProcessingStatus'];
+  isInserting?: boolean;
+  hasInserted?: boolean;
+}
+
+export interface ImageGenerationAnchorControllerResult {
+  phase: ImageGenerationAnchorPhase;
+  nextPatch: Partial<PlaitImageGenerationAnchor>;
+  viewModel: ImageGenerationAnchorViewModel;
+}
+
+export function getImageGenerationAnchorControllerResult(
+  options: ImageGenerationAnchorControllerOptions
+): ImageGenerationAnchorControllerResult {
+  const {
+    anchor,
+    task,
+    workflow,
+    postProcessingStatus,
+    isInserting,
+    hasInserted,
+  } = options;
+
+  const phase = deriveImageGenerationAnchorPhase({
+    anchor,
+    task,
+    workflow,
+    postProcessingStatus,
+    isInserting,
+    hasInserted,
+  });
+
+  const viewModel = buildImageGenerationAnchorViewModel({
+    anchor,
+    task,
+    workflow,
+    postProcessingStatus,
+    isInserting,
+    hasInserted,
+  });
+
+  return {
+    phase,
+    nextPatch: {
+      phase,
+      progress: viewModel.progress,
+      subtitle: viewModel.subtitle,
+      error: viewModel.error,
+    },
+    viewModel,
+  };
+}

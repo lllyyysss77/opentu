@@ -195,6 +195,12 @@ export function useWorkflowSubmission(
     retryContext: WorkflowRetryContext
   ) => Promise<void>) | null>(null);
 
+  const shouldSyncWorkZone = useCallback(
+    (generationType?: WorkflowMessageData['generationType'] | LegacyWorkflowDefinition['generationType']) =>
+      generationType !== 'image',
+    []
+  );
+
   /**
    * Recover workflows on mount (after page refresh)
    */
@@ -275,7 +281,11 @@ export function useWorkflowSubmission(
 
           const board = boardRef.current;
           const workZoneId = workZoneIdRef.current;
-          if (workZoneId && board) {
+          if (
+            shouldSyncWorkZone(recoveredWorkflow.generationType) &&
+            workZoneId &&
+            board
+          ) {
             WorkZoneTransforms.updateWorkflow(board, workZoneId, workflowData);
           }
 
@@ -310,6 +320,7 @@ export function useWorkflowSubmission(
   ) => {
     const board = boardRef.current;
     const workZoneId = workZoneIdRef.current;
+    const syncWorkZone = shouldSyncWorkZone(legacyWorkflow.generationType);
 
     switch (event.type) {
       case 'step': {
@@ -329,7 +340,7 @@ export function useWorkflowSubmission(
           const workflowData = toWorkflowMessageData(updatedWorkflow, retryContext);
           updateWorkflowMessageRef.current(workflowData);
 
-          if (workZoneId && board) {
+          if (syncWorkZone && workZoneId && board) {
             WorkZoneTransforms.updateWorkflow(board, workZoneId, workflowData);
           }
         }
@@ -367,7 +378,7 @@ export function useWorkflowSubmission(
           const workflowData = toWorkflowMessageData(completedWorkflow, retryContext);
           updateWorkflowMessageRef.current(workflowData);
 
-          if (workZoneId && board) {
+          if (syncWorkZone && workZoneId && board) {
             WorkZoneTransforms.updateWorkflow(board, workZoneId, workflowData);
             
             // 检查是否还有 pending 或 running 步骤（AI 分析可能会添加后续步骤）
@@ -419,7 +430,7 @@ export function useWorkflowSubmission(
           const workflowData = toWorkflowMessageData(failedWorkflow, retryContext);
           updateWorkflowMessageRef.current(workflowData);
 
-          if (workZoneId && board) {
+          if (syncWorkZone && workZoneId && board) {
             WorkZoneTransforms.updateWorkflow(board, workZoneId, workflowData);
           }
         }
@@ -444,7 +455,7 @@ export function useWorkflowSubmission(
           const workflowData = toWorkflowMessageData(workflowWithNewSteps, retryContext);
           updateWorkflowMessageRef.current(workflowData);
 
-          if (workZoneId && board) {
+          if (syncWorkZone && workZoneId && board) {
             WorkZoneTransforms.updateWorkflow(board, workZoneId, workflowData);
           }
         }
@@ -462,7 +473,7 @@ export function useWorkflowSubmission(
         break;
       }
     }
-  }, [workflowControl, boardRef, workZoneIdRef]);
+  }, [workflowControl, boardRef, workZoneIdRef, shouldSyncWorkZone]);
 
   // Update ref when handleWorkflowEvent changes
   useEffect(() => {

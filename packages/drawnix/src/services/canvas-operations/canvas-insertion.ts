@@ -18,6 +18,9 @@ import { scrollToPointIfNeeded } from '../../utils/selection-utils';
 import { parseMarkdownToCards } from '../../utils/markdown-to-cards';
 import { insertCardsToCanvas } from '../../utils/insert-cards';
 import type { MCPResult } from '../../mcp/types';
+import { parseSizeToPixels } from '../../utils/size-ratio';
+
+export { parseSizeToPixels };
 
 /**
  * 内容类型
@@ -67,35 +70,6 @@ const LAYOUT_CONSTANTS = {
   MEDIA_DEFAULT_SIZE: 400,
   MEDIA_MAX_SIZE: 600,
 };
-
-/**
- * 从 size 参数（如 '16x9', '1x1'）解析为像素尺寸
- * 基于默认宽度 400px 计算
- */
-export function parseSizeToPixels(size?: string, defaultWidth: number = 400): { width: number; height: number } {
-  if (!size) {
-    return { width: defaultWidth, height: defaultWidth };
-  }
-
-  // 解析 size 格式，如 '16x9', '1x1', '3x2'
-  const match = size.match(/^(\d+)x(\d+)$/);
-  if (!match) {
-    return { width: defaultWidth, height: defaultWidth };
-  }
-
-  const ratioWidth = parseInt(match[1], 10);
-  const ratioHeight = parseInt(match[2], 10);
-
-  if (ratioWidth <= 0 || ratioHeight <= 0) {
-    return { width: defaultWidth, height: defaultWidth };
-  }
-
-  // 基于默认宽度计算高度
-  const aspectRatio = ratioHeight / ratioWidth;
-  const height = Math.round(defaultWidth * aspectRatio);
-
-  return { width: defaultWidth, height };
-}
 
 /**
  * Board 引用持有器

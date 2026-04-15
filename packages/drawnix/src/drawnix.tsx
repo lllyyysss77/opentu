@@ -66,12 +66,14 @@ import { withToolFocus } from './plugins/with-tool-focus';
 import { withToolResize } from './plugins/with-tool-resize';
 import { withMultiResize } from './plugins/with-multi-resize';
 import { withTextResize } from './plugins/with-text-resize';
+import { withImageGenerationAnchor } from './plugins/with-image-generation-anchor';
 import { withWorkZone } from './plugins/with-workzone';
 import { MultiSelectionHandles } from './components/multi-selection-handles';
 import { ActiveTaskWarning } from './components/task-queue/ActiveTaskWarning';
 import { useTaskStorage } from './hooks/useTaskStorage';
 import { useTaskExecutor } from './hooks/useTaskExecutor';
 import { useAutoInsertToCanvas } from './hooks/useAutoInsertToCanvas';
+import { useImageGenerationAnchorSync } from './hooks/useImageGenerationAnchorSync';
 import { useBeforeUnload } from './hooks/useBeforeUnload';
 import { ChatDrawer } from './components/chat-drawer';
 import { ChatDrawerProvider, useChatDrawer } from './contexts/ChatDrawerContext';
@@ -769,6 +771,7 @@ export const Drawnix: React.FC<DrawnixProps> = ({
     withTool,
     withToolResize, // 工具缩放功能 - 拖拽缩放手柄
     withToolFocus, // 工具焦点管理 - 双击编辑
+    withImageGenerationAnchor, // 生图锚点 - 结果对象化反馈的独立画布元素
     withWorkZone, // 工作区元素 - 在画布上显示工作流进度
     withArrowLineAutoCompleteExtend, // 自动完成形状选择 - hover 中点时选择下一个节点形状
     withFlowchartShortcut, // 流程图快速创建 - 方向键创建连接节点，Tab 导航
@@ -793,6 +796,9 @@ export const Drawnix: React.FC<DrawnixProps> = ({
 
   // Auto-insert completed tasks to canvas
   useAutoInsertToCanvas({ enabled: true, insertPrompt: false, groupSimilarTasks: true });
+
+  // Image generation anchor sync skeleton
+  useImageGenerationAnchorSync({ board, enabled: isTaskStorageReady });
 
   // Warn users before leaving page with active tasks
   useBeforeUnload();

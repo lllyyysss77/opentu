@@ -119,7 +119,7 @@ export async function insertMediaIntoFrame(
   frameDimensions: { width: number; height: number },
   mediaDimensions?: { width: number; height: number },
   targetRegion?: { x: number; y: number; width: number; height: number }
-): Promise<void> {
+): Promise<{ point: Point; size: { width: number; height: number } } | undefined> {
   // 查找目标 Frame
   const frameElement = board.children.find(
     (el) => el.id === frameId && isFrameElement(el)
@@ -138,7 +138,7 @@ export async function insertMediaIntoFrame(
       const { insertImageFromUrl } = await import('../data/image');
       await insertImageFromUrl(board, mediaUrl);
     }
-    return;
+    return undefined;
   }
 
   const frameRect = RectangleClient.getRectangleByPoints(frameElement.points);
@@ -211,4 +211,12 @@ export async function insertMediaIntoFrame(
       FrameTransforms.bindToFrame(board, newElement, frameElement);
     }
   }
+
+  return {
+    point: insertionPoint,
+    size: {
+      width: mediaWidth,
+      height: mediaHeight,
+    },
+  };
 }

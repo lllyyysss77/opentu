@@ -1,0 +1,156 @@
+import { describe, expect, it } from 'vitest';
+import {
+  buildImageGenerationAnchorViewModel,
+  deriveImageGenerationAnchorPhase,
+} from '../image-generation-anchor-view-model';
+import type { WorkflowMessageData } from '../../types/chat.types';
+import {
+  TaskExecutionPhase,
+  TaskStatus,
+  TaskType,
+  type Task,
+} from '../../types/task.types';
+import type { PlaitImageGenerationAnchor } from '../../types/image-generation-anchor.types';
+
+function createAnchor(
+  overrides: Partial<PlaitImageGenerationAnchor> = {}
+): PlaitImageGenerationAnchor {
+  return {
+    id: 'anchor-1',
+    type: 'generation-anchor',
+    points: [
+      [10, 20],
+      [330, 200],
+    ],
+    angle: 0,
+    anchorType: 'ratio',
+    phase: 'submitted',
+    title: '图片生成',
+    subtitle: '已提交，等待执行',
+    progress: null,
+    error: undefined,
+    transitionMode: 'hold',
+    createdAt: 1,
+    workflowId: 'wf-1',
+    taskIds: ['task-1'],
+    primaryTaskId: 'task-1',
+    expectedInsertPosition: [10, 20],
+    targetFrameId: undefined,
+    targetFrameDimensions: undefined,
+    requestedSize: '16x9',
+    requestedCount: 1,
+    zoom: 1,
+    children: [],
+    ...overrides,
+  };
+}
+
+function createTask(overrides: Partial<Task> = {}): Task {
+  return {
+    id: 'task-1',
+    type: TaskType.IMAGE,
+    status: TaskStatus.PENDING,
+    params: {
+      prompt: '生成图片',
+      workflowId: 'wf-1',
+      size: '16x9',
+    },
+    createdAt: 1,
+    updatedAt: 1,
+    ...overrides,
+  };
+}
+
+function createWorkflow(
+  overrides: Partial<WorkflowMessageData> = {}
+): WorkflowMessageData {
+  return {
+    id: 'wf-1',
+    name: '图片生成',
+    generationType: 'image',
+    prompt: '生成图片',
+    count: 1,
+    steps: [],
+    ...overrides,
+  };
+}
+
+describe('image-generation-anchor-view-model', () => {
+  it('maps processing + submitting task to queued phase', () => {
+    const phase = deriveImageGenerationAnchorPhase({
+      anchor: createAnchor(),
+      task: createTask({
+        status: TaskStatus.PROCESSING,
+        executionPhase: TaskExecutionPhase.SUBMITTING,
+      }),
+    });
+
+    expect(phase).toBe('queued');
+  });
+
+  it('maps processing task without submitting phase to generating', () => {
+    const viewModel = buildImageGenerationAnchorViewModel({
+      anchor: createAnchor({ phase: 'queued' }),
+      task: createTask({
+        status: TaskStatus.PROCESSING,
+        progress: 42,
+      }),
+    });
+
+    expect(viewModel.phase).toBe('generating');
+    expect(viewModel.progress).toBe(42);
+    expect(viewModel.phaseLabel).toBe('生成中');
+    expect(viewModel.subtitle).toBe('图片正在生成，请稍候');
+  });
+
+  it('uses developing phase during post-processing and falls back to derived subtitle', () => {
+    const viewModel = buildImageGenerationAnchorViewModel({
+      anchor: createAnchor({
+        phase: 'submitted',
+        subtitle: '旧提示文案',
+      }),
+      task: createTask({
+        status: TaskStatus.COMPLETED,
+      }),
+      postProcessingStatus: 'processing',
+    });
+
+    expect(viewModel.phase).toBe('developing');
+    expect(viewModel.subtitle).toBe('结果已返回，正在准备显影');
+    expect(viewModel.tone).toBe('warning');
+  });
+
+  it('marks inserted result as completed and terminal', () => {
+    const viewModel = buildImageGenerationAnchorViewModel({
+      anchor: createAnchor({ phase: 'inserting' }),
+      task: createTask({
+        status: TaskStatus.COMPLETED,
+        insertedToCanvas: true,
+      }),
+      hasInserted: true,
+    });
+
+    expect(viewModel.phase).toBe('completed');
+    expect(viewModel.subtitle).toBe('图片已稳定落位');
+    expect(viewModel.tone).toBe('success');
+    expect(viewModel.isTerminal).toBe(true);
+  });
+
+  it('marks failed post-processing as failed and surfaces workflow error', () => {
+    const viewModel = buildImageGenerationAnchorViewModel({
+      anchor: createAnchor({ phase: 'developing' }),
+      task: createTask({
+        status: TaskStatus.COMPLETED,
+      }),
+      workflow: createWorkflow({
+        postProcessingStatus: 'failed',
+        error: '插入失败',
+      }),
+    });
+
+    expect(viewModel.phase).toBe('failed');
+    expect(viewModel.error).toBe('插入失败');
+    expect(viewModel.primaryAction.type).toBe('retry');
+    expect(viewModel.secondaryAction?.type).toBe('details');
+  });
+});
