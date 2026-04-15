@@ -729,7 +729,8 @@ class TaskQueueService {
         messages,
         undefined,
         undefined,
-        (params.modelRef as any) || params.model
+        (params.modelRef as any) || params.model,
+        { taskType: 'video', taskId: task.id }
       );
       const text = response.choices?.[0]?.message?.content;
       if (!text) {
@@ -903,7 +904,8 @@ class TaskQueueService {
         messages,
         undefined,
         undefined,
-        (params.modelRef as any) || params.model
+        (params.modelRef as any) || params.model,
+        { taskType: 'audio', taskId: task.id }
       );
       const text = response.choices?.[0]?.message?.content;
       if (!text) {
@@ -997,7 +999,8 @@ class TaskQueueService {
         messages,
         undefined,
         undefined,
-        (params.modelRef as any) || params.model
+        (params.modelRef as any) || params.model,
+        { taskType: 'audio', taskId: task.id }
       );
       const text = response.choices?.[0]?.message?.content;
       if (!text) {

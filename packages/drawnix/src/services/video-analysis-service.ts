@@ -1,13 +1,10 @@
 import type { MCPResult } from '../mcp/types';
 import {
-  resolveInvocationRoute,
-  settingsManager,
   type ModelRef,
 } from '../utils/settings-manager';
-import { callGoogleGenerateContentRaw } from '../utils/gemini-api/apiCalls';
-import { validateAndEnsureConfig } from '../utils/gemini-api/auth';
-import type { GeminiConfig, GeminiMessage } from '../utils/gemini-api/types';
-import { resolveInvocationPlanFromRoute } from './provider-routing';
+import { callGoogleGenerateContentWithLog } from '../utils/gemini-api/logged-calls';
+import type { GeminiMessage } from '../utils/gemini-api/types';
+import { buildGenerateContentConfig, extractJsonObjects } from './analysis-core';
 
 export type VideoShotType = 'opening' | 'product' | 'detail' | 'scene' | 'cta' | 'other';
 export type TransitionHint = 'cut' | 'dissolve' | 'match_cut' | 'fade_to_black';
@@ -96,56 +93,6 @@ export const DEFAULT_ANALYSIS_PROMPT = `请逐帧分析这个视频，并提供�
 5. 所有字段统一使用同一种语言输出，语言与视频中的口播/文字语言保持一致。
 `;
 
-async function buildGenerateContentConfig(
-  model?: string,
-  modelRef?: ModelRef | null
-): Promise<GeminiConfig> {
-  await settingsManager.waitForInitialization();
-
-  const routeModel = modelRef || model || null;
-  const route = resolveInvocationRoute('text', routeModel);
-  const plan = resolveInvocationPlanFromRoute('text', routeModel);
-
-  const config: GeminiConfig = {
-    apiKey: route.apiKey,
-    baseUrl: route.baseUrl,
-    modelName: model || route.modelId || 'gemini-3.1-pro-preview',
-    authType: plan?.provider.authType || 'bearer',
-    providerType: plan?.provider.providerType || 'custom',
-    extraHeaders: plan?.provider.extraHeaders,
-    protocol: 'google.generateContent',
-    binding: {
-      ...(plan?.binding || {}),
-      protocol: 'google.generateContent',
-      baseUrlStrategy: 'trim-v1',
-      submitPath: undefined,
-    } as any,
-    provider: plan?.provider || null,
-  };
-
-  return validateAndEnsureConfig(config);
-}
-
-function extractJsonObjects(text: string): string[] {
-  const results: string[] = [];
-  let depth = 0;
-  let start = -1;
-
-  for (let i = 0; i < text.length; i++) {
-    if (text[i] === '{') {
-      if (depth === 0) start = i;
-      depth++;
-    } else if (text[i] === '}') {
-      depth--;
-      if (depth === 0 && start >= 0) {
-        results.push(text.slice(start, i + 1));
-        start = -1;
-      }
-    }
-  }
-  return results;
-}
-
 export async function executeVideoAnalysis(
   params: VideoAnalyzeParams
 ): Promise<MCPResult> {
@@ -174,9 +121,12 @@ export async function executeVideoAnalysis(
     ];
 
     const config = await buildGenerateContentConfig(model, modelRef);
-    const response = await callGoogleGenerateContentRaw(config, messages, {
-      stream: false,
-    });
+    const response = await callGoogleGenerateContentWithLog(
+      config,
+      messages,
+      { stream: false },
+      { taskType: 'video', prompt: analysisPrompt }
+    );
 
     const text = response.choices?.[0]?.message?.content;
     if (!text) {

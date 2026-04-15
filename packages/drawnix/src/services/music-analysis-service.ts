@@ -1,13 +1,10 @@
 import type { MCPResult } from '../mcp/types';
 import {
-  resolveInvocationRoute,
-  settingsManager,
   type ModelRef,
 } from '../utils/settings-manager';
-import { callGoogleGenerateContentRaw } from '../utils/gemini-api/apiCalls';
-import { validateAndEnsureConfig } from '../utils/gemini-api/auth';
-import type { GeminiConfig, GeminiMessage } from '../utils/gemini-api/types';
-import { resolveInvocationPlanFromRoute } from './provider-routing';
+import { callGoogleGenerateContentWithLog } from '../utils/gemini-api/logged-calls';
+import type { GeminiMessage } from '../utils/gemini-api/types';
+import { buildGenerateContentConfig, extractJsonObjects } from './analysis-core';
 
 export interface MusicAnalysisData {
   summary: string;
@@ -72,57 +69,6 @@ ${SUNO_METATAG_GUIDE}
 3. structure 中的元素必须符合 Suno 可读的元标签格式，即单个标签用 [] 包裹。
 4. sunoLyricsDraft 必须是接近最终可用版本，而不只是提纲。
 5. 如果无法确定，也要给出最合理的推断，不要留空对象。`;
-
-async function buildGenerateContentConfig(
-  model?: string,
-  modelRef?: ModelRef | null
-): Promise<GeminiConfig> {
-  await settingsManager.waitForInitialization();
-
-  const routeModel = modelRef || model || null;
-  const route = resolveInvocationRoute('text', routeModel);
-  const plan = resolveInvocationPlanFromRoute('text', routeModel);
-
-  const config: GeminiConfig = {
-    apiKey: route.apiKey,
-    baseUrl: route.baseUrl,
-    modelName: model || route.modelId || 'gemini-2.5-pro',
-    authType: plan?.provider.authType || 'bearer',
-    providerType: plan?.provider.providerType || 'custom',
-    extraHeaders: plan?.provider.extraHeaders,
-    protocol: 'google.generateContent',
-    binding: {
-      ...(plan?.binding || {}),
-      protocol: 'google.generateContent',
-      baseUrlStrategy: 'trim-v1',
-      submitPath: undefined,
-    } as any,
-    provider: plan?.provider || null,
-  };
-
-  return validateAndEnsureConfig(config);
-}
-
-function extractJsonObjects(text: string): string[] {
-  const results: string[] = [];
-  let depth = 0;
-  let start = -1;
-
-  for (let i = 0; i < text.length; i += 1) {
-    if (text[i] === '{') {
-      if (depth === 0) start = i;
-      depth += 1;
-    } else if (text[i] === '}') {
-      depth -= 1;
-      if (depth === 0 && start >= 0) {
-        results.push(text.slice(start, i + 1));
-        start = -1;
-      }
-    }
-  }
-
-  return results;
-}
 
 function normalizeStringArray(value: unknown, wrapMetaTags = false): string[] {
   if (!Array.isArray(value)) {
@@ -193,9 +139,12 @@ export async function executeMusicAnalysis(
     ];
 
     const config = await buildGenerateContentConfig(model, modelRef);
-    const response = await callGoogleGenerateContentRaw(config, messages, {
-      stream: false,
-    });
+    const response = await callGoogleGenerateContentWithLog(
+      config,
+      messages,
+      { stream: false },
+      { taskType: 'audio', prompt: analysisPrompt }
+    );
 
     const text = response.choices?.[0]?.message?.content;
     if (!text) {
