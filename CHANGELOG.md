@@ -1,3 +1,22 @@
+## 0.6.28 (2026-04-15)
+
+### 🚀 Features
+
+- 引入音频卡片自适应尺寸及多工具窗口支持 ([92b47af9](https://github.com/ljquan/aitu/commit/92b47af9))
+- 完善音频结果缓存并接入 MV 分镜任务 ([b108089d](https://github.com/ljquan/aitu/commit/b108089d))
+- 爆款MV生成器增强 — 历史跳转、帧传递、音频驱动分镜 ([c29f4a81](https://github.com/ljquan/aitu/commit/c29f4a81))
+
+### 🩹 Fixes
+
+- 修复任务工作流同步幽灵日志刷屏 ([492ca8bf](https://github.com/ljquan/aitu/commit/492ca8bf))
+- 区分 sw-debug llmapi 的音频与歌词生成 ([7421d206](https://github.com/ljquan/aitu/commit/7421d206))
+- 补齐 sw-debug 的 llmapi JSON 结果展示 ([4a411bc6](https://github.com/ljquan/aitu/commit/4a411bc6))
+- 修复 suno 多音频重复与时长错误 ([093cdf54](https://github.com/ljquan/aitu/commit/093cdf54))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+
 ## 0.6.27 (2026-04-15)
 
 ### 🚀 Features
