@@ -1,3 +1,29 @@
+## 0.6.27 (2026-04-15)
+
+### 🚀 Features
+
+- 基于 pricing endpoints 推断 provider bindings ([1a161276](https://github.com/ljquan/aitu/commit/1a161276))
+- 统一爆款音乐续写与 infill 能力 ([458375c0](https://github.com/ljquan/aitu/commit/458375c0))
+- 优化爆款音乐生成工具流程与体验 ([ae2f0e12](https://github.com/ljquan/aitu/commit/ae2f0e12))
+- 支持工具默认窗口行为并修复音乐任务卡片异常 ([788cbe04](https://github.com/ljquan/aitu/commit/788cbe04))
+
+### 🩹 Fixes
+
+- 首屏异步预热价格并补全 LLM 原始响应日志 ([4aa69578](https://github.com/ljquan/aitu/commit/4aa69578))
+- 清理任务列表批量索引误渲染 0 ([211cb525](https://github.com/ljquan/aitu/commit/211cb525))
+- 补齐 suno 续写所需 task_id ([703812e4](https://github.com/ljquan/aitu/commit/703812e4))
+- 保留爆款音乐创作描述并上移错误提示 ([f3dce84e](https://github.com/ljquan/aitu/commit/f3dce84e))
+- 优化音乐分析历史标题并隐藏续写入口 ([cd9b213d](https://github.com/ljquan/aitu/commit/cd9b213d))
+
+### 🔧 Chores
+
+- refactor: 统一 LLM 调用日志，所有大模型调用自动记录到 sw-debug LLM API 面板 ([7313b52f](https://github.com/ljquan/aitu/commit/7313b52f))
+- style: 优化音乐分析器已生成片段布局 ([616b4633](https://github.com/ljquan/aitu/commit/616b4633))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+
 ## 0.6.26 (2026-04-14)
 
 ### 🚀 Features
