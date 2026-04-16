@@ -1,5 +1,5 @@
 import { useEffect, useRef, type MutableRefObject } from 'react';
-import type { PlaitBoard, Point } from '@plait/core';
+import { RectangleClient, type PlaitBoard, type Point } from '@plait/core';
 import { taskQueueService } from '../services/task-queue';
 import {
   workflowCompletionService,
@@ -10,6 +10,12 @@ import { ImageGenerationAnchorTransforms } from '../plugins/with-image-generatio
 import type { PlaitImageGenerationAnchor } from '../types/image-generation-anchor.types';
 import { TaskStatus, TaskType, type Task } from '../types/task.types';
 import { getImageGenerationAnchorControllerResult } from '../utils/image-generation-anchor-controller';
+import {
+  getImageGenerationAnchorTaskWorkflowId,
+  getTasksForImageGenerationAnchor,
+  mergeImageGenerationAnchorTaskIds,
+  selectPrimaryImageGenerationAnchorTask,
+} from '../utils/image-generation-anchor-task';
 import { parseSizeToPixels } from '../utils/size-ratio';
 
 export interface UseImageGenerationAnchorSyncOptions {
@@ -17,29 +23,10 @@ export interface UseImageGenerationAnchorSyncOptions {
   enabled?: boolean;
 }
 
-const COMPLETED_REMOVAL_DELAY = 1200;
-
-function getTaskWorkflowId(task: Task): string | undefined {
-  return typeof task.params.workflowId === 'string'
-    ? task.params.workflowId
-    : undefined;
-}
+const COMPLETED_REMOVAL_DELAY = 1600;
 
 function isImageTask(task: Task): boolean {
   return task.type === TaskType.IMAGE;
-}
-
-function mergeTaskIds(
-  anchor: PlaitImageGenerationAnchor,
-  tasks: Task[]
-): string[] {
-  const ids = new Set(anchor.taskIds);
-
-  tasks.forEach((task) => {
-    ids.add(task.id);
-  });
-
-  return Array.from(ids);
 }
 
 function shallowEqualIds(left: string[], right: string[]): boolean {
@@ -48,54 +35,6 @@ function shallowEqualIds(left: string[], right: string[]): boolean {
   }
 
   return left.every((id, index) => id === right[index]);
-}
-
-function selectPrimaryTask(
-  anchor: PlaitImageGenerationAnchor,
-  tasks: Task[]
-): Task | null {
-  if (anchor.primaryTaskId) {
-    const primaryTask = tasks.find((task) => task.id === anchor.primaryTaskId);
-    if (primaryTask) {
-      return primaryTask;
-    }
-  }
-
-  const activeTask = tasks
-    .filter(
-      (task) =>
-        task.status === TaskStatus.PENDING ||
-        task.status === TaskStatus.PROCESSING
-    )
-    .sort((left, right) => right.updatedAt - left.updatedAt)[0];
-  if (activeTask) {
-    return activeTask;
-  }
-
-  return tasks.sort((left, right) => right.updatedAt - left.updatedAt)[0] ?? null;
-}
-
-function getTasksForAnchor(
-  anchor: PlaitImageGenerationAnchor,
-  allTasks: Task[]
-): Task[] {
-  const taskIdSet = new Set<string>(anchor.taskIds);
-  if (anchor.primaryTaskId) {
-    taskIdSet.add(anchor.primaryTaskId);
-  }
-
-  return allTasks.filter((task) => {
-    if (!isImageTask(task)) {
-      return false;
-    }
-
-    if (taskIdSet.has(task.id)) {
-      return true;
-    }
-
-    const workflowId = getTaskWorkflowId(task);
-    return workflowId === anchor.workflowId;
-  });
 }
 
 function derivePostProcessingStatus(
@@ -148,6 +87,26 @@ function deriveAnchorError(
   );
 }
 
+function deriveAnchorPreviewImageUrl(
+  anchor: PlaitImageGenerationAnchor,
+  primaryTask: Task | null
+): string | undefined {
+  const result = primaryTask?.result as
+    | {
+        previewImageUrl?: string;
+        url?: string;
+        urls?: string[];
+      }
+    | undefined;
+
+  return (
+    result?.previewImageUrl ||
+    result?.url ||
+    result?.urls?.find((url) => typeof url === 'string' && url.length > 0) ||
+    anchor.previewImageUrl
+  );
+}
+
 function isSamePoint(left?: Point, right?: Point): boolean {
   if (!left || !right) {
     return left === right;
@@ -156,12 +115,63 @@ function isSamePoint(left?: Point, right?: Point): boolean {
   return left[0] === right[0] && left[1] === right[1];
 }
 
+function hasElementPoints(
+  value: unknown
+): value is { points: [Point, Point] } {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    Array.isArray((value as { points?: unknown }).points) &&
+    (value as { points: unknown[] }).points.length === 2
+  );
+}
+
+function getActualInsertedElementGeometry(
+  board: PlaitBoard,
+  postProcessingResult?: WorkflowPostProcessingResult
+): { position: Point; size: { width: number; height: number } } | undefined {
+  if (!postProcessingResult?.firstElementId) {
+    return undefined;
+  }
+
+  const element = board.children.find(
+    (child) =>
+      (child as { id?: string }).id === postProcessingResult.firstElementId
+  );
+
+  if (!hasElementPoints(element)) {
+    return undefined;
+  }
+
+  const rect = RectangleClient.getRectangleByPoints(element.points);
+  return {
+    position: element.points[0],
+    size: {
+      width: rect.width,
+      height: rect.height,
+    },
+  };
+}
+
 function getAnchorResultDimensions(
   anchor: PlaitImageGenerationAnchor,
-  primaryTask: Task | null
+  primaryTask: Task | null,
+  postProcessingResult?: WorkflowPostProcessingResult
 ): { width: number; height: number } | undefined {
   if (anchor.anchorType === 'stack') {
     return undefined;
+  }
+
+  if (
+    typeof postProcessingResult?.firstElementSize?.width === 'number' &&
+    typeof postProcessingResult?.firstElementSize?.height === 'number' &&
+    postProcessingResult.firstElementSize.width > 0 &&
+    postProcessingResult.firstElementSize.height > 0
+  ) {
+    return {
+      width: postProcessingResult.firstElementSize.width,
+      height: postProcessingResult.firstElementSize.height,
+    };
   }
 
   const taskResult = primaryTask?.result as
@@ -276,9 +286,9 @@ export function useImageGenerationAnchorSync({
       }
 
       const allTasks = taskQueueService.getAllTasks();
-      const relatedTasks = getTasksForAnchor(anchor, allTasks);
-      const primaryTask = selectPrimaryTask(anchor, relatedTasks);
-      const mergedTaskIds = mergeTaskIds(anchor, relatedTasks);
+      const relatedTasks = getTasksForImageGenerationAnchor(anchor, allTasks);
+      const primaryTask = selectPrimaryImageGenerationAnchorTask(anchor, relatedTasks);
+      const mergedTaskIds = mergeImageGenerationAnchorTaskIds(anchor, relatedTasks);
       const primaryTaskId = anchor.primaryTaskId || primaryTask?.id;
       const postProcessingStatus = derivePostProcessingStatus(relatedTasks);
       const primaryPostProcessingResult =
@@ -302,6 +312,11 @@ export function useImageGenerationAnchorSync({
               'completed'
         );
       const nextError = deriveAnchorError(anchor, primaryTask, relatedTasks);
+      const nextPreviewImageUrl = deriveAnchorPreviewImageUrl(anchor, primaryTask);
+      const actualInsertedGeometry = getActualInsertedElementGeometry(
+        board,
+        primaryPostProcessingResult
+      );
 
       const controllerResult = getImageGenerationAnchorControllerResult({
         anchor: {
@@ -344,10 +359,16 @@ export function useImageGenerationAnchorSync({
         patch.error = nextPatch.error;
       }
 
+      if ((anchor.previewImageUrl ?? '') !== (nextPreviewImageUrl ?? '')) {
+        patch.previewImageUrl = nextPreviewImageUrl;
+      }
+
       const geometryPatch = buildAnchorGeometryPatch(
         anchor,
-        primaryPostProcessingResult?.firstElementPosition,
-        getAnchorResultDimensions(anchor, primaryTask)
+        actualInsertedGeometry?.position ??
+          primaryPostProcessingResult?.firstElementPosition,
+        actualInsertedGeometry?.size ??
+          getAnchorResultDimensions(anchor, primaryTask, primaryPostProcessingResult)
       );
 
       Object.assign(patch, geometryPatch);
@@ -388,7 +409,7 @@ export function useImageGenerationAnchorSync({
         candidateAnchorIds.add(byTaskId.id);
       }
 
-      const workflowId = getTaskWorkflowId(task);
+      const workflowId = getImageGenerationAnchorTaskWorkflowId(task);
       if (workflowId) {
         const byWorkflowId = ImageGenerationAnchorTransforms.getAnchorByWorkflowId(
           board,

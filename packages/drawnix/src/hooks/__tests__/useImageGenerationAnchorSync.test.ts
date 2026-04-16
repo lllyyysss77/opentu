@@ -18,6 +18,8 @@ const completionState = {
       status: 'pending' | 'processing' | 'completed' | 'failed';
       type: 'direct_insert';
       firstElementPosition?: [number, number];
+      firstElementId?: string;
+      firstElementSize?: { width: number; height: number };
       error?: string;
     }
   >(),
@@ -65,18 +67,27 @@ vi.mock('../../services/workflow-completion-service', () => ({
 vi.mock('../../plugins/with-image-generation-anchor', () => ({
   ImageGenerationAnchorTransforms: {
     getAnchorById: (board: PlaitBoard, anchorId: string) =>
-      ((board as unknown as { children: PlaitImageGenerationAnchor[] }).children ?? []).find(
-        (anchor) => anchor.id === anchorId
+      ((board as unknown as { children: unknown[] }).children ?? []).find(
+        (anchor) =>
+          (anchor as { type?: string }).type === 'generation-anchor' &&
+          (anchor as { id?: string }).id === anchorId
       ) ?? null,
     getAllAnchors: (board: PlaitBoard) =>
-      ((board as unknown as { children: PlaitImageGenerationAnchor[] }).children ?? []),
+      ((board as unknown as { children: unknown[] }).children ?? []).filter(
+        (anchor) => (anchor as { type?: string }).type === 'generation-anchor'
+      ),
     getAnchorByTaskId: (board: PlaitBoard, taskId: string) =>
-      ((board as unknown as { children: PlaitImageGenerationAnchor[] }).children ?? []).find(
-        (anchor) => anchor.taskIds.includes(taskId)
+      ((board as unknown as { children: unknown[] }).children ?? []).find(
+        (anchor) =>
+          (anchor as { type?: string }).type === 'generation-anchor' &&
+          Array.isArray((anchor as { taskIds?: unknown }).taskIds) &&
+          (anchor as { taskIds: string[] }).taskIds.includes(taskId)
       ) ?? null,
     getAnchorByWorkflowId: (board: PlaitBoard, workflowId: string) =>
-      ((board as unknown as { children: PlaitImageGenerationAnchor[] }).children ?? []).find(
-        (anchor) => anchor.workflowId === workflowId
+      ((board as unknown as { children: unknown[] }).children ?? []).find(
+        (anchor) =>
+          (anchor as { type?: string }).type === 'generation-anchor' &&
+          (anchor as { workflowId?: string }).workflowId === workflowId
       ) ?? null,
     updateAnchor: (
       board: PlaitBoard,
@@ -84,22 +95,28 @@ vi.mock('../../plugins/with-image-generation-anchor', () => ({
       patch: Partial<PlaitImageGenerationAnchor>
     ) => {
       const boardState = board as unknown as {
-        children: PlaitImageGenerationAnchor[];
+        children: unknown[];
       };
-      const index = boardState.children.findIndex((anchor) => anchor.id === anchorId);
+      const index = boardState.children.findIndex(
+        (anchor) =>
+          (anchor as { type?: string }).type === 'generation-anchor' &&
+          (anchor as { id?: string }).id === anchorId
+      );
       if (index >= 0) {
         boardState.children[index] = {
-          ...boardState.children[index],
+          ...(boardState.children[index] as Record<string, unknown>),
           ...patch,
         };
       }
     },
     removeAnchor: (board: PlaitBoard, anchorId: string) => {
       const boardState = board as unknown as {
-        children: PlaitImageGenerationAnchor[];
+        children: unknown[];
       };
       boardState.children = boardState.children.filter(
-        (anchor) => anchor.id !== anchorId
+        (anchor) =>
+          (anchor as { type?: string }).type !== 'generation-anchor' ||
+          (anchor as { id?: string }).id !== anchorId
       );
     },
   },
@@ -155,9 +172,26 @@ function createTask(overrides: Partial<Task> = {}): Task {
   };
 }
 
-function createBoard(anchor: PlaitImageGenerationAnchor): PlaitBoard {
+function createImageElement(
+  overrides: Record<string, unknown> = {}
+): Record<string, unknown> {
   return {
-    children: [anchor],
+    id: 'image-1',
+    type: 'image',
+    points: [
+      [200, 300],
+      [690, 578],
+    ],
+    ...overrides,
+  };
+}
+
+function createBoard(
+  anchor: PlaitImageGenerationAnchor,
+  extraChildren: unknown[] = []
+): PlaitBoard {
+  return {
+    children: [anchor, ...extraChildren],
   } as unknown as PlaitBoard;
 }
 
@@ -244,7 +278,7 @@ describe('useImageGenerationAnchorSync', () => {
     expect(anchors[0]?.transitionMode).toBe('morph');
 
     act(() => {
-      vi.advanceTimersByTime(1200);
+      vi.advanceTimersByTime(1600);
     });
 
     anchors = (board as unknown as { children: PlaitImageGenerationAnchor[] })
@@ -253,7 +287,7 @@ describe('useImageGenerationAnchorSync', () => {
   });
 
   it('reconciles on task and completion events after mount', () => {
-    const board = createBoard(createAnchor());
+    const board = createBoard(createAnchor(), [createImageElement()]);
     taskState.tasks = [createTask()];
 
     renderHook(() => useImageGenerationAnchorSync({ board, enabled: true }));
@@ -277,6 +311,9 @@ describe('useImageGenerationAnchorSync', () => {
       status: TaskStatus.COMPLETED,
       insertedToCanvas: true,
       updatedAt: 3,
+      result: {
+        url: 'https://example.com/generated.png',
+      },
     });
     taskState.tasks = [completedTask];
     completionState.byTaskId.set('task-1', {
@@ -284,6 +321,8 @@ describe('useImageGenerationAnchorSync', () => {
       status: 'completed',
       type: 'direct_insert',
       firstElementPosition: [200, 300],
+      firstElementId: 'image-1',
+      firstElementSize: { width: 480, height: 270 },
     });
 
     act(() => {
@@ -294,5 +333,10 @@ describe('useImageGenerationAnchorSync', () => {
       .children;
     expect(anchor.phase).toBe('completed');
     expect(anchor.expectedInsertPosition).toEqual([200, 300]);
+    expect(anchor.previewImageUrl).toBe('https://example.com/generated.png');
+    expect(anchor.points).toEqual([
+      [200, 300],
+      [690, 578],
+    ]);
   });
 });

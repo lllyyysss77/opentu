@@ -1,10 +1,12 @@
-import { RectangleClient } from '@plait/core';
+import { RectangleClient, type PlaitBoard } from '@plait/core';
 import { createRoot, type Root } from 'react-dom/client';
 import React from 'react';
 import type { PlaitImageGenerationAnchor } from '../../types/image-generation-anchor.types';
 import { ImageGenerationAnchorContent } from './ImageGenerationAnchorContent';
 
 export class ImageGenerationAnchorGenerator {
+  constructor(private board: PlaitBoard) {}
+
   private foreignObject: SVGForeignObjectElement | null = null;
   private htmlContainer: HTMLElement | null = null;
   private reactRoot: Root | null = null;
@@ -90,6 +92,7 @@ export class ImageGenerationAnchorGenerator {
 
     this.reactRoot.render(
       React.createElement(ImageGenerationAnchorContent, {
+        board: this.board,
         element,
         selected,
       })

@@ -1,4 +1,5 @@
 import {
+  getSelectedElements,
   PlaitBoard,
   PlaitElement,
   PlaitHistoryBoard,
@@ -184,7 +185,15 @@ export const ImageGenerationAnchorTransforms = {
 };
 
 export const withImageGenerationAnchor: PlaitPlugin = (board: PlaitBoard) => {
-  const { drawElement, getRectangle, isHit, isRectangleHit, isMovable, isAlign } =
+  const {
+    drawElement,
+    getRectangle,
+    isHit,
+    isRectangleHit,
+    isMovable,
+    isAlign,
+    getDeletedFragment: originGetDeletedFragment,
+  } =
     board;
 
   board.drawElement = (context: PlaitPluginElementContext) => {
@@ -245,6 +254,18 @@ export const withImageGenerationAnchor: PlaitPlugin = (board: PlaitBoard) => {
     }
 
     return isAlign(element);
+  };
+
+  board.getDeletedFragment = (data: PlaitElement[]) => {
+    const selectedAnchors = getSelectedElements(board).filter(
+      isImageGenerationAnchorElement
+    );
+
+    if (selectedAnchors.length > 0) {
+      data.push(...selectedAnchors);
+    }
+
+    return originGetDeletedFragment(data);
   };
 
   return board;

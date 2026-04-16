@@ -31,7 +31,7 @@ export class ImageGenerationAnchorComponent
       hasResizeHandle: () => false,
     });
 
-    this.anchorGenerator = new ImageGenerationAnchorGenerator();
+    this.anchorGenerator = new ImageGenerationAnchorGenerator(this.board);
   }
 
   initialize(): void {

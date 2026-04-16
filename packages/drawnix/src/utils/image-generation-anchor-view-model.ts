@@ -3,6 +3,7 @@ import type { WorkflowMessageData } from '../types/chat.types';
 import {
   TaskExecutionPhase,
   TaskStatus,
+  TaskType,
   type Task,
 } from '../types/task.types';
 import type {
@@ -10,6 +11,7 @@ import type {
   ImageGenerationAnchorViewModel,
   PlaitImageGenerationAnchor,
 } from '../types/image-generation-anchor.types';
+import { resolveImageTaskDisplayProgress } from './image-task-progress';
 
 const PHASE_LABELS: Record<ImageGenerationAnchorPhase, string> = {
   submitted: '已提交',
@@ -46,6 +48,7 @@ export interface BuildImageGenerationAnchorViewModelOptions {
   postProcessingStatus?: WorkflowMessageData['postProcessingStatus'];
   isInserting?: boolean;
   hasInserted?: boolean;
+  taskDisplayProgress?: number | null;
 }
 
 export function deriveImageGenerationAnchorPhase(
@@ -102,10 +105,20 @@ export function deriveImageGenerationAnchorPhase(
 export function buildImageGenerationAnchorViewModel(
   options: BuildImageGenerationAnchorViewModelOptions
 ): ImageGenerationAnchorViewModel {
-  const { anchor, task, workflow } = options;
+  const { anchor, task, taskDisplayProgress, workflow } = options;
   const phase = deriveImageGenerationAnchorPhase(options);
   const rectangle = RectangleClient.getRectangleByPoints(anchor.points);
-  const progress = clampProgress(task?.progress ?? anchor.progress);
+  const fallbackProgress = clampProgress(task?.progress ?? anchor.progress);
+  const resolvedProgress =
+    task?.type === TaskType.IMAGE &&
+    task.status === TaskStatus.PROCESSING &&
+    (phase === 'queued' || phase === 'generating')
+      ? resolveImageTaskDisplayProgress({
+          startedAt: task.startedAt,
+          fallbackProgress,
+        })
+      : fallbackProgress;
+  const progress = clampProgress(taskDisplayProgress ?? resolvedProgress);
   const subtitle =
     anchor.subtitle && anchor.phase === phase
       ? anchor.subtitle
@@ -120,6 +133,15 @@ export function buildImageGenerationAnchorViewModel(
       ? 'warning'
       : 'default';
 
+  const progressMode: ImageGenerationAnchorViewModel['progressMode'] =
+    phase === 'queued' || phase === 'generating'
+      ? progress != null
+        ? 'determinate'
+        : 'indeterminate'
+      : phase === 'submitted'
+      ? 'indeterminate'
+      : 'hidden';
+
   const primaryAction =
     phase === 'failed'
       ? { type: 'retry' as const, label: '重试' }
@@ -127,7 +149,7 @@ export function buildImageGenerationAnchorViewModel(
 
   const secondaryAction =
     phase === 'failed'
-      ? { type: 'details' as const, label: '详情' }
+      ? { type: 'dismiss' as const, label: '关闭' }
       : undefined;
 
   return {
@@ -136,7 +158,9 @@ export function buildImageGenerationAnchorViewModel(
     phase,
     title: anchor.title || workflow?.name || '图片生成',
     subtitle,
+    previewImageUrl: anchor.previewImageUrl,
     progress,
+    progressMode,
     phaseLabel: PHASE_LABELS[phase],
     tone,
     geometry: {

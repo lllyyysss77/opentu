@@ -36,4 +36,6 @@ export type {
   ContentType,
   InsertionItem,
   CanvasInsertionParams,
+  CanvasInsertionResultData,
+  CanvasInsertionResultItem,
 } from './canvas-insertion';

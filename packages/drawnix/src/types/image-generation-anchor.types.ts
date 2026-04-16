@@ -48,7 +48,9 @@ export interface ImageGenerationAnchorViewModel {
   phase: ImageGenerationAnchorPhase;
   title: string;
   subtitle: string;
+  previewImageUrl?: string;
   progress: number | null;
+  progressMode: 'determinate' | 'indeterminate' | 'hidden';
   phaseLabel: string;
   tone: 'default' | 'warning' | 'success' | 'danger';
   geometry: ImageGenerationAnchorGeometry;
@@ -81,6 +83,7 @@ export interface PlaitImageGenerationAnchor extends PlaitElement {
   phase: ImageGenerationAnchorPhase;
   title: string;
   subtitle?: string;
+  previewImageUrl?: string;
   progress?: number | null;
   error?: string;
   transitionMode: ImageGenerationAnchorTransitionMode;

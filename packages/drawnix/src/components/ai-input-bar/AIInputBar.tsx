@@ -119,6 +119,7 @@ import { workflowCompletionService } from '../../services/workflow-completion-se
 import { BoardTransforms } from '@plait/core';
 import { ImageGenerationAnchorTransforms } from '../../plugins/with-image-generation-anchor';
 import { buildImageGenerationAnchorCreateOptions } from '../../utils/image-generation-anchor-submission';
+import { resolveImageGenerationAnchorAvailablePosition } from '../../utils/image-generation-anchor-placement';
 import {
   buildImageGenerationAnchorPresentationPatch,
   type ImageGenerationAnchorPresentationState,
@@ -532,16 +533,28 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
     const initialPreferences = loadAIInputPreferences();
 
     const bindCurrentImageAnchorTask = useCallback(
-      (boardInstance: typeof board, taskId: string) => {
-        const anchorId = currentImageAnchorIdRef.current;
-        if (!anchorId || !boardInstance) {
+      (
+        boardInstance: typeof board,
+        taskId: string,
+        workflowId?: string
+      ) => {
+        if (!boardInstance) {
           return;
         }
 
-        const currentAnchor = ImageGenerationAnchorTransforms.getAnchorById(
-          boardInstance,
-          anchorId
-        );
+        const currentAnchor =
+          (workflowId
+            ? ImageGenerationAnchorTransforms.getAnchorByWorkflowId(
+                boardInstance,
+                workflowId
+              )
+            : null) ||
+          (currentImageAnchorIdRef.current
+            ? ImageGenerationAnchorTransforms.getAnchorById(
+                boardInstance,
+                currentImageAnchorIdRef.current
+              )
+            : null);
         if (!currentAnchor) {
           return;
         }
@@ -550,7 +563,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
           ? currentAnchor.taskIds
           : [...currentAnchor.taskIds, taskId];
 
-        ImageGenerationAnchorTransforms.updateAnchor(boardInstance, anchorId, {
+        ImageGenerationAnchorTransforms.updateAnchor(boardInstance, currentAnchor.id, {
           taskIds: nextTaskIds,
           primaryTaskId: currentAnchor.primaryTaskId || taskId,
         });
@@ -2147,8 +2160,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
           const originY = board.viewport?.origination?.[1] || 0;
 
           const allElements = board.children.filter(
-            (el: { type?: string }) =>
-              el.type !== 'workzone' && el.type !== 'generation-anchor'
+            (el: { type?: string }) => el.type !== 'workzone'
           );
 
           const viewportCenterX =
@@ -2278,19 +2290,36 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
           const isImageGeneration = parsedParams.generationType === 'image';
 
           if (isImageGeneration) {
+            let anchorCreateOptions = buildImageGenerationAnchorCreateOptions({
+              workflowId: workflow.id,
+              expectedInsertPosition: [expectedInsertLeftX, expectedInsertY],
+              targetFrameId,
+              targetFrameDimensions,
+              requestedSize: parsedParams.size,
+              requestedCount: parsedParams.count,
+              zoom,
+              title: workflowMessageData.name || '图片生成',
+              ...buildImageGenerationAnchorPresentationPatch('submitted'),
+            });
+
+            if (!targetFrameId) {
+              const resolvedAnchorPosition =
+                resolveImageGenerationAnchorAvailablePosition(
+                  board,
+                  anchorCreateOptions.position,
+                  anchorCreateOptions.size
+                );
+
+              anchorCreateOptions = {
+                ...anchorCreateOptions,
+                position: resolvedAnchorPosition,
+                expectedInsertPosition: resolvedAnchorPosition,
+              };
+            }
+
             const anchorElement = ImageGenerationAnchorTransforms.insertAnchor(
               board,
-              buildImageGenerationAnchorCreateOptions({
-                workflowId: workflow.id,
-                expectedInsertPosition: [expectedInsertLeftX, expectedInsertY],
-                targetFrameId,
-                targetFrameDimensions,
-                requestedSize: parsedParams.size,
-                requestedCount: parsedParams.count,
-                zoom,
-                title: workflowMessageData.name || '图片生成',
-                ...buildImageGenerationAnchorPresentationPatch('submitted'),
-              })
+              anchorCreateOptions
             );
 
             currentImageAnchorIdRef.current = anchorElement.id;
@@ -2656,7 +2685,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
                 taskId: result.taskId,
               });
 
-              bindCurrentImageAnchorTask(board, result.taskId);
+              bindCurrentImageAnchorTask(board, result.taskId, workflow.id);
             } else if (currentStepStatus === 'running') {
               const normalizedResultData =
                 result.type === 'text' &&
@@ -3110,7 +3139,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
                 taskId: result.taskId,
               });
 
-              bindCurrentImageAnchorTask(board, result.taskId);
+              bindCurrentImageAnchorTask(board, result.taskId, workflow.id);
             } else if (currentStepStatus === 'running') {
               const normalizedResultData =
                 result.type === 'text' &&

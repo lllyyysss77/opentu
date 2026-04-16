@@ -17,6 +17,7 @@ export interface ImageGenerationAnchorControllerOptions {
   postProcessingStatus?: WorkflowMessageData['postProcessingStatus'];
   isInserting?: boolean;
   hasInserted?: boolean;
+  taskDisplayProgress?: number | null;
 }
 
 export interface ImageGenerationAnchorControllerResult {
@@ -31,6 +32,7 @@ export function getImageGenerationAnchorControllerResult(
   const {
     anchor,
     task,
+    taskDisplayProgress,
     workflow,
     postProcessingStatus,
     isInserting,
@@ -49,6 +51,7 @@ export function getImageGenerationAnchorControllerResult(
   const viewModel = buildImageGenerationAnchorViewModel({
     anchor,
     task,
+    taskDisplayProgress,
     workflow,
     postProcessingStatus,
     isInserting,

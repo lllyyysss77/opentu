@@ -1,71 +1,105 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import classNames from 'classnames';
+import type { PlaitBoard } from '@plait/core';
 import { useImageGenerationAnchorController } from '../../hooks/useImageGenerationAnchorController';
-import { getCanvasBoard } from '../../services/canvas-operations';
 import { ImageGenerationAnchorTransforms } from '../../plugins/with-image-generation-anchor';
 import {
   IMAGE_GENERATION_ANCHOR_RETRY_EVENT,
   type ImageGenerationAnchorActionType,
   type PlaitImageGenerationAnchor,
 } from '../../types/image-generation-anchor.types';
+import {
+  ImageGenerationProgressDisplay,
+  type ImageGenerationProgressTone,
+} from '../shared/ImageGenerationProgressDisplay';
+import { getImageTaskProgressStatusText } from '../../utils/image-task-progress';
 import { buildImageGenerationAnchorPresentationPatch } from '../../utils/image-generation-anchor-state';
 import './image-generation-anchor.scss';
 
 interface ImageGenerationAnchorContentProps {
+  board: PlaitBoard;
   element: PlaitImageGenerationAnchor;
   selected: boolean;
 }
 
+const PHASE_CENTER_LABELS = {
+  submitted: '等待执行',
+  queued: '等待执行',
+  generating: '生成中',
+  developing: '正在显影',
+  inserting: '正在显现',
+  completed: '',
+  failed: '生成失败',
+} as const;
+
 export const ImageGenerationAnchorContent: React.FC<
   ImageGenerationAnchorContentProps
-> = ({ element, selected }) => {
+> = ({ board, element, selected }) => {
   const { viewModel } = useImageGenerationAnchorController({ anchor: element });
   const [detailsOpen, setDetailsOpen] = useState(false);
   const isGhost = viewModel.anchorType === 'ghost';
-  const isFrameLike =
-    viewModel.anchorType === 'frame' || viewModel.anchorType === 'ratio';
   const isStack = viewModel.anchorType === 'stack';
-  const showActions =
-    !isGhost || viewModel.phase === 'failed' || detailsOpen;
-  const progressValue =
-    viewModel.progress != null
-      ? `${Math.round(viewModel.progress)}%`
-      : viewModel.phase === 'failed'
-      ? '!'
-      : '...';
-  const progressWidth = `${viewModel.progress ?? (viewModel.phase === 'failed' ? 100 : 24)}%`;
-  const primaryActionLabel = detailsOpen &&
-    viewModel.primaryAction.type === 'details'
-    ? '收起'
-    : viewModel.primaryAction.label;
-  const secondaryActionLabel = detailsOpen &&
-    viewModel.secondaryAction?.type === 'details'
-    ? '收起'
-    : viewModel.secondaryAction?.label;
-  const secondaryActionType = viewModel.secondaryAction?.type;
+  const isRenderingResult =
+    viewModel.phase === 'developing' || viewModel.phase === 'inserting';
+  const candidateCount = Math.max(
+    element.requestedCount ?? 0,
+    element.taskIds.length,
+    1
+  );
+  const showActions = viewModel.phase === 'failed' || detailsOpen || selected;
+  const showRing = viewModel.progressMode !== 'hidden';
+  const showDeterminateProgress =
+    viewModel.progressMode === 'determinate' && viewModel.progress != null;
+  const progressValue = Math.round(viewModel.progress ?? 0);
+  const showCenterLabel =
+    viewModel.phase !== 'completed' || viewModel.phase === 'failed';
+  const centerLabel =
+    showDeterminateProgress
+      ? getImageTaskProgressStatusText(progressValue)
+      : PHASE_CENTER_LABELS[viewModel.phase];
+  const previewImageStyle = viewModel.previewImageUrl
+    ? {
+        backgroundImage: `url("${viewModel.previewImageUrl}")`,
+      }
+    : undefined;
+  const progressTone: ImageGenerationProgressTone =
+    viewModel.phase === 'failed'
+      ? 'danger'
+      : viewModel.phase === 'completed'
+      ? 'success'
+      : isRenderingResult
+      ? 'loading'
+      : 'default';
   const detailItems = useMemo(
     () => [
       { label: '阶段', value: viewModel.phaseLabel },
-      { label: '类型', value: viewModel.anchorType },
+      { label: '形态', value: viewModel.anchorType },
+      { label: '过渡', value: viewModel.transitionMode },
       {
         label: '任务',
         value: element.primaryTaskId || (element.taskIds[0] ?? '待绑定'),
       },
       { label: '工作流', value: element.workflowId },
+      { label: '错误', value: viewModel.error || '无' },
     ],
     [
       element.primaryTaskId,
       element.taskIds,
       element.workflowId,
       viewModel.anchorType,
+      viewModel.error,
       viewModel.phaseLabel,
+      viewModel.transitionMode,
     ]
   );
 
-  const stopPointer = useCallback((event: React.PointerEvent | React.MouseEvent) => {
-    event.stopPropagation();
-    event.preventDefault();
-  }, []);
+  const stopPointer = useCallback(
+    (event: React.PointerEvent | React.MouseEvent) => {
+      event.stopPropagation();
+      event.preventDefault();
+    },
+    []
+  );
 
   const handleAction = useCallback(
     (actionType: ImageGenerationAnchorActionType) => {
@@ -84,14 +118,11 @@ export const ImageGenerationAnchorContent: React.FC<
           return;
         }
 
-        const board = getCanvasBoard();
-        if (board) {
-          ImageGenerationAnchorTransforms.updateAnchor(
-            board,
-            element.id,
-            buildImageGenerationAnchorPresentationPatch('retrying')
-          );
-        }
+        ImageGenerationAnchorTransforms.updateAnchor(
+          board,
+          element.id,
+          buildImageGenerationAnchorPresentationPatch('retrying')
+        );
 
         window.dispatchEvent(
           new CustomEvent(IMAGE_GENERATION_ANCHOR_RETRY_EVENT, {
@@ -102,14 +133,58 @@ export const ImageGenerationAnchorContent: React.FC<
       }
 
       if (actionType === 'dismiss') {
-        const board = getCanvasBoard();
-        if (board) {
-          ImageGenerationAnchorTransforms.removeAnchor(board, element.id);
-        }
+        board.deleteFragment([element]);
       }
     },
-    [element.id, element.primaryTaskId, element.taskIds]
+    [board, element]
   );
+
+  const renderCore = () => {
+    return (
+      <div className="image-generation-anchor__surface-core">
+        {showCenterLabel ? (
+          <ImageGenerationProgressDisplay
+            progress={showDeterminateProgress ? progressValue : null}
+            progressMode={viewModel.progressMode}
+            tone={progressTone}
+            statusText={centerLabel}
+            compact
+            showRing={showRing || viewModel.phase === 'failed'}
+            className="image-generation-anchor__progress-display"
+          />
+        ) : null}
+        {viewModel.phase === 'failed' && viewModel.error ? (
+          <div className="image-generation-anchor__error">
+            <span className="image-generation-anchor__error-raw">
+              {viewModel.error}
+            </span>
+            <button
+              type="button"
+              className="image-generation-anchor__error-link"
+              onPointerDown={stopPointer}
+              onMouseDown={stopPointer}
+              onClick={(event) => {
+                stopPointer(event);
+                handleAction('details');
+              }}
+            >
+              {detailsOpen ? '收起详情' : '查看详情'}
+            </button>
+          </div>
+        ) : null}
+      </div>
+    );
+  };
+
+  const primaryActionLabel =
+    detailsOpen && viewModel.primaryAction.type === 'details'
+      ? '收起'
+      : viewModel.primaryAction.label;
+  const secondaryActionLabel =
+    detailsOpen && viewModel.secondaryAction?.type === 'details'
+      ? '收起'
+      : viewModel.secondaryAction?.label;
+  const secondaryActionType = viewModel.secondaryAction?.type;
 
   return (
     <div
@@ -118,6 +193,8 @@ export const ImageGenerationAnchorContent: React.FC<
         `image-generation-anchor--${viewModel.anchorType}`,
         `image-generation-anchor--${viewModel.tone}`,
         `image-generation-anchor--phase-${viewModel.phase}`,
+        `image-generation-anchor--progress-${viewModel.progressMode}`,
+        `image-generation-anchor--transition-${viewModel.transitionMode}`,
         {
           'image-generation-anchor--selected': selected,
           'image-generation-anchor--terminal': viewModel.isTerminal,
@@ -126,93 +203,41 @@ export const ImageGenerationAnchorContent: React.FC<
       )}
     >
       <div className="image-generation-anchor__glow" />
-      {isGhost ? (
-        <>
-          <div className="image-generation-anchor__ghost">
-            <div className="image-generation-anchor__ghost-ring" />
-            <div className="image-generation-anchor__ghost-core">
-              <span className="image-generation-anchor__ghost-label">
-                {viewModel.phaseLabel}
-              </span>
-              <span className="image-generation-anchor__ghost-value">
-                {progressValue}
-              </span>
-            </div>
-          </div>
 
-          <div className="image-generation-anchor__ghost-copy">
-            <span className="image-generation-anchor__title">
-              {viewModel.title}
-            </span>
-            <span className="image-generation-anchor__subtitle">
-              {viewModel.subtitle}
-            </span>
-          </div>
-        </>
-      ) : (
-        <>
-          <div className="image-generation-anchor__header">
-            <div className="image-generation-anchor__heading">
-              <span className="image-generation-anchor__eyebrow">
-                {isFrameLike
-                  ? '结果外壳'
-                  : isStack
-                  ? '候选组'
-                  : '结果锚点'}
-              </span>
-              <span className="image-generation-anchor__title">
-                {viewModel.title}
-              </span>
-            </div>
-            <span className="image-generation-anchor__phase">
-              {viewModel.phaseLabel}
-            </span>
-          </div>
-
-          <div className="image-generation-anchor__surface">
-            <div className="image-generation-anchor__surface-grid" />
-            <div className="image-generation-anchor__surface-status">
-              <span className="image-generation-anchor__badge">
-                {viewModel.anchorType}
-              </span>
-              <span className="image-generation-anchor__badge">
-                {viewModel.transitionMode}
-              </span>
-            </div>
-            <div className="image-generation-anchor__surface-center">
-              <span className="image-generation-anchor__surface-title">
-                {viewModel.phaseLabel}
-              </span>
-              <span className="image-generation-anchor__surface-subtitle">
-                {viewModel.subtitle}
-              </span>
-            </div>
-            {isStack ? (
-              <div className="image-generation-anchor__stack-layers">
-                <span />
-                <span />
-                <span />
-              </div>
+      <div
+        className={classNames('image-generation-anchor__surface', {
+          'image-generation-anchor__surface--compact': isGhost,
+        })}
+      >
+        <div className="image-generation-anchor__surface-grid" />
+        <div className="image-generation-anchor__surface-refresh" />
+        <div className="image-generation-anchor__surface-preview">
+          <div className="image-generation-anchor__surface-shell" />
+          <div
+            className={classNames('image-generation-anchor__surface-image', {
+              'image-generation-anchor__surface-image--actual':
+                Boolean(viewModel.previewImageUrl),
+            })}
+          >
+            <span className="image-generation-anchor__surface-image-noise" />
+            {viewModel.previewImageUrl ? (
+              <span
+                className="image-generation-anchor__surface-image-actual"
+                style={previewImageStyle}
+              />
             ) : null}
+            <span className="image-generation-anchor__surface-image-sheen" />
           </div>
-        </>
-      )}
-
-      <div className="image-generation-anchor__progress">
-        <div className="image-generation-anchor__progress-bar">
-          <span
-            className="image-generation-anchor__progress-fill"
-            style={{ width: progressWidth }}
-          />
         </div>
-        <span className="image-generation-anchor__progress-value">
-          {progressValue}
-        </span>
-      </div>
 
-      {viewModel.error ? (
-        <div className="image-generation-anchor__error">{viewModel.error}</div>
-      ) : null}
+        {renderCore()}
+
+        {isStack ? (
+          <div className="image-generation-anchor__stack-badge">
+            {candidateCount}
+          </div>
+        ) : null}
+      </div>
 
       {detailsOpen ? (
         <div className="image-generation-anchor__details">

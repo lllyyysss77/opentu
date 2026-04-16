@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   buildImageGenerationAnchorViewModel,
   deriveImageGenerationAnchorPhase,
@@ -76,6 +76,10 @@ function createWorkflow(
 }
 
 describe('image-generation-anchor-view-model', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('maps processing + submitting task to queued phase', () => {
     const phase = deriveImageGenerationAnchorPhase({
       anchor: createAnchor(),
@@ -86,6 +90,24 @@ describe('image-generation-anchor-view-model', () => {
     });
 
     expect(phase).toBe('queued');
+  });
+
+  it('uses simulated image progress during queued processing', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-04-15T08:00:00.000Z'));
+
+    const viewModel = buildImageGenerationAnchorViewModel({
+      anchor: createAnchor({ phase: 'submitted' }),
+      task: createTask({
+        status: TaskStatus.PROCESSING,
+        executionPhase: TaskExecutionPhase.SUBMITTING,
+        startedAt: Date.now() - 90_000,
+      }),
+    });
+
+    expect(viewModel.phase).toBe('queued');
+    expect(viewModel.progressMode).toBe('determinate');
+    expect(viewModel.progress).toBeGreaterThan(0);
   });
 
   it('maps processing task without submitting phase to generating', () => {
@@ -99,8 +121,25 @@ describe('image-generation-anchor-view-model', () => {
 
     expect(viewModel.phase).toBe('generating');
     expect(viewModel.progress).toBe(42);
+    expect(viewModel.progressMode).toBe('determinate');
     expect(viewModel.phaseLabel).toBe('生成中');
     expect(viewModel.subtitle).toBe('图片正在生成，请稍候');
+  });
+
+  it('prefers shared task display progress when provided', () => {
+    const viewModel = buildImageGenerationAnchorViewModel({
+      anchor: createAnchor({ phase: 'queued', progress: 0 }),
+      task: createTask({
+        status: TaskStatus.PROCESSING,
+        executionPhase: TaskExecutionPhase.SUBMITTING,
+        startedAt: Date.now(),
+      }),
+      taskDisplayProgress: 42,
+    });
+
+    expect(viewModel.phase).toBe('queued');
+    expect(viewModel.progressMode).toBe('determinate');
+    expect(viewModel.progress).toBe(42);
   });
 
   it('uses developing phase during post-processing and falls back to derived subtitle', () => {
@@ -116,6 +155,7 @@ describe('image-generation-anchor-view-model', () => {
     });
 
     expect(viewModel.phase).toBe('developing');
+    expect(viewModel.progressMode).toBe('hidden');
     expect(viewModel.subtitle).toBe('结果已返回，正在准备显影');
     expect(viewModel.tone).toBe('warning');
   });
@@ -132,6 +172,7 @@ describe('image-generation-anchor-view-model', () => {
 
     expect(viewModel.phase).toBe('completed');
     expect(viewModel.subtitle).toBe('图片已稳定落位');
+    expect(viewModel.progressMode).toBe('hidden');
     expect(viewModel.tone).toBe('success');
     expect(viewModel.isTerminal).toBe(true);
   });
@@ -151,6 +192,7 @@ describe('image-generation-anchor-view-model', () => {
     expect(viewModel.phase).toBe('failed');
     expect(viewModel.error).toBe('插入失败');
     expect(viewModel.primaryAction.type).toBe('retry');
-    expect(viewModel.secondaryAction?.type).toBe('details');
+    expect(viewModel.progressMode).toBe('hidden');
+    expect(viewModel.secondaryAction?.type).toBe('dismiss');
   });
 });

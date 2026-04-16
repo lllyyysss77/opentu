@@ -17,6 +17,8 @@ import { getTaskQueueService } from '../services/task-queue';
 import { workflowCompletionService } from '../services/workflow-completion-service';
 import { Task, TaskStatus, TaskType } from '../types/task.types';
 import {
+  type CanvasInsertionResultData,
+  type ContentType,
   executeCanvasInsertion,
   getCanvasBoard,
   insertAIFlow,
@@ -44,6 +46,11 @@ import {
 } from '../services/media-result-handler';
 import { insertMediaIntoFrame } from '../utils/frame-insertion-utils';
 import { buildImageGenerationAnchorPresentationPatch } from '../utils/image-generation-anchor-state';
+import {
+  getAnchorCurrentPosition,
+  isSamePoint,
+  resolveImageAnchorInsertionPoint,
+} from '../utils/image-generation-anchor-insertion';
 import { formatLyricsForCanvas, getLyricsTitle, isLyricsTask } from '../utils/lyrics-task-utils';
 
 /**
@@ -166,6 +173,17 @@ function isPoint(value: unknown): value is Point {
   );
 }
 
+function isDimensions(
+  value: unknown
+): value is { width: number; height: number } {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as { width?: unknown }).width === 'number' &&
+    typeof (value as { height?: unknown }).height === 'number'
+  );
+}
+
 function getTaskImageDimensions(
   task: Task,
   fallback?: { width: number; height: number }
@@ -239,6 +257,40 @@ function getInsertionResultPoint(result: unknown, fallback: Point): Point {
     : fallback;
 }
 
+function getInsertionResultGeometry(
+  result: unknown,
+  fallbackPosition: Point,
+  fallbackSize?: { width: number; height: number },
+  preferredTypes?: ContentType[]
+): {
+  elementId?: string;
+  position: Point;
+  size?: { width: number; height: number };
+} {
+  const data = (result as { data?: CanvasInsertionResultData } | undefined)?.data;
+  const preferredItem =
+    data?.items.find((item) => preferredTypes?.includes(item.type)) ??
+    data?.items[0];
+
+  const position = isPoint(preferredItem?.point)
+    ? preferredItem.point
+    : isPoint(data?.firstElementPosition)
+    ? data.firstElementPosition
+    : fallbackPosition;
+
+  const size = isDimensions(preferredItem?.size)
+    ? preferredItem.size
+    : isDimensions(data?.firstElementSize)
+    ? data.firstElementSize
+    : fallbackSize;
+
+  return {
+    elementId: preferredItem?.elementId ?? data?.firstElementId,
+    position,
+    size,
+  };
+}
+
 function getStackAnchorPreviewSize(
   itemCount: number,
   dimensions?: { width: number; height: number }
@@ -252,6 +304,77 @@ function getStackAnchorPreviewSize(
   return {
     width: dimensions.width + (previewCount - 1) * 28,
     height: dimensions.height + (previewCount - 1) * 10,
+  };
+}
+
+function resolvePendingInsertContext(
+  board: NonNullable<ReturnType<typeof getCanvasBoard>>,
+  task: Task
+): {
+  insertionPoint?: Point;
+  targetFrameId?: string;
+  targetFrameDimensions?: { width: number; height: number };
+  imageAnchor: PlaitImageGenerationAnchor | null;
+} {
+  const workzone = findWorkZoneForTask(task.id);
+  const imageAnchor = findImageGenerationAnchorForTask(task);
+  let insertionPoint = resolveImageAnchorInsertionPoint({
+    anchor: imageAnchor,
+    workzoneExpectedInsertPosition: workzone?.expectedInsertPosition,
+  });
+  let targetFrameId: string | undefined;
+  let targetFrameDimensions: { width: number; height: number } | undefined;
+
+  const anchorCurrentPosition = getAnchorCurrentPosition(imageAnchor);
+  if (
+    imageAnchor &&
+    anchorCurrentPosition &&
+    !isSamePoint(imageAnchor.expectedInsertPosition, anchorCurrentPosition)
+  ) {
+    ImageGenerationAnchorTransforms.updateAnchor(board, imageAnchor.id, {
+      expectedInsertPosition: anchorCurrentPosition,
+    });
+  }
+
+  if (workzone?.targetFrameId && workzone?.targetFrameDimensions) {
+    targetFrameId = workzone.targetFrameId;
+    targetFrameDimensions = workzone.targetFrameDimensions;
+  }
+
+  if (
+    !targetFrameId &&
+    imageAnchor?.targetFrameId &&
+    imageAnchor?.targetFrameDimensions
+  ) {
+    targetFrameId = imageAnchor.targetFrameId;
+    targetFrameDimensions = imageAnchor.targetFrameDimensions;
+  }
+
+  if (!targetFrameId && task.params?.targetFrameId) {
+    targetFrameId = task.params.targetFrameId as string;
+    targetFrameDimensions = task.params.targetFrameDimensions as
+      | { width: number; height: number }
+      | undefined;
+  }
+
+  if (imageAnchor) {
+    linkImageGenerationAnchorToTask(imageAnchor, task);
+    ImageGenerationAnchorTransforms.updateAnchor(
+      board,
+      imageAnchor.id,
+      buildImageGenerationAnchorPresentationPatch('inserting')
+    );
+  }
+
+  if (!insertionPoint) {
+    insertionPoint = getInsertionPointBelowBottommostElement(board);
+  }
+
+  return {
+    insertionPoint,
+    targetFrameId,
+    targetFrameDimensions,
+    imageAnchor,
   };
 }
 
@@ -344,68 +467,33 @@ export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): v
       const toInsert = new Map(pendingMap);
       pendingMap.clear();
 
-      // 尝试查找与第一个任务关联的 WorkZone，获取预期插入位置和 Frame 上下文
-      const firstTask = Array.from(toInsert.values())[0]?.[0]?.task;
-      let insertionPoint: Point | undefined;
-      let targetFrameId: string | undefined;
-      let targetFrameDimensions: { width: number; height: number } | undefined;
-
-      if (firstTask) {
-        const workzone = findWorkZoneForTask(firstTask.id);
-        const imageAnchor = findImageGenerationAnchorForTask(firstTask);
-        if (workzone?.expectedInsertPosition) {
-          insertionPoint = workzone.expectedInsertPosition;
-        }
-        if (!insertionPoint && imageAnchor?.expectedInsertPosition) {
-          insertionPoint = imageAnchor.expectedInsertPosition;
-        }
-        // 获取 Frame 上下文
-        if (workzone?.targetFrameId && workzone?.targetFrameDimensions) {
-          targetFrameId = workzone.targetFrameId;
-          targetFrameDimensions = workzone.targetFrameDimensions;
-        }
-        if (
-          !targetFrameId &&
-          imageAnchor?.targetFrameId &&
-          imageAnchor?.targetFrameDimensions
-        ) {
-          targetFrameId = imageAnchor.targetFrameId;
-          targetFrameDimensions = imageAnchor.targetFrameDimensions;
-        }
-
-        if (imageAnchor) {
-          linkImageGenerationAnchorToTask(imageAnchor, firstTask);
-          ImageGenerationAnchorTransforms.updateAnchor(
-            board,
-            imageAnchor.id,
-            buildImageGenerationAnchorPresentationPatch('inserting')
-          );
-        }
-      }
-
-      // 也检查 task.params 中的 Frame 上下文（TTD Dialog 路径）
-      if (!targetFrameId && firstTask?.params?.targetFrameId) {
-        targetFrameId = firstTask.params.targetFrameId as string;
-        targetFrameDimensions = firstTask.params.targetFrameDimensions as { width: number; height: number } | undefined;
-      }
-
-      // 如果没有找到 WorkZone 或没有预期位置，回退到原来的逻辑
-      if (!insertionPoint) {
-        insertionPoint = getInsertionPointBelowBottommostElement(board);
-      }
-
-      if (!insertionPoint) {
-        return;
-      }
-
-      const resolvedInsertionPoint = insertionPoint;
-
-      // console.log(`[AutoInsert] Insertion point:`, insertionPoint);
-
       for (const [promptKey, inserts] of toInsert) {
         if (!isActive) break;
 
         // console.log(`[AutoInsert] Processing prompt group "${promptKey.substring(0, 30)}..." with ${inserts.length} tasks`);
+
+        const firstInsertTask = inserts[0]?.task;
+        if (!firstInsertTask) {
+          continue;
+        }
+
+        const {
+          insertionPoint: resolvedInsertionPoint,
+          targetFrameId,
+          targetFrameDimensions,
+          imageAnchor: scopedImageAnchor,
+        } = resolvePendingInsertContext(board, firstInsertTask);
+
+        if (!resolvedInsertionPoint) {
+          for (const { task } of inserts) {
+            releaseTaskInsertion(task.id);
+            workflowCompletionService.failPostProcessing(
+              task.id,
+              'No insertion point available'
+            );
+          }
+          continue;
+        }
 
         // 注册所有任务
         for (const { task } of inserts) {
@@ -481,12 +569,16 @@ export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): v
             const taskFrameId = targetFrameId || (task.params.targetFrameId as string | undefined);
             const taskFrameDims = targetFrameDimensions || (task.params.targetFrameDimensions as { width: number; height: number } | undefined);
             const imageAnchor =
-              type === 'image' ? findImageGenerationAnchorForTask(task) : null;
+              type === 'image'
+                ? scopedImageAnchor ?? findImageGenerationAnchorForTask(task)
+                : null;
             const targetImageDimensions =
               type === 'image'
                 ? getTaskImageDimensions(task, dimensions)
                 : undefined;
             let insertedPoint = resolvedInsertionPoint;
+            let insertedElementId: string | undefined;
+            let insertedSize = targetImageDimensions;
 
             if (taskFrameId && taskFrameDims && board && type !== 'audio' && type !== 'text') {
               // 插入到 Frame 内部，contain 模式等比缩放
@@ -500,6 +592,8 @@ export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): v
               );
               if (frameInsert) {
                 insertedPoint = frameInsert.point;
+                insertedElementId = frameInsert.elementId;
+                insertedSize = frameInsert.size;
                 syncImageAnchorGeometry(board, imageAnchor, {
                   position: frameInsert.point,
                   size: frameInsert.size,
@@ -532,10 +626,15 @@ export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): v
                 })),
                 resolvedInsertionPoint
               );
-              insertedPoint = getInsertionResultPoint(
+              const insertionGeometry = getInsertionResultGeometry(
                 insertionResult,
-                resolvedInsertionPoint
+                resolvedInsertionPoint,
+                targetImageDimensions,
+                ['image']
               );
+              insertedPoint = insertionGeometry.position;
+              insertedElementId = insertionGeometry.elementId;
+              insertedSize = insertionGeometry.size;
             } else if (type === 'image' && allUrls.length > 1) {
               if (imageAnchor) {
                 syncImageAnchorGeometry(board, imageAnchor, {
@@ -549,10 +648,15 @@ export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): v
                 resolvedInsertionPoint,
                 dimensions
               );
-              insertedPoint = getInsertionResultPoint(
+              const insertionGeometry = getInsertionResultGeometry(
                 insertionResult,
-                resolvedInsertionPoint
+                resolvedInsertionPoint,
+                targetImageDimensions,
+                ['image']
               );
+              insertedPoint = insertionGeometry.position;
+              insertedElementId = insertionGeometry.elementId;
+              insertedSize = insertionGeometry.size;
             } else if (type === 'text') {
               const lyricsLabel =
                 getLyricsTitle(task.result, task.params.title || task.params.prompt) ||
@@ -615,21 +719,43 @@ export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): v
                 dimensions,
                 metadata
               );
-              insertedPoint = getInsertionResultPoint(
-                insertionResult,
-                resolvedInsertionPoint
-              );
+              if (type === 'image') {
+                const insertionGeometry = getInsertionResultGeometry(
+                  insertionResult,
+                  resolvedInsertionPoint,
+                  targetImageDimensions,
+                  ['image']
+                );
+                insertedPoint = insertionGeometry.position;
+                insertedElementId = insertionGeometry.elementId;
+                insertedSize = insertionGeometry.size;
+              } else {
+                insertedPoint = getInsertionResultPoint(
+                  insertionResult,
+                  resolvedInsertionPoint
+                );
+              }
+            }
+
+            if (type === 'image' && imageAnchor && insertedSize) {
+              syncImageAnchorGeometry(board, imageAnchor, {
+                position: insertedPoint,
+                size: insertedSize,
+                transitionMode:
+                  imageAnchor.anchorType === 'ghost' ? 'morph' : 'hold',
+              });
             }
 
             workflowCompletionService.completePostProcessing(
               task.id,
               allUrls.length,
-              insertedPoint
+              insertedPoint,
+              type === 'image' ? insertedElementId : undefined,
+              type === 'image' ? insertedSize : undefined
             );
             finalizeTaskInsertion(task.id);
           } else {
             // 多个同 Prompt 任务，水平排列（展开每个任务的多图）
-            const firstInsertTask = inserts[0].task;
             const isLyricsAudioTask = isLyricsTask(firstInsertTask);
             const urls = isLyricsAudioTask
               ? inserts.map(({ task }) => formatLyricsForCanvas(task))
@@ -689,13 +815,16 @@ export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): v
                 : undefined;
             const groupImageAnchor =
               type === 'image'
-                ? findImageGenerationAnchorForTask(firstInsertTask)
+                ? scopedImageAnchor ??
+                  findImageGenerationAnchorForTask(firstInsertTask)
                 : null;
             const groupImageDimensions =
               type === 'image'
                 ? getTaskImageDimensions(firstInsertTask, dimensions)
                 : undefined;
             let insertedPoint = resolvedInsertionPoint;
+            let insertedElementId: string | undefined;
+            let insertedSize = groupImageDimensions;
 
             // console.log(`[AutoInsert] Inserting group of ${urls.length} ${type}s`);
 
@@ -723,10 +852,22 @@ export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): v
                 })),
                 resolvedInsertionPoint
               );
-              insertedPoint = getInsertionResultPoint(
-                insertionResult,
-                resolvedInsertionPoint
-              );
+              if (type === 'image') {
+                const insertionGeometry = getInsertionResultGeometry(
+                  insertionResult,
+                  resolvedInsertionPoint,
+                  groupImageDimensions,
+                  ['image']
+                );
+                insertedPoint = insertionGeometry.position;
+                insertedElementId = insertionGeometry.elementId;
+                insertedSize = insertionGeometry.size;
+              } else {
+                insertedPoint = getInsertionResultPoint(
+                  insertionResult,
+                  resolvedInsertionPoint
+                );
+              }
             } else {
               if (type === 'image') {
                 if (groupImageAnchor) {
@@ -745,10 +886,15 @@ export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): v
                   resolvedInsertionPoint,
                   dimensions
                 );
-                insertedPoint = getInsertionResultPoint(
+                const insertionGeometry = getInsertionResultGeometry(
                   insertionResult,
-                  resolvedInsertionPoint
+                  resolvedInsertionPoint,
+                  groupImageDimensions,
+                  ['image']
                 );
+                insertedPoint = insertionGeometry.position;
+                insertedElementId = insertionGeometry.elementId;
+                insertedSize = insertionGeometry.size;
               } else if (type === 'text') {
                 const insertionResult = await executeCanvasInsertion({
                   items: inserts.map(({ task }) => ({
@@ -809,11 +955,21 @@ export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): v
             // console.log(`[AutoInsert] Successfully inserted group of ${urls.length} ${type}s`);
 
             // 标记所有任务完成
+            if (type === 'image' && groupImageAnchor && insertedSize) {
+              syncImageAnchorGeometry(board, groupImageAnchor, {
+                position: insertedPoint,
+                size: insertedSize,
+                transitionMode: 'morph',
+              });
+            }
+
             for (const { task } of inserts) {
               workflowCompletionService.completePostProcessing(
                 task.id,
                 1,
-                insertedPoint
+                insertedPoint,
+                type === 'image' ? insertedElementId : undefined,
+                type === 'image' ? insertedSize : undefined
               );
               finalizeTaskInsertion(task.id);
             }
@@ -970,8 +1126,11 @@ export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): v
       // Note: 步骤状态更新现在由 SW 统一通过 workflow:stepStatus 事件处理
       // 不再需要在这里调用 updateWorkflowStepForTask
 
-      // 获取 Prompt 作为分组 key
-      const promptKey = task.params.prompt || 'unknown';
+      // 优先按 workflow 分组，避免不同轮同 prompt 生成共用同一个插入槽位。
+      const promptKey =
+        getTaskWorkflowId(task) ||
+        task.params.prompt ||
+        `task:${task.id}`;
       // console.log(`[AutoInsert] Task ${task.id} added to pending inserts with promptKey: ${promptKey.substring(0, 30)}`);
 
       // 添加到待插入列表

@@ -119,7 +119,14 @@ export async function insertMediaIntoFrame(
   frameDimensions: { width: number; height: number },
   mediaDimensions?: { width: number; height: number },
   targetRegion?: { x: number; y: number; width: number; height: number }
-): Promise<{ point: Point; size: { width: number; height: number } } | undefined> {
+): Promise<
+  | {
+      point: Point;
+      size: { width: number; height: number };
+      elementId?: string;
+    }
+  | undefined
+> {
   // 查找目标 Frame
   const frameElement = board.children.find(
     (el) => el.id === frameId && isFrameElement(el)
@@ -212,8 +219,13 @@ export async function insertMediaIntoFrame(
     }
   }
 
+  const insertedElement = board.children[childrenCountBefore] as
+    | { id?: string }
+    | undefined;
+
   return {
     point: insertionPoint,
+    elementId: insertedElement?.id,
     size: {
       width: mediaWidth,
       height: mediaHeight,
