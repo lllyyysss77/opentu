@@ -2,7 +2,12 @@ import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PlaitBoard } from '@plait/core';
 import { useImageGenerationAnchorSync } from '../useImageGenerationAnchorSync';
-import { TaskExecutionPhase, TaskStatus, TaskType, type Task } from '../../types/task.types';
+import {
+  TaskExecutionPhase,
+  TaskStatus,
+  TaskType,
+  type Task,
+} from '../../types/task.types';
 import type { PlaitImageGenerationAnchor } from '../../types/image-generation-anchor.types';
 
 const taskListeners: Array<(event: { task: Task }) => void> = [];
@@ -89,6 +94,27 @@ vi.mock('../../plugins/with-image-generation-anchor', () => ({
           (anchor as { type?: string }).type === 'generation-anchor' &&
           (anchor as { workflowId?: string }).workflowId === workflowId
       ) ?? null,
+    getAnchorsByWorkflowId: (board: PlaitBoard, workflowId: string) =>
+      ((board as unknown as { children: unknown[] }).children ?? []).filter(
+        (anchor) =>
+          (anchor as { type?: string }).type === 'generation-anchor' &&
+          (anchor as { workflowId?: string }).workflowId === workflowId
+      ),
+    getAnchorByBatchSlot: (
+      board: PlaitBoard,
+      options: {
+        workflowId?: string;
+        batchId?: string;
+        batchIndex?: number;
+      }
+    ) =>
+      ((board as unknown as { children: unknown[] }).children ?? []).find(
+        (anchor) =>
+          (anchor as { type?: string }).type === 'generation-anchor' &&
+          (anchor as { workflowId?: string }).workflowId === options.workflowId &&
+          (anchor as { batchId?: string }).batchId === options.batchId &&
+          (anchor as { batchIndex?: number }).batchIndex === options.batchIndex
+      ) ?? null,
     updateAnchor: (
       board: PlaitBoard,
       anchorId: string,
@@ -144,6 +170,9 @@ function createAnchor(
     workflowId: 'wf-1',
     taskIds: [],
     primaryTaskId: undefined,
+    batchId: undefined,
+    batchIndex: undefined,
+    batchTotal: undefined,
     expectedInsertPosition: [10, 20],
     targetFrameId: undefined,
     targetFrameDimensions: undefined,
@@ -223,12 +252,58 @@ describe('useImageGenerationAnchorSync', () => {
 
     renderHook(() => useImageGenerationAnchorSync({ board, enabled: true }));
 
-    const [anchor] = (board as unknown as { children: PlaitImageGenerationAnchor[] })
-      .children;
+    const [anchor] = (
+      board as unknown as { children: PlaitImageGenerationAnchor[] }
+    ).children;
     expect(anchor.taskIds).toEqual(['task-1']);
     expect(anchor.primaryTaskId).toBe('task-1');
     expect(anchor.phase).toBe('queued');
     expect(anchor.subtitle).toBe('请求已受理，等待执行');
+  });
+
+  it('only binds a batched task to its matching independent anchor', () => {
+    const board = {
+      children: [
+        createAnchor({
+          id: 'anchor-1',
+          batchId: 'wf_batch_wf-1',
+          batchIndex: 1,
+          batchTotal: 2,
+          requestedCount: 1,
+        }),
+        createAnchor({
+          id: 'anchor-2',
+          batchId: 'wf_batch_wf-1',
+          batchIndex: 2,
+          batchTotal: 2,
+          requestedCount: 1,
+        }),
+      ],
+    } as unknown as PlaitBoard;
+    taskState.tasks = [
+      createTask({
+        id: 'task-2',
+        status: TaskStatus.PROCESSING,
+        executionPhase: TaskExecutionPhase.SUBMITTING,
+        params: {
+          prompt: '生成图片',
+          workflowId: 'wf-1',
+          batchId: 'wf_batch_wf-1',
+          batchIndex: 2,
+          batchTotal: 2,
+          size: '16x9',
+        },
+      }),
+    ];
+
+    renderHook(() => useImageGenerationAnchorSync({ board, enabled: true }));
+
+    const anchors = (
+      board as unknown as { children: PlaitImageGenerationAnchor[] }
+    ).children;
+    expect(anchors[0].taskIds).toEqual([]);
+    expect(anchors[1].taskIds).toEqual(['task-2']);
+    expect(anchors[1].primaryTaskId).toBe('task-2');
   });
 
   it('updates anchor to failed when post-processing fails', () => {
@@ -247,16 +322,22 @@ describe('useImageGenerationAnchorSync', () => {
 
     renderHook(() => useImageGenerationAnchorSync({ board, enabled: true }));
 
-    const [anchor] = (board as unknown as { children: PlaitImageGenerationAnchor[] })
-      .children;
+    const [anchor] = (
+      board as unknown as { children: PlaitImageGenerationAnchor[] }
+    ).children;
     expect(anchor.phase).toBe('failed');
     expect(anchor.error).toBe('插入失败');
   });
 
-  it('removes anchor after completed insertion settles', () => {
-    vi.useFakeTimers();
-
-    const board = createBoard(createAnchor({ taskIds: ['task-1'], phase: 'inserting' }));
+  it('does not complete a stack anchor before the requested slot count is covered', () => {
+    const board = createBoard(
+      createAnchor({
+        anchorType: 'stack',
+        taskIds: ['task-1'],
+        requestedCount: 4,
+        phase: 'inserting',
+      })
+    );
     taskState.tasks = [
       createTask({
         status: TaskStatus.COMPLETED,
@@ -272,8 +353,37 @@ describe('useImageGenerationAnchorSync', () => {
 
     renderHook(() => useImageGenerationAnchorSync({ board, enabled: true }));
 
-    let anchors = (board as unknown as { children: PlaitImageGenerationAnchor[] })
-      .children;
+    const [anchor] = (
+      board as unknown as { children: PlaitImageGenerationAnchor[] }
+    ).children;
+    expect(anchor.phase).not.toBe('completed');
+    expect(anchor.phase).toBe('developing');
+  });
+
+  it('removes anchor after completed insertion settles', () => {
+    vi.useFakeTimers();
+
+    const board = createBoard(
+      createAnchor({ taskIds: ['task-1'], phase: 'inserting' })
+    );
+    taskState.tasks = [
+      createTask({
+        status: TaskStatus.COMPLETED,
+        insertedToCanvas: true,
+      }),
+    ];
+    completionState.byTaskId.set('task-1', {
+      taskId: 'task-1',
+      status: 'completed',
+      type: 'direct_insert',
+      firstElementPosition: [120, 240],
+    });
+
+    renderHook(() => useImageGenerationAnchorSync({ board, enabled: true }));
+
+    let anchors = (
+      board as unknown as { children: PlaitImageGenerationAnchor[] }
+    ).children;
     expect(anchors[0]?.phase).toBe('completed');
     expect(anchors[0]?.transitionMode).toBe('morph');
 
@@ -303,8 +413,9 @@ describe('useImageGenerationAnchorSync', () => {
       emitTaskUpdate(processingTask);
     });
 
-    let [anchor] = (board as unknown as { children: PlaitImageGenerationAnchor[] })
-      .children;
+    let [anchor] = (
+      board as unknown as { children: PlaitImageGenerationAnchor[] }
+    ).children;
     expect(anchor.phase).toBe('generating');
 
     const completedTask = createTask({
@@ -329,8 +440,9 @@ describe('useImageGenerationAnchorSync', () => {
       emitCompletion('task-1');
     });
 
-    [anchor] = (board as unknown as { children: PlaitImageGenerationAnchor[] })
-      .children;
+    [anchor] = (
+      board as unknown as { children: PlaitImageGenerationAnchor[] }
+    ).children;
     expect(anchor.phase).toBe('completed');
     expect(anchor.expectedInsertPosition).toEqual([200, 300]);
     expect(anchor.previewImageUrl).toBe('https://example.com/generated.png');

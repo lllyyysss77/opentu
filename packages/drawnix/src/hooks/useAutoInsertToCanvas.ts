@@ -51,7 +51,16 @@ import {
   isSamePoint,
   resolveImageAnchorInsertionPoint,
 } from '../utils/image-generation-anchor-insertion';
-import { formatLyricsForCanvas, getLyricsTitle, isLyricsTask } from '../utils/lyrics-task-utils';
+import {
+  formatLyricsForCanvas,
+  getLyricsTitle,
+  isLyricsTask,
+} from '../utils/lyrics-task-utils';
+import {
+  getImageGenerationAnchorTaskBatchId,
+  getImageGenerationAnchorTaskBatchIndex,
+  getImageGenerationAnchorTaskWorkflowId,
+} from '../utils/image-generation-anchor-task';
 
 /**
  * 配置项
@@ -91,7 +100,7 @@ function findWorkZoneForTask(taskId: string): PlaitWorkZone | null {
   const allWorkZones = WorkZoneTransforms.getAllWorkZones(board);
   for (const workzone of allWorkZones) {
     // 检查 workflow 的 steps 中是否包含此任务的 taskId
-    const hasTask = workzone.workflow.steps?.some(step => {
+    const hasTask = workzone.workflow.steps?.some((step) => {
       const result = step.result as { taskId?: string } | undefined;
       return result?.taskId === taskId;
     });
@@ -102,12 +111,6 @@ function findWorkZoneForTask(taskId: string): PlaitWorkZone | null {
   return null;
 }
 
-function getTaskWorkflowId(task: Task): string | undefined {
-  return typeof task.params.workflowId === 'string'
-    ? task.params.workflowId
-    : undefined;
-}
-
 function findImageGenerationAnchorForTask(
   taskOrTaskId: Task | string
 ): PlaitImageGenerationAnchor | null {
@@ -115,7 +118,10 @@ function findImageGenerationAnchorForTask(
   if (!board) return null;
 
   if (typeof taskOrTaskId === 'string') {
-    return ImageGenerationAnchorTransforms.getAnchorByTaskId(board, taskOrTaskId);
+    return ImageGenerationAnchorTransforms.getAnchorByTaskId(
+      board,
+      taskOrTaskId
+    );
   }
 
   const byTaskId = ImageGenerationAnchorTransforms.getAnchorByTaskId(
@@ -126,9 +132,29 @@ function findImageGenerationAnchorForTask(
     return byTaskId;
   }
 
-  const workflowId = getTaskWorkflowId(taskOrTaskId);
+  const workflowId = getImageGenerationAnchorTaskWorkflowId(taskOrTaskId);
+  const batchId = getImageGenerationAnchorTaskBatchId(taskOrTaskId);
+  const batchIndex = getImageGenerationAnchorTaskBatchIndex(taskOrTaskId);
+  if (workflowId && batchId && typeof batchIndex === 'number') {
+    const byBatchSlot = ImageGenerationAnchorTransforms.getAnchorByBatchSlot(
+      board,
+      {
+        workflowId,
+        batchId,
+        batchIndex,
+      }
+    );
+
+    if (byBatchSlot) {
+      return byBatchSlot;
+    }
+  }
+
   if (workflowId) {
-    return ImageGenerationAnchorTransforms.getAnchorByWorkflowId(board, workflowId);
+    return ImageGenerationAnchorTransforms.getAnchorByWorkflowId(
+      board,
+      workflowId
+    );
   }
 
   return null;
@@ -192,9 +218,7 @@ function getTaskImageDimensions(
     return fallback;
   }
 
-  const result = task.result as
-    | { width?: number; height?: number }
-    | undefined;
+  const result = task.result as { width?: number; height?: number } | undefined;
 
   if (
     typeof result?.width === 'number' &&
@@ -209,6 +233,17 @@ function getTaskImageDimensions(
   }
 
   return parseSizeToPixels(task.params.size);
+}
+
+function resolveAnchorInsertionPreviewSize(
+  anchor: PlaitImageGenerationAnchor | null,
+  size?: { width: number; height: number }
+): { width: number; height: number } | undefined {
+  if (!anchor || anchor.anchorType !== 'stack') {
+    return size;
+  }
+
+  return undefined;
 }
 
 function syncImageAnchorGeometry(
@@ -250,8 +285,9 @@ function syncImageAnchorGeometry(
 }
 
 function getInsertionResultPoint(result: unknown, fallback: Point): Point {
-  const data = (result as { data?: { firstElementPosition?: unknown } } | undefined)
-    ?.data;
+  const data = (
+    result as { data?: { firstElementPosition?: unknown } } | undefined
+  )?.data;
   return isPoint(data?.firstElementPosition)
     ? data.firstElementPosition
     : fallback;
@@ -267,7 +303,8 @@ function getInsertionResultGeometry(
   position: Point;
   size?: { width: number; height: number };
 } {
-  const data = (result as { data?: CanvasInsertionResultData } | undefined)?.data;
+  const data = (result as { data?: CanvasInsertionResultData } | undefined)
+    ?.data;
   const preferredItem =
     data?.items.find((item) => preferredTypes?.includes(item.type)) ??
     data?.items[0];
@@ -288,22 +325,6 @@ function getInsertionResultGeometry(
     elementId: preferredItem?.elementId ?? data?.firstElementId,
     position,
     size,
-  };
-}
-
-function getStackAnchorPreviewSize(
-  itemCount: number,
-  dimensions?: { width: number; height: number }
-): { width: number; height: number } | undefined {
-  if (!dimensions) {
-    return undefined;
-  }
-
-  const previewCount = Math.max(1, Math.min(itemCount, 3));
-
-  return {
-    width: dimensions.width + (previewCount - 1) * 28,
-    height: dimensions.height + (previewCount - 1) * 10,
   };
 }
 
@@ -398,18 +419,23 @@ function updateWorkflowStepForTask(
   if (!workzone) return;
 
   // 找到包含此 taskId 的步骤并更新状态
-  const updatedSteps = workzone.workflow.steps?.map(step => {
+  const updatedSteps = workzone.workflow.steps?.map((step) => {
     const stepResult = step.result as { taskId?: string } | undefined;
     if (stepResult?.taskId === taskId) {
-      const existingResult = typeof step.result === 'object' && step.result !== null ? step.result : {};
+      const existingResult =
+        typeof step.result === 'object' && step.result !== null
+          ? step.result
+          : {};
       return {
         ...step,
         status,
-        result: result ? {
-          ...existingResult,
-          url: result.url,
-          success: status === 'completed',
-        } : step.result,
+        result: result
+          ? {
+              ...existingResult,
+              url: result.url,
+              success: status === 'completed',
+            }
+          : step.result,
         error: error,
       };
     }
@@ -434,7 +460,9 @@ interface PendingInsert {
 /**
  * 自动插入到画布的 Hook
  */
-export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): void {
+export function useAutoInsertToCanvas(
+  config: Partial<AutoInsertConfig> = {}
+): void {
   const mergedConfig = { ...DEFAULT_CONFIG, ...config };
   const pendingInsertsRef = useRef<Map<string, PendingInsert[]>>(new Map());
   const flushTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -497,7 +525,9 @@ export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): v
 
         // 注册所有任务
         for (const { task } of inserts) {
-          const batchId = (task.params as Record<string, unknown>).batchId as string | undefined;
+          const batchId = (task.params as Record<string, unknown>).batchId as
+            | string
+            | undefined;
           workflowCompletionService.registerTask(task.id, batchId);
           workflowCompletionService.startPostProcessing(
             task.id,
@@ -511,21 +541,27 @@ export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): v
             const { task } = inserts[0];
             const isLyricsAudioTask = isLyricsTask(task);
             const url = task.result?.url;
-            if (!url && !isLyricsAudioTask) {
+            const hasResultUrl = typeof url === 'string' && url.length > 0;
+            const hasResultUrls =
+              Array.isArray(task.result?.urls) && task.result.urls.length > 0;
+
+            if (!hasResultUrl && !hasResultUrls && !isLyricsAudioTask) {
               // console.log(`[AutoInsert] Task ${task.id} has no result URL, skipping`);
               releaseTaskInsertion(task.id);
-              workflowCompletionService.failPostProcessing(task.id, 'No result URL');
+              workflowCompletionService.failPostProcessing(
+                task.id,
+                'No result URL'
+              );
               continue;
             }
 
-            const type =
-              isLyricsAudioTask
-                ? 'text'
-                : task.type === TaskType.VIDEO
-                ? 'video'
-                : task.type === TaskType.AUDIO
-                ? 'audio'
-                : 'image';
+            const type = isLyricsAudioTask
+              ? 'text'
+              : task.type === TaskType.VIDEO
+              ? 'video'
+              : task.type === TaskType.AUDIO
+              ? 'audio'
+              : 'image';
             const dimensions =
               type === 'audio'
                 ? {
@@ -566,8 +602,14 @@ export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): v
                 : [url as string];
 
             // 检查是否需要插入到 Frame 内部
-            const taskFrameId = targetFrameId || (task.params.targetFrameId as string | undefined);
-            const taskFrameDims = targetFrameDimensions || (task.params.targetFrameDimensions as { width: number; height: number } | undefined);
+            const taskFrameId =
+              targetFrameId ||
+              (task.params.targetFrameId as string | undefined);
+            const taskFrameDims =
+              targetFrameDimensions ||
+              (task.params.targetFrameDimensions as
+                | { width: number; height: number }
+                | undefined);
             const imageAnchor =
               type === 'image'
                 ? scopedImageAnchor ?? findImageGenerationAnchorForTask(task)
@@ -580,7 +622,14 @@ export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): v
             let insertedElementId: string | undefined;
             let insertedSize = targetImageDimensions;
 
-            if (taskFrameId && taskFrameDims && board && type !== 'audio' && type !== 'text') {
+            if (
+              taskFrameId &&
+              taskFrameDims &&
+              board &&
+              type !== 'audio' &&
+              type !== 'text' &&
+              allUrls.length === 1
+            ) {
               // 插入到 Frame 内部，contain 模式等比缩放
               const frameInsert = await insertMediaIntoFrame(
                 board,
@@ -615,7 +664,11 @@ export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): v
                           title:
                             task.result?.clips?.[index]?.title ||
                             (allUrls.length > 1
-                              ? `${metadata?.title || task.params.title || 'Audio'} ${index + 1}`
+                              ? `${
+                                  metadata?.title ||
+                                  task.params.title ||
+                                  'Audio'
+                                } ${index + 1}`
                               : metadata?.title),
                           clipId:
                             task.result?.clips?.[index]?.clipId ||
@@ -639,7 +692,10 @@ export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): v
               if (imageAnchor) {
                 syncImageAnchorGeometry(board, imageAnchor, {
                   position: resolvedInsertionPoint,
-                  size: getStackAnchorPreviewSize(allUrls.length, targetImageDimensions),
+                  size: resolveAnchorInsertionPreviewSize(
+                    imageAnchor,
+                    targetImageDimensions
+                  ),
                   transitionMode: 'morph',
                 });
               }
@@ -659,11 +715,16 @@ export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): v
               insertedSize = insertionGeometry.size;
             } else if (type === 'text') {
               const lyricsLabel =
-                getLyricsTitle(task.result, task.params.title || task.params.prompt) ||
+                getLyricsTitle(
+                  task.result,
+                  task.params.title || task.params.prompt
+                ) ||
                 (task.params.prompt || '').slice(0, 20) ||
                 undefined;
               const insertionResult = await executeCanvasInsertion({
-                items: [{ type: 'text', content: allUrls[0], label: lyricsLabel }],
+                items: [
+                  { type: 'text', content: allUrls[0], label: lyricsLabel },
+                ],
                 startPoint: resolvedInsertionPoint,
               });
               insertedPoint = getInsertionResultPoint(
@@ -683,7 +744,9 @@ export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): v
                     title:
                       task.result?.clips?.[index]?.title ||
                       (allUrls.length > 1
-                        ? `${metadata?.title || task.params.title || 'Audio'} ${index + 1}`
+                        ? `${metadata?.title || task.params.title || 'Audio'} ${
+                            index + 1
+                          }`
                         : metadata?.title),
                     clipId:
                       task.result?.clips?.[index]?.clipId ||
@@ -761,7 +824,9 @@ export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): v
               ? inserts.map(({ task }) => formatLyricsForCanvas(task))
               : inserts
                   .flatMap(({ task }) =>
-                    task.result?.urls?.length ? task.result.urls : [task.result?.url]
+                    task.result?.urls?.length
+                      ? task.result.urls
+                      : [task.result?.url]
                   )
                   .filter((url): url is string => !!url);
 
@@ -769,19 +834,21 @@ export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): v
               // console.log(`[AutoInsert] No valid URLs in group, skipping`);
               for (const { task } of inserts) {
                 releaseTaskInsertion(task.id);
-                workflowCompletionService.failPostProcessing(task.id, 'No result URL');
+                workflowCompletionService.failPostProcessing(
+                  task.id,
+                  'No result URL'
+                );
               }
               continue;
             }
 
-            const type =
-              isLyricsAudioTask
-                ? 'text'
-                : firstInsertTask.type === TaskType.VIDEO
-                ? 'video'
-                : firstInsertTask.type === TaskType.AUDIO
-                ? 'audio'
-                : 'image';
+            const type = isLyricsAudioTask
+              ? 'text'
+              : firstInsertTask.type === TaskType.VIDEO
+              ? 'video'
+              : firstInsertTask.type === TaskType.AUDIO
+              ? 'audio'
+              : 'image';
             const dimensions =
               type === 'audio'
                 ? {
@@ -795,7 +862,8 @@ export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): v
               type === 'audio'
                 ? {
                     title:
-                      firstInsertTask.result?.title || firstInsertTask.params.title,
+                      firstInsertTask.result?.title ||
+                      firstInsertTask.params.title,
                     duration: firstInsertTask.result?.duration,
                     previewImageUrl: firstInsertTask.result?.previewImageUrl,
                     tags:
@@ -842,7 +910,11 @@ export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): v
                           title:
                             firstInsertTask.result?.clips?.[index]?.title ||
                             (urls.length > 1
-                              ? `${baseMetadata?.title || firstInsertTask.params.title || 'Audio'} ${index + 1}`
+                              ? `${
+                                  baseMetadata?.title ||
+                                  firstInsertTask.params.title ||
+                                  'Audio'
+                                } ${index + 1}`
                               : baseMetadata?.title),
                           clipId:
                             firstInsertTask.result?.clips?.[index]?.clipId ||
@@ -873,10 +945,10 @@ export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): v
                 if (groupImageAnchor) {
                   syncImageAnchorGeometry(board, groupImageAnchor, {
                     position: resolvedInsertionPoint,
-                    size:
-                      groupImageAnchor.anchorType === 'stack'
-                        ? getStackAnchorPreviewSize(urls.length, groupImageDimensions)
-                        : groupImageDimensions,
+                    size: resolveAnchorInsertionPreviewSize(
+                      groupImageAnchor,
+                      groupImageDimensions
+                    ),
                     transitionMode: 'morph',
                   });
                 }
@@ -900,8 +972,13 @@ export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): v
                   items: inserts.map(({ task }) => ({
                     type: 'text',
                     content: formatLyricsForCanvas(task),
-                    label: getLyricsTitle(task.result, task.params.title || task.params.prompt)
-                      || (task.params.prompt || '').slice(0, 20) || undefined,
+                    label:
+                      getLyricsTitle(
+                        task.result,
+                        task.params.title || task.params.prompt
+                      ) ||
+                      (task.params.prompt || '').slice(0, 20) ||
+                      undefined,
                     groupId: `lyrics-group-${firstInsertTask.id}`,
                   })),
                   startPoint: resolvedInsertionPoint,
@@ -918,18 +995,22 @@ export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): v
                     content: resultUrl,
                     groupId,
                     dimensions,
-                      metadata: {
-                        ...baseMetadata,
-                        title:
-                          firstInsertTask.result?.clips?.[index]?.title ||
-                          (urls.length > 1
-                            ? `${baseMetadata?.title || firstInsertTask.params.title || 'Audio'} ${index + 1}`
-                            : baseMetadata?.title),
-                        clipId:
-                          firstInsertTask.result?.clips?.[index]?.clipId ||
-                          firstInsertTask.result?.clipIds?.[index],
-                      },
-                    })),
+                    metadata: {
+                      ...baseMetadata,
+                      title:
+                        firstInsertTask.result?.clips?.[index]?.title ||
+                        (urls.length > 1
+                          ? `${
+                              baseMetadata?.title ||
+                              firstInsertTask.params.title ||
+                              'Audio'
+                            } ${index + 1}`
+                          : baseMetadata?.title),
+                      clipId:
+                        firstInsertTask.result?.clips?.[index]?.clipId ||
+                        firstInsertTask.result?.clipIds?.[index],
+                    },
+                  })),
                   startPoint: resolvedInsertionPoint,
                 });
                 insertedPoint = getInsertionResultPoint(
@@ -975,10 +1056,16 @@ export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): v
             }
           }
         } catch (error) {
-          console.error(`[AutoInsert] Failed to insert for prompt ${promptKey}:`, error);
+          console.error(
+            `[AutoInsert] Failed to insert for prompt ${promptKey}:`,
+            error
+          );
           for (const { task } of inserts) {
             releaseTaskInsertion(task.id);
-            workflowCompletionService.failPostProcessing(task.id, String(error));
+            workflowCompletionService.failPostProcessing(
+              task.id,
+              String(error)
+            );
           }
         }
       }
@@ -1006,7 +1093,12 @@ export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): v
         releaseTaskInsertion(task.id);
         workflowCompletionService.failPostProcessing(task.id, 'No result URL');
         // 更新步骤状态为失败
-        updateWorkflowStepForTask(task.id, 'failed', undefined, 'No result URL');
+        updateWorkflowStepForTask(
+          task.id,
+          'failed',
+          undefined,
+          'No result URL'
+        );
         return;
       }
 
@@ -1025,7 +1117,12 @@ export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): v
         }
 
         releaseTaskInsertion(task.id);
-        updateWorkflowStepForTask(task.id, 'failed', undefined, result.error || '拆分失败');
+        updateWorkflowStepForTask(
+          task.id,
+          'failed',
+          undefined,
+          result.error || '拆分失败'
+        );
       } catch (error) {
         const errorMessage = String(error);
         releaseTaskInsertion(task.id);
@@ -1043,7 +1140,9 @@ export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): v
       const linkedWorkzone = findWorkZoneForTask(task.id);
       const linkedImageAnchor = findImageGenerationAnchorForTask(task);
       const shouldAutoInsert =
-        task.params.autoInsertToCanvas || !!linkedWorkzone || !!linkedImageAnchor;
+        task.params.autoInsertToCanvas ||
+        !!linkedWorkzone ||
+        !!linkedImageAnchor;
 
       if (!shouldAutoInsert) {
         return;
@@ -1073,7 +1172,12 @@ export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): v
       }
 
       // 检查是否有结果 URL
-      if (!task.result?.url && !isLyricsTask(task) && !task.result?.chatResponse) {
+      if (
+        !task.result?.url &&
+        !task.result?.urls?.length &&
+        !isLyricsTask(task) &&
+        !task.result?.chatResponse
+      ) {
         return;
       }
 
@@ -1086,7 +1190,8 @@ export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): v
 
       // 检查是否为灵感图任务（需要在宫格图之前检查）
       if (task.type === TaskType.CHAT) {
-        const promptLabel = (task.params.prompt || '').slice(0, 20) || undefined;
+        const promptLabel =
+          (task.params.prompt || '').slice(0, 20) || undefined;
         executeCanvasInsertion({
           items: [
             {
@@ -1102,7 +1207,10 @@ export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): v
           })
           .catch((error) => {
             releaseTaskInsertion(task.id);
-            workflowCompletionService.failPostProcessing(task.id, String(error));
+            workflowCompletionService.failPostProcessing(
+              task.id,
+              String(error)
+            );
           });
         return;
       }
@@ -1128,7 +1236,7 @@ export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): v
 
       // 优先按 workflow 分组，避免不同轮同 prompt 生成共用同一个插入槽位。
       const promptKey =
-        getTaskWorkflowId(task) ||
+        getImageGenerationAnchorTaskWorkflowId(task) ||
         task.params.prompt ||
         `task:${task.id}`;
       // console.log(`[AutoInsert] Task ${task.id} added to pending inserts with promptKey: ${promptKey.substring(0, 30)}`);
@@ -1160,60 +1268,76 @@ export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): v
     // 订阅任务更新事件
     const taskQueueService = getTaskQueueService();
     // console.log('[AutoInsert] Subscribing to task updates');
-    const subscription = taskQueueService.observeTaskUpdates().subscribe(event => {
-      if (!isActive) {
-        // console.log('[AutoInsert] Received event but hook is inactive, ignoring');
-        return;
-      }
+    const subscription = taskQueueService
+      .observeTaskUpdates()
+      .subscribe((event) => {
+        if (!isActive) {
+          // console.log('[AutoInsert] Received event but hook is inactive, ignoring');
+          return;
+        }
 
-      // console.log(`[AutoInsert] Received event: ${event.type}, task: ${event.task.id}, status: ${event.task.status}`);
+        // console.log(`[AutoInsert] Received event: ${event.type}, task: ${event.task.id}, status: ${event.task.status}`);
 
-      if (event.type === 'taskUpdated' || event.type === 'taskCompleted') {
-        if (event.task.status === TaskStatus.COMPLETED) {
-          handleTaskCompleted(event.task);
-        } else if (event.task.status === TaskStatus.FAILED) {
+        if (event.type === 'taskUpdated' || event.type === 'taskCompleted') {
+          if (event.task.status === TaskStatus.COMPLETED) {
+            handleTaskCompleted(event.task);
+          } else if (event.task.status === TaskStatus.FAILED) {
+            handleTaskFailed(event.task);
+          }
+        } else if (event.type === 'taskFailed') {
           handleTaskFailed(event.task);
+        } else if (event.type === 'taskSynced') {
+          if (event.task.status === TaskStatus.COMPLETED) {
+            handleTaskCompleted(event.task);
+          }
         }
-      } else if (event.type === 'taskFailed') {
-        handleTaskFailed(event.task);
-      } else if (event.type === 'taskSynced') {
-        if (event.task.status === TaskStatus.COMPLETED) {
-          handleTaskCompleted(event.task);
-        }
-      }
-    });
+      });
 
     // 订阅后处理完成事件，以便在所有任务插入完成后删除 WorkZone
-    const completionSub = workflowCompletionService.observeCompletionEvents().subscribe(event => {
-      if (event.type === 'postProcessingCompleted' || event.type === 'postProcessingFailed') {
-        const board = getCanvasBoard();
-        if (!board) return;
+    const completionSub = workflowCompletionService
+      .observeCompletionEvents()
+      .subscribe((event) => {
+        if (
+          event.type === 'postProcessingCompleted' ||
+          event.type === 'postProcessingFailed'
+        ) {
+          const board = getCanvasBoard();
+          if (!board) return;
 
-        const workzone = findWorkZoneForTask(event.taskId);
-        if (workzone) {
-          // 重新检查该 WorkZone 的所有步骤
-          const allStepsFinished = workzone.workflow.steps?.every(
-            step => step.status === 'completed' || step.status === 'failed' || step.status === 'skipped'
-          );
+          const workzone = findWorkZoneForTask(event.taskId);
+          if (workzone) {
+            // 重新检查该 WorkZone 的所有步骤
+            const allStepsFinished = workzone.workflow.steps?.every(
+              (step) =>
+                step.status === 'completed' ||
+                step.status === 'failed' ||
+                step.status === 'skipped'
+            );
 
-          if (allStepsFinished) {
-            const allPostProcessingFinished = workzone.workflow.steps?.every(step => {
-              const stepResult = step.result as { taskId?: string } | undefined;
-              if (stepResult?.taskId) {
-                return workflowCompletionService.isPostProcessingCompleted(stepResult.taskId);
+            if (allStepsFinished) {
+              const allPostProcessingFinished = workzone.workflow.steps?.every(
+                (step) => {
+                  const stepResult = step.result as
+                    | { taskId?: string }
+                    | undefined;
+                  if (stepResult?.taskId) {
+                    return workflowCompletionService.isPostProcessingCompleted(
+                      stepResult.taskId
+                    );
+                  }
+                  return true;
+                }
+              );
+
+              if (allPostProcessingFinished) {
+                setTimeout(() => {
+                  WorkZoneTransforms.removeWorkZone(board, workzone.id);
+                }, 1500);
               }
-              return true;
-            });
-
-            if (allPostProcessingFinished) {
-              setTimeout(() => {
-                WorkZoneTransforms.removeWorkZone(board, workzone.id);
-              }, 1500);
             }
           }
         }
-      }
-    });
+      });
 
     const handleAnchorRetry = (rawEvent: Event) => {
       const event = rawEvent as CustomEvent<{ taskId?: string }>;
@@ -1264,7 +1388,12 @@ export function useAutoInsertToCanvas(config: Partial<AutoInsertConfig> = {}): v
         clearTimeout(flushTimerRef.current);
       }
     };
-  }, [mergedConfig.enabled, mergedConfig.insertPrompt, mergedConfig.groupSimilarTasks, mergedConfig.groupTimeWindow]);
+  }, [
+    mergedConfig.enabled,
+    mergedConfig.insertPrompt,
+    mergedConfig.groupSimilarTasks,
+    mergedConfig.groupTimeWindow,
+  ]);
 }
 
 /**

@@ -13,6 +13,7 @@ import {
 export interface ImageGenerationAnchorControllerOptions {
   anchor: PlaitImageGenerationAnchor;
   task?: Task | null;
+  tasks?: Task[];
   workflow?: WorkflowMessageData | null;
   postProcessingStatus?: WorkflowMessageData['postProcessingStatus'];
   isInserting?: boolean;
@@ -32,6 +33,7 @@ export function getImageGenerationAnchorControllerResult(
   const {
     anchor,
     task,
+    tasks,
     taskDisplayProgress,
     workflow,
     postProcessingStatus,
@@ -42,6 +44,7 @@ export function getImageGenerationAnchorControllerResult(
   const phase = deriveImageGenerationAnchorPhase({
     anchor,
     task,
+    tasks,
     workflow,
     postProcessingStatus,
     isInserting,
@@ -51,6 +54,7 @@ export function getImageGenerationAnchorControllerResult(
   const viewModel = buildImageGenerationAnchorViewModel({
     anchor,
     task,
+    tasks,
     taskDisplayProgress,
     workflow,
     postProcessingStatus,

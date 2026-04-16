@@ -9,6 +9,20 @@ export function getImageGenerationAnchorTaskWorkflowId(
     : undefined;
 }
 
+export function getImageGenerationAnchorTaskBatchId(
+  task: Task
+): string | undefined {
+  return typeof task.params.batchId === 'string' ? task.params.batchId : undefined;
+}
+
+export function getImageGenerationAnchorTaskBatchIndex(
+  task: Task
+): number | undefined {
+  return typeof task.params.batchIndex === 'number'
+    ? task.params.batchIndex
+    : undefined;
+}
+
 function isImageTask(task: Task): boolean {
   return task.type === TaskType.IMAGE;
 }
@@ -30,8 +44,30 @@ export function doesTaskBelongToImageGenerationAnchor(
     return true;
   }
 
+  const taskWorkflowId = getImageGenerationAnchorTaskWorkflowId(task);
+  const taskBatchId = getImageGenerationAnchorTaskBatchId(task);
+  const taskBatchIndex = getImageGenerationAnchorTaskBatchIndex(task);
+  const hasExplicitBatchBinding =
+    Boolean(anchor.batchId) || typeof anchor.batchIndex === 'number';
+
+  if (hasExplicitBatchBinding) {
+    if (anchor.workflowId !== taskWorkflowId) {
+      return false;
+    }
+
+    if (anchor.batchId && anchor.batchId !== taskBatchId) {
+      return false;
+    }
+
+    if (typeof anchor.batchIndex === 'number') {
+      return anchor.batchIndex === taskBatchIndex;
+    }
+
+    return Boolean(taskBatchId);
+  }
+
   return (
-    getImageGenerationAnchorTaskWorkflowId(task) === anchor.workflowId
+    taskWorkflowId === anchor.workflowId
   );
 }
 

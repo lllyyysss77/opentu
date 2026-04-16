@@ -3,6 +3,7 @@ import {
   buildImageGenerationAnchorViewModel,
   deriveImageGenerationAnchorPhase,
 } from '../image-generation-anchor-view-model';
+import { workflowCompletionService } from '../../services/workflow-completion-service';
 import type { WorkflowMessageData } from '../../types/chat.types';
 import {
   TaskExecutionPhase,
@@ -78,6 +79,7 @@ function createWorkflow(
 describe('image-generation-anchor-view-model', () => {
   afterEach(() => {
     vi.useRealTimers();
+    workflowCompletionService.clear();
   });
 
   it('maps processing + submitting task to queued phase', () => {
@@ -194,5 +196,190 @@ describe('image-generation-anchor-view-model', () => {
     expect(viewModel.primaryAction.type).toBe('retry');
     expect(viewModel.progressMode).toBe('hidden');
     expect(viewModel.secondaryAction?.type).toBe('dismiss');
+  });
+
+  it('builds batch preview slots for stack anchors during generation', () => {
+    const viewModel = buildImageGenerationAnchorViewModel({
+      anchor: createAnchor({
+        anchorType: 'stack',
+        requestedCount: 4,
+        taskIds: ['task-1'],
+      }),
+      task: createTask({
+        status: TaskStatus.PROCESSING,
+        progress: 18,
+      }),
+      tasks: [
+        createTask({
+          status: TaskStatus.PROCESSING,
+          progress: 18,
+        }),
+      ],
+    });
+
+    expect(viewModel.batchPreview).toEqual({
+      totalCount: 4,
+      visibleSlotCount: 4,
+      overflowCount: 0,
+      readySlotCount: 0,
+      generatingSlotCount: 4,
+      pendingSlotCount: 0,
+      failedSlotCount: 0,
+      hasPreviewImage: false,
+      progress: 18,
+      statusText: '分析提示词...',
+      slots: [
+        {
+          id: 'task-1',
+          taskId: 'task-1',
+          status: 'generating',
+        },
+        {
+          id: 'placeholder-1',
+          status: 'generating',
+        },
+        {
+          id: 'placeholder-2',
+          status: 'generating',
+        },
+        {
+          id: 'placeholder-3',
+          status: 'generating',
+        },
+      ],
+    });
+  });
+
+  it('maps inserted and failed task results into per-slot batch previews', () => {
+    workflowCompletionService.completePostProcessing('task-1', 1, [10, 20]);
+    workflowCompletionService.failPostProcessing('task-2', '插入失败');
+
+    const viewModel = buildImageGenerationAnchorViewModel({
+      anchor: createAnchor({
+        anchorType: 'stack',
+        phase: 'developing',
+        requestedCount: 4,
+      }),
+      task: createTask({
+        status: TaskStatus.COMPLETED,
+      }),
+      tasks: [
+        createTask({
+          id: 'task-1',
+          status: TaskStatus.COMPLETED,
+          result: {
+            url: 'https://example.com/1.png',
+          } as Task['result'],
+        }),
+        createTask({
+          id: 'task-2',
+          status: TaskStatus.FAILED,
+          error: {
+            code: 'POST_PROCESSING',
+            message: '插入失败',
+          },
+        }),
+      ],
+      postProcessingStatus: 'processing',
+    });
+
+    expect(viewModel.batchPreview).toEqual({
+      totalCount: 4,
+      visibleSlotCount: 4,
+      overflowCount: 0,
+      readySlotCount: 1,
+      generatingSlotCount: 2,
+      pendingSlotCount: 0,
+      failedSlotCount: 1,
+      hasPreviewImage: true,
+      progress: 100,
+      statusText: '1/4 已完成',
+      slots: [
+        {
+          id: 'task-1-0',
+          taskId: 'task-1',
+          status: 'ready',
+          previewImageUrl: 'https://example.com/1.png',
+          error: undefined,
+        },
+        {
+          id: 'task-2',
+          taskId: 'task-2',
+          status: 'failed',
+          error: '插入失败',
+        },
+        {
+          id: 'placeholder-2',
+          status: 'generating',
+        },
+        {
+          id: 'placeholder-3',
+          status: 'generating',
+        },
+      ],
+    });
+  });
+
+  it('keeps batch slot ordering stable by creation time', () => {
+    const viewModel = buildImageGenerationAnchorViewModel({
+      anchor: createAnchor({
+        anchorType: 'stack',
+        requestedCount: 2,
+      }),
+      tasks: [
+        createTask({
+          id: 'task-b',
+          createdAt: 2,
+          updatedAt: 99,
+          status: TaskStatus.PROCESSING,
+        }),
+        createTask({
+          id: 'task-a',
+          createdAt: 1,
+          updatedAt: 1000,
+          status: TaskStatus.PROCESSING,
+        }),
+      ],
+    });
+
+    expect(viewModel.batchPreview?.slots.map((slot) => slot.taskId)).toEqual([
+      'task-a',
+      'task-b',
+    ]);
+  });
+
+  it('does not collapse the whole stack anchor into failed when only one slot fails', () => {
+    workflowCompletionService.failPostProcessing('task-2', '插入失败');
+
+    const viewModel = buildImageGenerationAnchorViewModel({
+      anchor: createAnchor({
+        anchorType: 'stack',
+        requestedCount: 2,
+      }),
+      task: createTask({
+        id: 'task-1',
+        status: TaskStatus.PROCESSING,
+        progress: 32,
+      }),
+      tasks: [
+        createTask({
+          id: 'task-1',
+          status: TaskStatus.PROCESSING,
+          progress: 32,
+        }),
+        createTask({
+          id: 'task-2',
+          status: TaskStatus.FAILED,
+          error: {
+            code: 'POST_PROCESSING',
+            message: '插入失败',
+          },
+        }),
+      ],
+    });
+
+    expect(viewModel.phase).toBe('generating');
+    expect(viewModel.batchPreview?.failedSlotCount).toBe(1);
+    expect(viewModel.batchPreview?.statusText).toBe('1/2 已处理');
   });
 });

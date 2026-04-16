@@ -1,5 +1,6 @@
 import { RectangleClient } from '@plait/core';
 import type { WorkflowMessageData } from '../types/chat.types';
+import { workflowCompletionService } from '../services/workflow-completion-service';
 import {
   TaskExecutionPhase,
   TaskStatus,
@@ -7,11 +8,20 @@ import {
   type Task,
 } from '../types/task.types';
 import type {
+  ImageGenerationAnchorBatchSlot,
   ImageGenerationAnchorPhase,
   ImageGenerationAnchorViewModel,
   PlaitImageGenerationAnchor,
 } from '../types/image-generation-anchor.types';
-import { resolveImageTaskDisplayProgress } from './image-task-progress';
+import {
+  getImageGenerationBatchExpectedCount,
+  getTaskResultPreviewUrls,
+  resolveImageGenerationBatchDisplayProgress,
+} from './image-generation-anchor-batch';
+import {
+  getImageTaskProgressStatusText,
+  resolveImageTaskDisplayProgress,
+} from './image-task-progress';
 
 const PHASE_LABELS: Record<ImageGenerationAnchorPhase, string> = {
   submitted: '已提交',
@@ -33,6 +43,16 @@ const PHASE_SUBTITLES: Record<ImageGenerationAnchorPhase, string> = {
   failed: '生成失败，可从当前位置重试',
 };
 
+const BATCH_STATUS_LABELS: Record<ImageGenerationAnchorPhase, string> = {
+  submitted: '等待执行',
+  queued: '等待执行',
+  generating: '生成中...',
+  developing: '正在显影',
+  inserting: '正在显现',
+  completed: '',
+  failed: '生成失败',
+};
+
 const clampProgress = (value: number | null | undefined): number | null => {
   if (typeof value !== 'number' || Number.isNaN(value)) {
     return null;
@@ -41,9 +61,191 @@ const clampProgress = (value: number | null | undefined): number | null => {
   return Math.max(0, Math.min(100, value));
 };
 
+function sortBatchTasks(tasks: Task[]): Task[] {
+  return [...tasks].sort((left, right) => {
+    if (left.createdAt !== right.createdAt) {
+      return left.createdAt - right.createdAt;
+    }
+
+    return left.id.localeCompare(right.id);
+  });
+}
+
+function derivePlaceholderSlotStatus(
+  phase: ImageGenerationAnchorPhase
+): ImageGenerationAnchorBatchSlot['status'] {
+  if (phase === 'failed') {
+    return 'failed';
+  }
+
+  if (phase === 'completed') {
+    return 'ready';
+  }
+
+  if (
+    phase === 'generating' ||
+    phase === 'developing' ||
+    phase === 'inserting'
+  ) {
+    return 'generating';
+  }
+
+  return 'pending';
+}
+
+function deriveTaskBatchSlotStatus(
+  task: Task,
+  phase: ImageGenerationAnchorPhase
+): ImageGenerationAnchorBatchSlot['status'] {
+  const postProcessing = workflowCompletionService.getPostProcessingStatus(
+    task.id
+  );
+
+  if (
+    task.status === TaskStatus.FAILED ||
+    postProcessing?.status === 'failed'
+  ) {
+    return 'failed';
+  }
+
+  if (task.insertedToCanvas || postProcessing?.status === 'completed') {
+    return 'ready';
+  }
+
+  if (
+    postProcessing?.status === 'processing' ||
+    task.status === TaskStatus.COMPLETED
+  ) {
+    return 'generating';
+  }
+
+  if (task.status === TaskStatus.PROCESSING) {
+    return task.executionPhase === TaskExecutionPhase.SUBMITTING
+      ? 'pending'
+      : 'generating';
+  }
+
+  if (task.status === TaskStatus.PENDING) {
+    return derivePlaceholderSlotStatus(phase);
+  }
+
+  return derivePlaceholderSlotStatus(phase);
+}
+
+function buildBatchPreview(
+  anchor: PlaitImageGenerationAnchor,
+  phase: ImageGenerationAnchorPhase,
+  tasks: Task[],
+  fallbackProgress: number | null
+): ImageGenerationAnchorViewModel['batchPreview'] {
+  if (anchor.anchorType !== 'stack') {
+    return undefined;
+  }
+
+  const slots: ImageGenerationAnchorBatchSlot[] = [];
+  const sortedTasks = sortBatchTasks(tasks);
+
+  sortedTasks.forEach((task) => {
+    const slotStatus = deriveTaskBatchSlotStatus(task, phase);
+    const previewUrls = getTaskResultPreviewUrls(task);
+
+    if (previewUrls.length > 0) {
+      previewUrls.forEach((previewUrl, index) => {
+        slots.push({
+          id: `${task.id}-${index}`,
+          taskId: task.id,
+          status: slotStatus,
+          previewImageUrl: previewUrl,
+          error:
+            slotStatus === 'failed'
+              ? task.error?.message ||
+                task.error?.details?.originalError ||
+                workflowCompletionService.getPostProcessingStatus(task.id)
+                  ?.error
+              : undefined,
+        });
+      });
+      return;
+    }
+
+    slots.push({
+      id: task.id,
+      taskId: task.id,
+      status: slotStatus,
+      error:
+        slotStatus === 'failed'
+          ? task.error?.message ||
+            task.error?.details?.originalError ||
+            workflowCompletionService.getPostProcessingStatus(task.id)?.error
+          : undefined,
+    });
+  });
+
+  const totalCount = Math.max(
+    getImageGenerationBatchExpectedCount(anchor),
+    slots.length
+  );
+  const placeholderStatus = derivePlaceholderSlotStatus(phase);
+
+  while (slots.length < totalCount) {
+    const slotIndex = slots.length;
+    slots.push({
+      id: `placeholder-${slotIndex}`,
+      status: placeholderStatus,
+    });
+  }
+
+  const visibleSlotCount = Math.max(2, Math.min(totalCount, 4));
+  const overflowCount = Math.max(totalCount - visibleSlotCount, 0);
+  const visibleSlots = slots.slice(0, visibleSlotCount);
+  const readySlotCount = slots.filter((slot) => slot.status === 'ready').length;
+  const generatingSlotCount = slots.filter(
+    (slot) => slot.status === 'generating'
+  ).length;
+  const pendingSlotCount = slots.filter(
+    (slot) => slot.status === 'pending'
+  ).length;
+  const failedSlotCount = slots.filter(
+    (slot) => slot.status === 'failed'
+  ).length;
+  const progress = resolveImageGenerationBatchDisplayProgress(
+    anchor,
+    tasks,
+    fallbackProgress
+  );
+  const settledCount = readySlotCount + failedSlotCount;
+  const hasPreviewImage = visibleSlots.some((slot) =>
+    Boolean(slot.previewImageUrl)
+  );
+  const statusText =
+    phase !== 'completed' && readySlotCount > 0 && readySlotCount < totalCount
+      ? `${readySlotCount}/${totalCount} 已完成`
+      : phase !== 'failed' && settledCount > 0 && settledCount < totalCount
+      ? `${settledCount}/${totalCount} 已处理`
+      : progress != null &&
+        (phase === 'submitted' || phase === 'queued' || phase === 'generating')
+      ? getImageTaskProgressStatusText(progress)
+      : BATCH_STATUS_LABELS[phase];
+
+  return {
+    totalCount,
+    visibleSlotCount,
+    overflowCount,
+    readySlotCount,
+    generatingSlotCount,
+    pendingSlotCount,
+    failedSlotCount,
+    hasPreviewImage,
+    progress,
+    statusText,
+    slots: visibleSlots,
+  };
+}
+
 export interface BuildImageGenerationAnchorViewModelOptions {
   anchor: PlaitImageGenerationAnchor;
   task?: Task | null;
+  tasks?: Task[];
   workflow?: WorkflowMessageData | null;
   postProcessingStatus?: WorkflowMessageData['postProcessingStatus'];
   isInserting?: boolean;
@@ -54,16 +256,51 @@ export interface BuildImageGenerationAnchorViewModelOptions {
 export function deriveImageGenerationAnchorPhase(
   options: BuildImageGenerationAnchorViewModelOptions
 ): ImageGenerationAnchorPhase {
-  const { anchor, task, workflow, postProcessingStatus, isInserting, hasInserted } =
-    options;
+  const {
+    anchor,
+    task,
+    tasks = [],
+    workflow,
+    postProcessingStatus,
+    isInserting,
+    hasInserted,
+  } = options;
+  const relatedTasks = tasks.length > 0 ? tasks : task ? [task] : [];
+  const hasBatchFailure =
+    anchor.anchorType === 'stack' &&
+    relatedTasks.some((relatedTask) => {
+      const relatedPostProcessing =
+        workflowCompletionService.getPostProcessingStatus(relatedTask.id);
 
-  if (task?.status === TaskStatus.FAILED || workflow?.status === 'failed') {
+      return (
+        relatedTask.status === TaskStatus.FAILED ||
+        relatedPostProcessing?.status === 'failed'
+      );
+    });
+  const hasBatchNonFailed =
+    anchor.anchorType === 'stack' &&
+    relatedTasks.some((relatedTask) => {
+      const relatedPostProcessing =
+        workflowCompletionService.getPostProcessingStatus(relatedTask.id);
+
+      return (
+        relatedTask.status !== TaskStatus.FAILED &&
+        relatedPostProcessing?.status !== 'failed'
+      );
+    });
+  const shouldSuppressFailedPhase = hasBatchFailure && hasBatchNonFailed;
+
+  if (
+    !shouldSuppressFailedPhase &&
+    (task?.status === TaskStatus.FAILED || workflow?.status === 'failed')
+  ) {
     return 'failed';
   }
 
   if (
-    postProcessingStatus === 'failed' ||
-    workflow?.postProcessingStatus === 'failed'
+    !shouldSuppressFailedPhase &&
+    (postProcessingStatus === 'failed' ||
+      workflow?.postProcessingStatus === 'failed')
   ) {
     return 'failed';
   }
@@ -83,7 +320,10 @@ export function deriveImageGenerationAnchorPhase(
     return 'developing';
   }
 
-  if (task?.status === TaskStatus.COMPLETED || workflow?.status === 'completed') {
+  if (
+    task?.status === TaskStatus.COMPLETED ||
+    workflow?.status === 'completed'
+  ) {
     return 'developing';
   }
 
@@ -105,10 +345,16 @@ export function deriveImageGenerationAnchorPhase(
 export function buildImageGenerationAnchorViewModel(
   options: BuildImageGenerationAnchorViewModelOptions
 ): ImageGenerationAnchorViewModel {
-  const { anchor, task, taskDisplayProgress, workflow } = options;
+  const { anchor, task, tasks = [], taskDisplayProgress, workflow } = options;
   const phase = deriveImageGenerationAnchorPhase(options);
   const rectangle = RectangleClient.getRectangleByPoints(anchor.points);
   const fallbackProgress = clampProgress(task?.progress ?? anchor.progress);
+  const batchPreview = buildBatchPreview(
+    anchor,
+    phase,
+    tasks,
+    fallbackProgress
+  );
   const resolvedProgress =
     task?.type === TaskType.IMAGE &&
     task.status === TaskStatus.PROCESSING &&
@@ -118,7 +364,11 @@ export function buildImageGenerationAnchorViewModel(
           fallbackProgress,
         })
       : fallbackProgress;
-  const progress = clampProgress(taskDisplayProgress ?? resolvedProgress);
+  const progress = clampProgress(
+    anchor.anchorType === 'stack'
+      ? batchPreview?.progress ?? taskDisplayProgress ?? resolvedProgress
+      : taskDisplayProgress ?? resolvedProgress
+  );
   const subtitle =
     anchor.subtitle && anchor.phase === phase
       ? anchor.subtitle
@@ -159,6 +409,7 @@ export function buildImageGenerationAnchorViewModel(
     title: anchor.title || workflow?.name || '图片生成',
     subtitle,
     previewImageUrl: anchor.previewImageUrl,
+    batchPreview,
     progress,
     progressMode,
     phaseLabel: PHASE_LABELS[phase],

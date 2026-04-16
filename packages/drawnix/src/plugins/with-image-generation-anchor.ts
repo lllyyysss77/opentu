@@ -72,6 +72,9 @@ export const ImageGenerationAnchorTransforms = {
       workflowId: options.workflowId,
       taskIds: options.taskIds ? [...options.taskIds] : [],
       primaryTaskId: options.primaryTaskId,
+      batchId: options.batchId,
+      batchIndex: options.batchIndex,
+      batchTotal: options.batchTotal,
       expectedInsertPosition: options.expectedInsertPosition ?? options.position,
       targetFrameId: options.targetFrameId,
       targetFrameDimensions: options.targetFrameDimensions,
@@ -169,6 +172,16 @@ export const ImageGenerationAnchorTransforms = {
     return element && isImageGenerationAnchorElement(element) ? element : null;
   },
 
+  getAnchorsByWorkflowId(
+    board: PlaitBoard,
+    workflowId: string
+  ): PlaitImageGenerationAnchor[] {
+    return board.children.filter(
+      (item) =>
+        isImageGenerationAnchorElement(item) && item.workflowId === workflowId
+    ) as PlaitImageGenerationAnchor[];
+  },
+
   getAnchorByTaskId(
     board: PlaitBoard,
     taskId: string
@@ -176,6 +189,30 @@ export const ImageGenerationAnchorTransforms = {
     const element = board.children.find(
       (item) => isImageGenerationAnchorElement(item) && item.taskIds.includes(taskId)
     );
+    return element && isImageGenerationAnchorElement(element) ? element : null;
+  },
+
+  getAnchorByBatchSlot(
+    board: PlaitBoard,
+    options: {
+      workflowId?: string;
+      batchId?: string;
+      batchIndex?: number;
+    }
+  ): PlaitImageGenerationAnchor | null {
+    const { workflowId, batchId, batchIndex } = options;
+    if (!workflowId || !batchId || typeof batchIndex !== 'number') {
+      return null;
+    }
+
+    const element = board.children.find(
+      (item) =>
+        isImageGenerationAnchorElement(item) &&
+        item.workflowId === workflowId &&
+        item.batchId === batchId &&
+        item.batchIndex === batchIndex
+    );
+
     return element && isImageGenerationAnchorElement(element) ? element : null;
   },
 

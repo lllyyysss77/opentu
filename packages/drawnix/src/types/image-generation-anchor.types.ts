@@ -25,6 +25,34 @@ export interface ImageGenerationAnchorAction {
   disabled?: boolean;
 }
 
+export type ImageGenerationAnchorBatchSlotStatus =
+  | 'pending'
+  | 'generating'
+  | 'ready'
+  | 'failed';
+
+export interface ImageGenerationAnchorBatchSlot {
+  id: string;
+  taskId?: string;
+  status: ImageGenerationAnchorBatchSlotStatus;
+  previewImageUrl?: string;
+  error?: string;
+}
+
+export interface ImageGenerationAnchorBatchPreview {
+  totalCount: number;
+  visibleSlotCount: number;
+  overflowCount: number;
+  readySlotCount: number;
+  generatingSlotCount: number;
+  pendingSlotCount: number;
+  failedSlotCount: number;
+  hasPreviewImage: boolean;
+  progress: number | null;
+  statusText: string;
+  slots: ImageGenerationAnchorBatchSlot[];
+}
+
 export interface ImageGenerationAnchorGeometry {
   position: Point;
   width: number;
@@ -49,6 +77,7 @@ export interface ImageGenerationAnchorViewModel {
   title: string;
   subtitle: string;
   previewImageUrl?: string;
+  batchPreview?: ImageGenerationAnchorBatchPreview;
   progress: number | null;
   progressMode: 'determinate' | 'indeterminate' | 'hidden';
   phaseLabel: string;
@@ -70,6 +99,9 @@ export interface ImageGenerationAnchorCreateOptions
   title?: string;
   subtitle?: string;
   primaryTaskId?: string;
+  batchId?: string;
+  batchIndex?: number;
+  batchTotal?: number;
   progress?: number | null;
   error?: string;
   transitionMode?: ImageGenerationAnchorTransitionMode;
@@ -91,6 +123,9 @@ export interface PlaitImageGenerationAnchor extends PlaitElement {
   workflowId: string;
   taskIds: string[];
   primaryTaskId?: string;
+  batchId?: string;
+  batchIndex?: number;
+  batchTotal?: number;
   expectedInsertPosition?: Point;
   targetFrameId?: string;
   targetFrameDimensions?: { width: number; height: number };

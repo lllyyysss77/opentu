@@ -17,6 +17,23 @@ interface AnchorPlacementOptions {
   maxSearchRadius?: number;
 }
 
+export function resolveImageGenerationBatchAnchorSeedPosition(
+  origin: Point,
+  size: AnchorSize,
+  index: number,
+  total: number,
+  gap = 32
+): Point {
+  const columns = total <= 2 ? total : total <= 4 ? 2 : 3;
+  const row = Math.floor(index / columns);
+  const column = index % columns;
+
+  return [
+    origin[0] + column * (size.width + gap),
+    origin[1] + row * (size.height + gap),
+  ];
+}
+
 function hasElementPoints(
   value: unknown
 ): value is {
@@ -91,7 +108,9 @@ export function resolveImageGenerationAnchorAvailablePosition(
         !ignoreElementIds.includes(element.id ?? '')
     )
     .map((element) => ({
-      ...RectangleClient.getRectangleByPoints(element.points),
+      ...RectangleClient.getRectangleByPoints(
+        (element as unknown as { points: [Point, Point] }).points
+      ),
       id: element.id,
       type: element.type,
     }));

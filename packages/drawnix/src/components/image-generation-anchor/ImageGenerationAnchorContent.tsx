@@ -32,31 +32,37 @@ const PHASE_CENTER_LABELS = {
   failed: '生成失败',
 } as const;
 
+const STACK_SLOT_STATUS_LABELS = {
+  pending: '待生成',
+  generating: '生成中',
+  ready: '已完成',
+  failed: '失败',
+} as const;
+
 export const ImageGenerationAnchorContent: React.FC<
   ImageGenerationAnchorContentProps
 > = ({ board, element, selected }) => {
   const { viewModel } = useImageGenerationAnchorController({ anchor: element });
   const [detailsOpen, setDetailsOpen] = useState(false);
   const isGhost = viewModel.anchorType === 'ghost';
-  const isStack = viewModel.anchorType === 'stack';
+  const batchPreview = viewModel.batchPreview;
+  const isStack = Boolean(batchPreview);
   const isRenderingResult =
     viewModel.phase === 'developing' || viewModel.phase === 'inserting';
-  const candidateCount = Math.max(
-    element.requestedCount ?? 0,
-    element.taskIds.length,
-    1
-  );
+  const candidateCount =
+    batchPreview?.totalCount ??
+    Math.max(element.requestedCount ?? 0, element.taskIds.length, 1);
   const showActions = viewModel.phase === 'failed' || detailsOpen || selected;
   const showRing = viewModel.progressMode !== 'hidden';
   const showDeterminateProgress =
     viewModel.progressMode === 'determinate' && viewModel.progress != null;
   const progressValue = Math.round(viewModel.progress ?? 0);
-  const showCenterLabel =
-    viewModel.phase !== 'completed' || viewModel.phase === 'failed';
-  const centerLabel =
-    showDeterminateProgress
-      ? getImageTaskProgressStatusText(progressValue)
-      : PHASE_CENTER_LABELS[viewModel.phase];
+  const showCenterLabel = viewModel.phase !== 'completed';
+  const centerLabel = isStack
+    ? batchPreview?.statusText || PHASE_CENTER_LABELS[viewModel.phase]
+    : showDeterminateProgress
+    ? getImageTaskProgressStatusText(progressValue)
+    : PHASE_CENTER_LABELS[viewModel.phase];
   const previewImageStyle = viewModel.previewImageUrl
     ? {
         backgroundImage: `url("${viewModel.previewImageUrl}")`,
@@ -185,6 +191,101 @@ export const ImageGenerationAnchorContent: React.FC<
       ? '收起'
       : viewModel.secondaryAction?.label;
   const secondaryActionType = viewModel.secondaryAction?.type;
+  const stackBadgeLabel =
+    candidateCount > 1 ? `${candidateCount} 张` : String(candidateCount);
+  const stackSummaryLabel =
+    batchPreview && batchPreview.readySlotCount > 0
+      ? `${batchPreview.readySlotCount}/${batchPreview.totalCount} 已完成`
+      : batchPreview?.statusText;
+
+  const renderSurfacePreview = () => {
+    if (isStack && batchPreview) {
+      const slots = batchPreview.slots.map((slot, index) => {
+        const slotPreviewStyle = slot.previewImageUrl
+          ? {
+              backgroundImage: `url("${slot.previewImageUrl}")`,
+            }
+          : undefined;
+
+        return (
+          <div
+            key={slot.id}
+            className={classNames(
+              'image-generation-anchor__stack-slot',
+              `image-generation-anchor__stack-slot--index-${index}`,
+              `image-generation-anchor__stack-slot--${slot.status}`,
+              {
+                'image-generation-anchor__stack-slot--preview': Boolean(
+                  slot.previewImageUrl
+                ),
+              }
+            )}
+          >
+            <span className="image-generation-anchor__stack-slot-noise" />
+            {slot.previewImageUrl ? (
+              <span
+                className="image-generation-anchor__stack-slot-image"
+                style={slotPreviewStyle}
+              />
+            ) : null}
+            <span className="image-generation-anchor__stack-slot-meta">
+              <span className="image-generation-anchor__stack-slot-index">
+                {index + 1}
+              </span>
+              <span className="image-generation-anchor__stack-slot-status">
+                {STACK_SLOT_STATUS_LABELS[slot.status]}
+              </span>
+            </span>
+            <span className="image-generation-anchor__stack-slot-sheen" />
+          </div>
+        );
+      });
+
+      return (
+        <div
+          className={classNames(
+            'image-generation-anchor__surface-preview',
+            'image-generation-anchor__surface-preview--stack'
+          )}
+        >
+          <div
+            className={classNames(
+              'image-generation-anchor__stack-preview',
+              `image-generation-anchor__stack-preview--count-${batchPreview.visibleSlotCount}`,
+              {
+                'image-generation-anchor__stack-preview--has-preview':
+                  batchPreview.hasPreviewImage,
+              }
+            )}
+          >
+            {slots}
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="image-generation-anchor__surface-preview">
+        <div className="image-generation-anchor__surface-shell" />
+        <div
+          className={classNames('image-generation-anchor__surface-image', {
+            'image-generation-anchor__surface-image--actual': Boolean(
+              viewModel.previewImageUrl
+            ),
+          })}
+        >
+          <span className="image-generation-anchor__surface-image-noise" />
+          {viewModel.previewImageUrl ? (
+            <span
+              className="image-generation-anchor__surface-image-actual"
+              style={previewImageStyle}
+            />
+          ) : null}
+          <span className="image-generation-anchor__surface-image-sheen" />
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div
@@ -207,42 +308,37 @@ export const ImageGenerationAnchorContent: React.FC<
       <div
         className={classNames('image-generation-anchor__surface', {
           'image-generation-anchor__surface--compact': isGhost,
+          'image-generation-anchor__surface--stack': isStack,
         })}
       >
-        <div className="image-generation-anchor__surface-grid" />
+        {!isStack ? (
+          <div className="image-generation-anchor__surface-grid" />
+        ) : null}
         <div className="image-generation-anchor__surface-refresh" />
-        <div className="image-generation-anchor__surface-preview">
-          <div className="image-generation-anchor__surface-shell" />
-          <div
-            className={classNames('image-generation-anchor__surface-image', {
-              'image-generation-anchor__surface-image--actual':
-                Boolean(viewModel.previewImageUrl),
-            })}
-          >
-            <span className="image-generation-anchor__surface-image-noise" />
-            {viewModel.previewImageUrl ? (
-              <span
-                className="image-generation-anchor__surface-image-actual"
-                style={previewImageStyle}
-              />
+        {isStack && batchPreview ? (
+          <div className="image-generation-anchor__stack-header">
+            <div className="image-generation-anchor__stack-badge">
+              {stackBadgeLabel}
+            </div>
+            {stackSummaryLabel ? (
+              <div className="image-generation-anchor__stack-summary">
+                {stackSummaryLabel}
+              </div>
             ) : null}
-            <span className="image-generation-anchor__surface-image-sheen" />
-          </div>
-        </div>
-
-        {renderCore()}
-
-        {isStack ? (
-          <div className="image-generation-anchor__stack-badge">
-            {candidateCount}
           </div>
         ) : null}
+        {renderSurfacePreview()}
+
+        {renderCore()}
       </div>
 
       {detailsOpen ? (
         <div className="image-generation-anchor__details">
           {detailItems.map((item) => (
-            <div key={item.label} className="image-generation-anchor__detail-row">
+            <div
+              key={item.label}
+              className="image-generation-anchor__detail-row"
+            >
               <span className="image-generation-anchor__detail-label">
                 {item.label}
               </span>
