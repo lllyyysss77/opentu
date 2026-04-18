@@ -1,3 +1,37 @@
+## 0.6.32 (2026-04-18)
+
+### 🚀 Features
+
+- 支持资产嵌入的尺寸调整和工具图标优化 ([7d05d56b](https://github.com/ljquan/aitu/commit/7d05d56b))
+- 统一视频展示为海报优先并支持降级播放 ([a2ad5fd6](https://github.com/ljquan/aitu/commit/a2ad5fd6))
+- 对齐爆款视频与爆款MV生成页交互 ([8864fac4](https://github.com/ljquan/aitu/commit/8864fac4))
+- 支持镜头草稿保存和素材库视频插入 ([c808c822](https://github.com/ljquan/aitu/commit/c808c822))
+- 串行化爆款视频批量生成 ([df558f3e](https://github.com/ljquan/aitu/commit/df558f3e))
+- 优化多图批量生成锚点的位置规划与任务匹配 ([84461d2b](https://github.com/ljquan/aitu/commit/84461d2b))
+- 拆分多图生成反馈为独立锚点 ([21471bec](https://github.com/ljquan/aitu/commit/21471bec))
+- 引入生图锚点反馈初版框架 ([99c1a521](https://github.com/ljquan/aitu/commit/99c1a521))
+
+### 🩹 Fixes
+
+- 完善素材选择与素材插入体验 ([88c63210](https://github.com/ljquan/aitu/commit/88c63210))
+- 优化知识库素材加载与媒体预览释放 ([626df4a9](https://github.com/ljquan/aitu/commit/626df4a9))
+- 修复归档任务导致音频素材元数据丢失 ([94968bb2](https://github.com/ljquan/aitu/commit/94968bb2))
+- 修复生成页多项 Bug 并优化单镜头生成参数透传 ([4732d060](https://github.com/ljquan/aitu/commit/4732d060))
+- 修正 tuzi 图片路由与 AI 生图弹窗标题 ([ff9f7395](https://github.com/ljquan/aitu/commit/ff9f7395))
+- 优化图片生成锚点的占位与加载反馈 ([20b71b12](https://github.com/ljquan/aitu/commit/20b71b12))
+
+### 🔧 Chores
+
+- bump version to 0.6.31 ([a086b160](https://github.com/ljquan/aitu/commit/a086b160))
+- bump version to 0.6.30 ([a3c31d78](https://github.com/ljquan/aitu/commit/a3c31d78))
+- bump version to 0.6.29 ([0e197f24](https://github.com/ljquan/aitu/commit/0e197f24))
+- refactor(mv-creator): 重构为 分析→脚本→生成 三步流程，对齐爆款视频生成 ([9e61a023](https://github.com/ljquan/aitu/commit/9e61a023))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+- gongchengtu <1817063960@qq.com>
+
 ## 0.6.31 (2026-04-17)
 
 ### 🚀 Features
