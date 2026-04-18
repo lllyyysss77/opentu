@@ -249,6 +249,7 @@ export function convertDirectGenerationToWorkflow(
         prompt,
         model: modelId,
         modelRef,
+        workflowId,
         // 批量生成参数直接放在 args 中
         batchId,
         batchIndex: i + 1,
@@ -282,6 +283,7 @@ export function convertDirectGenerationToWorkflow(
         model: modelId,
         modelRef,
         seconds: duration || '5',
+        workflowId,
         // 批量生成参数直接放在 args 中
         batchId,
         batchIndex: i + 1,
@@ -318,6 +320,7 @@ export function convertDirectGenerationToWorkflow(
         model: modelId,
         modelRef,
         sunoAction,
+        workflowId,
         batchId,
         batchIndex: i + 1,
         batchTotal: count,
@@ -384,6 +387,11 @@ export function convertDirectGenerationToWorkflow(
         model: modelId,
         modelRef,
         rawInput,
+        workflowId,
+        batchId,
+        batchIndex: i + 1,
+        batchTotal: count,
+        globalIndex: i + 1,
       };
       if (referenceImages.length > 0) {
         textArgs.referenceImages = referenceImages;

@@ -11,7 +11,7 @@
 
 import { useEffect, useRef } from 'react';
 import { taskQueueService } from '../services/task-queue-service';
-import { TaskStatus } from '../types/shared/core.types';
+import { TaskStatus, TaskType } from '../types/shared/core.types';
 import type { WorkflowMessageData } from '../types/chat.types';
 import { WorkZoneTransforms, isWorkZoneElement } from '../plugins/with-workzone';
 import { PlaitBoard } from '@plait/core';
@@ -97,6 +97,8 @@ function processViaContext(
   const taskStepMap = buildTaskStepMap(workflow?.steps);
   const stepId = taskStepMap.get(task.id);
   if (!stepId) return false;
+  const shouldSyncWorkZone =
+    task.type !== TaskType.IMAGE && workflow?.generationType !== 'image';
 
   if (mapped.status === 'running') {
     workflowControl.resumeWorkflow();
@@ -109,7 +111,7 @@ function processViaContext(
     updateWorkflowMessageRef.current(workflowData);
     const board = boardRef.current;
     const workZoneId = workZoneIdRef.current;
-    if (board && workZoneId) {
+    if (shouldSyncWorkZone && board && workZoneId) {
       WorkZoneTransforms.updateWorkflow(board, workZoneId, workflowData);
     }
   }
@@ -130,10 +132,16 @@ function processViaWorkZone(
 ): boolean {
   const board = boardRef.current;
   if (!board) return false;
+  if (task.type === TaskType.IMAGE) {
+    return false;
+  }
 
   for (const element of board.children) {
     if (!isWorkZoneElement(element)) continue;
     const wz = element as PlaitWorkZone;
+    if (wz.workflow.generationType === 'image') {
+      continue;
+    }
     const wzStepMap = buildTaskStepMap(wz.workflow?.steps);
     const wzStepId = wzStepMap.get(task.id);
     if (!wzStepId) continue;

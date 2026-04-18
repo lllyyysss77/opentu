@@ -1,0 +1,387 @@
+import React, { useCallback, useMemo, useState } from 'react';
+import classNames from 'classnames';
+import type { PlaitBoard } from '@plait/core';
+import { useImageGenerationAnchorController } from '../../hooks/useImageGenerationAnchorController';
+import { ImageGenerationAnchorTransforms } from '../../plugins/with-image-generation-anchor';
+import {
+  IMAGE_GENERATION_ANCHOR_RETRY_EVENT,
+  type ImageGenerationAnchorActionType,
+  type PlaitImageGenerationAnchor,
+} from '../../types/image-generation-anchor.types';
+import {
+  ImageGenerationProgressDisplay,
+  type ImageGenerationProgressTone,
+} from '../shared/ImageGenerationProgressDisplay';
+import { getImageTaskProgressStatusText } from '../../utils/image-task-progress';
+import { buildImageGenerationAnchorPresentationPatch } from '../../utils/image-generation-anchor-state';
+import './image-generation-anchor.scss';
+
+interface ImageGenerationAnchorContentProps {
+  board: PlaitBoard;
+  element: PlaitImageGenerationAnchor;
+  selected: boolean;
+}
+
+const PHASE_CENTER_LABELS = {
+  submitted: '等待执行',
+  queued: '等待执行',
+  generating: '生成中',
+  developing: '正在显影',
+  inserting: '正在显现',
+  completed: '',
+  failed: '生成失败',
+} as const;
+
+const STACK_SLOT_STATUS_LABELS = {
+  pending: '待生成',
+  generating: '生成中',
+  ready: '已完成',
+  failed: '失败',
+} as const;
+
+export const ImageGenerationAnchorContent: React.FC<
+  ImageGenerationAnchorContentProps
+> = ({ board, element, selected }) => {
+  const { viewModel } = useImageGenerationAnchorController({ anchor: element });
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const isGhost = viewModel.anchorType === 'ghost';
+  const batchPreview = viewModel.batchPreview;
+  const isStack = Boolean(batchPreview);
+  const isRenderingResult =
+    viewModel.phase === 'developing' || viewModel.phase === 'inserting';
+  const candidateCount =
+    batchPreview?.totalCount ??
+    Math.max(element.requestedCount ?? 0, element.taskIds.length, 1);
+  const showActions = viewModel.phase === 'failed' || detailsOpen || selected;
+  const showRing = viewModel.progressMode !== 'hidden';
+  const showDeterminateProgress =
+    viewModel.progressMode === 'determinate' && viewModel.progress != null;
+  const progressValue = Math.round(viewModel.progress ?? 0);
+  const showCenterLabel = viewModel.phase !== 'completed';
+  const centerLabel = isStack
+    ? batchPreview?.statusText || PHASE_CENTER_LABELS[viewModel.phase]
+    : showDeterminateProgress
+    ? getImageTaskProgressStatusText(progressValue)
+    : PHASE_CENTER_LABELS[viewModel.phase];
+  const previewImageStyle = viewModel.previewImageUrl
+    ? {
+        backgroundImage: `url("${viewModel.previewImageUrl}")`,
+      }
+    : undefined;
+  const progressTone: ImageGenerationProgressTone =
+    viewModel.phase === 'failed'
+      ? 'danger'
+      : viewModel.phase === 'completed'
+      ? 'success'
+      : isRenderingResult
+      ? 'loading'
+      : 'default';
+  const detailItems = useMemo(
+    () => [
+      { label: '阶段', value: viewModel.phaseLabel },
+      { label: '形态', value: viewModel.anchorType },
+      { label: '过渡', value: viewModel.transitionMode },
+      {
+        label: '任务',
+        value: element.primaryTaskId || (element.taskIds[0] ?? '待绑定'),
+      },
+      { label: '工作流', value: element.workflowId },
+      { label: '错误', value: viewModel.error || '无' },
+    ],
+    [
+      element.primaryTaskId,
+      element.taskIds,
+      element.workflowId,
+      viewModel.anchorType,
+      viewModel.error,
+      viewModel.phaseLabel,
+      viewModel.transitionMode,
+    ]
+  );
+
+  const stopPointer = useCallback(
+    (event: React.PointerEvent | React.MouseEvent) => {
+      event.stopPropagation();
+      event.preventDefault();
+    },
+    []
+  );
+
+  const handleAction = useCallback(
+    (actionType: ImageGenerationAnchorActionType) => {
+      if (actionType === 'none') {
+        return;
+      }
+
+      if (actionType === 'details') {
+        setDetailsOpen((value) => !value);
+        return;
+      }
+
+      if (actionType === 'retry') {
+        const taskId = element.primaryTaskId || element.taskIds[0];
+        if (!taskId) {
+          return;
+        }
+
+        ImageGenerationAnchorTransforms.updateAnchor(
+          board,
+          element.id,
+          buildImageGenerationAnchorPresentationPatch('retrying')
+        );
+
+        window.dispatchEvent(
+          new CustomEvent(IMAGE_GENERATION_ANCHOR_RETRY_EVENT, {
+            detail: { taskId },
+          })
+        );
+        return;
+      }
+
+      if (actionType === 'dismiss') {
+        board.deleteFragment([element]);
+      }
+    },
+    [board, element]
+  );
+
+  const renderCore = () => {
+    return (
+      <div className="image-generation-anchor__surface-core">
+        {showCenterLabel ? (
+          <ImageGenerationProgressDisplay
+            progress={showDeterminateProgress ? progressValue : null}
+            progressMode={viewModel.progressMode}
+            tone={progressTone}
+            statusText={centerLabel}
+            compact
+            showRing={showRing || viewModel.phase === 'failed'}
+            className="image-generation-anchor__progress-display"
+          />
+        ) : null}
+        {viewModel.phase === 'failed' && viewModel.error ? (
+          <div className="image-generation-anchor__error">
+            <span className="image-generation-anchor__error-raw">
+              {viewModel.error}
+            </span>
+            <button
+              type="button"
+              className="image-generation-anchor__error-link"
+              onPointerDown={stopPointer}
+              onMouseDown={stopPointer}
+              onClick={(event) => {
+                stopPointer(event);
+                handleAction('details');
+              }}
+            >
+              {detailsOpen ? '收起详情' : '查看详情'}
+            </button>
+          </div>
+        ) : null}
+      </div>
+    );
+  };
+
+  const primaryActionLabel =
+    detailsOpen && viewModel.primaryAction.type === 'details'
+      ? '收起'
+      : viewModel.primaryAction.label;
+  const secondaryActionLabel =
+    detailsOpen && viewModel.secondaryAction?.type === 'details'
+      ? '收起'
+      : viewModel.secondaryAction?.label;
+  const secondaryActionType = viewModel.secondaryAction?.type;
+  const stackBadgeLabel =
+    candidateCount > 1 ? `${candidateCount} 张` : String(candidateCount);
+  const stackSummaryLabel =
+    batchPreview && batchPreview.readySlotCount > 0
+      ? `${batchPreview.readySlotCount}/${batchPreview.totalCount} 已完成`
+      : batchPreview?.statusText;
+
+  const renderSurfacePreview = () => {
+    if (isStack && batchPreview) {
+      const slots = batchPreview.slots.map((slot, index) => {
+        const slotPreviewStyle = slot.previewImageUrl
+          ? {
+              backgroundImage: `url("${slot.previewImageUrl}")`,
+            }
+          : undefined;
+
+        return (
+          <div
+            key={slot.id}
+            className={classNames(
+              'image-generation-anchor__stack-slot',
+              `image-generation-anchor__stack-slot--index-${index}`,
+              `image-generation-anchor__stack-slot--${slot.status}`,
+              {
+                'image-generation-anchor__stack-slot--preview': Boolean(
+                  slot.previewImageUrl
+                ),
+              }
+            )}
+          >
+            <span className="image-generation-anchor__stack-slot-noise" />
+            {slot.previewImageUrl ? (
+              <span
+                className="image-generation-anchor__stack-slot-image"
+                style={slotPreviewStyle}
+              />
+            ) : null}
+            <span className="image-generation-anchor__stack-slot-meta">
+              <span className="image-generation-anchor__stack-slot-index">
+                {index + 1}
+              </span>
+              <span className="image-generation-anchor__stack-slot-status">
+                {STACK_SLOT_STATUS_LABELS[slot.status]}
+              </span>
+            </span>
+            <span className="image-generation-anchor__stack-slot-sheen" />
+          </div>
+        );
+      });
+
+      return (
+        <div
+          className={classNames(
+            'image-generation-anchor__surface-preview',
+            'image-generation-anchor__surface-preview--stack'
+          )}
+        >
+          <div
+            className={classNames(
+              'image-generation-anchor__stack-preview',
+              `image-generation-anchor__stack-preview--count-${batchPreview.visibleSlotCount}`,
+              {
+                'image-generation-anchor__stack-preview--has-preview':
+                  batchPreview.hasPreviewImage,
+              }
+            )}
+          >
+            {slots}
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="image-generation-anchor__surface-preview">
+        <div className="image-generation-anchor__surface-shell" />
+        <div
+          className={classNames('image-generation-anchor__surface-image', {
+            'image-generation-anchor__surface-image--actual': Boolean(
+              viewModel.previewImageUrl
+            ),
+          })}
+        >
+          <span className="image-generation-anchor__surface-image-noise" />
+          {viewModel.previewImageUrl ? (
+            <span
+              className="image-generation-anchor__surface-image-actual"
+              style={previewImageStyle}
+            />
+          ) : null}
+          <span className="image-generation-anchor__surface-image-sheen" />
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div
+      className={classNames(
+        'image-generation-anchor',
+        `image-generation-anchor--${viewModel.anchorType}`,
+        `image-generation-anchor--${viewModel.tone}`,
+        `image-generation-anchor--phase-${viewModel.phase}`,
+        `image-generation-anchor--progress-${viewModel.progressMode}`,
+        `image-generation-anchor--transition-${viewModel.transitionMode}`,
+        {
+          'image-generation-anchor--selected': selected,
+          'image-generation-anchor--terminal': viewModel.isTerminal,
+          'image-generation-anchor--details-open': detailsOpen,
+        }
+      )}
+    >
+      <div className="image-generation-anchor__glow" />
+
+      <div
+        className={classNames('image-generation-anchor__surface', {
+          'image-generation-anchor__surface--compact': isGhost,
+          'image-generation-anchor__surface--stack': isStack,
+        })}
+      >
+        {!isStack ? (
+          <div className="image-generation-anchor__surface-grid" />
+        ) : null}
+        <div className="image-generation-anchor__surface-refresh" />
+        {isStack && batchPreview ? (
+          <div className="image-generation-anchor__stack-header">
+            <div className="image-generation-anchor__stack-badge">
+              {stackBadgeLabel}
+            </div>
+            {stackSummaryLabel ? (
+              <div className="image-generation-anchor__stack-summary">
+                {stackSummaryLabel}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+        {renderSurfacePreview()}
+
+        {renderCore()}
+      </div>
+
+      {detailsOpen ? (
+        <div className="image-generation-anchor__details">
+          {detailItems.map((item) => (
+            <div
+              key={item.label}
+              className="image-generation-anchor__detail-row"
+            >
+              <span className="image-generation-anchor__detail-label">
+                {item.label}
+              </span>
+              <span className="image-generation-anchor__detail-value">
+                {item.value}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {showActions ? (
+        <div className="image-generation-anchor__actions">
+          <button
+            type="button"
+            className="image-generation-anchor__action"
+            onPointerDown={stopPointer}
+            onMouseDown={stopPointer}
+            onClick={(event) => {
+              stopPointer(event);
+              handleAction(viewModel.primaryAction.type);
+            }}
+          >
+            {primaryActionLabel}
+          </button>
+          {viewModel.secondaryAction ? (
+            <button
+              type="button"
+              className="image-generation-anchor__action image-generation-anchor__action--secondary"
+              onPointerDown={stopPointer}
+              onMouseDown={stopPointer}
+              onClick={(event) => {
+                stopPointer(event);
+                if (secondaryActionType) {
+                  handleAction(secondaryActionType);
+                }
+              }}
+            >
+              {secondaryActionLabel}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+};

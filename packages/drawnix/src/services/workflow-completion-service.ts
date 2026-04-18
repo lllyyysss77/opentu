@@ -32,6 +32,13 @@ export interface WorkflowPostProcessingResult {
   insertedCount?: number;
   /** 第一个插入元素的位置（用于滚动定位） */
   firstElementPosition?: Point;
+  /** 第一个插入元素的 ID（用于共享过渡对齐） */
+  firstElementId?: string;
+  /** 第一个插入元素的尺寸（用于过渡对齐） */
+  firstElementSize?: {
+    width: number;
+    height: number;
+  };
   /** 错误信息 */
   error?: string;
   /** 完成时间戳 */
@@ -148,7 +155,9 @@ class WorkflowCompletionService {
   completePostProcessing(
     taskId: string,
     insertedCount: number,
-    firstElementPosition?: Point
+    firstElementPosition?: Point,
+    firstElementId?: string,
+    firstElementSize?: { width: number; height: number }
   ): void {
     const existingResult = this.postProcessingResults.get(taskId);
 
@@ -158,6 +167,8 @@ class WorkflowCompletionService {
       type: existingResult?.type || 'direct_insert',
       insertedCount,
       firstElementPosition,
+      firstElementId,
+      firstElementSize,
       completedAt: Date.now(),
     };
 
