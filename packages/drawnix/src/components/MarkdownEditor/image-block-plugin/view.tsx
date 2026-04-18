@@ -39,6 +39,43 @@ function normalizeDimension(value: number | null | undefined): number | undefine
   return Math.round(value);
 }
 
+interface AspectResizeBounds {
+  minWidth: number;
+  maxWidth: number;
+  minHeight: number;
+  maxHeight: number;
+}
+
+function clampSizeByWidth(targetWidth: number, aspectRatio: number, bounds: AspectResizeBounds) {
+  let width = clamp(targetWidth, bounds.minWidth, bounds.maxWidth);
+  let height = width / aspectRatio;
+
+  if (height < bounds.minHeight || height > bounds.maxHeight) {
+    height = clamp(height, bounds.minHeight, bounds.maxHeight);
+    width = height * aspectRatio;
+  }
+
+  return {
+    width: clamp(width, bounds.minWidth, bounds.maxWidth),
+    height: clamp(height, bounds.minHeight, bounds.maxHeight),
+  };
+}
+
+function clampSizeByHeight(targetHeight: number, aspectRatio: number, bounds: AspectResizeBounds) {
+  let height = clamp(targetHeight, bounds.minHeight, bounds.maxHeight);
+  let width = height * aspectRatio;
+
+  if (width < bounds.minWidth || width > bounds.maxWidth) {
+    width = clamp(width, bounds.minWidth, bounds.maxWidth);
+    height = width / aspectRatio;
+  }
+
+  return {
+    width: clamp(width, bounds.minWidth, bounds.maxWidth),
+    height: clamp(height, bounds.minHeight, bounds.maxHeight),
+  };
+}
+
 function EmptyImageBlock({
   attrs,
   readonly,
@@ -234,6 +271,9 @@ function RenderedImageBlock({
 
     const editorRoot = frame.closest('.ProseMirror');
     const maxWidth = Math.max(120, (editorRoot?.getBoundingClientRect().width ?? rect.width) - 32);
+    const minWidth = 80;
+    const minHeight = 80;
+    const maxHeight = 1600;
     const startState = {
       x: event.clientX,
       y: event.clientY,
@@ -249,13 +289,46 @@ function RenderedImageBlock({
     const handlePointerMove = (moveEvent: PointerEvent) => {
       const dx = moveEvent.clientX - startState.x;
       const dy = moveEvent.clientY - startState.y;
+      const keepAspectRatio =
+        moveEvent.shiftKey &&
+        startState.width > 0 &&
+        startState.height > 0;
 
       const width = handle === 'bottom'
         ? startState.width
-        : clamp(startState.width + dx, 80, maxWidth);
+        : clamp(startState.width + dx, minWidth, maxWidth);
       const height = handle === 'right'
         ? startState.height
-        : clamp(startState.height + dy, 80, 1600);
+        : clamp(startState.height + dy, minHeight, maxHeight);
+
+      if (keepAspectRatio) {
+        const aspectRatio = startState.width / startState.height;
+        const bounds = {
+          minWidth,
+          maxWidth,
+          minHeight,
+          maxHeight,
+        };
+
+        if (handle === 'right') {
+          nextSize = clampSizeByWidth(width, aspectRatio, bounds);
+        } else if (handle === 'bottom') {
+          nextSize = clampSizeByHeight(height, aspectRatio, bounds);
+        } else {
+          const widthScale = width / startState.width;
+          const heightScale = height / startState.height;
+          nextSize = Math.abs(widthScale - 1) >= Math.abs(heightScale - 1)
+            ? clampSizeByWidth(width, aspectRatio, bounds)
+            : clampSizeByHeight(height, aspectRatio, bounds);
+        }
+
+        nextSize = {
+          width: Math.round(nextSize.width),
+          height: Math.round(nextSize.height),
+        };
+        setDraftSize(nextSize);
+        return;
+      }
 
       nextSize = {
         width: Math.round(width),
@@ -386,6 +459,15 @@ export const markdownImageBlockView = $view(markdownImageBlockSchema.node, (ctx)
 
     renderNode();
 
+    // 素材库插入：监听自定义事件，直接更新 ProseMirror 节点，绕过 React 状态
+    const handleAssetCommit = (e: Event) => {
+      const src = (e as CustomEvent).detail?.src;
+      if (src && typeof src === 'string') {
+        updateAttrs({ src });
+      }
+    };
+    dom.addEventListener('asset-commit', handleAssetCommit);
+
     return {
       dom,
       update: (updatedNode: any) => {
@@ -419,6 +501,7 @@ export const markdownImageBlockView = $view(markdownImageBlockSchema.node, (ctx)
         renderNode();
       },
       destroy: () => {
+        dom.removeEventListener('asset-commit', handleAssetCommit);
         if (reactRoot) {
           const root = reactRoot;
           reactRoot = null;

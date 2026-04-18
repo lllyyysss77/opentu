@@ -54,13 +54,13 @@ export const AssetItem = memo<AssetItemProps>(
       }
     }, [asset, onPreview, isInSelectionMode]);
 
-    const handleCheckboxChange = useCallback(() => {
-      onSelect(asset.id);
+    const handleCheckboxClick = useCallback((e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      onSelect(asset.id, e);
     }, [asset.id, onSelect]);
 
-    const handleCheckboxClick = useCallback((e: React.MouseEvent) => {
-      e.stopPropagation();
-    }, []);
+    const ignoreCheckboxChange = useCallback(() => undefined, []);
 
     // 插入功能（原来的双击功能）
     const handleInsertClick = useCallback((e: React.MouseEvent) => {
@@ -104,7 +104,7 @@ export const AssetItem = memo<AssetItemProps>(
           <div className="asset-item__checkbox asset-item__checkbox--left" onClick={handleCheckboxClick}>
             <Checkbox
               checked={isSelected}
-              onChange={handleCheckboxChange}
+              onChange={ignoreCheckboxChange}
               data-track="asset_item_checkbox"
             />
           </div>
@@ -181,7 +181,7 @@ export const AssetItem = memo<AssetItemProps>(
             <div className="asset-item__checkbox asset-item__checkbox--overlay" onClick={handleCheckboxClick}>
               <Checkbox
                 checked={isSelected}
-                onChange={handleCheckboxChange}
+                onChange={ignoreCheckboxChange}
                 data-track="asset_item_checkbox"
               />
             </div>

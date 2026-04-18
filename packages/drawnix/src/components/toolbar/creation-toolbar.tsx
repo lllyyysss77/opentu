@@ -266,7 +266,15 @@ export const CreationToolbar: React.FC<ToolbarSectionProps> = ({
       } else if (asset.type === AssetType.VIDEO) {
         await insertVideoFromUrl(board, asset.url);
       } else if (asset.type === AssetType.AUDIO) {
-        await insertAudioFromUrl(board, asset.url, { title: asset.name });
+        await insertAudioFromUrl(board, asset.url, {
+          title: asset.name,
+          duration: asset.duration,
+          previewImageUrl: asset.thumbnail,
+          prompt: asset.prompt,
+          mv: asset.modelName,
+          clipId: asset.clipId,
+          providerTaskId: asset.providerTaskId,
+        });
       }
       MessagePlugin.success('素材已插入到画板');
     } catch (error) {

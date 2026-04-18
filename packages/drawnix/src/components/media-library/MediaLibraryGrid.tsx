@@ -57,6 +57,7 @@ import { useDrawnix } from '../../hooks/use-drawnix';
 import { removeElementsByAssetIds, removeElementsByAssetUrls, isCacheUrl, countElementsByAssetUrls } from '../../utils/asset-cleanup';
 import { insertImageFromUrl } from '../../data/image';
 import { insertVideoFromUrl } from '../../data/video';
+import { insertAudioFromUrl } from '../../data/audio';
 import { useGitHubSync } from '../../contexts/GitHubSyncContext';
 import { useAudioPlaylists } from '../../contexts/AudioPlaylistContext';
 import { mediaSyncService } from '../../services/github-sync/media-sync-service';
@@ -626,6 +627,20 @@ export function MediaLibraryGrid({
     lastSelectedIdRef.current = null;
   }, []);
 
+  const replaceSelectionWithAssetIds = useCallback((assetIds: string[]) => {
+    setSelectionState({
+      scope: null,
+      selectedIds: new Set(assetIds),
+      deselectedIds: new Set<string>(),
+    });
+
+    lastSelectedIdRef.current = assetIds.length > 0 ? assetIds[assetIds.length - 1] : null;
+
+    if (assetIds.length > 0) {
+      onSelectAsset(assetIds[assetIds.length - 1]);
+    }
+  }, [onSelectAsset]);
+
   // 拖放事件处理
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -744,6 +759,10 @@ export function MediaLibraryGrid({
     // 更新右侧面板显示最近点击的素材
     onSelectAsset(assetId);
   }, [filteredResult.assets, onSelectAsset, playlistAssetIdSets]);
+
+  const handleMarqueeSelect = useCallback((assetIds: string[]) => {
+    replaceSelectionWithAssetIds(assetIds);
+  }, [replaceSelectionWithAssetIds]);
 
   // 批量删除处理（同时删除画布上使用这些素材的元素）
   // 只删除当前筛选结果中被选中的素材
@@ -1040,8 +1059,19 @@ export function MediaLibraryGrid({
     // 直接插入到画布
     if (board) {
       try {
+        const asset = filteredResult.assets.find(a => a.id === item.id);
         if (item.type === 'video') {
           await insertVideoFromUrl(board, item.url);
+        } else if (item.type === 'audio') {
+          await insertAudioFromUrl(board, item.url, {
+            title: asset?.name || item.title,
+            duration: asset?.duration,
+            previewImageUrl: asset?.thumbnail || item.posterUrl,
+            prompt: asset?.prompt,
+            mv: asset?.modelName,
+            clipId: asset?.clipId,
+            providerTaskId: asset?.providerTaskId,
+          });
         } else {
           await insertImageFromUrl(board, normalizeImageDataUrl(item.url));
         }
@@ -1393,7 +1423,9 @@ export function MediaLibraryGrid({
               selectedAssetId={selectedAssetId ?? undefined}
               isAssetSelected={isAssetSelected}
               isSelectionMode={isSelectionMode}
+              marqueeEnabled={!isMobile && isSelectionMode}
               onSelectAsset={isSelectionMode ? toggleAssetSelection : onSelectAsset}
+              onMarqueeSelect={handleMarqueeSelect}
               onDoubleClick={onDoubleClick}
               onPreview={handlePreview}
               onContextMenu={openAssetContextMenu}
