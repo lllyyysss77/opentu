@@ -20,7 +20,10 @@ import {
 import { MessagePlugin } from 'tdesign-react';
 import { assetStorageService } from '../services/asset-storage-service';
 import { taskQueueService } from '../services/task-queue';
-import { taskStorageReader } from '../services/task-storage-reader';
+import {
+  taskStorageReader,
+  type AssetTaskRecord,
+} from '../services/task-storage-reader';
 import {
   unifiedCacheService,
   type CachedMedia,
@@ -36,7 +39,7 @@ import type {
   StorageStatus,
 } from '../types/asset.types';
 import { AssetType as AssetTypeEnum, AssetSource as AssetSourceEnum, DEFAULT_FILTER_STATE } from '../types/asset.types';
-import { TaskStatus, TaskType } from '../types/task.types';
+import { TaskType } from '../types/task.types';
 import { AssetContext } from './asset-context-instance';
 import { audioPlaylistService } from '../services/audio-playlist-service';
 import { setGlobalAssetMap } from '../stores/asset-map-store';
@@ -58,6 +61,8 @@ import {
 interface AssetProviderProps {
   children: ReactNode;
 }
+
+const LOAD_ASSETS_CACHE_TTL_MS = 8000;
 
 function getLocalDedupeKey(asset: Asset): string | undefined {
   return getLocalAssetGroupKey(asset) || undefined;
@@ -110,6 +115,10 @@ function hasAIGeneratedCacheMetadata(item: {
     item.metadata?.taskId &&
     (item.metadata.prompt || item.metadata.model || item.metadata.params)
   );
+}
+
+function isInternalLibraryExcludedCache(item: Pick<CachedMedia, 'metadata'>): boolean {
+  return item.metadata?.source === 'video-frame';
 }
 
 function getNormalizedClipId(asset: Pick<Asset, 'clipId'>): string | undefined {
@@ -357,6 +366,8 @@ export function AssetProvider({ children }: AssetProviderProps) {
 
   // ref 供初始化 effect 延迟调用 loadAssets
   const loadAssetsRef = useRef<(() => void) | null>(null);
+  const loadAssetsPromiseRef = useRef<Promise<void> | null>(null);
+  const lastSuccessfulLoadRef = useRef<{ loadedAt: number; assetCount: number } | null>(null);
 
   /**
    * Initialize service on mount
@@ -388,35 +399,7 @@ export function AssetProvider({ children }: AssetProviderProps) {
    * Convert completed task to Asset
    * 将已完成的任务转换为素材
    */
-  const taskToAssets = useCallback((task: {
-    id: string;
-    type: TaskType;
-    result: {
-      url: string;
-      urls?: string[];
-      format?: string;
-      size?: number;
-      duration?: number;
-      previewImageUrl?: string;
-      title?: string;
-      providerTaskId?: string;
-      primaryClipId?: string;
-      clipIds?: string[];
-      clips?: Array<{
-        id?: string;
-        clipId?: string;
-        title?: string;
-        audioUrl: string;
-        imageUrl?: string;
-        imageLargeUrl?: string;
-        duration?: number | null;
-      }>;
-    };
-    params: { prompt?: string; model?: string; title?: string };
-    completedAt?: number;
-    createdAt: number;
-    remoteId?: string;
-  }): Asset[] => {
+  const taskToAssets = useCallback((task: AssetTaskRecord): Asset[] => {
     const assetType = task.type === TaskType.IMAGE
       ? AssetTypeEnum.IMAGE
       : task.type === TaskType.AUDIO
@@ -545,6 +528,10 @@ export function AssetProvider({ children }: AssetProviderProps) {
         
         if (!isAituCache && !isAssetLibrary && !isAIGeneratedAudio) continue;
 
+        // 视频分析 / 爆款视频工具生成的帧截图属于内部工作缓存，
+        // 不能混入素材库，也不能参与本地素材去重，否则会导致选中与插入错位。
+        if (isInternalLibraryExcludedCache(item)) continue;
+
         const normalizedPathname = normalizeAssetUrl(pathname);
         metadataByNormalizedUrl.set(normalizedPathname, item);
         const isDuplicatedByCompletedTask = Boolean(
@@ -638,172 +625,190 @@ export function AssetProvider({ children }: AssetProviderProps) {
    * 合并本地上传的素材、任务队列中已完成的 AI 生成任务、以及 Cache Storage 中的媒体
    */
   const loadAssets = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+    const now = Date.now();
+    const lastSuccessfulLoad = lastSuccessfulLoadRef.current;
+    const cachedAgeMs =
+      lastSuccessfulLoad ? now - lastSuccessfulLoad.loadedAt : null;
 
-    try {
-      // 1. 加载本地上传的素材（只包含 LOCAL 来源）
-      const localAssets = await assetStorageService.getAllAssets();
-
-      // 2. 从任务队列获取已完成的 AI 生成任务
-      // 统一从 IndexedDB 直接读取，SW 模式和降级模式使用同一个数据库
-      // includeArchived: 归档任务的媒体仍在 Cache Storage 中，需要读取元数据
-      const completedTasks = await taskStorageReader.getAllTasks({ status: TaskStatus.COMPLETED, includeArchived: true });
-      const preliminaryAiAssets = completedTasks
-        .filter((task): task is typeof task & { result: NonNullable<typeof task.result> } =>
-          (task.type === TaskType.IMAGE || task.type === TaskType.VIDEO || task.type === TaskType.AUDIO) &&
-          !!task.result?.url
-        )
-        .flatMap(taskToAssets);
-      const completedTaskIds = new Set(completedTasks.map(task => task.id));
-      const aiAssetUrls = new Set(preliminaryAiAssets.map(asset => normalizeAssetUrl(asset.url)));
-
-      // 3. 从 Cache Storage 获取媒体（优先级最低，用于补充）
-      const {
-        assets: cacheStorageAssets,
-        metadataByNormalizedUrl,
-      } = await getAssetsFromCacheStorage({
-        completedTaskIds,
-        completedTaskUrls: aiAssetUrls,
-      });
-      const aiAssets = preliminaryAiAssets.map((asset) => {
-        const cachedMetadata = metadataByNormalizedUrl.get(normalizeAssetUrl(asset.url));
-        const cachedDuration =
-          typeof cachedMetadata?.metadata?.duration === 'number'
-            ? cachedMetadata.metadata.duration
-            : undefined;
-        const cachedClipId =
-          typeof cachedMetadata?.metadata?.clipId === 'string'
-            ? cachedMetadata.metadata.clipId
-            : undefined;
-        const cachedProviderTaskId =
-          typeof cachedMetadata?.metadata?.providerTaskId === 'string'
-            ? cachedMetadata.metadata.providerTaskId
-            : cachedMetadata?.metadata?.taskId;
-
-        return {
-          ...asset,
-          contentHash:
-            getAssetContentHash(asset) || cachedMetadata?.contentHash,
-          duration: asset.duration ?? cachedDuration,
-          clipId: asset.clipId || cachedClipId,
-          providerTaskId: asset.providerTaskId || cachedProviderTaskId,
-          taskId: asset.taskId || cachedMetadata?.metadata?.taskId,
-        };
-      });
-      const localCacheAssets = cacheStorageAssets.filter(
-        asset => asset.source === AssetSourceEnum.LOCAL
-      );
-      const generatedCacheAssets = cacheStorageAssets.filter(
-        asset => asset.source === AssetSourceEnum.AI_GENERATED
-      );
-
-      // 4. 本地来源按内容去重；AI 结果保持独立
-      const groupedLocalAssets = mergeLocalAssets([
-        ...localAssets,
-        ...localCacheAssets,
-      ]);
-      const supplementalGeneratedAssets = generatedCacheAssets.filter(
-        (asset) => asset.type === AssetTypeEnum.AUDIO || !aiAssetUrls.has(normalizeAssetUrl(asset.url))
-      );
-      const aiAudioAssets = aiAssets.filter((asset) => asset.type === AssetTypeEnum.AUDIO);
-      const generatedAudioAssets = supplementalGeneratedAssets.filter(
-        (asset) => asset.type === AssetTypeEnum.AUDIO
-      );
-      const mergedAIAudioAssets = mergeAIGeneratedAudioAssets([
-        ...aiAudioAssets,
-        ...generatedAudioAssets,
-      ]);
-      const nonAudioGeneratedAssets = supplementalGeneratedAssets.filter(
-        (asset) => asset.type !== AssetTypeEnum.AUDIO
-      );
-      const nonAudioAiAssets = aiAssets.filter(
-        (asset) => asset.type !== AssetTypeEnum.AUDIO
-      );
-
-      // 5. 合并所有来源，按创建时间倒序排列
-      const allAssets = [
-        ...groupedLocalAssets,
-        ...nonAudioGeneratedAssets,
-        ...nonAudioAiAssets,
-        ...mergedAIAudioAssets,
-      ].sort(
-        (a, b) => b.createdAt - a.createdAt
-      );
-
-      setAssets(allAssets);
-
-      // 7. 延迟异步填充缺失的文件大小（不阻塞加载）
-      // 使用 requestIdleCallback 在浏览器空闲时执行
-      const fillMissingSizes = () => {
-        const assetsNeedingSize = allAssets.filter(a => !a.size || a.size === 0);
-        if (assetsNeedingSize.length === 0) return;
-
-        // 分批获取，每批最多 10 个，避免一次性发起太多请求
-        const batchSize = 10;
-        let currentIndex = 0;
-
-        const processBatch = async () => {
-          const batch = assetsNeedingSize.slice(currentIndex, currentIndex + batchSize);
-          if (batch.length === 0) return;
-
-          const sizePromises = batch.map(async (asset) => {
-            const size = await getAssetSizeFromCache(asset.url);
-            return { id: asset.id, size };
-          });
-
-          const sizeResults = await Promise.all(sizePromises);
-          const sizeMap = new Map(
-            sizeResults
-              .filter(r => r.size !== null && r.size > 0)
-              .map(r => [r.id, r.size as number])
-          );
-
-          if (sizeMap.size > 0) {
-            setAssets(prev =>
-              prev.map(asset =>
-                sizeMap.has(asset.id)
-                  ? { ...asset, size: sizeMap.get(asset.id) }
-                  : asset
-              )
-            );
-          }
-
-          currentIndex += batchSize;
-          if (currentIndex < assetsNeedingSize.length) {
-            // 继续处理下一批
-            if ('requestIdleCallback' in window) {
-              (window as Window).requestIdleCallback(processBatch);
-            } else {
-              setTimeout(processBatch, 50);
-            }
-          }
-        };
-
-        // 启动第一批
-        if ('requestIdleCallback' in window) {
-          (window as Window).requestIdleCallback(processBatch);
-        } else {
-          setTimeout(processBatch, 100);
-        }
-      };
-
-      // 使用 requestIdleCallback 延迟执行，不阻塞加载
-      if ('requestIdleCallback' in window) {
-        (window as Window).requestIdleCallback(fillMissingSizes, { timeout: 3000 });
-      } else {
-        setTimeout(fillMissingSizes, 200);
-      }
-    } catch (err: unknown) {
-      console.error('Failed to load assets:', err);
-      setError(err instanceof Error ? err.message : String(err));
-      MessagePlugin.error({
-        content: '加载素材失败，请刷新页面重试',
-        duration: 3000,
-      });
-    } finally {
-      setLoading(false);
+    if (loadAssetsPromiseRef.current) {
+      return loadAssetsPromiseRef.current;
     }
+
+    if (cachedAgeMs !== null && cachedAgeMs < LOAD_ASSETS_CACHE_TTL_MS) {
+      return;
+    }
+
+    const run = (async () => {
+      setLoading(true);
+      setError(null);
+
+      try {
+        // 1. 加载本地上传的素材（只包含 LOCAL 来源）
+        const localAssets = await assetStorageService.getAllAssets();
+
+        // 2. 从任务队列获取已完成的 AI 生成任务
+        // 统一从 IndexedDB 直接读取，SW 模式和降级模式使用同一个数据库
+        // includeArchived: 归档任务的媒体仍在 Cache Storage 中，需要读取元数据
+        const completedTasks = await taskStorageReader.getAssetTasks({ includeArchived: true });
+        const preliminaryAiAssets = completedTasks.flatMap(taskToAssets);
+        const completedTaskIds = new Set(completedTasks.map(task => task.id));
+        const aiAssetUrls = new Set(preliminaryAiAssets.map(asset => normalizeAssetUrl(asset.url)));
+
+        // 3. 从 Cache Storage 获取媒体（优先级最低，用于补充）
+        const {
+          assets: cacheStorageAssets,
+          metadataByNormalizedUrl,
+        } = await getAssetsFromCacheStorage({
+          completedTaskIds,
+          completedTaskUrls: aiAssetUrls,
+        });
+        const aiAssets = preliminaryAiAssets.map((asset) => {
+          const cachedMetadata = metadataByNormalizedUrl.get(normalizeAssetUrl(asset.url));
+          const cachedDuration =
+            typeof cachedMetadata?.metadata?.duration === 'number'
+              ? cachedMetadata.metadata.duration
+              : undefined;
+          const cachedClipId =
+            typeof cachedMetadata?.metadata?.clipId === 'string'
+              ? cachedMetadata.metadata.clipId
+              : undefined;
+          const cachedProviderTaskId =
+            typeof cachedMetadata?.metadata?.providerTaskId === 'string'
+              ? cachedMetadata.metadata.providerTaskId
+              : cachedMetadata?.metadata?.taskId;
+
+          return {
+            ...asset,
+            contentHash:
+              getAssetContentHash(asset) || cachedMetadata?.contentHash,
+            duration: asset.duration ?? cachedDuration,
+            clipId: asset.clipId || cachedClipId,
+            providerTaskId: asset.providerTaskId || cachedProviderTaskId,
+            taskId: asset.taskId || cachedMetadata?.metadata?.taskId,
+          };
+        });
+        const localCacheAssets = cacheStorageAssets.filter(
+          asset => asset.source === AssetSourceEnum.LOCAL
+        );
+        const generatedCacheAssets = cacheStorageAssets.filter(
+          asset => asset.source === AssetSourceEnum.AI_GENERATED
+        );
+
+        // 4. 本地来源按内容去重；AI 结果保持独立
+        const groupedLocalAssets = mergeLocalAssets([
+          ...localAssets,
+          ...localCacheAssets,
+        ]);
+        const supplementalGeneratedAssets = generatedCacheAssets.filter(
+          (asset) => asset.type === AssetTypeEnum.AUDIO || !aiAssetUrls.has(normalizeAssetUrl(asset.url))
+        );
+        const aiAudioAssets = aiAssets.filter((asset) => asset.type === AssetTypeEnum.AUDIO);
+        const generatedAudioAssets = supplementalGeneratedAssets.filter(
+          (asset) => asset.type === AssetTypeEnum.AUDIO
+        );
+        const mergedAIAudioAssets = mergeAIGeneratedAudioAssets([
+          ...aiAudioAssets,
+          ...generatedAudioAssets,
+        ]);
+        const nonAudioGeneratedAssets = supplementalGeneratedAssets.filter(
+          (asset) => asset.type !== AssetTypeEnum.AUDIO
+        );
+        const nonAudioAiAssets = aiAssets.filter(
+          (asset) => asset.type !== AssetTypeEnum.AUDIO
+        );
+
+        // 5. 合并所有来源，按创建时间倒序排列
+        const allAssets = [
+          ...groupedLocalAssets,
+          ...nonAudioGeneratedAssets,
+          ...nonAudioAiAssets,
+          ...mergedAIAudioAssets,
+        ].sort(
+          (a, b) => b.createdAt - a.createdAt
+        );
+
+        setAssets(allAssets);
+        lastSuccessfulLoadRef.current = {
+          loadedAt: Date.now(),
+          assetCount: allAssets.length,
+        };
+
+        // 7. 延迟异步填充缺失的文件大小（不阻塞加载）
+        // 使用 requestIdleCallback 在浏览器空闲时执行
+        const fillMissingSizes = () => {
+          const assetsNeedingSize = allAssets.filter(a => !a.size || a.size === 0);
+          if (assetsNeedingSize.length === 0) return;
+
+          // 分批获取，每批最多 10 个，避免一次性发起太多请求
+          const batchSize = 10;
+          let currentIndex = 0;
+
+          const processBatch = async () => {
+            const batch = assetsNeedingSize.slice(currentIndex, currentIndex + batchSize);
+            if (batch.length === 0) return;
+
+            const sizePromises = batch.map(async (asset) => {
+              const size = await getAssetSizeFromCache(asset.url);
+              return { id: asset.id, size };
+            });
+
+            const sizeResults = await Promise.all(sizePromises);
+            const sizeMap = new Map(
+              sizeResults
+                .filter(r => r.size !== null && r.size > 0)
+                .map(r => [r.id, r.size as number])
+            );
+
+            if (sizeMap.size > 0) {
+              setAssets(prev =>
+                prev.map(asset =>
+                  sizeMap.has(asset.id)
+                    ? { ...asset, size: sizeMap.get(asset.id) }
+                    : asset
+                )
+              );
+            }
+
+            currentIndex += batchSize;
+            if (currentIndex < assetsNeedingSize.length) {
+              // 继续处理下一批
+              if ('requestIdleCallback' in window) {
+                (window as Window).requestIdleCallback(processBatch);
+              } else {
+                setTimeout(processBatch, 50);
+              }
+            }
+          };
+
+          // 启动第一批
+          if ('requestIdleCallback' in window) {
+            (window as Window).requestIdleCallback(processBatch);
+          } else {
+            setTimeout(processBatch, 100);
+          }
+        };
+
+        // 使用 requestIdleCallback 延迟执行，不阻塞加载
+        if ('requestIdleCallback' in window) {
+          (window as Window).requestIdleCallback(fillMissingSizes, { timeout: 3000 });
+        } else {
+          setTimeout(fillMissingSizes, 200);
+        }
+      } catch (err: unknown) {
+        console.error('Failed to load assets:', err);
+        setError(err instanceof Error ? err.message : String(err));
+        MessagePlugin.error({
+          content: '加载素材失败，请刷新页面重试',
+          duration: 3000,
+        });
+      } finally {
+        loadAssetsPromiseRef.current = null;
+        setLoading(false);
+      }
+    })();
+
+    loadAssetsPromiseRef.current = run;
+    return run;
   }, [taskToAssets, getAssetsFromCacheStorage]);
 
   // 供初始化 effect 延迟调用

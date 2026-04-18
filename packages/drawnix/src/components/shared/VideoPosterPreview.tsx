@@ -144,6 +144,7 @@ export const VideoPosterPreview: React.FC<VideoPosterPreviewProps> = ({
   const [resolvedPoster, setResolvedPoster] = useState<string | null>(() => getCachedResolvedPoster(posterCandidate));
   const [retryCount, setRetryCount] = useState(0);
   const [showVideo, setShowVideo] = useState(false);
+  const shouldRequireExplicitActivation = activateVideoOnClick;
 
   useEffect(() => {
     setPreferGeneratedPoster(shouldIgnoreExplicitPoster);
@@ -166,7 +167,9 @@ export const VideoPosterPreview: React.FC<VideoPosterPreviewProps> = ({
     }
 
     if (!posterCandidate) {
-      setShowVideo(true);
+      if (!shouldRequireExplicitActivation) {
+        setShowVideo(true);
+      }
       return;
     }
 
@@ -178,7 +181,9 @@ export const VideoPosterPreview: React.FC<VideoPosterPreviewProps> = ({
 
     const scheduleRetry = () => {
       if (!canRetryGeneratedPoster || retryCount >= MAX_THUMBNAIL_RETRIES) {
-        setShowVideo(true);
+        if (!shouldRequireExplicitActivation) {
+          setShowVideo(true);
+        }
         return;
       }
 
@@ -241,6 +246,7 @@ export const VideoPosterPreview: React.FC<VideoPosterPreviewProps> = ({
     showVideo,
     normalizedPoster,
     resolvedPoster,
+    shouldRequireExplicitActivation,
   ]);
 
   useEffect(() => {
@@ -253,6 +259,23 @@ export const VideoPosterPreview: React.FC<VideoPosterPreviewProps> = ({
       // 浏览器策略可能阻止自动播放，保留 controls 让用户继续点播
     });
   }, [showVideo, playOnActivate]);
+
+  useEffect(() => {
+    return () => {
+      const video = videoRef.current;
+      if (!video) {
+        return;
+      }
+
+      try {
+        video.pause();
+        video.removeAttribute('src');
+        video.load();
+      } catch {
+        // 忽略释放失败
+      }
+    };
+  }, []);
 
   const handlePosterClick: React.MouseEventHandler<HTMLImageElement> = (event) => {
     if (activateVideoOnClick) {
@@ -285,7 +308,18 @@ export const VideoPosterPreview: React.FC<VideoPosterPreviewProps> = ({
 
   if (!showVideo && !resolvedPoster) {
     return renderPreviewWithOverlay(
-      <div className={`video-poster-preview__placeholder${className ? ` ${className}` : ''}`} aria-hidden="true" />,
+      <div
+        className={`video-poster-preview__placeholder${className ? ` ${className}` : ''}`}
+        aria-hidden="true"
+        onClick={
+          activateVideoOnClick
+            ? () => {
+                activatedByClickRef.current = true;
+                setShowVideo(true);
+              }
+            : undefined
+        }
+      />,
       showPlayOverlay
     );
   }

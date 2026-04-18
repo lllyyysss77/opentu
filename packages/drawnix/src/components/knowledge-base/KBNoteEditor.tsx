@@ -30,7 +30,7 @@ import { useCanvasAudioPlayback } from '../../hooks/useCanvasAudioPlayback';
 import { knowledgeBaseService } from '../../services/knowledge-base-service';
 import { openMusicPlayerToolAndPlay } from '../../services/tool-launch-service';
 import { createReadingPlaybackSource } from '../../services/reading-playback-source';
-import { buildAssetEmbedMarkdown } from '../../utils/markdown-asset-embeds';
+import { buildBlockAssetEmbedMarkdown } from '../../utils/markdown-asset-embeds';
 import './knowledge-base-editor.scss';
 import type { Asset } from '../../types/asset.types';
 import { SelectionMode } from '../../types/asset.types';
@@ -104,6 +104,14 @@ setOutputType((note.metadata?.outputType as 'image' | 'text' | 'video' | 'ppt' |
   // 切换笔记时重置标题、语音和 DSL 状态
   useEffect(() => {
     const currentSourceId = note ? `kb-note:${note.id}` : null;
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = null;
+    }
+    if (dslCheckTimeoutRef.current) {
+      clearTimeout(dslCheckTimeoutRef.current);
+      dslCheckTimeoutRef.current = null;
+    }
     if (note) {
       setTitle(note.title);
       currentNoteIdRef.current = note.id;
@@ -250,7 +258,7 @@ setOutputType((note.metadata?.outputType as 'image' | 'text' | 'video' | 'ppt' |
   }, [readOnly]);
 
   const handleInsertAsset = useCallback((asset: Asset) => {
-    editorRef.current?.insertMarkdown(buildAssetEmbedMarkdown(asset));
+    editorRef.current?.insertMarkdown(buildBlockAssetEmbedMarkdown(asset));
     setIsMediaLibraryOpen(false);
   }, []);
 
@@ -463,6 +471,7 @@ setOutputType((note.metadata?.outputType as 'image' | 'text' | 'video' | 'ppt' |
       {/* Markdown 编辑器 */}
       <div className="kb-note-editor__content">
         <MarkdownEditor
+          key={note.id}
           ref={editorRef}
           markdown={note.content}
           onChange={readOnly ? undefined : handleContentChange}

@@ -85,6 +85,7 @@ function CrepeEditorCore({ markdown, onChange, placeholder, readOnly, editorRef,
 
   const lastMarkdownRef = useRef(markdown);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingFlushRef = useRef<(() => void) | null>(null);
   const crepeRef = useRef<Crepe | null>(null);
 
   const { get, loading } = useEditor((root) => {
@@ -129,7 +130,10 @@ function CrepeEditorCore({ markdown, onChange, placeholder, readOnly, editorRef,
           if (debounceRef.current) clearTimeout(debounceRef.current);
           if (md !== lastMarkdownRef.current) {
             lastMarkdownRef.current = md;
-            debounceRef.current = setTimeout(() => onChangeRef.current?.(md), 50);
+            const cb = onChangeRef.current;
+            const flush = () => { pendingFlushRef.current = null; cb?.(md); };
+            pendingFlushRef.current = flush;
+            debounceRef.current = setTimeout(flush, 50);
           }
         });
       });
@@ -163,7 +167,12 @@ function CrepeEditorCore({ markdown, onChange, placeholder, readOnly, editorRef,
     };
 
     return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+        debounceRef.current = null;
+      }
+      pendingFlushRef.current?.();
+      pendingFlushRef.current = null;
       editorRef.current = null;
     };
   }, [get, readOnly, editorRef, loading]);
@@ -183,6 +192,12 @@ function CrepeEditorCore({ markdown, onChange, placeholder, readOnly, editorRef,
     try {
       const cur = lastMarkdownRef.current;
       if (markdown !== cur) {
+        // 切换笔记前，flush 上一篇笔记待保存的内容（回调已在调度时捕获，指向正确的笔记）
+        if (debounceRef.current) {
+          clearTimeout(debounceRef.current);
+          debounceRef.current = null;
+        }
+        pendingFlushRef.current?.();
         lastMarkdownRef.current = markdown;
         crepe.editor?.action(replaceAll(markdown));
       }
@@ -224,13 +239,6 @@ export const MarkdownEditor = memo(forwardRef<MarkdownEditorRef, MarkdownEditorP
     const sourceContentRef = useRef(sourceMarkdown || markdown);
 
     const canUseAssetLibraryImagePicker = enableAssetLibraryImagePicker && Boolean(assetContext);
-
-    // 启用素材渲染时，确保资产已加载到 global store
-    useEffect(() => {
-      if (enableAssetEmbeds && assetContext?.loadAssets) {
-        void assetContext.loadAssets();
-      }
-    }, [enableAssetEmbeds, assetContext]);
 
     useEffect(() => {
       sourceContentRef.current = sourceContent;
@@ -356,34 +364,16 @@ export const MarkdownEditor = memo(forwardRef<MarkdownEditorRef, MarkdownEditorP
         return false;
       }
 
-      const container = host.querySelector<HTMLElement>('.link-input-area');
-      const target = container?.matches('input, textarea, [contenteditable="true"]')
-        ? container
-        : container?.querySelector<HTMLElement>('input, textarea, [contenteditable="true"]') ?? container;
-
-      if (!target) {
-        return false;
-      }
-
-      target.focus();
-
-      const nextValue = `asset://${assetId}`;
-      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
-        target.value = nextValue;
-      } else {
-        target.textContent = nextValue;
-      }
-
-      target.dispatchEvent(new Event('input', { bubbles: true }));
-
-      const confirmButton = host.querySelector<HTMLButtonElement>('.confirm');
-      if (confirmButton) {
-        confirmButton.click();
+      // 找到 NodeView 的 DOM 根元素，通过自定义事件直接更新 ProseMirror 节点
+      const nodeViewDom = host.closest('.milkdown-image-block');
+      if (nodeViewDom) {
+        nodeViewDom.dispatchEvent(new CustomEvent('asset-commit', {
+          detail: { src: `asset://${assetId}` },
+        }));
         return true;
       }
 
-      target.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' }));
-      return true;
+      return false;
     }, []);
 
     useEffect(() => {
