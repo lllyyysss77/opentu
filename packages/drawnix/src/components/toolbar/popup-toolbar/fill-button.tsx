@@ -184,7 +184,7 @@ export const PopupFillButton: React.FC<PopupFillButtonProps> = ({
           visible={true}
           icon={icon}
           type="button"
-          title={title}
+          tooltip={title}
           aria-label={title}
           onPointerUp={() => {
             setIsFillPropertyOpen(!isFillPropertyOpen);

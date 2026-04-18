@@ -40,6 +40,7 @@ import './knowledge-base-extraction.scss';
 import { Button, MessagePlugin } from 'tdesign-react';
 import { ModelSelector } from '../chat-drawer';
 import MarkdownEditor from '../MarkdownEditor';
+import { HoverTip } from '../shared';
 import {
   createModelRef,
   resolveInvocationRoute,
@@ -472,31 +473,34 @@ export const KBKnowledgeExtraction: React.FC<KBKnowledgeExtractionProps> = ({
               </div>
               {msg.role === 'model' && (
                 <div className="kb-message__actions">
-                  <button
-                    className="kb-message__action-btn"
-                    onClick={() => handleCopy(getMessageText(msg))}
-                    title="复制"
-                  >
-                    <Copy size={14} />
-                  </button>
-                  <button
-                    className="kb-message__action-btn"
-                    onClick={() => {
-                      const text = getMessageText(msg);
-                      if (text) onInsertToNote?.(text);
-                    }}
-                    title="插入到笔记"
-                  >
-                    <NotebookPen size={14} />
-                  </button>
-                  {msg.type === 'extraction-result' && (
+                  <HoverTip content="复制" showArrow={false}>
                     <button
                       className="kb-message__action-btn"
-                      onClick={() => handleDownload(msg)}
-                      title="导出 Markdown"
+                      onClick={() => handleCopy(getMessageText(msg))}
                     >
-                      <Download size={14} />
+                      <Copy size={14} />
                     </button>
+                  </HoverTip>
+                  <HoverTip content="插入到笔记" showArrow={false}>
+                    <button
+                      className="kb-message__action-btn"
+                      onClick={() => {
+                        const text = getMessageText(msg);
+                        if (text) onInsertToNote?.(text);
+                      }}
+                    >
+                      <NotebookPen size={14} />
+                    </button>
+                  </HoverTip>
+                  {msg.type === 'extraction-result' && (
+                    <HoverTip content="导出 Markdown" showArrow={false}>
+                      <button
+                        className="kb-message__action-btn"
+                        onClick={() => handleDownload(msg)}
+                      >
+                        <Download size={14} />
+                      </button>
+                    </HoverTip>
                   )}
                 </div>
               )}
@@ -532,14 +536,17 @@ export const KBKnowledgeExtraction: React.FC<KBKnowledgeExtractionProps> = ({
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <button
-              className="kb-extraction-chat__icon-btn"
-              onClick={handleQuickExtract}
-              title="一键提取知识点"
-              disabled={isLoading}
-            >
-              <Sparkles size={16} />
-            </button>
+            <HoverTip content="一键提取知识点" showArrow={false}>
+              <span>
+                <button
+                  className="kb-extraction-chat__icon-btn"
+                  onClick={handleQuickExtract}
+                  disabled={isLoading}
+                >
+                  <Sparkles size={16} />
+                </button>
+              </span>
+            </HoverTip>
 
             <button
               className={`kb-extraction-chat__send-btn ${

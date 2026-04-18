@@ -9,6 +9,7 @@ import React, { useMemo, useEffect, useRef, useState, useCallback } from 'react'
 import { Trash2, RotateCcw, EyeOff } from 'lucide-react';
 import type { WorkflowMessageData } from '../../types/chat.types';
 import { ConfirmDialog } from '../dialog/ConfirmDialog';
+import { HoverTip } from '../shared';
 import './workzone-content.scss';
 
 // 状态图标映射
@@ -262,58 +263,58 @@ export const WorkZoneContent: React.FC<WorkZoneContentProps> = ({
         </span>
         {/* 不再显示按钮 */}
         {onHideForever && (
-          <button
-            className="workzone-content__hide-btn"
-            onPointerDown={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-            }}
-            onPointerUp={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              handleHideForeverClick();
-            }}
-            onMouseDown={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-            }}
-            onClick={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-            }}
-            title="不再显示"
-          >
-            <EyeOff size={14} />
-          </button>
+          <HoverTip content="不再显示" showArrow={false}>
+            <button
+              className="workzone-content__hide-btn"
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+              }}
+              onPointerUp={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                handleHideForeverClick();
+              }}
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+              }}
+            >
+              <EyeOff size={14} />
+            </button>
+          </HoverTip>
         )}
         {/* 删除按钮 - 始终显示（如果有 onDelete 回调） */}
         {onDelete && (
-          <button
-            className="workzone-content__delete-btn"
-            onPointerDown={(e) => {
-              // 必须在 pointerdown 阶段阻止事件冒泡，否则 Plait 会拦截
-              // console.log('[WorkZoneContent] Delete button pointerdown - stopping propagation');
-              e.stopPropagation();
-              e.preventDefault();
-            }}
-            onPointerUp={(e) => {
-              // console.log('[WorkZoneContent] Delete button pointerup - triggering delete');
-              e.stopPropagation();
-              e.preventDefault();
-              onDelete();
-            }}
-            onMouseDown={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-            }}
-            onClick={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-            }}
-            title="删除"
-          >
-            <Trash2 size={14} />
-          </button>
+          <HoverTip content="删除" showArrow={false}>
+            <button
+              className="workzone-content__delete-btn"
+              onPointerDown={(e) => {
+                // 必须在 pointerdown 阶段阻止事件冒泡，否则 Plait 会拦截
+                e.stopPropagation();
+                e.preventDefault();
+              }}
+              onPointerUp={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                onDelete();
+              }}
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+              }}
+            >
+              <Trash2 size={14} />
+            </button>
+          </HoverTip>
         )}
       </div>
 

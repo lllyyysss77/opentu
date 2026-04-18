@@ -13,7 +13,7 @@ import { Task, TaskType, TaskStatus } from '../../types/task.types';
 import { useDrawnix, DialogType } from '../../hooks/use-drawnix';
 import { insertImageFromUrl } from '../../data/image';
 import { insertVideoFromUrl } from '../../data/video';
-import { MessagePlugin, Input, Button, Tooltip } from 'tdesign-react';
+import { MessagePlugin, Input, Button } from 'tdesign-react';
 import { SearchIcon, DeleteIcon } from 'tdesign-icons-react';
 import { normalizeImageDataUrl } from '@aitu/utils';
 import {
@@ -27,6 +27,7 @@ import {
   type MediaItem as UnifiedMediaItem,
 } from '../shared/media-preview';
 import './dialog-task-list.scss';
+import { HoverTip } from '../shared';
 
 export interface DialogTaskListProps {
   /** Task IDs to display. If not provided, shows all tasks (subject to taskType filter) */
@@ -352,8 +353,8 @@ export const DialogTaskList: React.FC<DialogTaskListProps> = ({
         const fallbackUrls = task.result!.urls?.length
           ? task.result!.urls
           : task.result!.url
-            ? [task.result!.url]
-            : [];
+          ? [task.result!.url]
+          : [];
         const mediaItems =
           audioItems.length > 0
             ? audioItems
@@ -381,21 +382,28 @@ export const DialogTaskList: React.FC<DialogTaskListProps> = ({
           ? task.result!.urls
           : [task.result!.url];
         const mediaType =
-          task.type === TaskType.VIDEO ? ('video' as const) : ('image' as const);
+          task.type === TaskType.VIDEO
+            ? ('video' as const)
+            : ('image' as const);
 
         for (let i = 0; i < urls.length; i++) {
           items.push({
             id: urls.length > 1 ? `${task.id}-${i}` : task.id,
-            url: mediaType === 'image' ? normalizeImageDataUrl(urls[i]) : urls[i],
+            url:
+              mediaType === 'image' ? normalizeImageDataUrl(urls[i]) : urls[i],
             type: mediaType,
-            title: urls.length > 1 ? `${title} (${i + 1}/${urls.length})` : title,
+            title:
+              urls.length > 1 ? `${title} (${i + 1}/${urls.length})` : title,
           });
         }
       }
 
       const taskItemCount = items.length - startIndex;
       configMap.set(task.id, {
-        mode: task.type === TaskType.AUDIO && taskItemCount > 1 ? 'compare' : 'single',
+        mode:
+          task.type === TaskType.AUDIO && taskItemCount > 1
+            ? 'compare'
+            : 'single',
         index:
           task.type === TaskType.AUDIO && taskItemCount > 1
             ? Array.from(
@@ -441,7 +449,7 @@ export const DialogTaskList: React.FC<DialogTaskListProps> = ({
             <h4>生成任务 ({displayTotalCount})</h4>
             <div className="dialog-task-list__header-actions">
               {failedTaskCount > 0 && (
-                <Tooltip
+                <HoverTip
                   content={`清除全部失败任务 (${failedTaskCount})`}
                   theme="light"
                 >
@@ -451,7 +459,7 @@ export const DialogTaskList: React.FC<DialogTaskListProps> = ({
                     icon={<DeleteIcon />}
                     onClick={() => setShowClearFailedConfirm(true)}
                   />
-                </Tooltip>
+                </HoverTip>
               )}
             </div>
           </div>

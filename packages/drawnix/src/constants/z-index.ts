@@ -33,7 +33,6 @@ export const Z_INDEX = {
   POPOVER: 3000,
   POPOVER_FEEDBACK: 3010,
   POPOVER_ZOOM: 3020,
-  TOOLTIP: 3500,
 
   // ==========================================
   // Layer 3.5: Popovers above Drawers (4500-4999)
@@ -61,6 +60,7 @@ export const Z_INDEX = {
   DIALOG_AI_VIDEO: 5000,
   DIALOG_INNER: 5200,
   DIALOG_POPOVER: 5500,
+  TOOLTIP: 5600,
 
   // ==========================================
   // Layer 6: Notifications (6000-6999)

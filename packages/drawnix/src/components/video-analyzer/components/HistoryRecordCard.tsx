@@ -3,6 +3,7 @@ import { ChevronRight, Plus } from 'lucide-react';
 import type { AnalysisRecord } from '../types';
 import type { Task } from '../../../types/task.types';
 import { TaskStatus, TaskType } from '../../../types/task.types';
+import { HoverTip } from '../../shared';
 import { VideoPosterPreview } from '../../shared/VideoPosterPreview';
 
 export interface RelatedTasks {
@@ -233,51 +234,63 @@ const RelatedTaskItem: React.FC<{
   );
 
   return (
-    <div
-      className="va-history-related-task"
-      title={statusLabel(task.status)}
-      onClick={handleItemClick}
-    >
-      <span className={`va-history-related-task-status ${statusClass(task.status)}`} />
-      <span className="va-history-related-task-prompt">{taskPromptSummary(task)}</span>
-      <span className="va-history-related-task-time">{shortTime(task.createdAt)}</span>
-      {hasResult && primaryUrl && task.type !== TaskType.CHAT && (
-        <span className="va-history-related-task-thumb">
-          {task.type === TaskType.VIDEO ? (
-            <VideoPosterPreview
-              src={primaryUrl}
-              poster={thumbnailUrl || undefined}
-              alt=""
-              className="va-history-related-task-thumb-media"
-              thumbnailSize="small"
-              videoProps={{
-                preload: 'metadata',
-                muted: true,
-                playsInline: true,
-                'aria-hidden': true,
-              }}
-            />
-          ) : (
-            <img src={thumbnailUrl || primaryUrl} alt="" referrerPolicy="no-referrer" />
-          )}
-          {task.type === TaskType.VIDEO && (
-            <span className="va-history-related-task-thumb-badge" aria-hidden="true">
-              ▶
-            </span>
-          )}
+    <HoverTip content={statusLabel(task.status)} showArrow={false}>
+      <div className="va-history-related-task" onClick={handleItemClick}>
+        <span
+          className={`va-history-related-task-status ${statusClass(task.status)}`}
+        />
+        <span className="va-history-related-task-prompt">
+          {taskPromptSummary(task)}
         </span>
-      )}
-      {hasResult && onInsertTask && (
-        <button
-          className="va-history-related-insert-btn"
-          onClick={(event) => onInsertTask(event, task)}
-          title="插入画板"
-          aria-label="插入画板"
-        >
-          <Plus size={16} />
-        </button>
-      )}
-    </div>
+        <span className="va-history-related-task-time">
+          {shortTime(task.createdAt)}
+        </span>
+        {hasResult && primaryUrl && task.type !== TaskType.CHAT && (
+          <span className="va-history-related-task-thumb">
+            {task.type === TaskType.VIDEO ? (
+              <VideoPosterPreview
+                src={primaryUrl}
+                poster={thumbnailUrl || undefined}
+                alt=""
+                className="va-history-related-task-thumb-media"
+                thumbnailSize="small"
+                videoProps={{
+                  preload: 'metadata',
+                  muted: true,
+                  playsInline: true,
+                  'aria-hidden': true,
+                }}
+              />
+            ) : (
+              <img
+                src={thumbnailUrl || primaryUrl}
+                alt=""
+                referrerPolicy="no-referrer"
+              />
+            )}
+            {task.type === TaskType.VIDEO && (
+              <span
+                className="va-history-related-task-thumb-badge"
+                aria-hidden="true"
+              >
+                ▶
+              </span>
+            )}
+          </span>
+        )}
+        {hasResult && onInsertTask && (
+          <HoverTip content="插入画板" showArrow={false}>
+            <button
+              className="va-history-related-insert-btn"
+              onClick={(event) => onInsertTask(event, task)}
+              aria-label="插入画板"
+            >
+              <Plus size={16} />
+            </button>
+          </HoverTip>
+        )}
+      </div>
+    </HoverTip>
   );
 };
 

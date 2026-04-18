@@ -166,7 +166,7 @@ export const LinkPopup = () => {
                 type="icon"
                 visible={true}
                 icon={<TrashIcon />}
-                title={`Delete link`}
+                tooltip={`Delete link`}
                 aria-label={`Delete link`}
                 onPointerDown={() => {
                   if (!linkState) return;
@@ -198,7 +198,7 @@ export const LinkPopup = () => {
                 type="icon"
                 visible={true}
                 icon={<FeltTipPenIcon />}
-                title={`Edit link`}
+                tooltip={`Edit link`}
                 aria-label={`Edit link`}
                 onPointerDown={({ event }) => {
                   event.preventDefault();
@@ -216,7 +216,7 @@ export const LinkPopup = () => {
                 type="icon"
                 visible={true}
                 icon={<TrashIcon />}
-                title={`Delete link`}
+                tooltip={`Delete link`}
                 aria-label={`Delete link`}
                 onPointerDown={() => {
                   if (!linkState) return;

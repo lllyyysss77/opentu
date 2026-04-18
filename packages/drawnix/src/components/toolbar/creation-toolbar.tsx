@@ -70,6 +70,7 @@ import MenuItem from '../menu/menu-item';
 import { THEME_OPTIONS, CheckIcon, isBasicPointer, EmptyIcon } from './toolbar-shared';
 import { MoreToolsButton } from './more-tools-button';
 import { MinimizedToolsBar } from './minimized-tools-bar';
+import { HoverTip } from '../shared';
 
 export enum PopupKey {
   'shape' = 'shape',
@@ -564,8 +565,7 @@ export const CreationToolbar: React.FC<ToolbarSectionProps> = ({
               visible={true}
               selected={getIsSelected()}
               icon={displayIcon}
-              title={displayTitle}
-              tooltipPlacement="bottom"
+              tooltip={displayTitle}
               aria-label={displayTitle}
               data-track={`toolbar_click_${popupKey}`}
               onPointerDown={() => {
@@ -602,7 +602,7 @@ export const CreationToolbar: React.FC<ToolbarSectionProps> = ({
         type="radio"
         icon={button.icon}
         checked={isChecked(button)}
-        title={button.titleKey ? t(button.titleKey as keyof Translations) : ''}
+        tooltip={button.titleKey ? t(button.titleKey as keyof Translations) : ''}
         tooltipPlacement={embedded ? 'right' : 'bottom'}
         aria-label={button.titleKey ? t(button.titleKey as keyof Translations) : ''}
         data-track={`toolbar_click_${button.pointer || button.key}`}
@@ -648,7 +648,7 @@ export const CreationToolbar: React.FC<ToolbarSectionProps> = ({
             type="button"
             icon={<ZoomOutIcon />}
             visible={true}
-            title={t('zoom.out')}
+            tooltip={t('zoom.out')}
             tooltipPlacement={embedded ? 'right' : 'bottom'}
             aria-label={t('zoom.out')}
             data-track="toolbar_click_zoom_out"
@@ -665,19 +665,22 @@ export const CreationToolbar: React.FC<ToolbarSectionProps> = ({
             }}
             placement={embedded ? 'right-start' : 'bottom'}
           >
-            <PopoverTrigger asChild>
-              <div
-                title={t('zoom.fit')}
-                aria-label={t('zoom.fit')}
-                data-track="toolbar_click_zoom_menu"
-                className={classNames('zoom-menu-trigger', { active: zoomMenuOpen })}
-                onPointerUp={() => {
-                  setZoomMenuOpen(!zoomMenuOpen);
-                }}
-              >
-                {Number(((board?.viewport?.zoom || 1) * 100).toFixed(0))}%
-              </div>
-            </PopoverTrigger>
+            <HoverTip content={t('zoom.fit')} showArrow={false}>
+              <PopoverTrigger asChild>
+                <div
+                  aria-label={t('zoom.fit')}
+                  data-track="toolbar_click_zoom_menu"
+                  className={classNames('zoom-menu-trigger', {
+                    active: zoomMenuOpen,
+                  })}
+                  onPointerUp={() => {
+                    setZoomMenuOpen(!zoomMenuOpen);
+                  }}
+                >
+                  {Number(((board?.viewport?.zoom || 1) * 100).toFixed(0))}%
+                </div>
+              </PopoverTrigger>
+            </HoverTip>
             <PopoverContent container={container} style={{ zIndex: Z_INDEX.POPOVER }}>
               <Menu
                 onSelect={() => {
@@ -714,7 +717,7 @@ export const CreationToolbar: React.FC<ToolbarSectionProps> = ({
             type="button"
             icon={<ZoomInIcon />}
             visible={true}
-            title={t('zoom.in')}
+            tooltip={t('zoom.in')}
             tooltipPlacement={embedded ? 'right' : 'bottom'}
             aria-label={t('zoom.in')}
             data-track="toolbar_click_zoom_in"

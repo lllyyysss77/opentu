@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
-import { Checkbox, Tooltip } from 'tdesign-react';
+import { Checkbox } from 'tdesign-react';
+import { HoverTip } from '../../shared';
 
 interface AutoInsertCheckboxProps {
   storageKey: string;
@@ -18,18 +19,25 @@ export const AutoInsertCheckbox: React.FC<AutoInsertCheckboxProps> = ({
     }
   });
 
-  const handleChange = useCallback((val: boolean) => {
-    setChecked(val);
-    try {
-      localStorage.setItem(storageKey, String(val));
-    } catch {
-      // localStorage not available
-    }
-  }, [storageKey]);
+  const handleChange = useCallback(
+    (val: boolean) => {
+      setChecked(val);
+      try {
+        localStorage.setItem(storageKey, String(val));
+      } catch {
+        // localStorage not available
+      }
+    },
+    [storageKey]
+  );
 
   return (
-    <Tooltip
-      content={language === 'zh' ? '生成后自动插入画布' : 'Auto insert to canvas after generation'}
+    <HoverTip
+      content={
+        language === 'zh'
+          ? '生成后自动插入画布'
+          : 'Auto insert to canvas after generation'
+      }
       theme="light"
     >
       <Checkbox
@@ -37,7 +45,7 @@ export const AutoInsertCheckbox: React.FC<AutoInsertCheckboxProps> = ({
         onChange={handleChange}
         className="auto-insert-checkbox"
       />
-    </Tooltip>
+    </HoverTip>
   );
 };
 

@@ -6,7 +6,7 @@
  */
 
 import React, { useMemo, useCallback, useState, useEffect } from 'react';
-import { Tooltip } from 'tdesign-react';
+
 import {
   BrowseIcon,
   BrowseOffIcon,
@@ -32,6 +32,7 @@ import { isFrameElement } from '../../types/frame.types';
 import { isToolElement } from '../../plugins/with-tool';
 import { useDrawnix } from '../../hooks/use-drawnix';
 import { extractTextFromElement } from '../../utils/selection-utils';
+import { HoverTip } from '../shared';
 
 interface LayerItem {
   element: PlaitElement;
@@ -43,13 +44,26 @@ interface LayerItem {
   locked: boolean;
 }
 
-function getElementTypeInfo(element: PlaitElement, board: PlaitBoard): { typeLabel: string; icon: React.ReactNode } {
+function getElementTypeInfo(
+  element: PlaitElement,
+  board: PlaitBoard
+): { typeLabel: string; icon: React.ReactNode } {
   if (isFrameElement(element)) {
     return {
       typeLabel: 'Frame',
       icon: (
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-          <rect x="1.5" y="1.5" width="13" height="13" rx="2" stroke="currentColor" strokeWidth="1.2" strokeDasharray="3 2" fill="none" />
+          <rect
+            x="1.5"
+            y="1.5"
+            width="13"
+            height="13"
+            rx="2"
+            stroke="currentColor"
+            strokeWidth="1.2"
+            strokeDasharray="3 2"
+            fill="none"
+          />
         </svg>
       ),
     };
@@ -60,7 +74,16 @@ function getElementTypeInfo(element: PlaitElement, board: PlaitBoard): { typeLab
       typeLabel: 'Tool',
       icon: (
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-          <rect x="2" y="2" width="12" height="12" rx="2" stroke="currentColor" strokeWidth="1.2" fill="none" />
+          <rect
+            x="2"
+            y="2"
+            width="12"
+            height="12"
+            rx="2"
+            stroke="currentColor"
+            strokeWidth="1.2"
+            fill="none"
+          />
           <circle cx="8" cy="8" r="2" fill="currentColor" />
         </svg>
       ),
@@ -72,7 +95,16 @@ function getElementTypeInfo(element: PlaitElement, board: PlaitBoard): { typeLab
       typeLabel: 'Workzone',
       icon: (
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-          <rect x="2" y="2" width="12" height="12" rx="2" stroke="currentColor" strokeWidth="1.2" fill="none" />
+          <rect
+            x="2"
+            y="2"
+            width="12"
+            height="12"
+            rx="2"
+            stroke="currentColor"
+            strokeWidth="1.2"
+            fill="none"
+          />
           <path d="M5 8h6M8 5v6" stroke="currentColor" strokeWidth="1.2" />
         </svg>
       ),
@@ -84,7 +116,16 @@ function getElementTypeInfo(element: PlaitElement, board: PlaitBoard): { typeLab
       typeLabel: 'Audio',
       icon: (
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-          <rect x="2" y="2" width="12" height="12" rx="3" stroke="currentColor" strokeWidth="1.2" fill="none" />
+          <rect
+            x="2"
+            y="2"
+            width="12"
+            height="12"
+            rx="3"
+            stroke="currentColor"
+            strokeWidth="1.2"
+            fill="none"
+          />
           <path d="M6 10V6l4 2-4 2Z" fill="currentColor" />
         </svg>
       ),
@@ -96,7 +137,13 @@ function getElementTypeInfo(element: PlaitElement, board: PlaitBoard): { typeLab
       typeLabel: 'Freehand',
       icon: (
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-          <path d="M3 12c2-4 4-2 5-6s3-2 5-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none" />
+          <path
+            d="M3 12c2-4 4-2 5-6s3-2 5-4"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            fill="none"
+          />
         </svg>
       ),
     };
@@ -107,7 +154,14 @@ function getElementTypeInfo(element: PlaitElement, board: PlaitBoard): { typeLab
       typeLabel: 'Vector',
       icon: (
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-          <path d="M3 13L8 3l5 10" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+          <path
+            d="M3 13L8 3l5 10"
+            stroke="currentColor"
+            strokeWidth="1.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            fill="none"
+          />
         </svg>
       ),
     };
@@ -118,10 +172,38 @@ function getElementTypeInfo(element: PlaitElement, board: PlaitBoard): { typeLab
       typeLabel: 'Mind',
       icon: (
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-          <circle cx="8" cy="8" r="3" stroke="currentColor" strokeWidth="1.2" fill="none" />
-          <line x1="11" y1="5" x2="14" y2="3" stroke="currentColor" strokeWidth="1.2" />
-          <line x1="11" y1="11" x2="14" y2="13" stroke="currentColor" strokeWidth="1.2" />
-          <line x1="5" y1="8" x2="2" y2="8" stroke="currentColor" strokeWidth="1.2" />
+          <circle
+            cx="8"
+            cy="8"
+            r="3"
+            stroke="currentColor"
+            strokeWidth="1.2"
+            fill="none"
+          />
+          <line
+            x1="11"
+            y1="5"
+            x2="14"
+            y2="3"
+            stroke="currentColor"
+            strokeWidth="1.2"
+          />
+          <line
+            x1="11"
+            y1="11"
+            x2="14"
+            y2="13"
+            stroke="currentColor"
+            strokeWidth="1.2"
+          />
+          <line
+            x1="5"
+            y1="8"
+            x2="2"
+            y2="8"
+            stroke="currentColor"
+            strokeWidth="1.2"
+          />
         </svg>
       ),
     };
@@ -132,9 +214,23 @@ function getElementTypeInfo(element: PlaitElement, board: PlaitBoard): { typeLab
       typeLabel: 'Image',
       icon: (
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-          <rect x="2" y="2" width="12" height="12" rx="2" stroke="currentColor" strokeWidth="1.2" fill="none" />
+          <rect
+            x="2"
+            y="2"
+            width="12"
+            height="12"
+            rx="2"
+            stroke="currentColor"
+            strokeWidth="1.2"
+            fill="none"
+          />
           <circle cx="6" cy="6" r="1.5" fill="currentColor" />
-          <path d="M2 12l3-4 2 2 3-4 4 6" stroke="currentColor" strokeWidth="1.2" fill="none" />
+          <path
+            d="M2 12l3-4 2 2 3-4 4 6"
+            stroke="currentColor"
+            strokeWidth="1.2"
+            fill="none"
+          />
         </svg>
       ),
     };
@@ -145,7 +241,16 @@ function getElementTypeInfo(element: PlaitElement, board: PlaitBoard): { typeLab
       typeLabel: 'Video',
       icon: (
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-          <rect x="2" y="3" width="12" height="10" rx="2" stroke="currentColor" strokeWidth="1.2" fill="none" />
+          <rect
+            x="2"
+            y="3"
+            width="12"
+            height="10"
+            rx="2"
+            stroke="currentColor"
+            strokeWidth="1.2"
+            fill="none"
+          />
           <path d="M7 6l3 2-3 2V6z" fill="currentColor" />
         </svg>
       ),
@@ -157,19 +262,43 @@ function getElementTypeInfo(element: PlaitElement, board: PlaitBoard): { typeLab
       typeLabel: 'Text',
       icon: (
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-          <path d="M4 3h8M8 3v10M5 13h6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none" />
+          <path
+            d="M4 3h8M8 3v10M5 13h6"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            fill="none"
+          />
         </svg>
       ),
     };
   }
 
-  if (PlaitDrawElement.isArrowLine?.(element) || PlaitDrawElement.isVectorLine?.(element)) {
+  if (
+    PlaitDrawElement.isArrowLine?.(element) ||
+    PlaitDrawElement.isVectorLine?.(element)
+  ) {
     return {
       typeLabel: 'Line',
       icon: (
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-          <line x1="3" y1="13" x2="13" y2="3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-          <path d="M9 3h4v4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+          <line
+            x1="3"
+            y1="13"
+            x2="13"
+            y2="3"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+          />
+          <path
+            d="M9 3h4v4"
+            stroke="currentColor"
+            strokeWidth="1.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            fill="none"
+          />
         </svg>
       ),
     };
@@ -180,10 +309,40 @@ function getElementTypeInfo(element: PlaitElement, board: PlaitBoard): { typeLab
       typeLabel: 'Table',
       icon: (
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-          <rect x="2" y="2" width="12" height="12" rx="1" stroke="currentColor" strokeWidth="1.2" fill="none" />
-          <line x1="2" y1="6" x2="14" y2="6" stroke="currentColor" strokeWidth="1" />
-          <line x1="2" y1="10" x2="14" y2="10" stroke="currentColor" strokeWidth="1" />
-          <line x1="7" y1="2" x2="7" y2="14" stroke="currentColor" strokeWidth="1" />
+          <rect
+            x="2"
+            y="2"
+            width="12"
+            height="12"
+            rx="1"
+            stroke="currentColor"
+            strokeWidth="1.2"
+            fill="none"
+          />
+          <line
+            x1="2"
+            y1="6"
+            x2="14"
+            y2="6"
+            stroke="currentColor"
+            strokeWidth="1"
+          />
+          <line
+            x1="2"
+            y1="10"
+            x2="14"
+            y2="10"
+            stroke="currentColor"
+            strokeWidth="1"
+          />
+          <line
+            x1="7"
+            y1="2"
+            x2="7"
+            y2="14"
+            stroke="currentColor"
+            strokeWidth="1"
+          />
         </svg>
       ),
     };
@@ -194,7 +353,16 @@ function getElementTypeInfo(element: PlaitElement, board: PlaitBoard): { typeLab
       typeLabel: 'Shape',
       icon: (
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-          <rect x="2" y="2" width="12" height="12" rx="2" stroke="currentColor" strokeWidth="1.2" fill="none" />
+          <rect
+            x="2"
+            y="2"
+            width="12"
+            height="12"
+            rx="2"
+            stroke="currentColor"
+            strokeWidth="1.2"
+            fill="none"
+          />
         </svg>
       ),
     };
@@ -204,13 +372,26 @@ function getElementTypeInfo(element: PlaitElement, board: PlaitBoard): { typeLab
     typeLabel: element.type || 'Element',
     icon: (
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-        <rect x="2" y="2" width="12" height="12" rx="2" stroke="currentColor" strokeWidth="1.2" fill="none" />
+        <rect
+          x="2"
+          y="2"
+          width="12"
+          height="12"
+          rx="2"
+          stroke="currentColor"
+          strokeWidth="1.2"
+          fill="none"
+        />
       </svg>
     ),
   };
 }
 
-function getElementDisplayName(element: PlaitElement, board: PlaitBoard, typeInfo: { typeLabel: string }): string {
+function getElementDisplayName(
+  element: PlaitElement,
+  board: PlaitBoard,
+  typeInfo: { typeLabel: string }
+): string {
   if (isFrameElement(element)) {
     return element.name || 'Frame';
   }
@@ -219,7 +400,11 @@ function getElementDisplayName(element: PlaitElement, board: PlaitBoard, typeInf
     return element.metadata.name;
   }
 
-  if (element.type === 'audio' && typeof (element as any).title === 'string' && (element as any).title.trim()) {
+  if (
+    element.type === 'audio' &&
+    typeof (element as any).title === 'string' &&
+    (element as any).title.trim()
+  ) {
     return (element as any).title.trim();
   }
 
@@ -361,11 +546,7 @@ export const LayerPanel: React.FC = () => {
         return next;
       });
 
-      Transforms.setNode(
-        board,
-        { locked: willLock } as any,
-        [item.index]
-      );
+      Transforms.setNode(board, { locked: willLock } as any, [item.index]);
     },
     [board, lockedIds]
   );
@@ -381,10 +562,34 @@ export const LayerPanel: React.FC = () => {
   if (layers.length === 0) {
     return (
       <div className="layer-panel__empty">
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" style={{ color: 'var(--td-text-color-placeholder)' }}>
-          <path d="M12 2L2 7l10 5 10-5-10-5z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" fill="none" />
-          <path d="M2 17l10 5 10-5" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" fill="none" />
-          <path d="M2 12l10 5 10-5" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" fill="none" />
+        <svg
+          width="32"
+          height="32"
+          viewBox="0 0 24 24"
+          fill="none"
+          style={{ color: 'var(--td-text-color-placeholder)' }}
+        >
+          <path
+            d="M12 2L2 7l10 5 10-5-10-5z"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinejoin="round"
+            fill="none"
+          />
+          <path
+            d="M2 17l10 5 10-5"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinejoin="round"
+            fill="none"
+          />
+          <path
+            d="M2 12l10 5 10-5"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinejoin="round"
+            fill="none"
+          />
         </svg>
         <p>当前画布没有元素</p>
       </div>
@@ -402,36 +607,48 @@ export const LayerPanel: React.FC = () => {
         {layers.map((item) => (
           <div
             key={item.element.id}
-            className={`layer-panel__item${selectedId === item.element.id ? ' layer-panel__item--active' : ''}${item.hidden ? ' layer-panel__item--hidden' : ''}`}
+            className={`layer-panel__item${
+              selectedId === item.element.id ? ' layer-panel__item--active' : ''
+            }${item.hidden ? ' layer-panel__item--hidden' : ''}`}
             onClick={() => handleLayerClick(item)}
           >
-            <div className="layer-panel__item-icon">
-              {item.icon}
-            </div>
+            <div className="layer-panel__item-icon">{item.icon}</div>
 
             <div className="layer-panel__item-content">
               <span className="layer-panel__item-name">{item.name}</span>
             </div>
 
             <div className="layer-panel__item-actions">
-              <Tooltip content={item.hidden ? '显示' : '隐藏'} theme="light">
+              <HoverTip content={item.hidden ? '显示' : '隐藏'}>
                 <button
                   type="button"
-                  className={`layer-panel__action-btn${item.hidden ? ' layer-panel__action-btn--active' : ''}`}
+                  className={`layer-panel__action-btn${
+                    item.hidden ? ' layer-panel__action-btn--active' : ''
+                  }`}
                   onClick={(e) => toggleVisibility(item, e)}
                 >
-                  {item.hidden ? <BrowseOffIcon size="16px" /> : <BrowseIcon size="16px" />}
+                  {item.hidden ? (
+                    <BrowseOffIcon size="16px" />
+                  ) : (
+                    <BrowseIcon size="16px" />
+                  )}
                 </button>
-              </Tooltip>
-              <Tooltip content={item.locked ? '解锁' : '锁定'} theme="light">
+              </HoverTip>
+              <HoverTip content={item.locked ? '解锁' : '锁定'}>
                 <button
                   type="button"
-                  className={`layer-panel__action-btn${item.locked ? ' layer-panel__action-btn--active' : ''}`}
+                  className={`layer-panel__action-btn${
+                    item.locked ? ' layer-panel__action-btn--active' : ''
+                  }`}
                   onClick={(e) => toggleLock(item, e)}
                 >
-                  {item.locked ? <LockOnIcon size="16px" /> : <LockOffIcon size="16px" />}
+                  {item.locked ? (
+                    <LockOnIcon size="16px" />
+                  ) : (
+                    <LockOffIcon size="16px" />
+                  )}
                 </button>
-              </Tooltip>
+              </HoverTip>
             </div>
           </div>
         ))}

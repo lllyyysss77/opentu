@@ -62,6 +62,7 @@ import Menu from '../menu/menu';
 import MenuItem from '../menu/menu-item';
 import Stack from '../stack';
 import { THEME_OPTIONS, CheckIcon, isBasicPointer, EmptyIcon } from './toolbar-shared';
+import { HoverTip } from '../shared';
 
 interface MoreToolsButtonProps {
   /** 是否嵌入模式 */
@@ -210,7 +211,7 @@ export const MoreToolsButton: React.FC<MoreToolsButtonProps> = ({
           <ToolButton
             type="icon"
             icon={<MoreIcon />}
-            title={isOpen ? undefined : t('toolbar.more')}
+            tooltip={isOpen ? undefined : t('toolbar.more')}
             tooltipPlacement={embedded ? 'right' : 'bottom'}
             aria-label={t('toolbar.more')}
             selected={isOpen}
@@ -562,7 +563,7 @@ const MoreToolsPanel: React.FC<MoreToolsPanelProps> = ({
             type="button"
             icon={<ZoomOutIcon />}
             visible={true}
-            title={t('zoom.out')}
+            tooltip={t('zoom.out')}
             tooltipPlacement="top"
             aria-label={t('zoom.out')}
             data-track="toolbar_click_zoom_out"
@@ -579,19 +580,20 @@ const MoreToolsPanel: React.FC<MoreToolsPanelProps> = ({
             }}
             placement="right-start"
           >
-            <PopoverTrigger asChild>
-              <div
-                title={t('zoom.fit')}
-                aria-label={t('zoom.fit')}
-                data-track="toolbar_click_zoom_menu"
-                className={`zoom-menu-trigger ${zoomMenuOpen ? 'active' : ''}`}
-                onPointerUp={() => {
-                  setZoomMenuOpen(!zoomMenuOpen);
-                }}
-              >
-                {Number(((board?.viewport?.zoom || 1) * 100).toFixed(0))}%
-              </div>
-            </PopoverTrigger>
+            <HoverTip content={t('zoom.fit')} showArrow={false}>
+              <PopoverTrigger asChild>
+                <div
+                  aria-label={t('zoom.fit')}
+                  data-track="toolbar_click_zoom_menu"
+                  className={`zoom-menu-trigger ${zoomMenuOpen ? 'active' : ''}`}
+                  onPointerUp={() => {
+                    setZoomMenuOpen(!zoomMenuOpen);
+                  }}
+                >
+                  {Number(((board?.viewport?.zoom || 1) * 100).toFixed(0))}%
+                </div>
+              </PopoverTrigger>
+            </HoverTip>
             <PopoverContent container={container} style={{ zIndex: Z_INDEX.POPOVER + 1 }}>
               <Menu
                 onSelect={() => {
@@ -628,7 +630,7 @@ const MoreToolsPanel: React.FC<MoreToolsPanelProps> = ({
             type="button"
             icon={<ZoomInIcon />}
             visible={true}
-            title={t('zoom.in')}
+            tooltip={t('zoom.in')}
             tooltipPlacement="top"
             aria-label={t('zoom.in')}
             data-track="toolbar_click_zoom_in"
@@ -685,7 +687,7 @@ const MoreToolsPanel: React.FC<MoreToolsPanelProps> = ({
                 <ToolButton
                   type="icon"
                   icon={icon}
-                  title={title}
+                  tooltip={title}
                   tooltipPlacement="left"
                   aria-label={title}
                   visible={true}
@@ -718,7 +720,7 @@ const MoreToolsPanel: React.FC<MoreToolsPanelProps> = ({
         <ToolButton
           type="icon"
           icon={icon}
-          title={title}
+          tooltip={title}
           tooltipPlacement="right"
           aria-label={title}
           visible={true}

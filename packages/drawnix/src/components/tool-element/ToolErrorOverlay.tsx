@@ -8,6 +8,7 @@
 import React from 'react';
 import { Button } from 'tdesign-react';
 import { ToolErrorType } from '../../types/tool-error.types';
+import { HoverTip } from '../shared';
 
 export interface ToolErrorOverlayProps {
   /** 错误类型 */
@@ -89,9 +90,9 @@ export const ToolErrorOverlay: React.FC<ToolErrorOverlayProps> = ({
         <p className="tool-error-overlay__description">{config.description}</p>
         <div className="tool-error-overlay__details">
           <span className="tool-error-overlay__tool-name">{toolName}</span>
-          <span className="tool-error-overlay__url" title={url}>
-            {truncateUrl(url)}
-          </span>
+          <HoverTip content={url} showArrow={false}>
+            <span className="tool-error-overlay__url">{truncateUrl(url)}</span>
+          </HoverTip>
         </div>
         <div className="tool-error-overlay__actions">
           <Button size="small" theme="primary" onClick={onRetry}>

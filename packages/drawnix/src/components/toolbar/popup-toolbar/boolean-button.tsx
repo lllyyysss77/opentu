@@ -5,6 +5,7 @@
 
 import React, { useState, useCallback } from 'react';
 import classNames from 'classnames';
+import { HoverTip } from '../../shared';
 import { ToolButton } from '../../tool-button';
 import { Popover, PopoverContent, PopoverTrigger } from '../../popover/popover';
 import { Island } from '../../island';
@@ -109,7 +110,7 @@ export const PopupBooleanButton: React.FC<PopupBooleanButtonProps> = ({
           visible={true}
           icon={<BooleanIcon size={16} />}
           type="button"
-          title={title}
+          tooltip={title}
           aria-label={title}
           onPointerUp={() => setIsOpen(!isOpen)}
         />
@@ -124,16 +125,20 @@ export const PopupBooleanButton: React.FC<PopupBooleanButtonProps> = ({
         >
           <div className="boolean-actions">
             {booleanActions.map((action) => (
-              <button
+              <HoverTip
                 key={action.key}
-                className="boolean-action-btn"
-                onClick={action.handler}
-                title={action.label}
+                content={action.label}
+                showArrow={false}
               >
-                {action.icon}
-                <span className="boolean-label">{action.label}</span>
-                <span className="boolean-shortcut">{action.shortcut}</span>
-              </button>
+                <button
+                  className="boolean-action-btn"
+                  onClick={action.handler}
+                >
+                  {action.icon}
+                  <span className="boolean-label">{action.label}</span>
+                  <span className="boolean-shortcut">{action.shortcut}</span>
+                </button>
+              </HoverTip>
             ))}
           </div>
         </Island>

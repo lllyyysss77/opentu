@@ -5,6 +5,7 @@
 
 import React, { useState, useCallback } from 'react';
 import classNames from 'classnames';
+import { HoverTip } from '../../shared';
 import { ToolButton } from '../../tool-button';
 import { Popover, PopoverContent, PopoverTrigger } from '../../popover/popover';
 import { Island } from '../../island';
@@ -84,7 +85,7 @@ export const PopupDistributeButton: React.FC<PopupDistributeButtonProps> = ({
           visible={true}
           icon={<DistributeIcon size={16} />}
           type="button"
-          title={title}
+          tooltip={title}
           aria-label={title}
           onPointerUp={() => setIsOpen(!isOpen)}
         />
@@ -99,16 +100,20 @@ export const PopupDistributeButton: React.FC<PopupDistributeButtonProps> = ({
         >
           <div className="distribute-actions">
             {distributeActions.map((action) => (
-              <button
+              <HoverTip
                 key={action.key}
-                className="distribute-action-btn"
-                onClick={action.handler}
-                title={action.label}
+                content={action.label}
+                showArrow={false}
               >
-                {action.icon}
-                <span className="distribute-label">{action.label}</span>
-                <span className="distribute-shortcut">{action.shortcut}</span>
-              </button>
+                <button
+                  className="distribute-action-btn"
+                  onClick={action.handler}
+                >
+                  {action.icon}
+                  <span className="distribute-label">{action.label}</span>
+                  <span className="distribute-shortcut">{action.shortcut}</span>
+                </button>
+              </HoverTip>
             ))}
           </div>
         </Island>

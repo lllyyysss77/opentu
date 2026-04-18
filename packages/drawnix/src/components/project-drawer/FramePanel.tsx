@@ -5,10 +5,26 @@
  * 支持点击聚焦到对应 Frame 视图
  */
 
-import React, { useMemo, useCallback, useState, useEffect, useRef } from 'react';
+import React, {
+  useMemo,
+  useCallback,
+  useState,
+  useEffect,
+  useRef,
+} from 'react';
 import classNames from 'classnames';
-import { Input, Button, MessagePlugin, Tooltip, Loading } from 'tdesign-react';
-import { SearchIcon, EditIcon, DeleteIcon, ViewListIcon, AddIcon, PlayCircleIcon, ImageIcon, LayersIcon, FileCopyIcon } from 'tdesign-icons-react';
+import { Input, Button, MessagePlugin, Loading } from 'tdesign-react';
+import {
+  SearchIcon,
+  EditIcon,
+  DeleteIcon,
+  ViewListIcon,
+  AddIcon,
+  PlayCircleIcon,
+  ImageIcon,
+  LayersIcon,
+  FileCopyIcon,
+} from 'tdesign-icons-react';
 import {
   PlaitBoard,
   PlaitElement,
@@ -37,13 +53,17 @@ import { getImageRegion, type PPTFrameMeta } from '../../services/ppt';
 import { duplicateFrame, focusFrame } from '../../utils/frame-duplicate';
 import { useI18n } from '../../i18n';
 import { DownloadIcon } from '../icons';
-import { exportAllPPTFrames, exportFramesToPPT } from '../../services/ppt/ppt-export-service';
+import {
+  exportAllPPTFrames,
+  exportFramesToPPT,
+} from '../../services/ppt/ppt-export-service';
 import {
   ContextMenu,
   useContextMenuState,
   type ContextMenuEntry,
 } from '../shared';
 import { useConfirmDialog } from '../dialog/ConfirmDialog';
+import { HoverTip } from '../shared';
 
 interface FrameInfo {
   frame: PlaitFrame;
@@ -69,7 +89,9 @@ export const FramePanel: React.FC = () => {
   const [selectedFrameKey, setSelectedFrameKey] = useState<string | null>(null);
   const [addDialogVisible, setAddDialogVisible] = useState(false);
   const [slideshowVisible, setSlideshowVisible] = useState(false);
-  const [generatingImageIds, setGeneratingImageIds] = useState<Set<string>>(new Set());
+  const [generatingImageIds, setGeneratingImageIds] = useState<Set<string>>(
+    new Set()
+  );
   const [isGeneratingAll, setIsGeneratingAll] = useState(false);
   const bgFileInputRef = useRef<HTMLInputElement>(null);
   const {
@@ -106,7 +128,8 @@ export const FramePanel: React.FC = () => {
     const walk = (elements: PlaitElement[], parentPath: Path = []) => {
       elements.forEach((element, index) => {
         const path: Path = [...parentPath, index];
-        const frameId = (element as PlaitElement & { frameId?: string }).frameId;
+        const frameId = (element as PlaitElement & { frameId?: string })
+          .frameId;
         if (frameId) {
           childCountMap.set(frameId, (childCountMap.get(frameId) ?? 0) + 1);
         }
@@ -147,9 +170,7 @@ export const FramePanel: React.FC = () => {
   const filteredFrames = useMemo(() => {
     if (!searchQuery.trim()) return frames;
     const query = searchQuery.toLowerCase().trim();
-    return frames.filter((f) =>
-      f.frame.name.toLowerCase().includes(query)
-    );
+    return frames.filter((f) => f.frame.name.toLowerCase().includes(query));
   }, [frames, searchQuery]);
 
   const rootFrames = useMemo(() => {
@@ -190,7 +211,9 @@ export const FramePanel: React.FC = () => {
 
       // 获取底部输入框高度（如果存在）
       const inputBar = document.querySelector('.ai-input-bar');
-      const inputBarHeight = inputBar ? (inputBar as HTMLElement).offsetHeight : 0;
+      const inputBarHeight = inputBar
+        ? (inputBar as HTMLElement).offsetHeight
+        : 0;
 
       // 计算实际可见区域尺寸
       const visibleWidth = viewportWidth - drawerWidth;
@@ -252,7 +275,9 @@ export const FramePanel: React.FC = () => {
 
       const confirmed = await confirm({
         title: '确认删除 Frame',
-        description: `确定要删除 Frame「${frameInfo.frame.name || '未命名 Frame'}」吗？此操作不可撤销。`,
+        description: `确定要删除 Frame「${
+          frameInfo.frame.name || '未命名 Frame'
+        }」吗？此操作不可撤销。`,
         confirmText: '删除',
         cancelText: '取消',
         danger: true,
@@ -281,7 +306,11 @@ export const FramePanel: React.FC = () => {
       e?.stopPropagation();
       if (!board) return;
 
-      const clonedFrame = duplicateFrame(board, frameInfo.frame, language as 'zh' | 'en');
+      const clonedFrame = duplicateFrame(
+        board,
+        frameInfo.frame,
+        language as 'zh' | 'en'
+      );
 
       // 如果复制成功，自动聚焦到新 Frame
       if (clonedFrame) {
@@ -379,28 +408,32 @@ export const FramePanel: React.FC = () => {
     [handleDelete, handleDuplicate, closeContextMenu]
   );
 
-  const contextMenuItems = useMemo<ContextMenuEntry<FrameInfo>[]>(() => [
-    {
-      key: 'rename',
-      label: '重命名',
-      icon: <EditIcon />,
-      onSelect: (frameInfo) => handleContextMenuAction('rename', frameInfo),
-    },
-    {
-      key: 'duplicate',
-      label: '复制',
-      icon: <FileCopyIcon />,
-      onSelect: (frameInfo) => handleContextMenuAction('duplicate', frameInfo),
-    },
-    { key: 'divider-1', type: 'divider' },
-    {
-      key: 'delete',
-      label: '删除',
-      icon: <DeleteIcon />,
-      danger: true,
-      onSelect: (frameInfo) => handleContextMenuAction('delete', frameInfo),
-    },
-  ], [handleContextMenuAction]);
+  const contextMenuItems = useMemo<ContextMenuEntry<FrameInfo>[]>(
+    () => [
+      {
+        key: 'rename',
+        label: '重命名',
+        icon: <EditIcon />,
+        onSelect: (frameInfo) => handleContextMenuAction('rename', frameInfo),
+      },
+      {
+        key: 'duplicate',
+        label: '复制',
+        icon: <FileCopyIcon />,
+        onSelect: (frameInfo) =>
+          handleContextMenuAction('duplicate', frameInfo),
+      },
+      { key: 'divider-1', type: 'divider' },
+      {
+        key: 'delete',
+        label: '删除',
+        icon: <DeleteIcon />,
+        danger: true,
+        onSelect: (frameInfo) => handleContextMenuAction('delete', frameInfo),
+      },
+    ],
+    [handleContextMenuAction]
+  );
 
   // 统计有配图提示词的 Frame 数量
   const framesWithImagePrompt = useMemo(() => {
@@ -438,7 +471,11 @@ export const FramePanel: React.FC = () => {
         const dataUrl = reader.result as string;
 
         for (const frameInfo of pptFrames) {
-          Transforms.setNode(board, { backgroundUrl: dataUrl } as any, frameInfo.path);
+          Transforms.setNode(
+            board,
+            { backgroundUrl: dataUrl } as any,
+            frameInfo.path
+          );
         }
 
         MessagePlugin.success(`已为 ${pptFrames.length} 个 PPT 页面设置背景图`);
@@ -456,7 +493,11 @@ export const FramePanel: React.FC = () => {
     if (!board || pptFrames.length === 0) return;
 
     for (const frameInfo of pptFrames) {
-      Transforms.setNode(board, { backgroundUrl: undefined } as any, frameInfo.path);
+      Transforms.setNode(
+        board,
+        { backgroundUrl: undefined } as any,
+        frameInfo.path
+      );
     }
 
     MessagePlugin.success('已清除所有 PPT 页面的背景图');
@@ -471,7 +512,11 @@ export const FramePanel: React.FC = () => {
       const frameId = frameInfo.frame.id;
       setGeneratingImageIds((prev) => new Set(prev).add(frameId));
 
-      insertPPTImagePlaceholder(board, frameInfo.frame, frameInfo.pptMeta.imagePrompt);
+      insertPPTImagePlaceholder(
+        board,
+        frameInfo.frame,
+        frameInfo.pptMeta.imagePrompt
+      );
       setPPTImagePlaceholderStatus(board, frameId, 'loading');
       setFramePPTImageStatus(board, frameId, 'loading');
 
@@ -484,7 +529,9 @@ export const FramePanel: React.FC = () => {
 
         if (result.success && (result.data as any)?.url) {
           // 计算图片区域并插入
-          const frameRect = RectangleClient.getRectangleByPoints(frameInfo.frame.points);
+          const frameRect = RectangleClient.getRectangleByPoints(
+            frameInfo.frame.points
+          );
           const imgRegion = getImageRegion({
             x: frameRect.x,
             y: frameRect.y,
@@ -544,7 +591,11 @@ export const FramePanel: React.FC = () => {
         const frameId = frameInfo.frame.id;
         setGeneratingImageIds((prev) => new Set(prev).add(frameId));
 
-        insertPPTImagePlaceholder(board, frameInfo.frame, frameInfo.pptMeta!.imagePrompt!);
+        insertPPTImagePlaceholder(
+          board,
+          frameInfo.frame,
+          frameInfo.pptMeta!.imagePrompt!
+        );
         setPPTImagePlaceholderStatus(board, frameId, 'loading');
         setFramePPTImageStatus(board, frameId, 'loading');
 
@@ -555,7 +606,9 @@ export const FramePanel: React.FC = () => {
           });
 
           if (result.success && (result.data as any)?.url) {
-            const frameRect = RectangleClient.getRectangleByPoints(frameInfo.frame.points);
+            const frameRect = RectangleClient.getRectangleByPoints(
+              frameInfo.frame.points
+            );
             const imgRegion = getImageRegion({
               x: frameRect.x,
               y: frameRect.y,
@@ -672,7 +725,7 @@ export const FramePanel: React.FC = () => {
 
       {/* 操作栏：icon + hover 文字 */}
       <div className="frame-panel__actions">
-        <Tooltip content="添加 Frame" theme="light">
+        <HoverTip content="添加 Frame">
           <Button
             variant="outline"
             size="small"
@@ -680,8 +733,10 @@ export const FramePanel: React.FC = () => {
             icon={<AddIcon />}
             onClick={() => setAddDialogVisible(true)}
           />
-        </Tooltip>
-        <Tooltip content={frames.length === 0 ? '没有 Frame 可播放' : '幻灯片播放'} theme="light">
+        </HoverTip>
+        <HoverTip
+          content={frames.length === 0 ? '没有 Frame 可播放' : '幻灯片播放'}
+        >
           <Button
             variant="outline"
             size="small"
@@ -690,11 +745,14 @@ export const FramePanel: React.FC = () => {
             disabled={frames.length === 0}
             onClick={() => setSlideshowVisible(true)}
           />
-        </Tooltip>
+        </HoverTip>
         {framesWithImagePrompt > 0 && (
-          <Tooltip
-            content={isGeneratingAll ? '正在生成...' : `全部配图 (${framesWithImagePrompt})`}
-            theme="light"
+          <HoverTip
+            content={
+              isGeneratingAll
+                ? '正在生成...'
+                : `全部配图 (${framesWithImagePrompt})`
+            }
           >
             <Button
               variant="outline"
@@ -704,30 +762,34 @@ export const FramePanel: React.FC = () => {
               disabled={isGeneratingAll}
               onClick={handleGenerateAllImages}
             />
-          </Tooltip>
+          </HoverTip>
         )}
         {frames.length > 0 && (
-          <Tooltip
-            content={isExportingAllPPT ? '正在导出 PPT...' : '导出所有 PPT 页面'}
-            theme="light"
+          <HoverTip
+            content={
+              isExportingAllPPT ? '正在导出 PPT...' : '导出所有 PPT 页面'
+            }
           >
             <Button
               variant="outline"
               size="small"
               shape="square"
               icon={
-                isExportingAllPPT ? <Loading size="small" /> : <DownloadIcon size={16} />
+                isExportingAllPPT ? (
+                  <Loading size="small" />
+                ) : (
+                  <DownloadIcon size={16} />
+                )
               }
               disabled={isExportingAllPPT}
               onClick={handleExportAllPPT}
             />
-          </Tooltip>
+          </HoverTip>
         )}
         {pptFrames.length > 0 && (
           <>
-            <Tooltip
+            <HoverTip
               content={currentBackgroundUrl ? '更换背景图' : '设置背景图'}
-              theme="light"
             >
               <Button
                 variant="outline"
@@ -736,9 +798,9 @@ export const FramePanel: React.FC = () => {
                 icon={<LayersIcon />}
                 onClick={() => bgFileInputRef.current?.click()}
               />
-            </Tooltip>
+            </HoverTip>
             {currentBackgroundUrl && (
-              <Tooltip content="清除背景图" theme="light">
+              <HoverTip content="清除背景图">
                 <Button
                   variant="outline"
                   size="small"
@@ -747,7 +809,7 @@ export const FramePanel: React.FC = () => {
                   icon={<DeleteIcon />}
                   onClick={handleClearBackground}
                 />
-              </Tooltip>
+              </HoverTip>
             )}
             <input
               ref={bgFileInputRef}
@@ -763,8 +825,12 @@ export const FramePanel: React.FC = () => {
       {/* Frame 列表 */}
       {filteredFrames.length === 0 ? (
         <div className="frame-panel__empty">
-          <ViewListIcon style={{ fontSize: 32, color: 'var(--td-text-color-placeholder)' }} />
-          <p>{frames.length === 0 ? '当前画布没有 Frame' : '未找到匹配的 Frame'}</p>
+          <ViewListIcon
+            style={{ fontSize: 32, color: 'var(--td-text-color-placeholder)' }}
+          />
+          <p>
+            {frames.length === 0 ? '当前画布没有 Frame' : '未找到匹配的 Frame'}
+          </p>
           {frames.length === 0 && (
             <p className="frame-panel__empty-hint">
               使用工具栏的 Frame 工具 (F) 创建
@@ -779,11 +845,14 @@ export const FramePanel: React.FC = () => {
               <div
                 key={info.listKey}
                 className={classNames('frame-panel__item', {
-                  'frame-panel__item--active': selectedFrameKey === info.listKey,
+                  'frame-panel__item--active':
+                    selectedFrameKey === info.listKey,
                   'frame-panel__item--dragging': dragProps['data-dragging'],
                   'frame-panel__item--drag-over': dragProps['data-drag-over'],
-                  'frame-panel__item--drag-before': dragProps['data-drag-position'] === 'before',
-                  'frame-panel__item--drag-after': dragProps['data-drag-position'] === 'after',
+                  'frame-panel__item--drag-before':
+                    dragProps['data-drag-position'] === 'before',
+                  'frame-panel__item--drag-after':
+                    dragProps['data-drag-position'] === 'after',
                 })}
                 onClick={() => handleFrameClick(info)}
                 onContextMenu={(e) => handleContextMenu(e, info)}
@@ -814,7 +883,9 @@ export const FramePanel: React.FC = () => {
                       autofocus
                       onBlur={() => handleFinishRename(info)}
                       onEnter={() => handleFinishRename(info)}
-                      onClick={(context: { e: React.MouseEvent }) => context.e.stopPropagation()}
+                      onClick={(context: { e: React.MouseEvent }) =>
+                        context.e.stopPropagation()
+                      }
                     />
                   ) : (
                     <>
@@ -830,9 +901,12 @@ export const FramePanel: React.FC = () => {
                 </div>
 
                 <div className="frame-panel__item-actions">
-                  <Tooltip
-                    content={exportingFrameId === info.frame.id ? '正在导出 PPT...' : '导出单页 PPT'}
-                    theme="light"
+                  <HoverTip
+                    content={
+                      exportingFrameId === info.frame.id
+                        ? '正在导出 PPT...'
+                        : '导出单页 PPT'
+                    }
                   >
                     <Button
                       variant="text"
@@ -845,39 +919,73 @@ export const FramePanel: React.FC = () => {
                           <DownloadIcon size={16} />
                         )
                       }
-                      onClick={(e) => handleExportSinglePPT(info, e as unknown as React.MouseEvent)}
+                      onClick={(e) =>
+                        handleExportSinglePPT(
+                          info,
+                          e as unknown as React.MouseEvent
+                        )
+                      }
                       disabled={exportingFrameId === info.frame.id}
                     />
-                  </Tooltip>
+                  </HoverTip>
                   {info.pptMeta?.imagePrompt && (
-                    <Tooltip content={generatingImageIds.has(info.frame.id) ? '生成中...' : '生成配图'} theme="light">
+                    <HoverTip
+                      content={
+                        generatingImageIds.has(info.frame.id)
+                          ? '生成中...'
+                          : '生成配图'
+                      }
+                    >
                       <Button
                         variant="text"
                         size="small"
                         shape="square"
-                        icon={generatingImageIds.has(info.frame.id) ? <Loading size="small" /> : <ImageIcon />}
-                        onClick={(e) => handleGenerateImage(info, e as unknown as React.MouseEvent)}
+                        icon={
+                          generatingImageIds.has(info.frame.id) ? (
+                            <Loading size="small" />
+                          ) : (
+                            <ImageIcon />
+                          )
+                        }
+                        onClick={(e) =>
+                          handleGenerateImage(
+                            info,
+                            e as unknown as React.MouseEvent
+                          )
+                        }
                         disabled={generatingImageIds.has(info.frame.id)}
                       />
-                    </Tooltip>
+                    </HoverTip>
                   )}
-                  <Button
-                    variant="text"
-                    size="small"
-                    shape="square"
-                    icon={<EditIcon />}
-                    onClick={(e) => handleStartRename(info, e as unknown as React.MouseEvent)}
-                    title="重命名"
-                  />
-                  <Button
-                    variant="text"
-                    size="small"
-                    shape="square"
-                    theme="danger"
-                    icon={<DeleteIcon />}
-                    onClick={(e) => void handleDelete(info, e as unknown as React.MouseEvent)}
-                    title="删除"
-                  />
+                  <HoverTip content="重命名" showArrow={false}>
+                    <Button
+                      variant="text"
+                      size="small"
+                      shape="square"
+                      icon={<EditIcon />}
+                      onClick={(e) =>
+                        handleStartRename(
+                          info,
+                          e as unknown as React.MouseEvent
+                        )
+                      }
+                    />
+                  </HoverTip>
+                  <HoverTip content="删除" showArrow={false}>
+                    <Button
+                      variant="text"
+                      size="small"
+                      shape="square"
+                      theme="danger"
+                      icon={<DeleteIcon />}
+                      onClick={(e) =>
+                        void handleDelete(
+                          info,
+                          e as unknown as React.MouseEvent
+                        )
+                      }
+                    />
+                  </HoverTip>
                 </div>
               </div>
             );

@@ -4,6 +4,7 @@ import { Dialog, Input, Button, MessagePlugin } from 'tdesign-react';
 import { Plus, X, Trash2, Edit2, Check } from 'lucide-react';
 import type { KBTag, KBTagWithCount } from '../../types/knowledge-base.types';
 import { useConfirmDialog } from '../dialog/ConfirmDialog';
+import { HoverTip } from '../shared';
 import './kb-tag-management-dialog.scss';
 
 interface KBTagManagementDialogProps {
@@ -179,20 +180,22 @@ export const KBTagManagementDialog: React.FC<KBTagManagementDialogProps> = ({
                 </span>
                 
                 <div className="kb-tag-item__actions">
-                  <button 
-                    className="kb-tag-item__action-btn"
-                    onClick={(e) => startEditing(e, tag)}
-                    title="重命名"
-                  >
-                    <Edit2 size={12} />
-                  </button>
-                  <button 
-                    className="kb-tag-item__action-btn kb-tag-item__action-btn--delete"
-                    onClick={(e) => handleDelete(e, tag.id)}
-                    title="删除"
-                  >
-                    <Trash2 size={12} />
-                  </button>
+                  <HoverTip content="重命名" showArrow={false}>
+                    <button
+                      className="kb-tag-item__action-btn"
+                      onClick={(e) => startEditing(e, tag)}
+                    >
+                      <Edit2 size={12} />
+                    </button>
+                  </HoverTip>
+                  <HoverTip content="删除" showArrow={false}>
+                    <button
+                      className="kb-tag-item__action-btn kb-tag-item__action-btn--delete"
+                      onClick={(e) => handleDelete(e, tag.id)}
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </HoverTip>
                 </div>
               </>
             )}

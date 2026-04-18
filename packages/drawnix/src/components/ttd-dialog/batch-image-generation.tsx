@@ -11,13 +11,7 @@ import React, {
   useRef,
   useMemo,
 } from 'react';
-import {
-  MessagePlugin,
-  Dialog,
-  Tooltip,
-  Button,
-  Checkbox,
-} from 'tdesign-react';
+import { MessagePlugin, Dialog, Button, Checkbox } from 'tdesign-react';
 import {
   DownloadIcon,
   FilePasteIcon,
@@ -65,6 +59,7 @@ import {
 import type { ModelConfig } from '../../constants/model-config';
 import './batch-image-generation.scss';
 import { trackMemory } from '../../utils/common';
+import { HoverTip } from '../shared';
 
 // 本地缓存 key
 const BATCH_IMAGE_CACHE_KEY = LS_KEYS_TO_MIGRATE.BATCH_IMAGE_CACHE;
@@ -2636,7 +2631,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
                   {rowInfo.tasks[0].error.message}
                 </span>
                 {rowInfo.tasks[0].error.details?.originalError && (
-                  <Tooltip
+                  <HoverTip
                     content={
                       <div className="error-details-tooltip">
                         <div className="error-details-title">原始错误信息:</div>
@@ -2650,7 +2645,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
                     showArrow={false}
                   >
                     <span className="preview-error-details-link">[详情]</span>
-                  </Tooltip>
+                  </HoverTip>
                 )}
               </div>
             )}
@@ -2729,7 +2724,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
 
           <div className="toolbar-left">
             {/* 1. 数据导入区 - 先下载模板 → 导入Excel → 批量导入图片 */}
-            <Tooltip
+            <HoverTip
               content={language === 'zh' ? '下载模板' : 'Download Template'}
               theme="light"
             >
@@ -2740,8 +2735,8 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
                 onClick={downloadExcelTemplate}
                 data-track="batch_download_template_click"
               />
-            </Tooltip>
-            <Tooltip
+            </HoverTip>
+            <HoverTip
               content={language === 'zh' ? '导入 Excel' : 'Import Excel'}
               theme="light"
             >
@@ -2752,8 +2747,8 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
                 onClick={() => excelImportInputRef.current?.click()}
                 data-track="batch_import_excel_click"
               />
-            </Tooltip>
-            <Tooltip
+            </HoverTip>
+            <HoverTip
               content={
                 language === 'zh' ? '批量导入图片' : 'Batch Import Images'
               }
@@ -2767,12 +2762,12 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
                 data-track="batch_import_images_click"
                 data-track-params={JSON.stringify({ source: 'toolbar' })}
               />
-            </Tooltip>
+            </HoverTip>
 
             <span className="toolbar-divider"></span>
 
             {/* 2. 选择操作区 - 导入后选择要处理的行 */}
-            <Tooltip
+            <HoverTip
               content={language === 'zh' ? '选择失败行' : 'Select Failed Rows'}
               theme="light"
             >
@@ -2783,8 +2778,8 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
                 onClick={selectFailedRows}
                 data-track="batch_select_failed_click"
               />
-            </Tooltip>
-            <Tooltip
+            </HoverTip>
+            <HoverTip
               content={language === 'zh' ? '反选' : 'Invert Selection'}
               theme="light"
             >
@@ -2795,7 +2790,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
                 onClick={invertSelection}
                 data-track="batch_invert_selection_click"
               />
-            </Tooltip>
+            </HoverTip>
 
             <span className="toolbar-divider"></span>
 
@@ -2884,7 +2879,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
             <span className="toolbar-divider"></span>
 
             {!hideLibrarySidebar && !showLibrary && (
-              <Tooltip
+              <HoverTip
                 content={language === 'zh' ? '显示素材库' : 'Show Library'}
                 theme="light"
               >
@@ -2895,7 +2890,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
                   onClick={() => setShowLibrary(true)}
                   data-track="batch_library_show_click"
                 />
-              </Tooltip>
+              </HoverTip>
             )}
           </div>
         </div>
@@ -2913,7 +2908,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
             <thead>
               <tr>
                 <th className="col-checkbox">
-                  <Tooltip
+                  <HoverTip
                     content={
                       selectedInfoText ||
                       (language === 'zh'
@@ -2939,13 +2934,13 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
                         onChange={toggleSelectAll}
                       />
                     </div>
-                  </Tooltip>
+                  </HoverTip>
                 </th>
                 <th className="row-number">#</th>
                 <th className="col-prompt">
                   <div className="th-content">
                     {language === 'zh' ? '提示词' : 'Prompt'}
-                    <Tooltip
+                    <HoverTip
                       content={language === 'zh' ? '向下填充' : 'Fill down'}
                       theme="light"
                     >
@@ -2959,13 +2954,13 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
                         data-track="batch_fill_column_click"
                         data-track-params={JSON.stringify({ column: 'prompt' })}
                       />
-                    </Tooltip>
+                    </HoverTip>
                   </div>
                 </th>
                 <th className="col-size">
                   <div className="th-content">
                     {language === 'zh' ? '尺寸' : 'Size'}
-                    <Tooltip
+                    <HoverTip
                       content={language === 'zh' ? '向下填充' : 'Fill down'}
                       theme="light"
                     >
@@ -2979,13 +2974,13 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
                         data-track="batch_fill_column_click"
                         data-track-params={JSON.stringify({ column: 'size' })}
                       />
-                    </Tooltip>
+                    </HoverTip>
                   </div>
                 </th>
                 <th className="col-images">
                   <div className="th-content">
                     {language === 'zh' ? '参考图片' : 'Ref Images'}
-                    <Tooltip
+                    <HoverTip
                       content={language === 'zh' ? '向下填充' : 'Fill down'}
                       theme="light"
                     >
@@ -2999,13 +2994,13 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
                         data-track="batch_fill_column_click"
                         data-track-params={JSON.stringify({ column: 'images' })}
                       />
-                    </Tooltip>
+                    </HoverTip>
                   </div>
                 </th>
                 <th className="col-count">
                   <div className="th-content">
                     {language === 'zh' ? '数量' : 'Count'}
-                    <Tooltip
+                    <HoverTip
                       content={language === 'zh' ? '向下填充' : 'Fill down'}
                       theme="light"
                     >
@@ -3019,7 +3014,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
                         data-track="batch_fill_column_click"
                         data-track-params={JSON.stringify({ column: 'count' })}
                       />
-                    </Tooltip>
+                    </HoverTip>
                   </div>
                 </th>
                 <th className="col-preview">

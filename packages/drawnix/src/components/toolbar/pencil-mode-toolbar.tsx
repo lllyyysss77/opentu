@@ -13,7 +13,7 @@ export const ClosePencilToolbar = () => {
           <ToolButton
             type="button"
             visible={true}
-            title={`X Pencil`}
+            tooltip={`X Pencil`}
             aria-label={`Arrow`}
             label="Pencil X"
             onPointerDown={() => {

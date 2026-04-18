@@ -10,6 +10,7 @@ import { useSharedTaskState } from '../../../hooks/useTaskQueue';
 import type { Task } from '../../../types/task.types';
 import { TaskStatus, TaskType } from '../../../types/task.types';
 import { ConfirmDialog } from '../../dialog/ConfirmDialog';
+import { HoverTip } from '../../shared';
 
 function statusLabel(status: TaskStatus): string {
   switch (status) {
@@ -259,11 +260,17 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({
 };
 
 const RelatedTaskItem: React.FC<{ task: Task }> = ({ task }) => (
-  <div className="va-history-related-task" title={statusLabel(task.status)}>
-    <span className={`va-history-related-task-status ${statusClass(task.status)}`} />
-    <span className="va-history-related-task-prompt">
-      {String(task.params.prompt || '').slice(0, 40) || task.id.slice(0, 8)}
-    </span>
-    <span className="va-history-related-task-time">{shortTime(task.createdAt)}</span>
-  </div>
+  <HoverTip content={statusLabel(task.status)} showArrow={false}>
+    <div className="va-history-related-task">
+      <span
+        className={`va-history-related-task-status ${statusClass(task.status)}`}
+      />
+      <span className="va-history-related-task-prompt">
+        {String(task.params.prompt || '').slice(0, 40) || task.id.slice(0, 8)}
+      </span>
+      <span className="va-history-related-task-time">
+        {shortTime(task.createdAt)}
+      </span>
+    </div>
+  </HoverTip>
 );

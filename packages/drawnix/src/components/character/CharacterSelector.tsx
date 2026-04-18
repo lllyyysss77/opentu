@@ -6,11 +6,12 @@
  */
 
 import React, { useCallback, useMemo } from 'react';
-import { Tooltip } from 'tdesign-react';
+
 import { UserIcon, InfoCircleIcon } from 'tdesign-icons-react';
 import { useCharacters } from '../../hooks/useCharacters';
 import type { SoraCharacter } from '../../types/character.types';
 import './character.scss';
+import { HoverTip } from '../shared';
 
 export interface CharacterSelectorProps {
   /** Currently selected character IDs */
@@ -45,31 +46,34 @@ export const CharacterSelector: React.FC<CharacterSelectorProps> = ({
   const hasMore = completedCharacters.length > maxVisible;
 
   // Handle character click
-  const handleCharacterClick = useCallback((character: SoraCharacter) => {
-    if (!onSelectionChange) return;
+  const handleCharacterClick = useCallback(
+    (character: SoraCharacter) => {
+      if (!onSelectionChange) return;
 
-    if (multiple) {
-      // Toggle selection
-      if (selectedIds.includes(character.id)) {
-        onSelectionChange(selectedIds.filter(id => id !== character.id));
+      if (multiple) {
+        // Toggle selection
+        if (selectedIds.includes(character.id)) {
+          onSelectionChange(selectedIds.filter((id) => id !== character.id));
+        } else {
+          onSelectionChange([...selectedIds, character.id]);
+        }
       } else {
-        onSelectionChange([...selectedIds, character.id]);
+        // Single selection - toggle if already selected
+        if (selectedIds.includes(character.id)) {
+          onSelectionChange([]);
+        } else {
+          onSelectionChange([character.id]);
+        }
       }
-    } else {
-      // Single selection - toggle if already selected
-      if (selectedIds.includes(character.id)) {
-        onSelectionChange([]);
-      } else {
-        onSelectionChange([character.id]);
-      }
-    }
-  }, [multiple, selectedIds, onSelectionChange]);
+    },
+    [multiple, selectedIds, onSelectionChange]
+  );
 
   // Get selected characters for display
   const getSelectedUsernames = useCallback(() => {
     return completedCharacters
-      .filter(c => selectedIds.includes(c.id))
-      .map(c => `@${c.username}`)
+      .filter((c) => selectedIds.includes(c.id))
+      .map((c) => `@${c.username}`)
       .join(', ');
   }, [completedCharacters, selectedIds]);
 
@@ -83,13 +87,13 @@ export const CharacterSelector: React.FC<CharacterSelectorProps> = ({
         <div className="character-selector__label">
           <UserIcon style={{ marginRight: 4 }} />
           角色
-          <Tooltip
+          <HoverTip
             content="从已完成的 Sora-2 视频中提取角色后可在此选择"
             theme="light"
             showArrow={false}
           >
             <InfoCircleIcon style={{ marginLeft: 4, cursor: 'help' }} />
-          </Tooltip>
+          </HoverTip>
         </div>
         <div className="character-selector__empty">暂无可用角色</div>
       </div>
@@ -108,31 +112,38 @@ export const CharacterSelector: React.FC<CharacterSelectorProps> = ({
 
       <div className="character-selector__chips">
         {visibleCharacters.map((character) => (
-          <Tooltip
+          <HoverTip
             key={character.id}
             content={character.sourcePrompt || `@${character.username}`}
             theme="light"
             showArrow={false}
           >
             <div
-              className={`character-selector__chip ${selectedIds.includes(character.id) ? 'character-selector__chip--selected' : ''}`}
+              className={`character-selector__chip ${
+                selectedIds.includes(character.id)
+                  ? 'character-selector__chip--selected'
+                  : ''
+              }`}
               onClick={() => handleCharacterClick(character)}
               data-track="character_click_select"
             >
               <div className="character-selector__chip-avatar">
                 {character.profilePictureUrl ? (
-                  <img src={character.profilePictureUrl} alt={character.username} />
+                  <img
+                    src={character.profilePictureUrl}
+                    alt={character.username}
+                  />
                 ) : (
                   <UserIcon />
                 )}
               </div>
               <span>@{character.username}</span>
             </div>
-          </Tooltip>
+          </HoverTip>
         ))}
 
         {hasMore && (
-          <Tooltip
+          <HoverTip
             content={`还有 ${completedCharacters.length - maxVisible} 个角色`}
             theme="light"
             showArrow={false}
@@ -140,7 +151,7 @@ export const CharacterSelector: React.FC<CharacterSelectorProps> = ({
             <div className="character-selector__chip">
               +{completedCharacters.length - maxVisible}
             </div>
-          </Tooltip>
+          </HoverTip>
         )}
       </div>
 

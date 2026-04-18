@@ -1,16 +1,16 @@
 import React, { useEffect, useRef, useState } from 'react';
 import classNames from 'classnames';
 import { Volume2, VolumeX } from 'lucide-react';
+import { HoverTip } from '../shared';
 
 interface CanvasAudioPlayerVolumeProps {
   volume: number;
   onVolumeChange: (volume: number) => void;
 }
 
-export const CanvasAudioPlayerVolume: React.FC<CanvasAudioPlayerVolumeProps> = ({
-  volume,
-  onVolumeChange,
-}) => {
+export const CanvasAudioPlayerVolume: React.FC<
+  CanvasAudioPlayerVolumeProps
+> = ({ volume, onVolumeChange }) => {
   const volumeRef = useRef<HTMLDivElement>(null);
   const collapseTimeoutRef = useRef<number | null>(null);
   const volumeTogglePointerDownRef = useRef(false);
@@ -73,7 +73,8 @@ export const CanvasAudioPlayerVolume: React.FC<CanvasAudioPlayerVolumeProps> = (
       volumeTogglePointerDownRef.current = false;
     };
     document.addEventListener('pointerdown', handlePointerDown, true);
-    return () => document.removeEventListener('pointerdown', handlePointerDown, true);
+    return () =>
+      document.removeEventListener('pointerdown', handlePointerDown, true);
   }, [volumeExpanded]);
 
   useEffect(() => {
@@ -140,30 +141,31 @@ export const CanvasAudioPlayerVolume: React.FC<CanvasAudioPlayerVolumeProps> = (
         <span className="canvas-audio-player__volume-value">
           {volumePercentage}%
         </span>
-        <button
-          type="button"
-          className="canvas-audio-player__volume-toggle"
-          onPointerDown={(event) => {
-            event.stopPropagation();
-            volumeTogglePointerDownRef.current = true;
-          }}
-          onClick={() => {
-            volumeTogglePointerDownRef.current = false;
-            toggleVolumeExpanded();
-          }}
-          onFocus={() => {
-            if (volumeTogglePointerDownRef.current) return;
-            expandVolume();
-          }}
-          onBlur={() => {
-            volumeTogglePointerDownRef.current = false;
-          }}
-          aria-label="Volume controls"
-          aria-expanded={volumeExpanded}
-          data-tooltip="音量"
-        >
-          {volume <= 0.01 ? <VolumeX size={16} /> : <Volume2 size={16} />}
-        </button>
+        <HoverTip content="音量">
+          <button
+            type="button"
+            className="canvas-audio-player__volume-toggle"
+            onPointerDown={(event) => {
+              event.stopPropagation();
+              volumeTogglePointerDownRef.current = true;
+            }}
+            onClick={() => {
+              volumeTogglePointerDownRef.current = false;
+              toggleVolumeExpanded();
+            }}
+            onFocus={() => {
+              if (volumeTogglePointerDownRef.current) return;
+              expandVolume();
+            }}
+            onBlur={() => {
+              volumeTogglePointerDownRef.current = false;
+            }}
+            aria-label="Volume controls"
+            aria-expanded={volumeExpanded}
+          >
+            {volume <= 0.01 ? <VolumeX size={16} /> : <Volume2 size={16} />}
+          </button>
+        </HoverTip>
       </div>
     </div>
   );

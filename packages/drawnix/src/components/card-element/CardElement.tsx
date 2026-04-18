@@ -7,6 +7,7 @@
 import React, { useCallback, useMemo } from 'react';
 import { BookOpen } from 'lucide-react';
 import { MarkdownEditor } from '../MarkdownEditor';
+import { HoverTip } from '../shared';
 import {
   getTitleColor,
   getBodyColor,
@@ -167,30 +168,31 @@ export const CardElement: React.FC<CardElementProps> = ({ element }) => {
           {displayTitle}
         </span>
         {hasKnowledgeBaseLink && (
-          <button
-            type="button"
-            title="打开知识库笔记"
-            aria-label="打开知识库笔记"
-            onMouseDown={stopPointerPropagation}
-            onPointerDown={stopPointerPropagation}
-            onClick={handleOpenKnowledgeBase}
-            style={{
-              width: 24,
-              height: 24,
-              padding: 0,
-              border: 'none',
-              borderRadius: 6,
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: 'rgba(255,255,255,0.16)',
-              color: '#fff',
-              cursor: 'pointer',
-              flexShrink: 0,
-            }}
-          >
-            <BookOpen size={14} />
-          </button>
+          <HoverTip content="打开知识库笔记" showArrow={false}>
+            <button
+              type="button"
+              aria-label="打开知识库笔记"
+              onMouseDown={stopPointerPropagation}
+              onPointerDown={stopPointerPropagation}
+              onClick={handleOpenKnowledgeBase}
+              style={{
+                width: 24,
+                height: 24,
+                padding: 0,
+                border: 'none',
+                borderRadius: 6,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: 'rgba(255,255,255,0.16)',
+                color: '#fff',
+                cursor: 'pointer',
+                flexShrink: 0,
+              }}
+            >
+              <BookOpen size={14} />
+            </button>
+          </HoverTip>
         )}
       </div>
       <div

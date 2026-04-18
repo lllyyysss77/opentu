@@ -6,8 +6,18 @@
  */
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { Button, Tabs, MessagePlugin, Input, Tooltip, Checkbox } from 'tdesign-react';
-import { DeleteIcon, SearchIcon, UserIcon, RefreshIcon, PauseCircleIcon, CheckDoubleIcon, ImageIcon, VideoIcon, FilterIcon } from 'tdesign-icons-react';
+import { Button, Tabs, MessagePlugin, Input, Checkbox } from 'tdesign-react';
+import {
+  DeleteIcon,
+  SearchIcon,
+  UserIcon,
+  RefreshIcon,
+  PauseCircleIcon,
+  CheckDoubleIcon,
+  ImageIcon,
+  VideoIcon,
+  FilterIcon,
+} from 'tdesign-icons-react';
 import { Music4 } from 'lucide-react';
 import { VirtualTaskList } from './VirtualTaskList';
 import { ArchivedTaskList } from './ArchivedTaskList';
@@ -33,15 +43,24 @@ import { BaseDrawer } from '../side-drawer';
 import { CharacterCreateDialog } from '../character/CharacterCreateDialog';
 import { CharacterList } from '../character/CharacterList';
 import { useCharacters } from '../../hooks/useCharacters';
-import { UnifiedMediaViewer, type MediaItem as UnifiedMediaItem } from '../shared/media-preview';
+import {
+  UnifiedMediaViewer,
+  type MediaItem as UnifiedMediaItem,
+} from '../shared/media-preview';
 import { ImageEditor } from '../image-editor';
 import { useGitHubSync } from '../../contexts/GitHubSyncContext';
 import { mediaSyncService } from '../../services/github-sync/media-sync-service';
 import { CloudUploadIcon } from 'tdesign-icons-react';
-import { formatLyricsForCanvas, getLyricsTags, getLyricsTitle, isLyricsTask } from '../../utils/lyrics-task-utils';
+import {
+  formatLyricsForCanvas,
+  getLyricsTags,
+  getLyricsTitle,
+  isLyricsTask,
+} from '../../utils/lyrics-task-utils';
 import { resolveAudioResultUrls } from '../../services/audio-task-result-utils';
 import { ConfirmDialog } from '../dialog/ConfirmDialog';
 import './task-queue.scss';
+import { HoverTip } from '../shared';
 
 const { TabPanel } = Tabs;
 
@@ -90,7 +109,9 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
   const { characters } = useCharacters();
   const [activeTab, setActiveTab] = useState<string>('all');
   const [showClearConfirm, setShowClearConfirm] = useState(false);
-  const [clearType, setClearType] = useState<'completed' | 'failed'>('completed');
+  const [clearType, setClearType] = useState<'completed' | 'failed'>(
+    'completed'
+  );
   const [searchText, setSearchText] = useState<string>('');
   const [typeFilter, setTypeFilter] = useState<
     'all' | 'image' | 'video' | 'audio' | 'text' | 'character'
@@ -103,21 +124,25 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
   const [previewInitialMode, setPreviewInitialMode] = useState<
     'single' | 'compare'
   >('single');
-  
+
   // 图片编辑器状态
   const [imageEditorVisible, setImageEditorVisible] = useState(false);
   const [imageEditorUrl, setImageEditorUrl] = useState('');
-  
+
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [taskToDelete, setTaskToDelete] = useState<string | null>(null);
   // Character extraction dialog state
-  const [characterDialogTask, setCharacterDialogTask] = useState<Task | null>(null);
+  const [characterDialogTask, setCharacterDialogTask] = useState<Task | null>(
+    null
+  );
   // Multi-selection state
   const [selectionMode, setSelectionMode] = useState(false);
-  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
+  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(
+    new Set()
+  );
   const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState(false);
   const [archivedCount, setArchivedCount] = useState<number | null>(null);
-  
+
   // Sync state
   const { isConfigured } = useGitHubSync();
   const [isSyncing, setIsSyncing] = useState(false);
@@ -138,15 +163,18 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
 
     let cancelled = false;
 
-    taskStorageReader.getArchivedTaskCount().then((count) => {
-      if (!cancelled) {
-        setArchivedCount(count);
-      }
-    }).catch(() => {
-      if (!cancelled) {
-        setArchivedCount(0);
-      }
-    });
+    taskStorageReader
+      .getArchivedTaskCount()
+      .then((count) => {
+        if (!cancelled) {
+          setArchivedCount(count);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setArchivedCount(0);
+        }
+      });
 
     return () => {
       cancelled = true;
@@ -182,36 +210,55 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
 
     // Apply type filter
     if (typeFilter !== 'all' && typeFilter !== 'character') {
-      tasksToFilter = tasksToFilter.filter(task =>
-        task.type ===
-        (typeFilter === 'image'
-          ? TaskType.IMAGE
-          : typeFilter === 'audio'
-          ? TaskType.AUDIO
-          : typeFilter === 'text'
-          ? TaskType.CHAT
-          : TaskType.VIDEO)
+      tasksToFilter = tasksToFilter.filter(
+        (task) =>
+          task.type ===
+          (typeFilter === 'image'
+            ? TaskType.IMAGE
+            : typeFilter === 'audio'
+            ? TaskType.AUDIO
+            : typeFilter === 'text'
+            ? TaskType.CHAT
+            : TaskType.VIDEO)
       );
     }
 
     // Apply search filter
     if (searchText.trim()) {
       const searchLower = searchText.toLowerCase().trim();
-      tasksToFilter = tasksToFilter.filter(task =>
-        task.params.prompt.toLowerCase().includes(searchLower) ||
-        String(task.result?.title || '').toLowerCase().includes(searchLower) ||
-        String(task.result?.lyricsTitle || '').toLowerCase().includes(searchLower) ||
-        String(task.result?.lyricsText || '').toLowerCase().includes(searchLower) ||
-        String(task.result?.chatResponse || '').toLowerCase().includes(searchLower) ||
-        (task.result?.lyricsTags || []).some((tag) =>
-          String(tag).toLowerCase().includes(searchLower)
-        )
+      tasksToFilter = tasksToFilter.filter(
+        (task) =>
+          task.params.prompt.toLowerCase().includes(searchLower) ||
+          String(task.result?.title || '')
+            .toLowerCase()
+            .includes(searchLower) ||
+          String(task.result?.lyricsTitle || '')
+            .toLowerCase()
+            .includes(searchLower) ||
+          String(task.result?.lyricsText || '')
+            .toLowerCase()
+            .includes(searchLower) ||
+          String(task.result?.chatResponse || '')
+            .toLowerCase()
+            .includes(searchLower) ||
+          (task.result?.lyricsTags || []).some((tag) =>
+            String(tag).toLowerCase().includes(searchLower)
+          )
       );
     }
 
     // Sort by time - newest first (reverse chronological)
     return [...tasksToFilter].sort((a, b) => b.createdAt - a.createdAt);
-  }, [activeTab, tasks, activeTasks, completedTasks, failedTasks, cancelledTasks, typeFilter, searchText]);
+  }, [
+    activeTab,
+    tasks,
+    activeTasks,
+    completedTasks,
+    failedTasks,
+    cancelledTasks,
+    typeFilter,
+    searchText,
+  ]);
 
   // Handle clear action
   const handleClear = (type: 'completed' | 'failed') => {
@@ -260,7 +307,7 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
   };
 
   const handleSelectionChange = (taskId: string, selected: boolean) => {
-    setSelectedTaskIds(prev => {
+    setSelectedTaskIds((prev) => {
       const newSet = new Set(prev);
       if (selected) {
         newSet.add(taskId);
@@ -272,7 +319,7 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
   };
 
   const handleSelectAll = () => {
-    const allTaskIds = filteredTasks.map(t => t.id);
+    const allTaskIds = filteredTasks.map((t) => t.id);
     setSelectedTaskIds(new Set(allTaskIds));
   };
 
@@ -295,9 +342,12 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
 
   const handleBatchRetry = () => {
     // Retry failed and cancelled tasks
-    const retryableSelectedIds = Array.from(selectedTaskIds).filter(id => {
-      const task = tasks.find(t => t.id === id);
-      return task?.status === TaskStatus.FAILED || task?.status === TaskStatus.CANCELLED;
+    const retryableSelectedIds = Array.from(selectedTaskIds).filter((id) => {
+      const task = tasks.find((t) => t.id === id);
+      return (
+        task?.status === TaskStatus.FAILED ||
+        task?.status === TaskStatus.CANCELLED
+      );
     });
     if (retryableSelectedIds.length === 0) {
       MessagePlugin.warning('没有可重试的任务');
@@ -311,27 +361,34 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
 
   // Count selected failed/cancelled tasks for retry button
   const selectedRetryableCount = useMemo(() => {
-    return Array.from(selectedTaskIds).filter(id => {
-      const task = tasks.find(t => t.id === id);
-      return task?.status === TaskStatus.FAILED || task?.status === TaskStatus.CANCELLED;
+    return Array.from(selectedTaskIds).filter((id) => {
+      const task = tasks.find((t) => t.id === id);
+      return (
+        task?.status === TaskStatus.FAILED ||
+        task?.status === TaskStatus.CANCELLED
+      );
     }).length;
   }, [selectedTaskIds, tasks]);
 
   // Count selected active tasks for cancel button
   const selectedActiveCount = useMemo(() => {
-    return Array.from(selectedTaskIds).filter(id => {
-      const task = tasks.find(t => t.id === id);
-      return task?.status === TaskStatus.PENDING ||
-             task?.status === TaskStatus.PROCESSING;
+    return Array.from(selectedTaskIds).filter((id) => {
+      const task = tasks.find((t) => t.id === id);
+      return (
+        task?.status === TaskStatus.PENDING ||
+        task?.status === TaskStatus.PROCESSING
+      );
     }).length;
   }, [selectedTaskIds, tasks]);
 
   // Count selected completed tasks for sync button
   const selectedSyncableCount = useMemo(() => {
-    return Array.from(selectedTaskIds).filter(id => {
-      const task = tasks.find(t => t.id === id);
-      return task?.status === TaskStatus.COMPLETED && 
-             (task?.type === TaskType.IMAGE || task?.type === TaskType.VIDEO);
+    return Array.from(selectedTaskIds).filter((id) => {
+      const task = tasks.find((t) => t.id === id);
+      return (
+        task?.status === TaskStatus.COMPLETED &&
+        (task?.type === TaskType.IMAGE || task?.type === TaskType.VIDEO)
+      );
     }).length;
   }, [selectedTaskIds, tasks]);
 
@@ -339,20 +396,22 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
   const typeCounts = useMemo(() => {
     return {
       all: tasks.length,
-      image: tasks.filter(t => t.type === TaskType.IMAGE).length,
-      video: tasks.filter(t => t.type === TaskType.VIDEO).length,
-      audio: tasks.filter(t => t.type === TaskType.AUDIO).length,
-      text: tasks.filter(t => t.type === TaskType.CHAT).length,
+      image: tasks.filter((t) => t.type === TaskType.IMAGE).length,
+      video: tasks.filter((t) => t.type === TaskType.VIDEO).length,
+      audio: tasks.filter((t) => t.type === TaskType.AUDIO).length,
+      text: tasks.filter((t) => t.type === TaskType.CHAT).length,
       character: characters.length,
     };
   }, [tasks, characters]);
 
   const handleBatchCancel = () => {
     // Only cancel active tasks
-    const activeSelectedIds = Array.from(selectedTaskIds).filter(id => {
-      const task = tasks.find(t => t.id === id);
-      return task?.status === TaskStatus.PENDING ||
-             task?.status === TaskStatus.PROCESSING;
+    const activeSelectedIds = Array.from(selectedTaskIds).filter((id) => {
+      const task = tasks.find((t) => t.id === id);
+      return (
+        task?.status === TaskStatus.PENDING ||
+        task?.status === TaskStatus.PROCESSING
+      );
     });
     if (activeSelectedIds.length === 0) {
       MessagePlugin.warning('没有可取消的进行中任务');
@@ -366,17 +425,19 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
 
   const handleBatchSync = async () => {
     // Only sync completed image/video tasks
-    const syncableSelectedIds = Array.from(selectedTaskIds).filter(id => {
-      const task = tasks.find(t => t.id === id);
-      return task?.status === TaskStatus.COMPLETED && 
-             (task?.type === TaskType.IMAGE || task?.type === TaskType.VIDEO);
+    const syncableSelectedIds = Array.from(selectedTaskIds).filter((id) => {
+      const task = tasks.find((t) => t.id === id);
+      return (
+        task?.status === TaskStatus.COMPLETED &&
+        (task?.type === TaskType.IMAGE || task?.type === TaskType.VIDEO)
+      );
     });
-    
+
     if (syncableSelectedIds.length === 0 || isSyncing) return;
-    
+
     setIsSyncing(true);
     setSyncProgress(0);
-    
+
     try {
       const result = await (mediaSyncService as any).syncMultipleTasks(
         syncableSelectedIds,
@@ -384,10 +445,10 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
           setSyncProgress(Math.round((current / total) * 100));
         }
       );
-      
+
       console.log('[TaskQueuePanel] Batch sync result:', result);
       setSyncProgress(100);
-      
+
       if (result.succeeded > 0) {
         MessagePlugin.success(`已同步 ${result.succeeded} 个任务`);
       }
@@ -404,7 +465,7 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
   };
 
   const handleDownload = async (taskId: string) => {
-    const task = tasks.find(t => t.id === taskId);
+    const task = tasks.find((t) => t.id === taskId);
     if (task && isLyricsTask(task)) {
       MessagePlugin.info('歌词任务支持复制或插入画布');
       return;
@@ -433,7 +494,7 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
   };
 
   const handleCopy = async (taskId: string) => {
-    const task = tasks.find(t => t.id === taskId);
+    const task = tasks.find((t) => t.id === taskId);
     if (!task || !isLyricsTask(task)) {
       MessagePlugin.warning('暂无可复制的歌词');
       return;
@@ -461,17 +522,22 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
   };
 
   const handleInsert = async (taskId: string) => {
-    const task = tasks.find(t => t.id === taskId);
+    const task = tasks.find((t) => t.id === taskId);
     if (!task || !board) {
       console.warn('Cannot insert: task result or board not available');
       MessagePlugin.warning('无法插入：白板未就绪');
       return;
     }
-    if (!task.result?.url && !task.result?.urls?.length && !isLyricsTask(task)) {
+    if (
+      !task.result?.url &&
+      !task.result?.urls?.length &&
+      !isLyricsTask(task)
+    ) {
       const chatResponse =
         task.type === TaskType.CHAT ? task.result?.chatResponse : undefined;
       if (chatResponse?.trim()) {
-        const promptLabel = (task.params.prompt || '').slice(0, 20) || undefined;
+        const promptLabel =
+          (task.params.prompt || '').slice(0, 20) || undefined;
         await executeCanvasInsertion({
           items: [
             {
@@ -493,11 +559,15 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
     try {
       const taskResult = task.result!;
       if (task.type === TaskType.IMAGE) {
-        const urls = taskResult.urls?.length ? taskResult.urls : [taskResult.url];
+        const urls = taskResult.urls?.length
+          ? taskResult.urls
+          : [taskResult.url];
         for (const url of urls) {
           await insertImageFromUrl(board, normalizeImageDataUrl(url));
         }
-        MessagePlugin.success(urls.length > 1 ? '多图已插入到白板' : '图片已插入到白板');
+        MessagePlugin.success(
+          urls.length > 1 ? '多图已插入到白板' : '图片已插入到白板'
+        );
       } else if (task.type === TaskType.VIDEO) {
         // 插入视频到白板
         await insertVideoFromUrl(board, taskResult.url);
@@ -505,10 +575,13 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
         MessagePlugin.success('视频已插入到白板');
       } else if (task.type === TaskType.AUDIO) {
         if (isLyricsTask(task)) {
-          const lyricsLabel = getLyricsTitle(
-            taskResult,
-            task.params.title || task.params.prompt
-          ) || (task.params.prompt || '').slice(0, 20) || undefined;
+          const lyricsLabel =
+            getLyricsTitle(
+              taskResult,
+              task.params.title || task.params.prompt
+            ) ||
+            (task.params.prompt || '').slice(0, 20) ||
+            undefined;
           await executeCanvasInsertion({
             items: [
               {
@@ -540,13 +613,8 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
               : taskResult.duration,
           previewImageUrl: taskResult.previewImageUrl,
           tags:
-            typeof task.params.tags === 'string'
-              ? task.params.tags
-              : undefined,
-          mv:
-            typeof task.params.mv === 'string'
-              ? task.params.mv
-              : undefined,
+            typeof task.params.tags === 'string' ? task.params.tags : undefined,
+          mv: typeof task.params.mv === 'string' ? task.params.mv : undefined,
           prompt: task.params.prompt,
           providerTaskId: taskResult.providerTaskId || task.remoteId,
           clipId:
@@ -597,7 +665,8 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
         );
       } else if (task.type === TaskType.CHAT) {
         const chatResponse = taskResult.chatResponse || '';
-        const promptLabel = (task.params.prompt || '').slice(0, 20) || undefined;
+        const promptLabel =
+          (task.params.prompt || '').slice(0, 20) || undefined;
         await executeCanvasInsertion({
           items: [
             {
@@ -612,12 +681,14 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
       onTaskAction?.('insert', taskId);
     } catch (error) {
       console.error('Failed to insert to board:', error);
-      MessagePlugin.error(`插入失败: ${error instanceof Error ? error.message : '未知错误'}`);
+      MessagePlugin.error(
+        `插入失败: ${error instanceof Error ? error.message : '未知错误'}`
+      );
     }
   };
 
   const handleEdit = (taskId: string) => {
-    const task = tasks.find(t => t.id === taskId);
+    const task = tasks.find((t) => t.id === taskId);
     if (!task) {
       console.warn('Cannot edit: task not found');
       return;
@@ -630,23 +701,24 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
         initialPrompt: task.params.prompt,
         initialWidth: task.params.width,
         initialHeight: task.params.height,
-        initialImages: task.params.uploadedImages,  // 传递上传的参考图片(数组)
-        initialResultUrl: task.result?.url,  // 传递结果URL用于预览
-        initialResultUrls: task.result?.urls,  // 多图结果
+        initialImages: task.params.uploadedImages, // 传递上传的参考图片(数组)
+        initialResultUrl: task.result?.url, // 传递结果URL用于预览
+        initialResultUrls: task.result?.urls, // 多图结果
       };
       openDialog(DialogType.aiImageGeneration, initialData);
     } else if (task.type === TaskType.VIDEO) {
       // 准备视频生成初始数据
       const initialData = {
         initialPrompt: task.params.prompt,
-        initialDuration: typeof task.params.seconds === 'string'
-          ? parseInt(task.params.seconds, 10)
-          : task.params.seconds,  // 确保转换为数字
-        initialModel: task.params.model,  // 传递模型
-        initialSize: task.params.size,  // 传递尺寸
-        initialImages: task.params.uploadedImages,  // 传递上传的图片（多图片格式）
-        initialResultUrl: task.result?.url,  // 传递结果URL用于预览
-        initialResultUrls: task.result?.urls,  // 多图/多视频结果
+        initialDuration:
+          typeof task.params.seconds === 'string'
+            ? parseInt(task.params.seconds, 10)
+            : task.params.seconds, // 确保转换为数字
+        initialModel: task.params.model, // 传递模型
+        initialSize: task.params.size, // 传递尺寸
+        initialImages: task.params.uploadedImages, // 传递上传的图片（多图片格式）
+        initialResultUrl: task.result?.url, // 传递结果URL用于预览
+        initialResultUrls: task.result?.urls, // 多图/多视频结果
       };
       openDialog(DialogType.aiVideoGeneration, initialData);
     } else if (task.type === TaskType.AUDIO) {
@@ -659,7 +731,7 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
 
   // Handle extract character action
   const handleExtractCharacter = (taskId: string) => {
-    const task = tasks.find(t => t.id === taskId);
+    const task = tasks.find((t) => t.id === taskId);
     if (task) {
       setCharacterDialogTask(task);
       onTaskAction?.('extractCharacter', taskId);
@@ -669,15 +741,13 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
   // Get completed tasks with results for navigation (deduplicated by ID)
   const completedTasksWithResults = useMemo(() => {
     const seen = new Set<string>();
-    return filteredTasks.filter(t => {
+    return filteredTasks.filter((t) => {
       if (
         t.status !== TaskStatus.COMPLETED ||
         (!t.result?.url && !t.result?.urls?.length) ||
-        (
-          t.type !== TaskType.IMAGE &&
+        (t.type !== TaskType.IMAGE &&
           t.type !== TaskType.VIDEO &&
-          !(t.type === TaskType.AUDIO && t.result?.resultKind !== 'lyrics')
-        )
+          !(t.type === TaskType.AUDIO && t.result?.resultKind !== 'lyrics'))
       ) {
         return false;
       }
@@ -735,8 +805,8 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
         const fallbackUrls = task.result!.urls?.length
           ? task.result!.urls
           : task.result!.url
-            ? [task.result!.url]
-            : [];
+          ? [task.result!.url]
+          : [];
         const mediaItems =
           audioItems.length > 0
             ? audioItems
@@ -763,24 +833,30 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
         const urls = task.result!.urls?.length
           ? task.result!.urls
           : [task.result!.url];
-        const mediaType = task.type === TaskType.VIDEO ? 'video' as const : 'image' as const;
+        const mediaType =
+          task.type === TaskType.VIDEO
+            ? ('video' as const)
+            : ('image' as const);
 
         for (let i = 0; i < urls.length; i++) {
-          const normalizedUrl = mediaType === 'image'
-            ? normalizeImageDataUrl(urls[i])
-            : urls[i];
+          const normalizedUrl =
+            mediaType === 'image' ? normalizeImageDataUrl(urls[i]) : urls[i];
           items.push({
             id: urls.length > 1 ? `${task.id}-${i}` : task.id,
             url: normalizedUrl,
             type: mediaType,
-            title: urls.length > 1 ? `${title} (${i + 1}/${urls.length})` : title,
+            title:
+              urls.length > 1 ? `${title} (${i + 1}/${urls.length})` : title,
           });
         }
       }
 
       const taskItemCount = items.length - startIndex;
       configMap.set(task.id, {
-        mode: task.type === TaskType.AUDIO && taskItemCount > 1 ? 'compare' : 'single',
+        mode:
+          task.type === TaskType.AUDIO && taskItemCount > 1
+            ? 'compare'
+            : 'single',
         index:
           task.type === TaskType.AUDIO && taskItemCount > 1
             ? Array.from(
@@ -795,15 +871,18 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
   }, [completedTasksWithResults]);
 
   // Preview navigation handlers - 使用 Map 精确查找索引
-  const handlePreviewOpen = useCallback((taskId: string) => {
-    setPreviewTaskId(taskId);
-    const config = taskIdToPreviewConfig.get(taskId);
-    if (config !== undefined) {
-      setPreviewInitialMode(config.mode);
-      setPreviewInitialIndex(config.index);
-      setPreviewVisible(true);
-    }
-  }, [taskIdToPreviewConfig]);
+  const handlePreviewOpen = useCallback(
+    (taskId: string) => {
+      setPreviewTaskId(taskId);
+      const config = taskIdToPreviewConfig.get(taskId);
+      if (config !== undefined) {
+        setPreviewInitialMode(config.mode);
+        setPreviewInitialIndex(config.index);
+        setPreviewVisible(true);
+      }
+    },
+    [taskIdToPreviewConfig]
+  );
 
   const handlePreviewClose = useCallback(() => {
     setPreviewTaskId(null);
@@ -819,30 +898,35 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
   }, []);
 
   // 编辑后插入画布
-  const handleEditInsert = useCallback(async (editedImageUrl: string) => {
-    if (!board) return;
-    
-    try {
-      const taskId = `edited-image-${Date.now()}`;
-      const stableUrl = `/__aitu_cache__/image/${taskId}.png`;
-      
-      // 将 data URL 转换为 Blob
-      const response = await fetch(editedImageUrl);
-      const blob = await response.blob();
-      
-      // 缓存到 Cache API
-      await unifiedCacheService.cacheMediaFromBlob(stableUrl, blob, 'image', { taskId });
-      
-      // 插入到画布
-      await insertImageFromUrl(board, stableUrl);
-      
-      // 关闭编辑器
-      setImageEditorVisible(false);
-      setImageEditorUrl('');
-    } catch (error) {
-      console.error('Failed to insert edited image:', error);
-    }
-  }, [board]);
+  const handleEditInsert = useCallback(
+    async (editedImageUrl: string) => {
+      if (!board) return;
+
+      try {
+        const taskId = `edited-image-${Date.now()}`;
+        const stableUrl = `/__aitu_cache__/image/${taskId}.png`;
+
+        // 将 data URL 转换为 Blob
+        const response = await fetch(editedImageUrl);
+        const blob = await response.blob();
+
+        // 缓存到 Cache API
+        await unifiedCacheService.cacheMediaFromBlob(stableUrl, blob, 'image', {
+          taskId,
+        });
+
+        // 插入到画布
+        await insertImageFromUrl(board, stableUrl);
+
+        // 关闭编辑器
+        setImageEditorVisible(false);
+        setImageEditorUrl('');
+      } catch (error) {
+        console.error('Failed to insert edited image:', error);
+      }
+    },
+    [board]
+  );
 
   // Handle close
   const handleClose = useCallback(() => {
@@ -852,13 +936,15 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
   // 计算各 Tab 的显示数量（已加载数据中的分类 + 未加载的估算）
   // 全部数量使用 totalCount（来自 SW），其他分类使用已加载数据的数量
   const displayTotalCount = totalCount > 0 ? totalCount : tasks.length;
-  const taskRetentionHint = '这里只显示最近 100 个任务，更早的任务会自动移到“历史”中继续保留。';
+  const taskRetentionHint =
+    '这里只显示最近 100 个任务，更早的任务会自动移到“历史”中继续保留。';
   const allTabLabel = (
-    <Tooltip content={taskRetentionHint} theme="light">
+    <HoverTip content={taskRetentionHint}>
       <span>全部 ({displayTotalCount})</span>
-    </Tooltip>
+    </HoverTip>
   );
-  const archivedTabLabel = archivedCount === null ? '历史' : `历史 (${archivedCount})`;
+  const archivedTabLabel =
+    archivedCount === null ? '历史' : `历史 (${archivedCount})`;
   const allLoadedText =
     totalCount >= 100
       ? `已加载最近 ${totalCount} 个任务，较早任务已移至“历史”`
@@ -867,128 +953,162 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
   // Filter section with tabs and filters
   const filterSection = (
     <div className="task-queue-panel__filters-container">
-      <Tabs value={activeTab} onChange={(value) => setActiveTab(value as string)}>
+      <Tabs
+        value={activeTab}
+        onChange={(value) => setActiveTab(value as string)}
+      >
         <TabPanel value="all" label={allTabLabel} />
         <TabPanel value="active" label={`生成中 (${activeTasks.length})`} />
         <TabPanel value="failed" label={`失败 (${failedTasks.length})`} />
-        <TabPanel value="completed" label={`已完成 (${completedTasks.length})`} />
+        <TabPanel
+          value="completed"
+          label={`已完成 (${completedTasks.length})`}
+        />
         <TabPanel value="archived" label={archivedTabLabel} />
       </Tabs>
 
       {activeTab !== 'archived' && (
-      <div className="task-queue-panel__filters">
-        {/* Simplified Type Filters */}
-        <div className="task-queue-panel__type-filters">
-          <Tooltip content={`全部 (${typeCounts.all})`} theme="light">
-            <Button
-              size="small"
-              variant="text"
-              shape="square"
-              onClick={() => setTypeFilter('all')}
-              className={typeFilter === 'all' ? 'task-queue-panel__filter-btn--active' : ''}
-            >
-              <FilterIcon size="16px" />
-            </Button>
-          </Tooltip>
-          <Tooltip content={`图片 (${typeCounts.image})`} theme="light">
-            <Button
-              size="small"
-              variant="text"
-              shape="square"
-              onClick={() => setTypeFilter('image')}
-              className={typeFilter === 'image' ? 'task-queue-panel__filter-btn--active' : ''}
-            >
-              <ImageIcon size="16px" />
-            </Button>
-          </Tooltip>
-          <Tooltip content={`视频 (${typeCounts.video})`} theme="light">
-            <Button
-              size="small"
-              variant="text"
-              shape="square"
-              onClick={() => setTypeFilter('video')}
-              className={typeFilter === 'video' ? 'task-queue-panel__filter-btn--active' : ''}
-            >
-              <VideoIcon size="16px" />
-            </Button>
-          </Tooltip>
-          <Tooltip content={`音频 (${typeCounts.audio})`} theme="light">
-            <Button
-              size="small"
-              variant="text"
-              shape="square"
-              onClick={() => setTypeFilter('audio')}
-              className={typeFilter === 'audio' ? 'task-queue-panel__filter-btn--active' : ''}
-            >
-              <Music4 size={16} strokeWidth={1.9} />
-            </Button>
-          </Tooltip>
-          <Tooltip content={`文本 (${typeCounts.text})`} theme="light">
-            <Button
-              size="small"
-              variant="text"
-              shape="square"
-              onClick={() => setTypeFilter('text')}
-              className={typeFilter === 'text' ? 'task-queue-panel__filter-btn--active' : ''}
-            >
-              文
-            </Button>
-          </Tooltip>
-          <Tooltip content={`角色 (${typeCounts.character})`} theme="light">
-            <Button
-              size="small"
-              variant="text"
-              shape="square"
-              onClick={() => setTypeFilter('character')}
-              className={typeFilter === 'character' ? 'task-queue-panel__filter-btn--active' : ''}
-            >
-              <UserIcon size="16px" />
-            </Button>
-          </Tooltip>
-        </div>
-
-        {/* Search row integrated in the same line */}
-        <div className="task-queue-panel__search-row">
-          <Input
-            value={searchText}
-            onChange={(value) => setSearchText(value)}
-            placeholder="搜索..."
-            clearable
-            prefixIcon={<SearchIcon />}
-            size="small"
-            className="task-queue-panel__search-input"
-          />
-
-          <div className="task-queue-panel__filter-actions">
-            <Tooltip content={selectionMode ? "退出多选" : "批量操作"} theme="light">
+        <div className="task-queue-panel__filters">
+          {/* Simplified Type Filters */}
+          <div className="task-queue-panel__type-filters">
+            <HoverTip content={`全部 (${typeCounts.all})`}>
               <Button
                 size="small"
-                variant={selectionMode ? "base" : "outline"}
-                theme={selectionMode ? "primary" : "default"}
-                icon={<CheckDoubleIcon />}
-                data-track="task_click_toggle_selection"
-                onClick={handleToggleSelectionMode}
+                variant="text"
+                shape="square"
+                onClick={() => setTypeFilter('all')}
+                className={
+                  typeFilter === 'all'
+                    ? 'task-queue-panel__filter-btn--active'
+                    : ''
+                }
               >
-                {selectionMode ? "退出" : "多选"}
+                <FilterIcon size="16px" />
               </Button>
-            </Tooltip>
+            </HoverTip>
+            <HoverTip content={`图片 (${typeCounts.image})`}>
+              <Button
+                size="small"
+                variant="text"
+                shape="square"
+                onClick={() => setTypeFilter('image')}
+                className={
+                  typeFilter === 'image'
+                    ? 'task-queue-panel__filter-btn--active'
+                    : ''
+                }
+              >
+                <ImageIcon size="16px" />
+              </Button>
+            </HoverTip>
+            <HoverTip content={`视频 (${typeCounts.video})`}>
+              <Button
+                size="small"
+                variant="text"
+                shape="square"
+                onClick={() => setTypeFilter('video')}
+                className={
+                  typeFilter === 'video'
+                    ? 'task-queue-panel__filter-btn--active'
+                    : ''
+                }
+              >
+                <VideoIcon size="16px" />
+              </Button>
+            </HoverTip>
+            <HoverTip content={`音频 (${typeCounts.audio})`}>
+              <Button
+                size="small"
+                variant="text"
+                shape="square"
+                onClick={() => setTypeFilter('audio')}
+                className={
+                  typeFilter === 'audio'
+                    ? 'task-queue-panel__filter-btn--active'
+                    : ''
+                }
+              >
+                <Music4 size={16} strokeWidth={1.9} />
+              </Button>
+            </HoverTip>
+            <HoverTip content={`文本 (${typeCounts.text})`}>
+              <Button
+                size="small"
+                variant="text"
+                shape="square"
+                onClick={() => setTypeFilter('text')}
+                className={
+                  typeFilter === 'text'
+                    ? 'task-queue-panel__filter-btn--active'
+                    : ''
+                }
+              >
+                文
+              </Button>
+            </HoverTip>
+            <HoverTip content={`角色 (${typeCounts.character})`}>
+              <Button
+                size="small"
+                variant="text"
+                shape="square"
+                onClick={() => setTypeFilter('character')}
+                className={
+                  typeFilter === 'character'
+                    ? 'task-queue-panel__filter-btn--active'
+                    : ''
+                }
+              >
+                <UserIcon size="16px" />
+              </Button>
+            </HoverTip>
+          </div>
 
-            {failedTasks.length > 0 && !selectionMode && (
-              <Tooltip content="清除失败" theme="light">
+          {/* Search row integrated in the same line */}
+          <div className="task-queue-panel__search-row">
+            <Input
+              value={searchText}
+              onChange={(value) => setSearchText(value)}
+              placeholder="搜索..."
+              clearable
+              prefixIcon={<SearchIcon />}
+              size="small"
+              className="task-queue-panel__search-input"
+            />
+
+            <div className="task-queue-panel__filter-actions">
+              <HoverTip content={selectionMode ? '退出多选' : '批量操作'}>
                 <Button
                   size="small"
-                  variant="text"
-                  theme="default"
-                  icon={<DeleteIcon style={{ color: 'var(--td-text-color-placeholder)' }} />}
-                  data-track="task_click_clear_failed"
-                  onClick={() => handleClear('failed')}
-                  className="task-queue-panel__clear-btn"
-                />
-              </Tooltip>
-            )}
+                  variant={selectionMode ? 'base' : 'outline'}
+                  theme={selectionMode ? 'primary' : 'default'}
+                  icon={<CheckDoubleIcon />}
+                  data-track="task_click_toggle_selection"
+                  onClick={handleToggleSelectionMode}
+                >
+                  {selectionMode ? '退出' : '多选'}
+                </Button>
+              </HoverTip>
+
+              {failedTasks.length > 0 && !selectionMode && (
+                <HoverTip content="清除失败">
+                  <Button
+                    size="small"
+                    variant="text"
+                    theme="default"
+                    icon={
+                      <DeleteIcon
+                        style={{ color: 'var(--td-text-color-placeholder)' }}
+                      />
+                    }
+                    data-track="task_click_clear_failed"
+                    onClick={() => handleClear('failed')}
+                    className="task-queue-panel__clear-btn"
+                  />
+                </HoverTip>
+              )}
+            </div>
           </div>
         </div>
-      </div>
       )}
 
       {/* Batch action bar - shown when in selection mode */}
@@ -996,9 +1116,17 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
         <div className="task-queue-panel__batch-actions">
           <div className="task-queue-panel__batch-select">
             <Checkbox
-              checked={selectedTaskIds.size === filteredTasks.length && filteredTasks.length > 0}
-              indeterminate={selectedTaskIds.size > 0 && selectedTaskIds.size < filteredTasks.length}
-              onChange={(checked) => checked ? handleSelectAll() : handleDeselectAll()}
+              checked={
+                selectedTaskIds.size === filteredTasks.length &&
+                filteredTasks.length > 0
+              }
+              indeterminate={
+                selectedTaskIds.size > 0 &&
+                selectedTaskIds.size < filteredTasks.length
+              }
+              onChange={(checked) =>
+                checked ? handleSelectAll() : handleDeselectAll()
+              }
             />
             <span className="task-queue-panel__batch-count">
               已选 {selectedTaskIds.size} / {filteredTasks.length}
@@ -1029,7 +1157,7 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
               </Button>
             )}
             {isConfigured && selectedSyncableCount > 0 && (
-              <Tooltip content="同步选中的任务到云端" placement="bottom" theme="light">
+              <HoverTip content="同步选中的任务到云端" placement="bottom">
                 <Button
                   size="small"
                   variant="outline"
@@ -1039,9 +1167,11 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
                   disabled={isSyncing}
                   loading={isSyncing}
                 >
-                  {isSyncing ? `${syncProgress}%` : `同步 (${selectedSyncableCount})`}
+                  {isSyncing
+                    ? `${syncProgress}%`
+                    : `同步 (${selectedSyncableCount})`}
                 </Button>
-              </Tooltip>
+              </HoverTip>
             )}
             <Button
               size="small"
@@ -1054,7 +1184,6 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
             >
               删除 ({selectedTaskIds.size})
             </Button>
-
           </div>
         </div>
       )}
@@ -1083,10 +1212,7 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
       >
         {isCharacterView ? (
           /* Character List View */
-          <CharacterList
-            showHeader={false}
-            title=""
-          />
+          <CharacterList showHeader={false} title="" />
         ) : activeTab === 'archived' ? (
           /* Archived Task List View */
           <ArchivedTaskList
@@ -1127,7 +1253,17 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
                 <div className="task-queue-panel__empty">
                   <div className="task-queue-panel__empty-icon">📋</div>
                   <div className="task-queue-panel__empty-text">
-                    {activeTab === 'all' ? '暂无任务' : `暂无${activeTab === 'active' ? '生成中' : activeTab === 'completed' ? '已完成' : activeTab === 'failed' ? '失败' : '已取消'}任务`}
+                    {activeTab === 'all'
+                      ? '暂无任务'
+                      : `暂无${
+                          activeTab === 'active'
+                            ? '生成中'
+                            : activeTab === 'completed'
+                            ? '已完成'
+                            : activeTab === 'failed'
+                            ? '失败'
+                            : '已取消'
+                        }任务`}
                   </div>
                 </div>
               )
@@ -1140,7 +1276,9 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
       <ConfirmDialog
         open={showClearConfirm}
         title="确认清除"
-        description={`确定要清除所有${clearType === 'completed' ? '已完成' : '失败'}的任务吗？此操作无法撤销。`}
+        description={`确定要清除所有${
+          clearType === 'completed' ? '已完成' : '失败'
+        }的任务吗？此操作无法撤销。`}
         confirmText="清除"
         cancelText="取消"
         danger

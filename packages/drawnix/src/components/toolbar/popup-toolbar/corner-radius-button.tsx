@@ -170,7 +170,7 @@ export const PopupCornerRadiusButton: React.FC<PopupCornerRadiusButtonProps> = (
         className={classNames('property-button', 'corner-radius-button', { 'is-active': isOpen })}
         visible={true}
         type="button"
-        title={displayTitle}
+        tooltip={displayTitle}
         aria-label={displayTitle}
         onPointerUp={handleToggle}
       >

@@ -15,6 +15,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '../popover/popover';
 import { Z_INDEX } from '../../constants/z-index';
 import { useI18n } from '../../i18n';
 import { fitFrame } from '../../utils/fit-frame';
+import { HoverTip } from '../shared';
 import './view-navigation.scss';
 
 export interface ViewNavigationProps {
@@ -202,16 +203,17 @@ export const ViewNavigation: React.FC<ViewNavigationProps> = ({
     >
       {/* 缩放控制区域 */}
       <div className="view-navigation__zoom">
-        <button
-          className="view-navigation__zoom-btn"
-          onClick={handleZoomOut}
-          title={t('zoom.out')}
-          aria-label={t('zoom.out')}
-          data-track="view_nav_zoom_out"
-          data-testid="zoom-out"
-        >
-          <MinusIcon />
-        </button>
+        <HoverTip content={t('zoom.out')} showArrow={false}>
+          <button
+            className="view-navigation__zoom-btn"
+            onClick={handleZoomOut}
+            aria-label={t('zoom.out')}
+            data-track="view_nav_zoom_out"
+            data-testid="zoom-out"
+          >
+            <MinusIcon />
+          </button>
+        </HoverTip>
 
         <Popover
           sideOffset={8}
@@ -219,18 +221,19 @@ export const ViewNavigation: React.FC<ViewNavigationProps> = ({
           onOpenChange={setZoomMenuOpen}
           placement="bottom"
         >
-          <PopoverTrigger asChild>
-            <button
-              className="view-navigation__zoom-percent"
-              onClick={handleZoomPercentClick}
-              title={t('zoom.fit')}
-              aria-label={t('zoom.fit')}
-              data-track="view_nav_zoom_menu"
-              data-testid="zoom-display"
-            >
-              {zoomPercentage}%
-            </button>
-          </PopoverTrigger>
+          <HoverTip content={t('zoom.fit')} showArrow={false}>
+            <PopoverTrigger asChild>
+              <button
+                className="view-navigation__zoom-percent"
+                onClick={handleZoomPercentClick}
+                aria-label={t('zoom.fit')}
+                data-track="view_nav_zoom_menu"
+                data-testid="zoom-display"
+              >
+                {zoomPercentage}%
+              </button>
+            </PopoverTrigger>
+          </HoverTip>
           <PopoverContent container={container} style={{ zIndex: Z_INDEX.POPOVER }}>
             <div className="view-navigation-zoom-menu">
               <button
@@ -260,28 +263,33 @@ export const ViewNavigation: React.FC<ViewNavigationProps> = ({
           </PopoverContent>
         </Popover>
 
-        <button
-          className="view-navigation__zoom-btn"
-          onClick={handleZoomIn}
-          title={t('zoom.in')}
-          aria-label={t('zoom.in')}
-          data-track="view_nav_zoom_in"
-          data-testid="zoom-in"
-        >
-          <AddIcon />
-        </button>
+        <HoverTip content={t('zoom.in')} showArrow={false}>
+          <button
+            className="view-navigation__zoom-btn"
+            onClick={handleZoomIn}
+            aria-label={t('zoom.in')}
+            data-track="view_nav_zoom_in"
+            data-testid="zoom-in"
+          >
+            <AddIcon />
+          </button>
+        </HoverTip>
 
         {/* Minimap 展开按钮 */}
         {showMinimap && (
-          <button
-            className={`view-navigation__minimap-toggle ${minimapExpanded ? 'view-navigation__minimap-toggle--expanded' : ''}`}
-            onClick={toggleMinimap}
-            title={minimapExpanded ? '折叠小地图' : '展开小地图'}
-            aria-label={minimapExpanded ? '折叠小地图' : '展开小地图'}
-            data-track="view_nav_minimap_toggle"
+          <HoverTip
+            content={minimapExpanded ? '折叠小地图' : '展开小地图'}
+            showArrow={false}
           >
-            <ChevronDownIcon />
-          </button>
+            <button
+              className={`view-navigation__minimap-toggle ${minimapExpanded ? 'view-navigation__minimap-toggle--expanded' : ''}`}
+              onClick={toggleMinimap}
+              aria-label={minimapExpanded ? '折叠小地图' : '展开小地图'}
+              data-track="view_nav_minimap_toggle"
+            >
+              <ChevronDownIcon />
+            </button>
+          </HoverTip>
         )}
       </div>
 

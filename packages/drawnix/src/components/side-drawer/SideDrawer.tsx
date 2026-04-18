@@ -8,6 +8,7 @@
 import React, { useCallback, useEffect, useState, useRef } from 'react';
 import { Button } from 'tdesign-react';
 import { CloseIcon } from 'tdesign-icons-react';
+import { HoverTip } from '../shared';
 import './side-drawer.scss';
 
 export type DrawerPosition = 'toolbar-right' | 'screen-left';
@@ -213,14 +214,15 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
           <div className="side-drawer__header-right">
             {headerActions}
             {showCloseButton && (
-              <Button
-                variant="text"
-                size={closeButtonSize}
-                icon={<CloseIcon />}
-                onClick={onClose}
-                title="关闭"
-                className="side-drawer__close-btn"
-              />
+              <HoverTip content="关闭" showArrow={false}>
+                <Button
+                  variant="text"
+                  size={closeButtonSize}
+                  icon={<CloseIcon />}
+                  onClick={onClose}
+                  className="side-drawer__close-btn"
+                />
+              </HoverTip>
             )}
           </div>
         </div>

@@ -3,13 +3,20 @@
  * 素材库网格视图组件 - 使用虚拟滚动优化大数据量性能
  */
 
-import { useMemo, useState, useCallback, useRef, useEffect, useTransition } from 'react';
-import { Loading, Input, Button, Checkbox, Tooltip, Dialog } from 'tdesign-react';
-import { 
-  Search, 
-  Trash2, 
-  CheckSquare, 
-  XSquare, 
+import {
+  useMemo,
+  useState,
+  useCallback,
+  useRef,
+  useEffect,
+  useTransition,
+} from 'react';
+import { Loading, Input, Button, Checkbox, Dialog } from 'tdesign-react';
+import {
+  Search,
+  Trash2,
+  CheckSquare,
+  XSquare,
   HardDrive,
   Video as VideoIcon,
   Image as ImageIcon,
@@ -32,7 +39,7 @@ import {
   Heart,
   ListMusic,
 } from 'lucide-react';
-import { 
+import {
   ImageUploadIcon as ImageUploadIconComp,
   MediaLibraryIcon,
 } from '../icons';
@@ -43,7 +50,10 @@ import { useDeviceType } from '../../hooks/useDeviceType';
 import { VirtualAssetGrid } from './VirtualAssetGrid';
 import { MediaLibraryEmpty } from './MediaLibraryEmpty';
 import { ViewModeToggle } from './ViewModeToggle';
-import { UnifiedMediaViewer, type MediaItem as UnifiedMediaItem } from '../shared/media-preview';
+import {
+  UnifiedMediaViewer,
+  type MediaItem as UnifiedMediaItem,
+} from '../shared/media-preview';
 import { ImageEditor } from '../image-editor';
 import { AudioPlaylistTabs } from '../shared/AudioPlaylistTabs';
 import {
@@ -51,10 +61,20 @@ import {
   useContextMenuState,
   type ContextMenuEntry,
 } from '../shared';
-import type { MediaLibraryGridProps, ViewMode, SortOption, Asset } from '../../types/asset.types';
+import type {
+  MediaLibraryGridProps,
+  ViewMode,
+  SortOption,
+  Asset,
+} from '../../types/asset.types';
 import { AssetType, AssetSource } from '../../types/asset.types';
 import { useDrawnix } from '../../hooks/use-drawnix';
-import { removeElementsByAssetIds, removeElementsByAssetUrls, isCacheUrl, countElementsByAssetUrls } from '../../utils/asset-cleanup';
+import {
+  removeElementsByAssetIds,
+  removeElementsByAssetUrls,
+  isCacheUrl,
+  countElementsByAssetUrls,
+} from '../../utils/asset-cleanup';
 import { insertImageFromUrl } from '../../data/image';
 import { insertVideoFromUrl } from '../../data/video';
 import { insertAudioFromUrl } from '../../data/audio';
@@ -73,6 +93,7 @@ import {
 } from '../../utils/download-utils';
 import './MediaLibraryGrid.scss';
 import './VirtualAssetGrid.scss';
+import { HoverTip } from '../shared';
 
 // 视图切换防抖时间
 const VIEW_MODE_DEBOUNCE_MS = 150;
@@ -81,7 +102,10 @@ const VIEW_MODE_DEBOUNCE_MS = 150;
 const VIEW_MODE_STORAGE_KEY = 'media-library-view-mode';
 const GRID_SIZE_STORAGE_KEY = 'media-library-grid-size';
 
-function normalizeImageDataUrl(value: string, fallbackMimeType = 'image/png'): string {
+function normalizeImageDataUrl(
+  value: string,
+  fallbackMimeType = 'image/png'
+): string {
   const trimmed = value.trim();
 
   if (
@@ -145,32 +169,42 @@ const TYPE_OPTIONS = [
 // 来源过滤选项
 const SOURCE_OPTIONS = [
   { value: 'ALL', label: '全部来源', icon: Globe, countKey: 'sourceAll' },
-  { value: AssetSource.LOCAL, label: '本地上传', icon: User, countKey: 'local' },
-  { value: AssetSource.AI_GENERATED, label: 'AI生成', icon: Sparkles, countKey: 'ai' },
+  {
+    value: AssetSource.LOCAL,
+    label: '本地上传',
+    icon: User,
+    countKey: 'local',
+  },
+  {
+    value: AssetSource.AI_GENERATED,
+    label: 'AI生成',
+    icon: Sparkles,
+    countKey: 'ai',
+  },
 ];
 
 // 排序组定义
 const SORT_GROUPS = [
-  { 
-    id: 'DATE', 
-    label: '时间', 
+  {
+    id: 'DATE',
+    label: '时间',
     options: { asc: 'DATE_ASC' as SortOption, desc: 'DATE_DESC' as SortOption },
     icons: { asc: Calendar, desc: Clock },
-    default: 'DATE_DESC' as SortOption
+    default: 'DATE_DESC' as SortOption,
   },
-  { 
-    id: 'NAME', 
-    label: '名称', 
+  {
+    id: 'NAME',
+    label: '名称',
     options: { asc: 'NAME_ASC' as SortOption, desc: 'NAME_DESC' as SortOption },
     icons: { asc: ArrowUpAZ, desc: ArrowDownZA },
-    default: 'NAME_ASC' as SortOption
+    default: 'NAME_ASC' as SortOption,
   },
-  { 
-    id: 'SIZE', 
-    label: '大小', 
+  {
+    id: 'SIZE',
+    label: '大小',
     options: { asc: 'SIZE_ASC' as SortOption, desc: 'SIZE_DESC' as SortOption },
     icons: { asc: ArrowUpNarrowWide, desc: ArrowDownWideNarrow },
-    default: 'SIZE_DESC' as SortOption
+    default: 'SIZE_DESC' as SortOption,
   },
 ];
 
@@ -203,7 +237,8 @@ function matchesSelectionScope(
   if (!scope) return false;
 
   const matchesType = !scope.activeType || asset.type === scope.activeType;
-  const matchesSource = !scope.activeSource || asset.source === scope.activeSource;
+  const matchesSource =
+    !scope.activeSource || asset.source === scope.activeSource;
   const matchesSearch =
     !scope.searchQuery || asset.name.toLowerCase().includes(scope.searchQuery);
 
@@ -212,7 +247,8 @@ function matchesSelectionScope(
     if (scope.playlistId === AUDIO_PLAYLIST_ALL_ID) {
       matchesPlaylist = asset.type === AssetType.AUDIO;
     } else {
-      matchesPlaylist = playlistAssetIdSets.get(scope.playlistId)?.has(asset.id) ?? false;
+      matchesPlaylist =
+        playlistAssetIdSets.get(scope.playlistId)?.has(asset.id) ?? false;
     }
   }
 
@@ -228,7 +264,15 @@ export function MediaLibraryGrid({
   onUploadClick,
   storageStatus,
 }: MediaLibraryGridProps) {
-  const { assets, filters, loading, setFilters, removeAssets, syncedUrls, loadSyncedUrls } = useAssets();
+  const {
+    assets,
+    filters,
+    loading,
+    setFilters,
+    removeAssets,
+    syncedUrls,
+    loadSyncedUrls,
+  } = useAssets();
   const {
     playlists,
     favoriteAssetIds,
@@ -251,26 +295,28 @@ export function MediaLibraryGrid({
   );
   const [gridSize, setGridSize] = useState<number>(getStoredGridSize); // 从缓存恢复网格尺寸
   const lastSelectedIdRef = useRef<string | null>(null); // 记录上次选中的素材ID，用于Shift连选
-  
+
   // 预览状态
   const [previewVisible, setPreviewVisible] = useState(false);
   const [previewItems, setPreviewItems] = useState<UnifiedMediaItem[]>([]);
   const [previewInitialIndex, setPreviewInitialIndex] = useState(0);
   const gridContainerRef = useRef<HTMLDivElement>(null);
-  
+
   // 图片编辑器状态
   const [imageEditorVisible, setImageEditorVisible] = useState(false);
   const [imageEditorUrl, setImageEditorUrl] = useState('');
-  
+
   // 下载状态
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState(0); // 0-100
-  
+
   // 同步状态
   const { isConfigured } = useGitHubSync();
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncProgress, setSyncProgress] = useState(0); // 0-100
-  const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(null);
+  const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(
+    null
+  );
   const {
     contextMenu: assetContextMenu,
     open: openAssetMenu,
@@ -292,7 +338,11 @@ export function MediaLibraryGrid({
   }, [isConfigured, loadSyncedUrls]);
 
   useEffect(() => {
-    if (filters.activeType && filters.activeType !== AssetType.AUDIO && selectedPlaylistId) {
+    if (
+      filters.activeType &&
+      filters.activeType !== AssetType.AUDIO &&
+      selectedPlaylistId
+    ) {
       setSelectedPlaylistId(null);
     }
   }, [filters.activeType, selectedPlaylistId]);
@@ -314,22 +364,28 @@ export function MediaLibraryGrid({
     let mounted = true;
     const handleSyncCompleted = async () => {
       if (mounted) {
-        console.log('[MediaLibraryGrid] Media sync completed, refreshing synced URLs');
+        console.log(
+          '[MediaLibraryGrid] Media sync completed, refreshing synced URLs'
+        );
         await loadSyncedUrls();
       }
     };
 
     // 动态导入并注册监听器
-    import('../../services/github-sync/media-sync-service').then(({ mediaSyncService }) => {
-      mediaSyncService.addSyncCompletedListener(handleSyncCompleted);
-    });
+    import('../../services/github-sync/media-sync-service').then(
+      ({ mediaSyncService }) => {
+        mediaSyncService.addSyncCompletedListener(handleSyncCompleted);
+      }
+    );
 
     return () => {
       mounted = false;
       // 清理监听器
-      import('../../services/github-sync/media-sync-service').then(({ mediaSyncService }) => {
-        mediaSyncService.removeSyncCompletedListener(handleSyncCompleted);
-      });
+      import('../../services/github-sync/media-sync-service').then(
+        ({ mediaSyncService }) => {
+          mediaSyncService.removeSyncCompletedListener(handleSyncCompleted);
+        }
+      );
     };
   }, [isConfigured, loadSyncedUrls]);
 
@@ -337,11 +393,11 @@ export function MediaLibraryGrid({
   const counts = useMemo(() => {
     return {
       all: assets.length,
-      image: assets.filter(a => a.type === AssetType.IMAGE).length,
-      video: assets.filter(a => a.type === AssetType.VIDEO).length,
-      audio: assets.filter(a => a.type === AssetType.AUDIO).length,
-      local: assets.filter(a => a.source === AssetSource.LOCAL).length,
-      ai: assets.filter(a => a.source === AssetSource.AI_GENERATED).length,
+      image: assets.filter((a) => a.type === AssetType.IMAGE).length,
+      video: assets.filter((a) => a.type === AssetType.VIDEO).length,
+      audio: assets.filter((a) => a.type === AssetType.AUDIO).length,
+      local: assets.filter((a) => a.source === AssetSource.LOCAL).length,
+      ai: assets.filter((a) => a.source === AssetSource.AI_GENERATED).length,
       sourceAll: assets.length,
     };
   }, [assets]);
@@ -349,7 +405,7 @@ export function MediaLibraryGrid({
   // 获取选中的素材（用于移动端底部简介）
   const selectedAsset = useMemo(() => {
     if (!selectedAssetId) return null;
-    return assets.find(a => a.id === selectedAssetId) || null;
+    return assets.find((a) => a.id === selectedAssetId) || null;
   }, [assets, selectedAssetId]);
 
   // 监听网格尺寸变化并缓存
@@ -359,7 +415,8 @@ export function MediaLibraryGrid({
 
   // 视图模式状态 - 使用两个状态实现平滑过渡，从 localStorage 恢复
   const [viewMode, setViewMode] = useState<ViewMode>(getStoredViewMode);
-  const [pendingViewMode, setPendingViewMode] = useState<ViewMode>(getStoredViewMode);
+  const [pendingViewMode, setPendingViewMode] =
+    useState<ViewMode>(getStoredViewMode);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [isPending, startTransition] = useTransition();
   const viewModeDebounceRef = useRef<NodeJS.Timeout | null>(null);
@@ -373,11 +430,15 @@ export function MediaLibraryGrid({
 
     const playlistAssetIds = new Set(
       selectedPlaylistId === AUDIO_PLAYLIST_ALL_ID
-        ? assets.filter((asset) => asset.type === AssetType.AUDIO).map((asset) => asset.id)
+        ? assets
+            .filter((asset) => asset.type === AssetType.AUDIO)
+            .map((asset) => asset.id)
         : getPlaylistAssetIds(selectedPlaylistId)
     );
 
-    const playlistAssets = result.assets.filter((asset) => playlistAssetIds.has(asset.id));
+    const playlistAssets = result.assets.filter((asset) =>
+      playlistAssetIds.has(asset.id)
+    );
     return {
       assets: playlistAssets,
       count: playlistAssets.length,
@@ -404,7 +465,10 @@ export function MediaLibraryGrid({
         new Set(
           items
             .map((item) => item.assetId)
-            .filter((assetId): assetId is string => typeof assetId === 'string' && assetId.length > 0)
+            .filter(
+              (assetId): assetId is string =>
+                typeof assetId === 'string' && assetId.length > 0
+            )
         )
       );
     });
@@ -415,160 +479,177 @@ export function MediaLibraryGrid({
     await smartDownload([buildAssetDownloadItem(asset)]);
   }, []);
 
-  const assetContextMenuItems = useMemo<ContextMenuEntry<Asset>[]>(() => [
-    {
-      key: 'open-player',
-      label: '在音乐播放器中打开',
-      icon: <Music size={14} />,
-      onSelect: async (asset) => {
-        const audioQueue = filteredResult.assets
-          .filter((item) => item.type === AssetType.AUDIO)
-          .map((item) => ({
-            elementId: `asset:${item.id}`,
-            audioUrl: item.url,
-            title: item.name,
-            duration: item.duration,
-            previewImageUrl: item.thumbnail,
-            clipId: item.clipId,
-            providerTaskId: item.providerTaskId,
-          }));
-        const activePlaylist = selectedPlaylistId
-          ? playlists.find((playlist) => playlist.id === selectedPlaylistId) || null
-          : null;
+  const assetContextMenuItems = useMemo<ContextMenuEntry<Asset>[]>(
+    () => [
+      {
+        key: 'open-player',
+        label: '在音乐播放器中打开',
+        icon: <Music size={14} />,
+        onSelect: async (asset) => {
+          const audioQueue = filteredResult.assets
+            .filter((item) => item.type === AssetType.AUDIO)
+            .map((item) => ({
+              elementId: `asset:${item.id}`,
+              audioUrl: item.url,
+              title: item.name,
+              duration: item.duration,
+              previewImageUrl: item.thumbnail,
+              clipId: item.clipId,
+              providerTaskId: item.providerTaskId,
+            }));
+          const activePlaylist = selectedPlaylistId
+            ? playlists.find(
+                (playlist) => playlist.id === selectedPlaylistId
+              ) || null
+            : null;
 
-        await openMusicPlayerToolAndPlay({
-          source: {
-            elementId: `asset:${asset.id}`,
-            audioUrl: asset.url,
-            title: asset.name,
-            duration: asset.duration,
-            previewImageUrl: asset.thumbnail,
-            clipId: asset.clipId,
-            providerTaskId: asset.providerTaskId,
-          },
-          queue: audioQueue,
-          playlist:
-            activePlaylist && selectedPlaylistId !== AUDIO_PLAYLIST_ALL_ID
-              ? {
-                  playlistId: activePlaylist.id,
-                  playlistName: activePlaylist.name,
-                }
-              : undefined,
-        });
-      },
-    },
-    {
-      key: 'favorite',
-      label: (asset) => (favoriteAssetIds.has(asset.id) ? '取消收藏' : '加入收藏'),
-      icon: <Heart size={14} />,
-      onSelect: (asset) => {
-        if (asset.type === AssetType.AUDIO) {
-          void toggleFavorite(asset.id);
-        }
-      },
-    },
-    {
-      key: 'playlist-actions',
-      type: 'submenu',
-      label: '添加到播放列表',
-      icon: <ListMusic size={14} />,
-      children: (asset) =>
-        playlists.map((playlist) => {
-          const exists = (playlistItems[playlist.id] || []).some(
-            (item) => item.assetId === asset.id
-          );
-          return {
-            key: `playlist-${playlist.id}`,
-            label: exists ? `已在 ${playlist.name}` : `添加到 ${playlist.name}`,
-            icon: <ListMusic size={14} />,
-            disabled: exists,
-            onSelect: () => {
-              void addAssetToPlaylist(asset.id, playlist.id);
+          await openMusicPlayerToolAndPlay({
+            source: {
+              elementId: `asset:${asset.id}`,
+              audioUrl: asset.url,
+              title: asset.name,
+              duration: asset.duration,
+              previewImageUrl: asset.thumbnail,
+              clipId: asset.clipId,
+              providerTaskId: asset.providerTaskId,
             },
-          };
-        }),
-    },
-    {
-      key: 'remove-current',
-      label: '从当前播放列表移除',
-      icon: <XSquare size={14} />,
-      danger: true,
-      disabled: (asset) =>
-        !selectedPlaylistId ||
-        selectedPlaylistId === AUDIO_PLAYLIST_ALL_ID ||
-        !currentPlaylistAssetIds.has(asset.id),
-      onSelect: (asset) => {
-        if (selectedPlaylistId && selectedPlaylistId !== AUDIO_PLAYLIST_ALL_ID) {
-          void removeAssetFromPlaylist(asset.id, selectedPlaylistId);
-        }
+            queue: audioQueue,
+            playlist:
+              activePlaylist && selectedPlaylistId !== AUDIO_PLAYLIST_ALL_ID
+                ? {
+                    playlistId: activePlaylist.id,
+                    playlistName: activePlaylist.name,
+                  }
+                : undefined,
+          });
+        },
       },
-    },
-    {
-      key: 'create-playlist',
-      label: '新建播放列表并添加',
-      icon: <Plus size={14} />,
-      onSelect: (asset) => {
-        setPlaylistNameInput('');
-        setPlaylistDialog({ mode: 'create-and-add', targetAssetId: asset.id });
-        closeAssetMenu();
+      {
+        key: 'favorite',
+        label: (asset) =>
+          favoriteAssetIds.has(asset.id) ? '取消收藏' : '加入收藏',
+        icon: <Heart size={14} />,
+        onSelect: (asset) => {
+          if (asset.type === AssetType.AUDIO) {
+            void toggleFavorite(asset.id);
+          }
+        },
       },
-    },
-  ], [
-    addAssetToPlaylist,
-    closeAssetMenu,
-    currentPlaylistAssetIds,
-    favoriteAssetIds,
-    filteredResult.assets,
-    playlists,
-    playlistItems,
-    removeAssetFromPlaylist,
-    selectedPlaylistId,
-    toggleFavorite,
-  ]);
+      {
+        key: 'playlist-actions',
+        type: 'submenu',
+        label: '添加到播放列表',
+        icon: <ListMusic size={14} />,
+        children: (asset) =>
+          playlists.map((playlist) => {
+            const exists = (playlistItems[playlist.id] || []).some(
+              (item) => item.assetId === asset.id
+            );
+            return {
+              key: `playlist-${playlist.id}`,
+              label: exists
+                ? `已在 ${playlist.name}`
+                : `添加到 ${playlist.name}`,
+              icon: <ListMusic size={14} />,
+              disabled: exists,
+              onSelect: () => {
+                void addAssetToPlaylist(asset.id, playlist.id);
+              },
+            };
+          }),
+      },
+      {
+        key: 'remove-current',
+        label: '从当前播放列表移除',
+        icon: <XSquare size={14} />,
+        danger: true,
+        disabled: (asset) =>
+          !selectedPlaylistId ||
+          selectedPlaylistId === AUDIO_PLAYLIST_ALL_ID ||
+          !currentPlaylistAssetIds.has(asset.id),
+        onSelect: (asset) => {
+          if (
+            selectedPlaylistId &&
+            selectedPlaylistId !== AUDIO_PLAYLIST_ALL_ID
+          ) {
+            void removeAssetFromPlaylist(asset.id, selectedPlaylistId);
+          }
+        },
+      },
+      {
+        key: 'create-playlist',
+        label: '新建播放列表并添加',
+        icon: <Plus size={14} />,
+        onSelect: (asset) => {
+          setPlaylistNameInput('');
+          setPlaylistDialog({
+            mode: 'create-and-add',
+            targetAssetId: asset.id,
+          });
+          closeAssetMenu();
+        },
+      },
+    ],
+    [
+      addAssetToPlaylist,
+      closeAssetMenu,
+      currentPlaylistAssetIds,
+      favoriteAssetIds,
+      filteredResult.assets,
+      playlists,
+      playlistItems,
+      removeAssetFromPlaylist,
+      selectedPlaylistId,
+      toggleFavorite,
+    ]
+  );
 
   // 视图模式切换处理 - 带防抖和过渡动画，并持久化到 localStorage
-  const handleViewModeChange = useCallback((mode: ViewMode) => {
-    // 如果相同模式，不处理
-    if (mode === viewMode) return;
+  const handleViewModeChange = useCallback(
+    (mode: ViewMode) => {
+      // 如果相同模式，不处理
+      if (mode === viewMode) return;
 
-    // 清除之前的防抖定时器
-    if (viewModeDebounceRef.current) {
-      clearTimeout(viewModeDebounceRef.current);
-    }
+      // 清除之前的防抖定时器
+      if (viewModeDebounceRef.current) {
+        clearTimeout(viewModeDebounceRef.current);
+      }
 
-    // 立即更新按钮状态
-    setPendingViewMode(mode);
+      // 立即更新按钮状态
+      setPendingViewMode(mode);
 
-    // 根据模式自动调整滑块位置并同步缓存
-    let newSize = gridSize;
-    if (mode === 'grid') newSize = 180;
-    else if (mode === 'compact') newSize = 80;
-    
-    setGridSize(newSize);
-    localStorage.setItem(GRID_SIZE_STORAGE_KEY, newSize.toString());
+      // 根据模式自动调整滑块位置并同步缓存
+      let newSize = gridSize;
+      if (mode === 'grid') newSize = 180;
+      else if (mode === 'compact') newSize = 80;
 
-    // 显示过渡状态
-    setIsTransitioning(true);
+      setGridSize(newSize);
+      localStorage.setItem(GRID_SIZE_STORAGE_KEY, newSize.toString());
 
-    // 保存到 localStorage
-    try {
-      localStorage.setItem(VIEW_MODE_STORAGE_KEY, mode);
-    } catch {
-      // localStorage 不可用时忽略
-    }
+      // 显示过渡状态
+      setIsTransitioning(true);
 
-    // 防抖处理实际的视图切换
-    viewModeDebounceRef.current = setTimeout(() => {
-      // 使用 startTransition 降低优先级，让 UI 保持响应
-      startTransition(() => {
-        setViewMode(mode);
-        // 延迟关闭过渡状态，让动画完成
-        setTimeout(() => {
-          setIsTransitioning(false);
-        }, 100);
-      });
-    }, VIEW_MODE_DEBOUNCE_MS);
-  }, [gridSize, viewMode]);
+      // 保存到 localStorage
+      try {
+        localStorage.setItem(VIEW_MODE_STORAGE_KEY, mode);
+      } catch {
+        // localStorage 不可用时忽略
+      }
+
+      // 防抖处理实际的视图切换
+      viewModeDebounceRef.current = setTimeout(() => {
+        // 使用 startTransition 降低优先级，让 UI 保持响应
+        startTransition(() => {
+          setViewMode(mode);
+          // 延迟关闭过渡状态，让动画完成
+          setTimeout(() => {
+            setIsTransitioning(false);
+          }, 100);
+        });
+      }, VIEW_MODE_DEBOUNCE_MS);
+    },
+    [gridSize, viewMode]
+  );
 
   // 清理防抖定时器
   useEffect(() => {
@@ -592,18 +673,29 @@ export function MediaLibraryGrid({
       searchQuery: filters.searchQuery.trim().toLowerCase(),
       playlistId: selectedPlaylistId || null,
     };
-  }, [filters.activeSource, filters.activeType, filters.searchQuery, selectedPlaylistId]);
+  }, [
+    filters.activeSource,
+    filters.activeType,
+    filters.searchQuery,
+    selectedPlaylistId,
+  ]);
 
-  const isAssetSelected = useCallback((asset: Asset): boolean => {
-    if (selectionState.selectedIds.has(asset.id)) {
-      return true;
-    }
+  const isAssetSelected = useCallback(
+    (asset: Asset): boolean => {
+      if (selectionState.selectedIds.has(asset.id)) {
+        return true;
+      }
 
-    return (
-      matchesSelectionScope(asset, selectionState.scope, playlistAssetIdSets) &&
-      !selectionState.deselectedIds.has(asset.id)
-    );
-  }, [playlistAssetIdSets, selectionState]);
+      return (
+        matchesSelectionScope(
+          asset,
+          selectionState.scope,
+          playlistAssetIdSets
+        ) && !selectionState.deselectedIds.has(asset.id)
+      );
+    },
+    [playlistAssetIdSets, selectionState]
+  );
 
   const filteredSelectedAssets = useMemo(() => {
     return filteredResult.assets.filter(isAssetSelected);
@@ -619,7 +711,10 @@ export function MediaLibraryGrid({
 
   const isPartialSelected = useMemo(() => {
     if (filteredResult.assets.length === 0) return false;
-    return filteredSelectedCount > 0 && filteredSelectedCount < filteredResult.assets.length;
+    return (
+      filteredSelectedCount > 0 &&
+      filteredSelectedCount < filteredResult.assets.length
+    );
   }, [filteredResult.assets.length, filteredSelectedCount]);
 
   const clearSelectionState = useCallback(() => {
@@ -627,19 +722,23 @@ export function MediaLibraryGrid({
     lastSelectedIdRef.current = null;
   }, []);
 
-  const replaceSelectionWithAssetIds = useCallback((assetIds: string[]) => {
-    setSelectionState({
-      scope: null,
-      selectedIds: new Set(assetIds),
-      deselectedIds: new Set<string>(),
-    });
+  const replaceSelectionWithAssetIds = useCallback(
+    (assetIds: string[]) => {
+      setSelectionState({
+        scope: null,
+        selectedIds: new Set(assetIds),
+        deselectedIds: new Set<string>(),
+      });
 
-    lastSelectedIdRef.current = assetIds.length > 0 ? assetIds[assetIds.length - 1] : null;
+      lastSelectedIdRef.current =
+        assetIds.length > 0 ? assetIds[assetIds.length - 1] : null;
 
-    if (assetIds.length > 0) {
-      onSelectAsset(assetIds[assetIds.length - 1]);
-    }
-  }, [onSelectAsset]);
+      if (assetIds.length > 0) {
+        onSelectAsset(assetIds[assetIds.length - 1]);
+      }
+    },
+    [onSelectAsset]
+  );
 
   // 拖放事件处理
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -665,7 +764,7 @@ export function MediaLibraryGrid({
         onFileUpload(files);
       }
     },
-    [onFileUpload],
+    [onFileUpload]
   );
 
   // 批量选择处理
@@ -686,100 +785,126 @@ export function MediaLibraryGrid({
     }
   }, [clearSelectionState, getSelectionScopeSnapshot, isAllSelected]);
 
-  const toggleAssetSelection = useCallback((assetId: string, event?: React.MouseEvent) => {
-    const currentAsset = filteredResult.assets.find((asset) => asset.id === assetId);
-    if (!currentAsset) {
-      return;
-    }
-
-    // Shift 键连选逻辑
-    if (event?.shiftKey && lastSelectedIdRef.current && lastSelectedIdRef.current !== assetId) {
-      const lastIndex = filteredResult.assets.findIndex(a => a.id === lastSelectedIdRef.current);
-      const currentIndex = filteredResult.assets.findIndex(a => a.id === assetId);
-      
-      if (lastIndex !== -1 && currentIndex !== -1) {
-        const start = Math.min(lastIndex, currentIndex);
-        const end = Math.max(lastIndex, currentIndex);
-        const rangeAssets = filteredResult.assets.slice(start, end + 1);
-        
-        setSelectionState((prev) => {
-          const nextSelectedIds = new Set(prev.selectedIds);
-          const nextDeselectedIds = new Set(prev.deselectedIds);
-
-          rangeAssets.forEach((asset) => {
-            if (matchesSelectionScope(asset, prev.scope, playlistAssetIdSets)) {
-              nextDeselectedIds.delete(asset.id);
-            } else {
-              nextSelectedIds.add(asset.id);
-            }
-          });
-
-          return {
-            ...prev,
-            selectedIds: nextSelectedIds,
-            deselectedIds: nextDeselectedIds,
-          };
-        });
-        
-        // 更新右侧面板显示最近点击的素材
-        onSelectAsset(assetId);
+  const toggleAssetSelection = useCallback(
+    (assetId: string, event?: React.MouseEvent) => {
+      const currentAsset = filteredResult.assets.find(
+        (asset) => asset.id === assetId
+      );
+      if (!currentAsset) {
         return;
       }
-    }
-    
-    // 普通点击切换选中状态
-    setSelectionState((prev) => {
-      const nextSelectedIds = new Set(prev.selectedIds);
-      const nextDeselectedIds = new Set(prev.deselectedIds);
-      const selectedByScope = matchesSelectionScope(currentAsset, prev.scope, playlistAssetIdSets);
-      const isSelected = nextSelectedIds.has(assetId) || (selectedByScope && !nextDeselectedIds.has(assetId));
 
-      if (isSelected) {
-        if (nextSelectedIds.has(assetId)) {
-          nextSelectedIds.delete(assetId);
-        } else if (selectedByScope) {
-          nextDeselectedIds.add(assetId);
+      // Shift 键连选逻辑
+      if (
+        event?.shiftKey &&
+        lastSelectedIdRef.current &&
+        lastSelectedIdRef.current !== assetId
+      ) {
+        const lastIndex = filteredResult.assets.findIndex(
+          (a) => a.id === lastSelectedIdRef.current
+        );
+        const currentIndex = filteredResult.assets.findIndex(
+          (a) => a.id === assetId
+        );
+
+        if (lastIndex !== -1 && currentIndex !== -1) {
+          const start = Math.min(lastIndex, currentIndex);
+          const end = Math.max(lastIndex, currentIndex);
+          const rangeAssets = filteredResult.assets.slice(start, end + 1);
+
+          setSelectionState((prev) => {
+            const nextSelectedIds = new Set(prev.selectedIds);
+            const nextDeselectedIds = new Set(prev.deselectedIds);
+
+            rangeAssets.forEach((asset) => {
+              if (
+                matchesSelectionScope(asset, prev.scope, playlistAssetIdSets)
+              ) {
+                nextDeselectedIds.delete(asset.id);
+              } else {
+                nextSelectedIds.add(asset.id);
+              }
+            });
+
+            return {
+              ...prev,
+              selectedIds: nextSelectedIds,
+              deselectedIds: nextDeselectedIds,
+            };
+          });
+
+          // 更新右侧面板显示最近点击的素材
+          onSelectAsset(assetId);
+          return;
         }
-      } else if (selectedByScope) {
-        nextDeselectedIds.delete(assetId);
-      } else {
-        nextSelectedIds.add(assetId);
       }
 
-      return {
-        ...prev,
-        selectedIds: nextSelectedIds,
-        deselectedIds: nextDeselectedIds,
-      };
-    });
-    
-    // 记录本次选中的 ID
-    lastSelectedIdRef.current = assetId;
-    
-    // 更新右侧面板显示最近点击的素材
-    onSelectAsset(assetId);
-  }, [filteredResult.assets, onSelectAsset, playlistAssetIdSets]);
+      // 普通点击切换选中状态
+      setSelectionState((prev) => {
+        const nextSelectedIds = new Set(prev.selectedIds);
+        const nextDeselectedIds = new Set(prev.deselectedIds);
+        const selectedByScope = matchesSelectionScope(
+          currentAsset,
+          prev.scope,
+          playlistAssetIdSets
+        );
+        const isSelected =
+          nextSelectedIds.has(assetId) ||
+          (selectedByScope && !nextDeselectedIds.has(assetId));
 
-  const handleMarqueeSelect = useCallback((assetIds: string[]) => {
-    replaceSelectionWithAssetIds(assetIds);
-  }, [replaceSelectionWithAssetIds]);
+        if (isSelected) {
+          if (nextSelectedIds.has(assetId)) {
+            nextSelectedIds.delete(assetId);
+          } else if (selectedByScope) {
+            nextDeselectedIds.add(assetId);
+          }
+        } else if (selectedByScope) {
+          nextDeselectedIds.delete(assetId);
+        } else {
+          nextSelectedIds.add(assetId);
+        }
+
+        return {
+          ...prev,
+          selectedIds: nextSelectedIds,
+          deselectedIds: nextDeselectedIds,
+        };
+      });
+
+      // 记录本次选中的 ID
+      lastSelectedIdRef.current = assetId;
+
+      // 更新右侧面板显示最近点击的素材
+      onSelectAsset(assetId);
+    },
+    [filteredResult.assets, onSelectAsset, playlistAssetIdSets]
+  );
+
+  const handleMarqueeSelect = useCallback(
+    (assetIds: string[]) => {
+      replaceSelectionWithAssetIds(assetIds);
+    },
+    [replaceSelectionWithAssetIds]
+  );
 
   // 批量删除处理（同时删除画布上使用这些素材的元素）
   // 只删除当前筛选结果中被选中的素材
   const handleBatchDelete = useCallback(async () => {
-    const idsToDelete = filteredSelectedAssets.map(a => a.id);
-    
+    const idsToDelete = filteredSelectedAssets.map((a) => a.id);
+
     if (idsToDelete.length === 0) return;
-    
+
     try {
       // 删除画布上使用这些素材的元素
       if (board) {
         // 分离缓存类型素材和普通素材
-        const cacheAssets = filteredSelectedAssets.filter(a => isCacheUrl(a.url));
-        const normalAssetIds = idsToDelete.filter(
-          id => !cacheAssets.some(a => a.id === id)
+        const cacheAssets = filteredSelectedAssets.filter((a) =>
+          isCacheUrl(a.url)
         );
-        
+        const normalAssetIds = idsToDelete.filter(
+          (id) => !cacheAssets.some((a) => a.id === id)
+        );
+
         // 缓存类型素材使用 URL 匹配删除
         for (const asset of cacheAssets) {
           removeElementsByAssetUrls(board, asset.dedupeUrls || [asset.url]);
@@ -787,13 +912,13 @@ export function MediaLibraryGrid({
 
         // 普通素材使用 ID 匹配删除
         if (normalAssetIds.length > 0) {
-          const expandedIds = filteredSelectedAssets.flatMap(asset =>
-            isCacheUrl(asset.url) ? [] : (asset.dedupeAssetIds || [asset.id])
+          const expandedIds = filteredSelectedAssets.flatMap((asset) =>
+            isCacheUrl(asset.url) ? [] : asset.dedupeAssetIds || [asset.id]
           );
           removeElementsByAssetIds(board, expandedIds);
         }
       }
-      
+
       // 然后删除素材本身
       await removeAssets(idsToDelete);
       clearSelectionState();
@@ -809,14 +934,17 @@ export function MediaLibraryGrid({
     if (!board || filteredSelectedAssets.length === 0) {
       return { hasCacheAssets: false, affectedCount: 0 };
     }
-    
+
     let affectedCount = 0;
-    const cacheAssets = filteredSelectedAssets.filter(a => isCacheUrl(a.url));
-    
+    const cacheAssets = filteredSelectedAssets.filter((a) => isCacheUrl(a.url));
+
     for (const asset of cacheAssets) {
-      affectedCount += countElementsByAssetUrls(board, asset.dedupeUrls || [asset.url]);
+      affectedCount += countElementsByAssetUrls(
+        board,
+        asset.dedupeUrls || [asset.url]
+      );
     }
-    
+
     return { hasCacheAssets: cacheAssets.length > 0, affectedCount };
   }, [board, filteredSelectedAssets]);
 
@@ -836,7 +964,11 @@ export function MediaLibraryGrid({
           {batchDeleteWarningInfo.hasCacheAssets &&
           batchDeleteWarningInfo.affectedCount > 0 ? (
             <p style={{ marginTop: '8px', color: 'var(--td-error-color)' }}>
-              <span role="img" aria-label="注意">⚠️</span> 画布中有 <strong>{batchDeleteWarningInfo.affectedCount}</strong> 个元素正在使用这些素材，删除后将被一并移除！
+              <span role="img" aria-label="注意">
+                ⚠️
+              </span>{' '}
+              画布中有 <strong>{batchDeleteWarningInfo.affectedCount}</strong>{' '}
+              个元素正在使用这些素材，删除后将被一并移除！
             </p>
           ) : null}
         </>
@@ -846,32 +978,40 @@ export function MediaLibraryGrid({
     if (confirmed) {
       await handleBatchDelete();
     }
-  }, [batchDeleteWarningInfo, confirm, filteredSelectedCount, handleBatchDelete]);
+  }, [
+    batchDeleteWarningInfo,
+    confirm,
+    filteredSelectedCount,
+    handleBatchDelete,
+  ]);
 
-  const handleDeletePlaylist = useCallback(async (playlist: AudioPlaylist) => {
-    const confirmed = await confirm({
-      title: '确认删除播放列表',
-      description: `确定要删除播放列表「${playlist.name}」吗？删除后列表内关联关系将被移除，此操作不可撤销。`,
-      confirmText: '删除',
-      cancelText: '取消',
-      danger: true,
-    });
+  const handleDeletePlaylist = useCallback(
+    async (playlist: AudioPlaylist) => {
+      const confirmed = await confirm({
+        title: '确认删除播放列表',
+        description: `确定要删除播放列表「${playlist.name}」吗？删除后列表内关联关系将被移除，此操作不可撤销。`,
+        confirmText: '删除',
+        cancelText: '取消',
+        danger: true,
+      });
 
-    if (!confirmed) {
-      return;
-    }
+      if (!confirmed) {
+        return;
+      }
 
-    await deletePlaylist(playlist.id);
-  }, [confirm, deletePlaylist]);
+      await deletePlaylist(playlist.id);
+    },
+    [confirm, deletePlaylist]
+  );
 
   // 批量下载处理
   // 只下载当前筛选结果中被选中的素材
   const handleBatchDownload = useCallback(async () => {
     if (filteredSelectedAssets.length === 0 || isDownloading) return;
-    
+
     setIsDownloading(true);
     setDownloadProgress(0);
-    
+
     try {
       await smartDownload(
         buildAssetDownloadItems(filteredSelectedAssets),
@@ -890,38 +1030,41 @@ export function MediaLibraryGrid({
   // 同步当前筛选结果中被选中的素材（AI 生成和本地上传）
   const handleBatchSync = useCallback(async () => {
     if (filteredSelectedAssets.length === 0 || isSyncing) return;
-    
+
     // 收集所有可同步的媒体 URL（排除已同步的）
     const syncableUrls: string[] = [];
-    
+
     // AI 生成素材：直接同步当前资产 URL（支持一个任务展开多条音频）
     filteredSelectedAssets
-      .filter(a => a.source === AssetSource.AI_GENERATED)
-      .forEach(a => {
+      .filter((a) => a.source === AssetSource.AI_GENERATED)
+      .forEach((a) => {
         const syncStatus = mediaSyncService.getUrlSyncStatus(a.url);
         if (syncStatus !== 'synced') {
           syncableUrls.push(a.url);
         }
       });
-    
+
     // 本地上传素材：获取缓存 URL（排除已同步）
     filteredSelectedAssets
-      .filter(a => a.source === AssetSource.LOCAL && a.url.startsWith('/__aitu_cache__/'))
-      .forEach(a => {
+      .filter(
+        (a) =>
+          a.source === AssetSource.LOCAL && a.url.startsWith('/__aitu_cache__/')
+      )
+      .forEach((a) => {
         const syncStatus = mediaSyncService.getUrlSyncStatus(a.url);
         if (syncStatus !== 'synced') {
           syncableUrls.push(a.url);
         }
       });
-    
+
     if (syncableUrls.length === 0) {
       console.log('[MediaLibraryGrid] No syncable assets found');
       return;
     }
-    
+
     setIsSyncing(true);
     setSyncProgress(0);
-    
+
     try {
       const result = await mediaSyncService.syncSelectedMedia(
         syncableUrls,
@@ -929,14 +1072,14 @@ export function MediaLibraryGrid({
           setSyncProgress(Math.round((current / total) * 100));
         }
       );
-      
-      console.log('[MediaLibraryGrid] Batch sync result:', { 
-        succeeded: result.succeeded, 
+
+      console.log('[MediaLibraryGrid] Batch sync result:', {
+        succeeded: result.succeeded,
         failed: result.failed,
-        skipped: result.skipped 
+        skipped: result.skipped,
       });
       setSyncProgress(100);
-      
+
       // 刷新同步状态（更新已同步 URL 列表）
       if (result.succeeded > 0) {
         await loadSyncedUrls();
@@ -948,18 +1091,18 @@ export function MediaLibraryGrid({
       setSyncProgress(0);
     }
   }, [filteredSelectedAssets, isSyncing, loadSyncedUrls]);
-  
+
   // 计算选中的可同步素材数量（排除已同步的）
   const syncableCount = useMemo(() => {
     // AI 生成素材：直接按资产 URL 判断是否可同步
-    const aiSyncable = filteredSelectedAssets.filter(a => {
+    const aiSyncable = filteredSelectedAssets.filter((a) => {
       if (a.source !== AssetSource.AI_GENERATED) return false;
       const syncStatus = mediaSyncService.getUrlSyncStatus(a.url);
       return syncStatus !== 'synced';
     }).length;
-    
+
     // 本地上传素材：检查是否有缓存 URL，且未同步
-    const localSyncable = filteredSelectedAssets.filter(a => {
+    const localSyncable = filteredSelectedAssets.filter((a) => {
       if (a.source !== AssetSource.LOCAL) return false;
       // 只有在统一缓存中的本地素材才能同步
       if (!a.url.startsWith('/__aitu_cache__/')) return false;
@@ -967,34 +1110,46 @@ export function MediaLibraryGrid({
       const syncStatus = mediaSyncService.getUrlSyncStatus(a.url);
       return syncStatus !== 'synced';
     }).length;
-    
+
     return aiSyncable + localSyncable;
   }, [filteredSelectedAssets]);
 
-  const handleToggleFavorite = useCallback(async (asset: Asset) => {
-    if (asset.type !== AssetType.AUDIO) return;
-    await toggleFavorite(asset.id);
-  }, [toggleFavorite]);
+  const handleToggleFavorite = useCallback(
+    async (asset: Asset) => {
+      if (asset.type !== AssetType.AUDIO) return;
+      await toggleFavorite(asset.id);
+    },
+    [toggleFavorite]
+  );
 
-  const openAssetContextMenu = useCallback((asset: Asset, event: React.MouseEvent) => {
-    if (asset.type !== AssetType.AUDIO) return;
-    event.preventDefault();
-    event.stopPropagation();
-    openAssetMenu(event, asset);
-  }, [openAssetMenu]);
+  const openAssetContextMenu = useCallback(
+    (asset: Asset, event: React.MouseEvent) => {
+      if (asset.type !== AssetType.AUDIO) return;
+      event.preventDefault();
+      event.stopPropagation();
+      openAssetMenu(event, asset);
+    },
+    [openAssetMenu]
+  );
 
-  const handleSelectPlaylist = useCallback((playlistId: string | null) => {
-    setSelectedPlaylistId(playlistId);
-    if (playlistId) {
-      setFilters({ activeType: AssetType.AUDIO });
-    }
-  }, [setFilters]);
+  const handleSelectPlaylist = useCallback(
+    (playlistId: string | null) => {
+      setSelectedPlaylistId(playlistId);
+      if (playlistId) {
+        setFilters({ activeType: AssetType.AUDIO });
+      }
+    },
+    [setFilters]
+  );
 
-  const openCreatePlaylistDialog = useCallback((mode: 'create' | 'create-and-add', targetAssetId?: string) => {
-    setPlaylistNameInput('');
-    setPlaylistDialog({ mode, targetAssetId });
-    closeAssetMenu();
-  }, [closeAssetMenu]);
+  const openCreatePlaylistDialog = useCallback(
+    (mode: 'create' | 'create-and-add', targetAssetId?: string) => {
+      setPlaylistNameInput('');
+      setPlaylistDialog({ mode, targetAssetId });
+      closeAssetMenu();
+    },
+    [closeAssetMenu]
+  );
 
   const openRenamePlaylistDialog = useCallback((playlist: AudioPlaylist) => {
     setPlaylistNameInput(playlist.name);
@@ -1007,38 +1162,62 @@ export function MediaLibraryGrid({
       await renamePlaylist(playlistDialog.playlistId, playlistNameInput);
     } else {
       const playlist = await createPlaylist(playlistNameInput);
-      if (playlistDialog.mode === 'create-and-add' && playlistDialog.targetAssetId) {
+      if (
+        playlistDialog.mode === 'create-and-add' &&
+        playlistDialog.targetAssetId
+      ) {
         await addAssetToPlaylist(playlistDialog.targetAssetId, playlist.id);
       }
       handleSelectPlaylist(playlist.id);
     }
     setPlaylistDialog(null);
     setPlaylistNameInput('');
-  }, [playlistDialog, renamePlaylist, playlistNameInput, createPlaylist, addAssetToPlaylist, handleSelectPlaylist]);
+  }, [
+    playlistDialog,
+    renamePlaylist,
+    playlistNameInput,
+    createPlaylist,
+    addAssetToPlaylist,
+    handleSelectPlaylist,
+  ]);
 
   // 将素材转换为预览项
-  const convertToMediaItems = useCallback((assetList: Asset[]): UnifiedMediaItem[] => {
-    return assetList.map(asset => ({
-      id: asset.id,
-      url: asset.type === AssetType.IMAGE ? normalizeImageDataUrl(asset.url) : asset.url,
-      type: asset.type === AssetType.VIDEO ? 'video' : asset.type === AssetType.AUDIO ? 'audio' : 'image',
-      title: asset.name,
-      alt: asset.name,
-      posterUrl: asset.thumbnail,
-      prompt: asset.prompt,
-      artist: asset.modelName,
-      album: asset.type === AssetType.AUDIO ? 'Aitu Generated' : undefined,
-    }));
-  }, []);
+  const convertToMediaItems = useCallback(
+    (assetList: Asset[]): UnifiedMediaItem[] => {
+      return assetList.map((asset) => ({
+        id: asset.id,
+        url:
+          asset.type === AssetType.IMAGE
+            ? normalizeImageDataUrl(asset.url)
+            : asset.url,
+        type:
+          asset.type === AssetType.VIDEO
+            ? 'video'
+            : asset.type === AssetType.AUDIO
+            ? 'audio'
+            : 'image',
+        title: asset.name,
+        alt: asset.name,
+        posterUrl: asset.thumbnail,
+        prompt: asset.prompt,
+        artist: asset.modelName,
+        album: asset.type === AssetType.AUDIO ? 'Aitu Generated' : undefined,
+      }));
+    },
+    []
+  );
 
   // 打开预览
-  const handlePreview = useCallback((asset: Asset) => {
-    const allMediaItems = convertToMediaItems(filteredResult.assets);
-    const index = filteredResult.assets.findIndex(a => a.id === asset.id);
-    setPreviewItems(allMediaItems);
-    setPreviewInitialIndex(index >= 0 ? index : 0);
-    setPreviewVisible(true);
-  }, [filteredResult.assets, convertToMediaItems]);
+  const handlePreview = useCallback(
+    (asset: Asset) => {
+      const allMediaItems = convertToMediaItems(filteredResult.assets);
+      const index = filteredResult.assets.findIndex((a) => a.id === asset.id);
+      setPreviewItems(allMediaItems);
+      setPreviewInitialIndex(index >= 0 ? index : 0);
+      setPreviewVisible(true);
+    },
+    [filteredResult.assets, convertToMediaItems]
+  );
 
   // 关闭预览
   const handlePreviewClose = useCallback(() => {
@@ -1046,42 +1225,45 @@ export function MediaLibraryGrid({
   }, []);
 
   // 从预览器插入到画布
-  const handleInsertFromViewer = useCallback(async (item: UnifiedMediaItem) => {
-    // 优先使用外部回调（如果有）
-    if (onDoubleClick) {
-      const asset = filteredResult.assets.find(a => a.id === item.id);
-      if (asset) {
-        onDoubleClick(asset);
-        return;
-      }
-    }
-    
-    // 直接插入到画布
-    if (board) {
-      try {
-        const asset = filteredResult.assets.find(a => a.id === item.id);
-        if (item.type === 'video') {
-          await insertVideoFromUrl(board, item.url);
-        } else if (item.type === 'audio') {
-          await insertAudioFromUrl(board, item.url, {
-            title: asset?.name || item.title,
-            duration: asset?.duration,
-            previewImageUrl: asset?.thumbnail || item.posterUrl,
-            prompt: asset?.prompt,
-            mv: asset?.modelName,
-            clipId: asset?.clipId,
-            providerTaskId: asset?.providerTaskId,
-          });
-        } else {
-          await insertImageFromUrl(board, normalizeImageDataUrl(item.url));
+  const handleInsertFromViewer = useCallback(
+    async (item: UnifiedMediaItem) => {
+      // 优先使用外部回调（如果有）
+      if (onDoubleClick) {
+        const asset = filteredResult.assets.find((a) => a.id === item.id);
+        if (asset) {
+          onDoubleClick(asset);
+          return;
         }
-        // 插入成功后关闭预览
-        setPreviewVisible(false);
-      } catch (error) {
-        console.error('Failed to insert media to canvas:', error);
       }
-    }
-  }, [filteredResult.assets, onDoubleClick, board]);
+
+      // 直接插入到画布
+      if (board) {
+        try {
+          const asset = filteredResult.assets.find((a) => a.id === item.id);
+          if (item.type === 'video') {
+            await insertVideoFromUrl(board, item.url);
+          } else if (item.type === 'audio') {
+            await insertAudioFromUrl(board, item.url, {
+              title: asset?.name || item.title,
+              duration: asset?.duration,
+              previewImageUrl: asset?.thumbnail || item.posterUrl,
+              prompt: asset?.prompt,
+              mv: asset?.modelName,
+              clipId: asset?.clipId,
+              providerTaskId: asset?.providerTaskId,
+            });
+          } else {
+            await insertImageFromUrl(board, normalizeImageDataUrl(item.url));
+          }
+          // 插入成功后关闭预览
+          setPreviewVisible(false);
+        } catch (error) {
+          console.error('Failed to insert media to canvas:', error);
+        }
+      }
+    },
+    [filteredResult.assets, onDoubleClick, board]
+  );
 
   // 处理图片编辑
   const handleEditImage = useCallback((item: UnifiedMediaItem) => {
@@ -1092,51 +1274,60 @@ export function MediaLibraryGrid({
   }, []);
 
   // 编辑后插入画布
-  const handleEditInsert = useCallback(async (editedImageUrl: string) => {
-    if (!board) return;
-    
-    try {
-      // 导入必要服务
-      const { unifiedCacheService } = await import('../../services/unified-cache-service');
-      
-      const taskId = `edited-image-${Date.now()}`;
-      const stableUrl = `/__aitu_cache__/image/${taskId}.png`;
-      
-      // 将 data URL 转换为 Blob
-      const response = await fetch(editedImageUrl);
-      const blob = await response.blob();
-      
-      // 缓存到 Cache API
-      await unifiedCacheService.cacheMediaFromBlob(stableUrl, blob, 'image', { taskId });
-      
-      // 插入到画布
-      await insertImageFromUrl(board, stableUrl);
-      
-      // 关闭编辑器
-      setImageEditorVisible(false);
-      setImageEditorUrl('');
-    } catch (error) {
-      console.error('Failed to insert edited image:', error);
-    }
-  }, [board]);
+  const handleEditInsert = useCallback(
+    async (editedImageUrl: string) => {
+      if (!board) return;
+
+      try {
+        // 导入必要服务
+        const { unifiedCacheService } = await import(
+          '../../services/unified-cache-service'
+        );
+
+        const taskId = `edited-image-${Date.now()}`;
+        const stableUrl = `/__aitu_cache__/image/${taskId}.png`;
+
+        // 将 data URL 转换为 Blob
+        const response = await fetch(editedImageUrl);
+        const blob = await response.blob();
+
+        // 缓存到 Cache API
+        await unifiedCacheService.cacheMediaFromBlob(stableUrl, blob, 'image', {
+          taskId,
+        });
+
+        // 插入到画布
+        await insertImageFromUrl(board, stableUrl);
+
+        // 关闭编辑器
+        setImageEditorVisible(false);
+        setImageEditorUrl('');
+      } catch (error) {
+        console.error('Failed to insert edited image:', error);
+      }
+    },
+    [board]
+  );
 
   // 键盘事件处理（空格键/回车键预览选中的素材）
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // 只有在素材库容器获得焦点时才处理
       if (!gridContainerRef.current?.contains(document.activeElement)) return;
-      
+
       // 如果正在编辑输入框，不处理
       const target = e.target as HTMLElement;
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
-      
+
       // 如果预览已打开，不处理（让 MediaViewer 处理）
       if (previewVisible) return;
 
       // 空格键或回车键预览选中的素材
       if ((e.key === ' ' || e.key === 'Enter') && selectedAssetId) {
         e.preventDefault();
-        const asset = filteredResult.assets.find(a => a.id === selectedAssetId);
+        const asset = filteredResult.assets.find(
+          (a) => a.id === selectedAssetId
+        );
         if (asset) {
           handlePreview(asset);
         }
@@ -1158,7 +1349,9 @@ export function MediaLibraryGrid({
   return (
     <div
       ref={gridContainerRef}
-      className={`media-library-grid ${isDragging ? 'media-library-grid--dragging' : ''}`}
+      className={`media-library-grid ${
+        isDragging ? 'media-library-grid--dragging' : ''
+      }`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -1177,7 +1370,10 @@ export function MediaLibraryGrid({
             />
           </div>
           <div className="media-library-grid__header-right">
-            <ViewModeToggle viewMode={pendingViewMode} onViewModeChange={handleViewModeChange} />
+            <ViewModeToggle
+              viewMode={pendingViewMode}
+              onViewModeChange={handleViewModeChange}
+            />
             {isSelectionMode ? (
               <>
                 <Button
@@ -1215,7 +1411,7 @@ export function MediaLibraryGrid({
                   下载
                 </Button>
                 {isConfigured && (
-                  <Tooltip content="同步选中的素材到云端" placement="bottom" theme="light">
+                  <HoverTip content="同步选中的素材到云端" placement="bottom">
                     <Button
                       variant="outline"
                       size="small"
@@ -1225,9 +1421,11 @@ export function MediaLibraryGrid({
                       onClick={handleBatchSync}
                       data-track="grid_batch_sync"
                     >
-                      {isSyncing ? `${syncProgress}%` : `同步 (${syncableCount})`}
+                      {isSyncing
+                        ? `${syncProgress}%`
+                        : `同步 (${syncableCount})`}
                     </Button>
-                  </Tooltip>
+                  </HoverTip>
                 )}
               </>
             ) : (
@@ -1283,87 +1481,140 @@ export function MediaLibraryGrid({
 
           <div className="media-library-grid__filter-island">
             <div className="media-library-grid__filter-group">
-              {TYPE_OPTIONS.map(opt => {
-                  const count = opt.value === 'ALL' ? counts.all : opt.value === AssetType.IMAGE ? counts.image : opt.value === AssetType.AUDIO ? counts.audio : counts.video;
-                  const Icon = opt.icon;
-                  const isActive = (filters.activeType || 'ALL') === opt.value;
-                  return (
-                    <Tooltip key={opt.value} content={`${opt.label} (${count})`} placement="top" theme="light" showArrow={false}>
-                      <div
-                        className={`media-library-grid__filter-option ${isActive ? 'media-library-grid__filter-option--active' : ''}`}
-                        onClick={() => setFilters({ activeType: opt.value === 'ALL' ? undefined : opt.value as AssetType })}
-                      >
-                        <Icon size={14} strokeWidth={1.5} className={opt.value === 'ALL' ? 'icon-all' : ''} />
-                        <span className="media-library-grid__filter-count">{count}</span>
-                      </div>
-                    </Tooltip>
-                  );
-                })}
-                
-                {SOURCE_OPTIONS.filter(opt => opt.value !== 'ALL').map(opt => {
+              {TYPE_OPTIONS.map((opt) => {
+                const count =
+                  opt.value === 'ALL'
+                    ? counts.all
+                    : opt.value === AssetType.IMAGE
+                    ? counts.image
+                    : opt.value === AssetType.AUDIO
+                    ? counts.audio
+                    : counts.video;
+                const Icon = opt.icon;
+                const isActive = (filters.activeType || 'ALL') === opt.value;
+                return (
+                  <HoverTip
+                    key={opt.value}
+                    content={`${opt.label} (${count})`}
+                    placement="top"
+                    showArrow={false}
+                  >
+                    <div
+                      className={`media-library-grid__filter-option ${
+                        isActive
+                          ? 'media-library-grid__filter-option--active'
+                          : ''
+                      }`}
+                      onClick={() =>
+                        setFilters({
+                          activeType:
+                            opt.value === 'ALL'
+                              ? undefined
+                              : (opt.value as AssetType),
+                        })
+                      }
+                    >
+                      <Icon
+                        size={14}
+                        strokeWidth={1.5}
+                        className={opt.value === 'ALL' ? 'icon-all' : ''}
+                      />
+                      <span className="media-library-grid__filter-count">
+                        {count}
+                      </span>
+                    </div>
+                  </HoverTip>
+                );
+              })}
+
+              {SOURCE_OPTIONS.filter((opt) => opt.value !== 'ALL').map(
+                (opt) => {
                   const count = counts[opt.countKey as keyof typeof counts];
                   const Icon = opt.icon;
                   const isActive = filters.activeSource === opt.value;
                   return (
-                    <Tooltip key={opt.value} content={`${opt.label} (${count})`} placement="top" theme="light" showArrow={false}>
+                    <HoverTip
+                      key={opt.value}
+                      content={`${opt.label} (${count})`}
+                      placement="top"
+                      showArrow={false}
+                    >
                       <div
-                        className={`media-library-grid__filter-option ${isActive ? 'media-library-grid__filter-option--active' : ''}`}
-                        onClick={() => setFilters({ activeSource: isActive ? undefined : opt.value as AssetSource })}
+                        className={`media-library-grid__filter-option ${
+                          isActive
+                            ? 'media-library-grid__filter-option--active'
+                            : ''
+                        }`}
+                        onClick={() =>
+                          setFilters({
+                            activeSource: isActive
+                              ? undefined
+                              : (opt.value as AssetSource),
+                          })
+                        }
                       >
                         <Icon size={14} strokeWidth={1.5} />
-                        <span className="media-library-grid__filter-count">{count}</span>
+                        <span className="media-library-grid__filter-count">
+                          {count}
+                        </span>
                       </div>
-                    </Tooltip>
+                    </HoverTip>
                   );
-                })}
+                }
+              )}
             </div>
           </div>
 
           <div className="media-library-grid__header-spacer" />
 
           <div className="media-library-grid__sort-options">
-              {SORT_GROUPS.map(group => {
-                const currentSort = filters.sortBy || 'DATE_DESC';
-                const isAsc = currentSort === group.options.asc;
-                const isDesc = currentSort === group.options.desc;
-                const isActive = isAsc || isDesc;
-                const Icon = isAsc ? group.icons.asc : group.icons.desc;
-                
-                const handleSortClick = () => {
-                  if (currentSort === group.options.asc) {
-                    // 当前是正序 -> 切换到逆序
-                    setFilters({ sortBy: group.options.desc });
-                  } else if (currentSort === group.options.desc) {
-                    // 当前是逆序
-                    if (currentSort === 'DATE_DESC' && group.id === 'DATE') {
-                      // 如果当前已经是默认的日期逆序，点一下进入日期正序
-                      setFilters({ sortBy: 'DATE_ASC' });
-                    } else {
-                      // 否则恢复默认排序 (DATE_DESC)
-                      setFilters({ sortBy: 'DATE_DESC' });
-                    }
-                  } else {
-                    // 当前不在该组 -> 切换到正序
-                    setFilters({ sortBy: group.options.asc });
-                  }
-                };
+            {SORT_GROUPS.map((group) => {
+              const currentSort = filters.sortBy || 'DATE_DESC';
+              const isAsc = currentSort === group.options.asc;
+              const isDesc = currentSort === group.options.desc;
+              const isActive = isAsc || isDesc;
+              const Icon = isAsc ? group.icons.asc : group.icons.desc;
 
-                return (
-          <Tooltip
-            key={group.id} 
-            content={`${group.label}: ${isAsc ? '正序' : (isDesc ? '逆序' : '默认')}`} 
-            placement="top" 
-            theme="light" 
-            showArrow={false}
-          >
-                    <div
-                      className={`media-library-grid__filter-option ${isActive ? 'media-library-grid__filter-option--active' : ''}`}
-                      onClick={handleSortClick}
-                    >
-                      <Icon size={14} strokeWidth={1.5} />
-                    </div>
-                  </Tooltip>
-                );
+              const handleSortClick = () => {
+                if (currentSort === group.options.asc) {
+                  // 当前是正序 -> 切换到逆序
+                  setFilters({ sortBy: group.options.desc });
+                } else if (currentSort === group.options.desc) {
+                  // 当前是逆序
+                  if (currentSort === 'DATE_DESC' && group.id === 'DATE') {
+                    // 如果当前已经是默认的日期逆序，点一下进入日期正序
+                    setFilters({ sortBy: 'DATE_ASC' });
+                  } else {
+                    // 否则恢复默认排序 (DATE_DESC)
+                    setFilters({ sortBy: 'DATE_DESC' });
+                  }
+                } else {
+                  // 当前不在该组 -> 切换到正序
+                  setFilters({ sortBy: group.options.asc });
+                }
+              };
+
+              return (
+                <HoverTip
+                  key={group.id}
+                  content={`${group.label}: ${
+                    isAsc ? '正序' : isDesc ? '逆序' : '默认'
+                  }`}
+                  placement="top"
+                  showArrow={false}
+                >
+                  <div
+                    className={`media-library-grid__filter-option ${
+                      isActive
+                        ? 'media-library-grid__filter-option--active'
+                        : ''
+                    }`}
+                    onClick={handleSortClick}
+                  >
+                    <Icon size={14} strokeWidth={1.5} />
+                  </div>
+                </HoverTip>
+              );
             })}
           </div>
         </div>
@@ -1386,7 +1637,7 @@ export function MediaLibraryGrid({
         {isDownloading && (
           <div className="media-library-grid__progress">
             <div className="media-library-grid__progress-bar">
-              <div 
+              <div
                 className="media-library-grid__progress-fill"
                 style={{ width: `${downloadProgress}%` }}
               />
@@ -1404,8 +1655,12 @@ export function MediaLibraryGrid({
             <div className="media-library-grid__drop-message-icon">
               <ImageUploadIconComp size={32} />
             </div>
-            <h3 className="media-library-grid__drop-message-title">拖放文件到这里</h3>
-            <p className="media-library-grid__drop-message-description">支持 JPG、PNG、MP4 格式</p>
+            <h3 className="media-library-grid__drop-message-title">
+              拖放文件到这里
+            </h3>
+            <p className="media-library-grid__drop-message-description">
+              支持 JPG、PNG、MP4 格式
+            </p>
           </div>
         </div>
       )}
@@ -1415,7 +1670,13 @@ export function MediaLibraryGrid({
       ) : (
         <>
           {/* 虚拟滚动网格 - 只渲染可见区域的元素 */}
-          <div className={`media-library-grid__container ${isTransitioning || isPending ? 'media-library-grid__container--transitioning' : ''}`}>
+          <div
+            className={`media-library-grid__container ${
+              isTransitioning || isPending
+                ? 'media-library-grid__container--transitioning'
+                : ''
+            }`}
+          >
             <VirtualAssetGrid
               assets={filteredResult.assets}
               viewMode={viewMode}
@@ -1424,7 +1685,9 @@ export function MediaLibraryGrid({
               isAssetSelected={isAssetSelected}
               isSelectionMode={isSelectionMode}
               marqueeEnabled={!isMobile && isSelectionMode}
-              onSelectAsset={isSelectionMode ? toggleAssetSelection : onSelectAsset}
+              onSelectAsset={
+                isSelectionMode ? toggleAssetSelection : onSelectAsset
+              }
               onMarqueeSelect={handleMarqueeSelect}
               onDoubleClick={onDoubleClick}
               onPreview={handlePreview}
@@ -1440,18 +1703,35 @@ export function MediaLibraryGrid({
             <div className="media-library-grid__mobile-inspector">
               <div className="media-library-grid__mobile-inspector-info">
                 <div className="media-library-grid__mobile-inspector-type">
-                  {selectedAsset.type === AssetType.IMAGE ? <ImageIcon size={14} /> : selectedAsset.type === AssetType.AUDIO ? <Music size={14} /> : <VideoIcon size={14} />}
-                  <span>{selectedAsset.type === AssetType.IMAGE ? '图片' : selectedAsset.type === AssetType.AUDIO ? '音频' : '视频'}</span>
+                  {selectedAsset.type === AssetType.IMAGE ? (
+                    <ImageIcon size={14} />
+                  ) : selectedAsset.type === AssetType.AUDIO ? (
+                    <Music size={14} />
+                  ) : (
+                    <VideoIcon size={14} />
+                  )}
+                  <span>
+                    {selectedAsset.type === AssetType.IMAGE
+                      ? '图片'
+                      : selectedAsset.type === AssetType.AUDIO
+                      ? '音频'
+                      : '视频'}
+                  </span>
                   {selectedAsset.source === AssetSource.AI_GENERATED && (
-                    <span className="media-library-grid__mobile-inspector-ai">AI</span>
+                    <span className="media-library-grid__mobile-inspector-ai">
+                      AI
+                    </span>
                   )}
                 </div>
-                <div className="media-library-grid__mobile-inspector-name" title={selectedAsset.name}>
+                <div
+                  className="media-library-grid__mobile-inspector-name"
+                  title={selectedAsset.name}
+                >
                   {selectedAsset.name}
                 </div>
               </div>
               <div className="media-library-grid__mobile-inspector-actions">
-                <Tooltip content="预览" theme="light">
+                <HoverTip content="预览">
                   <button
                     className="media-library-grid__mobile-inspector-btn"
                     onClick={() => handlePreview(selectedAsset)}
@@ -1459,9 +1739,9 @@ export function MediaLibraryGrid({
                   >
                     <Eye size={18} />
                   </button>
-                </Tooltip>
+                </HoverTip>
                 {onDoubleClick && (
-                  <Tooltip content="插入画布" theme="light">
+                  <HoverTip content="插入画布">
                     <button
                       className="media-library-grid__mobile-inspector-btn media-library-grid__mobile-inspector-btn--primary"
                       onClick={() => onDoubleClick(selectedAsset)}
@@ -1469,9 +1749,9 @@ export function MediaLibraryGrid({
                     >
                       <PlusCircle size={18} />
                     </button>
-                  </Tooltip>
+                  </HoverTip>
                 )}
-                <Tooltip content="下载" theme="light">
+                <HoverTip content="下载">
                   <button
                     className="media-library-grid__mobile-inspector-btn"
                     onClick={() => {
@@ -1481,7 +1761,7 @@ export function MediaLibraryGrid({
                   >
                     <Download size={18} />
                   </button>
-                </Tooltip>
+                </HoverTip>
               </div>
             </div>
           )}
@@ -1500,14 +1780,25 @@ export function MediaLibraryGrid({
                   <span>正在获取存储状态...</span>
                 </div>
               )}
-              <span className="media-library-grid__footer-count">共 {filteredResult.count} 个素材</span>
-              {!isSelectionMode && <span className="media-library-grid__footer-hint">双击预览</span>}
+              <span className="media-library-grid__footer-count">
+                共 {filteredResult.count} 个素材
+              </span>
+              {!isSelectionMode && (
+                <span className="media-library-grid__footer-hint">
+                  双击预览
+                </span>
+              )}
             </div>
-            
+
             <div className="media-library-grid__footer-right">
               {viewMode !== 'list' && (
                 <div className="media-library-grid__zoom-control">
-                  <Minus size={14} onClick={() => setGridSize(prev => Math.max(80, prev - 20))} />
+                  <Minus
+                    size={14}
+                    onClick={() =>
+                      setGridSize((prev) => Math.max(80, prev - 20))
+                    }
+                  />
                   <input
                     type="range"
                     min="80"
@@ -1518,7 +1809,12 @@ export function MediaLibraryGrid({
                     className="media-library-grid__zoom-slider"
                     data-track="grid_zoom_slider"
                   />
-                  <Plus size={14} onClick={() => setGridSize(prev => Math.min(300, prev + 20))} />
+                  <Plus
+                    size={14}
+                    onClick={() =>
+                      setGridSize((prev) => Math.min(300, prev + 20))
+                    }
+                  />
                 </div>
               )}
             </div>
@@ -1559,7 +1855,9 @@ export function MediaLibraryGrid({
 
       <Dialog
         visible={!!playlistDialog}
-        header={playlistDialog?.mode === 'rename' ? '重命名播放列表' : '新建播放列表'}
+        header={
+          playlistDialog?.mode === 'rename' ? '重命名播放列表' : '新建播放列表'
+        }
         onClose={() => setPlaylistDialog(null)}
         onConfirm={() => void handleSubmitPlaylistDialog()}
         confirmBtn="确定"

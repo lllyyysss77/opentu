@@ -5,16 +5,33 @@
  * 竖条形式展示在右下角，支持拖拽、常驻/关闭、位置记忆
  */
 
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Tooltip } from 'tdesign-react';
-import { CloseIcon, MoveIcon, PinIcon, PinFilledIcon, RefreshIcon, AddIcon } from 'tdesign-icons-react';
-import { memoryMonitorService, MemoryStats } from '../../services/memory-monitor-service';
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  useMemo,
+} from 'react';
+
+import {
+  CloseIcon,
+  MoveIcon,
+  PinIcon,
+  PinFilledIcon,
+  RefreshIcon,
+  AddIcon,
+} from 'tdesign-icons-react';
+import {
+  memoryMonitorService,
+  MemoryStats,
+} from '../../services/memory-monitor-service';
 import { Z_INDEX } from '../../constants/z-index';
 import { useI18n } from '../../i18n';
 import { PlaitElement } from '@plait/core';
 import { safeReload } from '../../utils/active-tasks';
 import { useConfirmDialog } from '../dialog/ConfirmDialog';
 import './performance-panel.scss';
+import { HoverTip } from '../shared';
 
 // 存储键 - 只保存位置和固定状态，dismissed 不持久化
 const STORAGE_KEY = 'drawnix_performance_panel_settings';
@@ -63,49 +80,54 @@ export const PerformancePanel: React.FC<PerformancePanelProps> = ({
     if (!elements || elements.length === 0) return 0;
     return elements.filter((el) => el.type === 'image').length;
   }, [elements]);
-  
+
   // 持久化设置（位置和固定状态）
-  const [persistedSettings, setPersistedSettings] = useState<PersistedSettings>(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        return {
-          position: parsed.position || DEFAULT_POSITION,
-          pinned: parsed.pinned || false,
-        };
+  const [persistedSettings, setPersistedSettings] = useState<PersistedSettings>(
+    () => {
+      try {
+        const stored = localStorage.getItem(STORAGE_KEY);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          return {
+            position: parsed.position || DEFAULT_POSITION,
+            pinned: parsed.pinned || false,
+          };
+        }
+      } catch {
+        // ignore
       }
-    } catch {
-      // ignore
+      return {
+        position: DEFAULT_POSITION,
+        pinned: false,
+      };
     }
-    return {
-      position: DEFAULT_POSITION,
-      pinned: false,
-    };
-  });
-  
+  );
+
   // 运行时状态（不持久化，刷新页面后重置）
   const [runtimeState, setRuntimeState] = useState<RuntimeState>({
     dismissed: false,
   });
-  
+
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const panelRef = useRef<HTMLDivElement>(null);
   const checkIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // 保存持久化设置到 localStorage
-  const savePersistedSettings = useCallback((newSettings: Partial<PersistedSettings>) => {
-    setPersistedSettings((prev) => {
-      const updated = { ...prev, ...newSettings };
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-      } catch {
-        // ignore
-      }
-      return updated;
-    });
-  }, []);
+  const savePersistedSettings = useCallback(
+    (newSettings: Partial<PersistedSettings>) => {
+      setPersistedSettings((prev) => {
+        const updated = { ...prev, ...newSettings };
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+        } catch {
+          // ignore
+        }
+        return updated;
+      });
+    },
+    []
+  );
 
   // 检查内存状态
   const checkMemory = useCallback(() => {
@@ -130,27 +152,37 @@ export const PerformancePanel: React.FC<PerformancePanelProps> = ({
     if (!memoryStats) return false;
     if (persistedSettings.pinned) return true;
     if (runtimeState.dismissed) return false;
-    
+
     // 内存使用超过 80% 自动显示
     const isHighMemory = memoryStats.usagePercent >= MEMORY_AUTO_SHOW_THRESHOLD;
     // 图片超过 100 且内存超过 60% 时显示
-    const isImageAndMemory = imageCount >= IMAGE_COUNT_THRESHOLD && memoryStats.usagePercent >= MEMORY_WITH_IMAGE_THRESHOLD;
-    
+    const isImageAndMemory =
+      imageCount >= IMAGE_COUNT_THRESHOLD &&
+      memoryStats.usagePercent >= MEMORY_WITH_IMAGE_THRESHOLD;
+
     return isHighMemory || isImageAndMemory;
-  }, [memoryStats, imageCount, persistedSettings.pinned, runtimeState.dismissed]);
+  }, [
+    memoryStats,
+    imageCount,
+    persistedSettings.pinned,
+    runtimeState.dismissed,
+  ]);
 
   // 计算警告级别
   const warningLevel = useMemo(() => {
     if (!memoryStats) return 'normal';
-    
+
     // 优先检查内存严重警告
     if (memoryStats.usagePercent >= CRITICAL_THRESHOLD) return 'critical';
-    
+
     // 检查内存警告或图片数量警告
-    if (memoryStats.usagePercent >= WARNING_THRESHOLD || imageCount >= IMAGE_COUNT_THRESHOLD) {
+    if (
+      memoryStats.usagePercent >= WARNING_THRESHOLD ||
+      imageCount >= IMAGE_COUNT_THRESHOLD
+    ) {
       return 'warning';
     }
-    
+
     return 'normal';
   }, [memoryStats, imageCount]);
 
@@ -160,7 +192,10 @@ export const PerformancePanel: React.FC<PerformancePanelProps> = ({
       zIndex: Z_INDEX.PERFORMANCE_PANEL,
     };
 
-    if (persistedSettings.position.x >= 0 && persistedSettings.position.y >= 0) {
+    if (
+      persistedSettings.position.x >= 0 &&
+      persistedSettings.position.y >= 0
+    ) {
       style.left = persistedSettings.position.x;
       style.top = persistedSettings.position.y;
       style.right = 'auto';
@@ -171,24 +206,21 @@ export const PerformancePanel: React.FC<PerformancePanelProps> = ({
   }, [persistedSettings.position]);
 
   // 拖拽开始
-  const handleDragStart = useCallback(
-    (e: React.PointerEvent) => {
-      if (!panelRef.current) return;
-      e.preventDefault();
-      e.stopPropagation();
+  const handleDragStart = useCallback((e: React.PointerEvent) => {
+    if (!panelRef.current) return;
+    e.preventDefault();
+    e.stopPropagation();
 
-      const rect = panelRef.current.getBoundingClientRect();
-      setDragOffset({
-        x: e.clientX - rect.left,
-        y: e.clientY - rect.top,
-      });
-      setIsDragging(true);
+    const rect = panelRef.current.getBoundingClientRect();
+    setDragOffset({
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+    });
+    setIsDragging(true);
 
-      // 捕获指针
-      (e.target as HTMLElement).setPointerCapture(e.pointerId);
-    },
-    []
-  );
+    // 捕获指针
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  }, []);
 
   // 拖拽移动
   const handleDragMove = useCallback(
@@ -241,7 +273,8 @@ export const PerformancePanel: React.FC<PerformancePanelProps> = ({
   const handleRefreshClick = useCallback(async () => {
     const confirmed = await confirm({
       title: language === 'zh' ? '刷新页面' : 'Refresh page',
-      description: language === 'zh' ? '刷新页面可释放内存' : 'Refresh to free memory',
+      description:
+        language === 'zh' ? '刷新页面可释放内存' : 'Refresh to free memory',
       confirmText: language === 'zh' ? '刷新' : 'Refresh',
       cancelText: language === 'zh' ? '取消' : 'Cancel',
     });
@@ -255,7 +288,7 @@ export const PerformancePanel: React.FC<PerformancePanelProps> = ({
   const [isCreating, setIsCreating] = useState(false);
   const handleCreateProject = useCallback(async () => {
     if (isCreating || !onCreateProject) return;
-    
+
     setIsCreating(true);
     try {
       await onCreateProject();
@@ -284,7 +317,13 @@ export const PerformancePanel: React.FC<PerformancePanelProps> = ({
           {language === 'zh' ? '限制' : 'Limit'}: {memoryStats?.formatted.limit}
         </div>
         {imageCount > 0 && (
-          <div style={{ marginTop: '4px', paddingTop: '4px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+          <div
+            style={{
+              marginTop: '4px',
+              paddingTop: '4px',
+              borderTop: '1px solid rgba(255,255,255,0.1)',
+            }}
+          >
             {language === 'zh' ? '图片数量' : 'Image Count'}: {imageCount}
             {imageCount >= IMAGE_COUNT_THRESHOLD && (
               <span style={{ color: '#E67E22', marginLeft: '4px' }}>
@@ -305,7 +344,9 @@ export const PerformancePanel: React.FC<PerformancePanelProps> = ({
   return (
     <div
       ref={panelRef}
-      className={`performance-panel performance-panel--${warningLevel} ${isDragging ? 'performance-panel--dragging' : ''}`}
+      className={`performance-panel performance-panel--${warningLevel} ${
+        isDragging ? 'performance-panel--dragging' : ''
+      }`}
       style={panelStyle}
     >
       {/* 拖拽手柄 */}
@@ -321,7 +362,7 @@ export const PerformancePanel: React.FC<PerformancePanelProps> = ({
       </div>
 
       {/* 内存百分比 */}
-      <Tooltip content={tooltipContent} placement="left" theme="light">
+      <HoverTip content={tooltipContent} placement="left">
         <div className="performance-panel__content">
           <div className="performance-panel__icon">
             {warningLevel === 'critical' ? '🔴' : '🟠'}
@@ -330,7 +371,7 @@ export const PerformancePanel: React.FC<PerformancePanelProps> = ({
             {memoryStats?.usagePercent.toFixed(0)}%
           </div>
         </div>
-      </Tooltip>
+      </HoverTip>
 
       {/* 分隔线 */}
       <div className="performance-panel__divider" />
@@ -363,9 +404,19 @@ export const PerformancePanel: React.FC<PerformancePanelProps> = ({
 
       {/* 固定/关闭按钮 */}
       <button
-        className={`performance-panel__btn ${persistedSettings.pinned ? 'performance-panel__btn--active' : ''}`}
+        className={`performance-panel__btn ${
+          persistedSettings.pinned ? 'performance-panel__btn--active' : ''
+        }`}
         onClick={handleTogglePin}
-        title={persistedSettings.pinned ? (language === 'zh' ? '取消常驻' : 'Unpin') : (language === 'zh' ? '常驻' : 'Pin')}
+        title={
+          persistedSettings.pinned
+            ? language === 'zh'
+              ? '取消常驻'
+              : 'Unpin'
+            : language === 'zh'
+            ? '常驻'
+            : 'Pin'
+        }
       >
         {persistedSettings.pinned ? <PinFilledIcon /> : <PinIcon />}
       </button>

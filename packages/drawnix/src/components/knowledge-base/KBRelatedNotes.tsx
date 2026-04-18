@@ -10,6 +10,7 @@ import React, { useMemo, useEffect, useState } from 'react';
 import { FileText, Link2, ChevronDown, ChevronRight, ExternalLink } from 'lucide-react';
 import type { KBNoteMeta, KBTag } from '../../types/knowledge-base.types';
 import { getKBSearchEngine, type KBSearchResult } from '../../services/kb-search-engine';
+import { HoverTip } from '../shared';
 
 interface KBRelatedNotesProps {
   currentNoteId: string;
@@ -113,13 +114,17 @@ export const KBRelatedNotes: React.FC<KBRelatedNotesProps> = ({
                 >
                   <FileText size={12} className="kb-related-notes__icon" />
                   <span className="kb-related-notes__name">{note.title || '无标题'}</span>
-                  <button
-                    className="kb-related-notes__goto-btn"
-                    onClick={(e) => { e.stopPropagation(); onSelectNote(note.id); }}
-                    title="跳转"
-                  >
-                    <ExternalLink size={10} />
-                  </button>
+                  <HoverTip content="跳转" showArrow={false}>
+                    <button
+                      className="kb-related-notes__goto-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSelectNote(note.id);
+                      }}
+                    >
+                      <ExternalLink size={10} />
+                    </button>
+                  </HoverTip>
                 </div>
               ))}
             </div>
@@ -156,13 +161,17 @@ export const KBRelatedNotes: React.FC<KBRelatedNotesProps> = ({
                         {Math.round(similarity * 100)}%
                       </span>
                     )}
-                    <button
-                      className="kb-related-notes__goto-btn"
-                      onClick={(e) => { e.stopPropagation(); onSelectNote(note.id); }}
-                      title="跳转"
-                    >
-                      <ExternalLink size={10} />
-                    </button>
+                    <HoverTip content="跳转" showArrow={false}>
+                      <button
+                        className="kb-related-notes__goto-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSelectNote(note.id);
+                        }}
+                      >
+                        <ExternalLink size={10} />
+                      </button>
+                    </HoverTip>
                   </div>
                 );
               })}

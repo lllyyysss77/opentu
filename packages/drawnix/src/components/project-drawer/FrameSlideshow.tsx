@@ -21,6 +21,7 @@ import { Z_INDEX } from '../../constants/z-index';
 import { FreehandShape } from '../../plugins/freehand/type';
 import { useSetPointer } from '../../hooks/use-drawnix';
 import { HandIcon, FeltTipPenIcon, EraseIcon, LaserPointerIcon, StrokeStyleNormalIcon, StrokeStyleDashedIcon, StrokeStyleDotedIcon, StrokeStyleDoubleIcon } from '../icons';
+import { HoverTip } from '../shared';
 import {
   getFreehandSettings,
   setFreehandStrokeColor,
@@ -573,73 +574,79 @@ export const FrameSlideshow: React.FC<FrameSlideshowProps> = ({
               </div>
             </div>
           )}
-          <button
-            className={`frame-slideshow__tool-btn ${activeTool === 'select' ? 'frame-slideshow__tool-btn--active' : ''}`}
-            onClick={() => switchTool('select')}
-            title="选择工具"
-          >
-            <HandIcon size={20} />
-          </button>
-          <button
-            className={`frame-slideshow__tool-btn ${activeTool === 'pen' ? 'frame-slideshow__tool-btn--active' : ''}`}
-            onClick={() => switchTool('pen')}
-            title="画笔"
-          >
-            <FeltTipPenIcon size={20} />
-          </button>
-          <button
-            className={`frame-slideshow__tool-btn ${activeTool === 'eraser' ? 'frame-slideshow__tool-btn--active' : ''}`}
-            onClick={() => switchTool('eraser')}
-            title="橡皮擦"
-          >
-            <EraseIcon size={20} />
-          </button>
-          <button
-            className={`frame-slideshow__tool-btn ${activeTool === 'laser' ? 'frame-slideshow__tool-btn--active' : ''}`}
-            onClick={() => switchTool('laser')}
-            title="激光笔"
-          >
-            <LaserPointerIcon size={20} />
-          </button>
+          <HoverTip content="选择工具" showArrow={false}>
+            <button
+              className={`frame-slideshow__tool-btn ${activeTool === 'select' ? 'frame-slideshow__tool-btn--active' : ''}`}
+              onClick={() => switchTool('select')}
+            >
+              <HandIcon size={20} />
+            </button>
+          </HoverTip>
+          <HoverTip content="画笔" showArrow={false}>
+            <button
+              className={`frame-slideshow__tool-btn ${activeTool === 'pen' ? 'frame-slideshow__tool-btn--active' : ''}`}
+              onClick={() => switchTool('pen')}
+            >
+              <FeltTipPenIcon size={20} />
+            </button>
+          </HoverTip>
+          <HoverTip content="橡皮擦" showArrow={false}>
+            <button
+              className={`frame-slideshow__tool-btn ${activeTool === 'eraser' ? 'frame-slideshow__tool-btn--active' : ''}`}
+              onClick={() => switchTool('eraser')}
+            >
+              <EraseIcon size={20} />
+            </button>
+          </HoverTip>
+          <HoverTip content="激光笔" showArrow={false}>
+            <button
+              className={`frame-slideshow__tool-btn ${activeTool === 'laser' ? 'frame-slideshow__tool-btn--active' : ''}`}
+              onClick={() => switchTool('laser')}
+            >
+              <LaserPointerIcon size={20} />
+            </button>
+          </HoverTip>
         </div>
       </div>
 
       {/* 导航按钮 */}
       {currentIndex > 0 && (
-        <button
-          className="frame-slideshow__nav frame-slideshow__nav--prev"
-          style={{ opacity: showControls ? 1 : 0 }}
-          onClick={() => goToFrame(currentIndex - 1)}
-          title="上一页"
-        >
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-            <path
-              d="M15 18l-6-6 6-6"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
+        <HoverTip content="上一页" showArrow={false}>
+          <button
+            className="frame-slideshow__nav frame-slideshow__nav--prev"
+            style={{ opacity: showControls ? 1 : 0 }}
+            onClick={() => goToFrame(currentIndex - 1)}
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M15 18l-6-6 6-6"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        </HoverTip>
       )}
       {currentIndex < frames.length - 1 && (
-        <button
-          className="frame-slideshow__nav frame-slideshow__nav--next"
-          style={{ opacity: showControls ? 1 : 0 }}
-          onClick={() => goToFrame(currentIndex + 1)}
-          title="下一页"
-        >
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-            <path
-              d="M9 18l6-6-6-6"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
+        <HoverTip content="下一页" showArrow={false}>
+          <button
+            className="frame-slideshow__nav frame-slideshow__nav--next"
+            style={{ opacity: showControls ? 1 : 0 }}
+            onClick={() => goToFrame(currentIndex + 1)}
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M9 18l6-6-6-6"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        </HoverTip>
       )}
 
     </div>,

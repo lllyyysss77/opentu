@@ -1,7 +1,7 @@
 import React, { useCallback, useRef, useState, useEffect } from 'react';
 import { ChevronRightIcon, ChevronLeftIcon } from 'tdesign-icons-react';
-import { Tooltip } from 'tdesign-react';
 import './ResizableDivider.scss';
+import { HoverTip } from '../../shared';
 
 // Storage keys for different dialog types
 const STORAGE_KEY_PREFIX = 'aitu-dialog-task-list-width-';
@@ -116,7 +116,7 @@ export const ResizableDivider: React.FC<ResizableDividerProps> = ({
       if (disabled || !isRightPanelVisible) return;
       e.preventDefault();
       e.stopPropagation();
-      
+
       setIsDragging(true);
       startXRef.current = e.clientX;
       startWidthRef.current = rightPanelWidth;
@@ -125,7 +125,10 @@ export const ResizableDivider: React.FC<ResizableDividerProps> = ({
       const handleMouseMove = (moveEvent: MouseEvent) => {
         // 向左拖动（deltaX < 0）应该增加右侧面板宽度
         const deltaX = startXRef.current - moveEvent.clientX;
-        const newWidth = Math.max(minWidth, Math.min(maxWidth, startWidthRef.current + deltaX));
+        const newWidth = Math.max(
+          minWidth,
+          Math.min(maxWidth, startWidthRef.current + deltaX)
+        );
         onWidthChange(newWidth);
       };
 
@@ -133,7 +136,9 @@ export const ResizableDivider: React.FC<ResizableDividerProps> = ({
         setIsDragging(false);
         onResizeEnd?.();
         // 保存当前宽度到 localStorage
-        const currentWidth = startWidthRef.current + (startXRef.current - document.body.getBoundingClientRect().left);
+        const currentWidth =
+          startWidthRef.current +
+          (startXRef.current - document.body.getBoundingClientRect().left);
         saveWidth(storageKey, rightPanelWidth);
         document.removeEventListener('mousemove', handleMouseMove);
         document.removeEventListener('mouseup', handleMouseUp);
@@ -142,7 +147,17 @@ export const ResizableDivider: React.FC<ResizableDividerProps> = ({
       document.addEventListener('mousemove', handleMouseMove);
       document.addEventListener('mouseup', handleMouseUp);
     },
-    [disabled, isRightPanelVisible, rightPanelWidth, minWidth, maxWidth, onWidthChange, onResizeStart, onResizeEnd, storageKey]
+    [
+      disabled,
+      isRightPanelVisible,
+      rightPanelWidth,
+      minWidth,
+      maxWidth,
+      onWidthChange,
+      onResizeStart,
+      onResizeEnd,
+      storageKey,
+    ]
   );
 
   // 保存宽度变化
@@ -168,7 +183,7 @@ export const ResizableDivider: React.FC<ResizableDividerProps> = ({
       onMouseDown={handleMouseDown}
     >
       <div className="resizable-divider__bar" />
-      <Tooltip content={toggleTooltip} theme="light" placement="left">
+      <HoverTip content={toggleTooltip} placement="left">
         <button
           type="button"
           className="resizable-divider__toggle"
@@ -184,7 +199,7 @@ export const ResizableDivider: React.FC<ResizableDividerProps> = ({
             <ChevronLeftIcon size="14px" />
           )}
         </button>
-      </Tooltip>
+      </HoverTip>
     </div>
   );
 };

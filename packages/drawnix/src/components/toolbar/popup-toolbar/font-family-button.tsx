@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import classNames from 'classnames';
+import { HoverTip } from '../../shared';
 import { ToolButton } from '../../tool-button';
 import { useConfirmDialog } from '../../dialog/ConfirmDialog';
 import { Popover, PopoverContent, PopoverTrigger } from '../../popover/popover';
@@ -216,16 +217,20 @@ export const PopupFontFamilyButton: React.FC<PopupFontFamilyButtonProps> = ({
               <span className="font-preview">{language === 'zh' ? '元旦快乐' : 'Happy New Year'}</span>
               <span className="font-name">{font.name.replace(/\.[^/.]+$/, '')}</span>
             </button>
-            <button
-              className="font-delete-btn"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleDeleteCustomFont(font.id);
-              }}
-              title={language === 'zh' ? '删除' : 'Delete'}
+            <HoverTip
+              content={language === 'zh' ? '删除' : 'Delete'}
+              showArrow={false}
             >
-              ×
-            </button>
+              <button
+                className="font-delete-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDeleteCustomFont(font.id);
+                }}
+              >
+                ×
+              </button>
+            </HoverTip>
           </div>
         ))
       )}
@@ -260,7 +265,7 @@ export const PopupFontFamilyButton: React.FC<PopupFontFamilyButtonProps> = ({
           visible={true}
           icon={<FontFamilyIcon />}
           type="button"
-          title={title}
+          tooltip={title}
           aria-label={title}
           onPointerUp={() => setIsOpen(!isOpen)}
         />

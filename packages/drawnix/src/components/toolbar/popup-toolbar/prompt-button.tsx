@@ -18,6 +18,7 @@ import { MindElement } from '@plait/mind';
 import { PlaitDrawElement, isDrawElementsIncludeText } from '@plait/draw';
 import { Popover, PopoverTrigger, PopoverContent } from '../../popover/popover';
 import { useConfirmDialog } from '../../dialog/ConfirmDialog';
+import { HoverTip } from '../../shared';
 import { ToolButton } from '../../tool-button';
 import { AI_IMAGE_PROMPTS } from '../../../constants/prompts';
 import { usePromptHistory } from '../../../hooks/usePromptHistory';
@@ -487,7 +488,7 @@ export const PopupPromptButton: React.FC<PopupPromptButtonProps> = ({
           type="icon"
           icon={<Lightbulb size={16} />}
           visible={true}
-          title={title || (language === 'zh' ? '提示词' : 'Prompts')}
+          tooltip={title || (language === 'zh' ? '提示词' : 'Prompts')}
           aria-label={title || (language === 'zh' ? '提示词' : 'Prompts')}
           onPointerUp={() => setIsOpen(!isOpen)}
         />
@@ -528,13 +529,17 @@ export const PopupPromptButton: React.FC<PopupPromptButtonProps> = ({
                     </div>
                     {/* 只有AI输入框的历史可以删除 */}
                     {item.source === 'ai-input' && (
-                      <button
-                        className="popup-prompt-panel__item-delete"
-                        onClick={(e) => handleDeleteHistory(e, item.id)}
-                        title={language === 'zh' ? '删除' : 'Delete'}
+                      <HoverTip
+                        content={language === 'zh' ? '删除' : 'Delete'}
+                        showArrow={false}
                       >
-                        <X size={12} />
-                      </button>
+                        <button
+                          className="popup-prompt-panel__item-delete"
+                          onClick={(e) => handleDeleteHistory(e, item.id)}
+                        >
+                          <X size={12} />
+                        </button>
+                      </HoverTip>
                     )}
                   </div>
                 ))}

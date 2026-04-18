@@ -104,7 +104,7 @@ export const PenSettingsToolbar: React.FC = () => {
                 type="button"
                 visible={true}
                 icon={option.icon}
-                title={t(option.titleKey as keyof Translations)}
+                tooltip={t(option.titleKey as keyof Translations)}
                 aria-label={t(option.titleKey as keyof Translations)}
                 onPointerUp={() => handleAnchorTypeChange(option.type)}
               />

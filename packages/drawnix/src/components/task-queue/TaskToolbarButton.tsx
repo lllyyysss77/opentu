@@ -6,11 +6,12 @@
  */
 
 import React, { useState, useRef } from 'react';
-import { Badge, Tooltip } from 'tdesign-react';
+import { Badge } from 'tdesign-react';
 import { TaskQueuePanel } from './TaskQueuePanel';
 import { useTaskQueue } from '../../hooks/useTaskQueue';
 import { useI18n } from '../../i18n';
 import './task-queue.scss';
+import { HoverTip } from '../shared';
 
 export interface TaskToolbarButtonProps {
   /** Whether in icon-only mode (for responsive layout) */
@@ -27,7 +28,7 @@ export interface TaskToolbarButtonProps {
  */
 export const TaskToolbarButton: React.FC<TaskToolbarButtonProps> = ({
   iconMode = false,
-  onExpandChange
+  onExpandChange,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const hasEverExpanded = useRef(false);
@@ -49,24 +50,33 @@ export const TaskToolbarButton: React.FC<TaskToolbarButtonProps> = ({
   };
 
   // Prepare tooltip content
-  const totalTasks = activeTasks.length + completedTasks.length + failedTasks.length;
-  const tooltipContent = totalTasks > 0
-    ? `任务队列 (生成中: ${activeTasks.length}, 已完成: ${completedTasks.length}, 失败: ${failedTasks.length})`
-    : '任务队列 (暂无任务)';
+  const totalTasks =
+    activeTasks.length + completedTasks.length + failedTasks.length;
+  const tooltipContent =
+    totalTasks > 0
+      ? `任务队列 (生成中: ${activeTasks.length}, 已完成: ${completedTasks.length}, 失败: ${failedTasks.length})`
+      : '任务队列 (暂无任务)';
 
   return (
     <>
       {/* Task Queue Panel - Only render after first expand */}
-      {hasEverExpanded.current && <TaskQueuePanel expanded={isExpanded} onClose={handleClose} />}
+      {hasEverExpanded.current && (
+        <TaskQueuePanel expanded={isExpanded} onClose={handleClose} />
+      )}
 
       {/* Embedded Task Button */}
-      <Tooltip content={tooltipContent} placement="right" theme="light">
+      <HoverTip content={tooltipContent} placement="right">
         <div
-          className={`task-toolbar-button ${isExpanded ? 'task-toolbar-button--expanded' : ''} ${iconMode ? 'task-toolbar-button--icon-only' : ''}`}
+          className={`task-toolbar-button ${
+            isExpanded ? 'task-toolbar-button--expanded' : ''
+          } ${iconMode ? 'task-toolbar-button--icon-only' : ''}`}
           data-track="toolbar_click_tasks"
           onClick={handleToggle}
         >
-          <Badge count={activeTasks.length > 0 ? activeTasks.length : 0} showZero={false}>
+          <Badge
+            count={activeTasks.length > 0 ? activeTasks.length : 0}
+            showZero={false}
+          >
             <div className="task-toolbar-button__content">
               <div className="task-toolbar-button__text">
                 {t('toolbar.tasks')}
@@ -82,7 +92,7 @@ export const TaskToolbarButton: React.FC<TaskToolbarButtonProps> = ({
             <div className="task-toolbar-button__status task-toolbar-button__status--failed" />
           )}
         </div>
-      </Tooltip>
+      </HoverTip>
     </>
   );
 };

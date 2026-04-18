@@ -52,7 +52,7 @@ export const ArrowPicker: React.FC<ArrowPickerProps> = ({ onPointerUp }) => {
               size={'small'}
               visible={true}
               icon={arrow.icon}
-              title={arrow.title}
+              tooltip={arrow.title}
               aria-label={arrow.title}
               onPointerDown={() => {
                 // 切换工具前，结束钢笔绘制

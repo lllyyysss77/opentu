@@ -6,6 +6,7 @@ import { useSharedTaskState } from '../../../hooks/useTaskQueue';
 import type { Task } from '../../../types/task.types';
 import { TaskStatus, TaskType } from '../../../types/task.types';
 import { ConfirmDialog } from '../../dialog/ConfirmDialog';
+import { HoverTip } from '../../shared';
 
 interface RelatedTasks {
   rewrite: Task[];
@@ -329,23 +330,31 @@ const RelatedTaskItem: React.FC<{ task: Task; onClick?: () => void }> = ({ task,
   const audioUrl = isCompleted ? (task.result?.url || '') : '';
 
   return (
-    <div
-      className="va-history-related-task"
-      title={statusLabel(task.status)}
-      onClick={onClick}
-      style={onClick ? { cursor: 'pointer' } : undefined}
-    >      <span className={`va-history-related-task-status ${statusClass(task.status)}`} />
-      <span className="va-history-related-task-prompt">{taskPromptSummary(task)}</span>
-      <span className="va-history-related-task-time">{shortTime(task.createdAt)}</span>
-      {isCompleted && audioUrl && task.type === TaskType.AUDIO && (
-        <audio
-          controls
-          src={audioUrl}
-          preload="metadata"
-          className="ma-related-task-audio"
-          onClick={(e) => e.stopPropagation()}
+    <HoverTip content={statusLabel(task.status)} showArrow={false}>
+      <div
+        className="va-history-related-task"
+        onClick={onClick}
+        style={onClick ? { cursor: 'pointer' } : undefined}
+      >
+        <span
+          className={`va-history-related-task-status ${statusClass(task.status)}`}
         />
-      )}
-    </div>
+        <span className="va-history-related-task-prompt">
+          {taskPromptSummary(task)}
+        </span>
+        <span className="va-history-related-task-time">
+          {shortTime(task.createdAt)}
+        </span>
+        {isCompleted && audioUrl && task.type === TaskType.AUDIO && (
+          <audio
+            controls
+            src={audioUrl}
+            preload="metadata"
+            className="ma-related-task-audio"
+            onClick={(e) => e.stopPropagation()}
+          />
+        )}
+      </div>
+    </HoverTip>
   );
 };

@@ -35,6 +35,7 @@ import './knowledge-base-editor.scss';
 import type { Asset } from '../../types/asset.types';
 import { SelectionMode } from '../../types/asset.types';
 import type { KBNote, KBTag, KBTagWithCount } from '../../types/knowledge-base.types';
+import { HoverTip } from '../shared';
 
 interface KBNoteEditorProps {
   note: KBNote | null;
@@ -311,38 +312,55 @@ setOutputType((note.metadata?.outputType as 'image' | 'text' | 'video' | 'ppt' |
         />
         <div className="kb-note-editor__actions">
           {isSpeechSupported && (
-            <button
-              className={`kb-note-editor__action-btn ${isCurrentReading ? 'kb-note-editor__action-btn--active' : ''}`}
-              onClick={handleSpeechToggle}
-              title={isCurrentReading ? (playback.playing ? '暂停朗读' : '继续朗读') : '语音朗读'}
+            <HoverTip
+              content={
+                isCurrentReading
+                  ? playback.playing
+                    ? '暂停朗读'
+                    : '继续朗读'
+                  : '语音朗读'
+              }
+              showArrow={false}
             >
-              {isCurrentReading && playback.playing ? <VolumeX size={14} /> : <Volume2 size={14} />}
-            </button>
+              <button
+                className={`kb-note-editor__action-btn ${isCurrentReading ? 'kb-note-editor__action-btn--active' : ''}`}
+                onClick={handleSpeechToggle}
+              >
+                {isCurrentReading && playback.playing ? (
+                  <VolumeX size={14} />
+                ) : (
+                  <Volume2 size={14} />
+                )}
+              </button>
+            </HoverTip>
           )}
           {isSpeechSupported && isCurrentReading && (
-            <button
-              className="kb-note-editor__action-btn kb-note-editor__action-btn--danger"
-              onClick={playback.stopPlayback}
-              title="停止朗读"
-            >
-              ■
-            </button>
+            <HoverTip content="停止朗读" showArrow={false}>
+              <button
+                className="kb-note-editor__action-btn kb-note-editor__action-btn--danger"
+                onClick={playback.stopPlayback}
+              >
+                ■
+              </button>
+            </HoverTip>
           )}
-          <button
-            className="kb-note-editor__action-btn"
-            onClick={handleExportMarkdown}
-            title="导出 Markdown"
-          >
-            <Download size={14} />
-          </button>
-          {!readOnly && (
+          <HoverTip content="导出 Markdown" showArrow={false}>
             <button
               className="kb-note-editor__action-btn"
-              onClick={handleOpenMediaLibrary}
-              title="插入素材"
+              onClick={handleExportMarkdown}
             >
-              <Paperclip size={14} />
+              <Download size={14} />
             </button>
+          </HoverTip>
+          {!readOnly && (
+            <HoverTip content="插入素材" showArrow={false}>
+              <button
+                className="kb-note-editor__action-btn"
+                onClick={handleOpenMediaLibrary}
+              >
+                <Paperclip size={14} />
+              </button>
+            </HoverTip>
           )}
         </div>
       </div>

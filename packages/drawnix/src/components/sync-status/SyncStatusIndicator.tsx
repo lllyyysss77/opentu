@@ -4,7 +4,7 @@
  */
 
 import React, { useState } from 'react';
-import { Tooltip, Loading } from 'tdesign-react';
+import { Loading } from 'tdesign-react';
 import {
   CloudIcon,
   CheckCircleFilledIcon,
@@ -15,6 +15,7 @@ import {
 import { useGitHubSyncOptional } from '../../contexts/GitHubSyncContext';
 import { SyncSettings } from '../sync-settings';
 import './sync-status.scss';
+import { HoverTip } from '../shared';
 
 /**
  * 同步状态指示器
@@ -28,7 +29,8 @@ export function SyncStatusIndicator() {
     return null;
   }
 
-  const { isConnected, isConfigured, syncStatus, isSyncing, lastSyncTime } = syncContext;
+  const { isConnected, isConfigured, syncStatus, isSyncing, lastSyncTime } =
+    syncContext;
 
   // 获取状态信息
   const getStatusInfo = (): {
@@ -94,7 +96,7 @@ export function SyncStatusIndicator() {
 
   return (
     <>
-      <Tooltip content={statusInfo.tooltip} theme="light">
+      <HoverTip content={statusInfo.tooltip}>
         <button
           className={`sync-status-indicator ${statusInfo.className}`}
           onClick={() => setShowSettings(true)}
@@ -102,7 +104,7 @@ export function SyncStatusIndicator() {
         >
           {statusInfo.icon}
         </button>
-      </Tooltip>
+      </HoverTip>
 
       <SyncSettings
         visible={showSettings}

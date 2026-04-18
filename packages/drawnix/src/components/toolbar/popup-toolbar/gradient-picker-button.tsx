@@ -5,6 +5,7 @@
 
 import React, { useState, useCallback } from 'react';
 import classNames from 'classnames';
+import { HoverTip } from '../../shared';
 import { ToolButton } from '../../tool-button';
 import { Popover, PopoverContent, PopoverTrigger } from '../../popover/popover';
 import { Island } from '../../island';
@@ -117,20 +118,24 @@ export const PopupGradientPickerButton: React.FC<PopupGradientPickerButtonProps>
             <div className="category-title">{label}</div>
             <div className="preset-grid">
               {GRADIENT_PRESETS.filter(p => p.category === key).map((preset) => (
-                <button
+                <HoverTip
                   key={preset.id}
-                  className="preset-item"
-                  onClick={() => applyPreset(preset)}
-                  title={language === 'zh' ? preset.nameZh : preset.name}
+                  content={language === 'zh' ? preset.nameZh : preset.name}
+                  showArrow={false}
                 >
-                  <div
-                    className="preset-preview"
-                    style={{ background: generateGradientCSS(preset.config) }}
-                  />
-                  <span className="preset-name">
-                    {language === 'zh' ? preset.nameZh : preset.name}
-                  </span>
-                </button>
+                  <button
+                    className="preset-item"
+                    onClick={() => applyPreset(preset)}
+                  >
+                    <div
+                      className="preset-preview"
+                      style={{ background: generateGradientCSS(preset.config) }}
+                    />
+                    <span className="preset-name">
+                      {language === 'zh' ? preset.nameZh : preset.name}
+                    </span>
+                  </button>
+                </HoverTip>
               ))}
             </div>
           </div>
@@ -301,7 +306,7 @@ export const PopupGradientPickerButton: React.FC<PopupGradientPickerButtonProps>
           visible={true}
           icon={<GradientIcon />}
           type="button"
-          title={title}
+          tooltip={title}
           aria-label={title}
           onPointerUp={() => setIsOpen(!isOpen)}
         />

@@ -19,6 +19,7 @@ import { isCacheUrl, countElementsByAssetUrls } from '../../utils/asset-cleanup'
 import { useDrawnix } from '../../hooks/use-drawnix';
 import { ConfirmDialog } from '../dialog/ConfirmDialog';
 import { VideoPosterPreview } from '../shared/VideoPosterPreview';
+import { HoverTip } from '../shared';
 import type { MediaLibraryInspectorProps } from '../../types/asset.types';
 import './MediaLibraryInspector.scss';
 
@@ -234,9 +235,9 @@ export function MediaLibraryInspector({
           </div>
         ) : (
           <div className="media-library-inspector__name-display">
-            <h3 className="media-library-inspector__name" title={asset.name}>
-              {asset.name}
-            </h3>
+            <HoverTip content={asset.name} showArrow={false}>
+              <h3 className="media-library-inspector__name">{asset.name}</h3>
+            </HoverTip>
             <Button
               size="small"
               variant="text"

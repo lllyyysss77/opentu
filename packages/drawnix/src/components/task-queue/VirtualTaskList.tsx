@@ -7,10 +7,11 @@
 
 import React, { useRef, useState, useEffect } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Button, Tooltip } from 'tdesign-react';
+import { Button } from 'tdesign-react';
 import { ArrowUpIcon } from 'tdesign-icons-react';
 import { Task } from '../../types/task.types';
 import { TaskItem } from './TaskItem';
+import { HoverTip } from '../shared';
 
 // Empty set singleton to avoid creating new objects on each render
 const EMPTY_SET = new Set<string>();
@@ -92,7 +93,10 @@ export const VirtualTaskList: React.FC<VirtualTaskListProps> = ({
   const lastLoadMoreTimeRef = useRef<number>(0);
   // 惰性初始化：小屏幕默认使用紧凑布局（用屏幕宽度作为初始估计）
   const [internalIsCompact, setInternalIsCompact] = useState(() => {
-    if (typeof window !== 'undefined' && window.innerWidth < COMPACT_LAYOUT_THRESHOLD) {
+    if (
+      typeof window !== 'undefined' &&
+      window.innerWidth < COMPACT_LAYOUT_THRESHOLD
+    ) {
       return true;
     }
     return false;
@@ -100,10 +104,13 @@ export const VirtualTaskList: React.FC<VirtualTaskListProps> = ({
   const [showBackToTop, setShowBackToTop] = useState(false);
 
   // 统一的布局检测模式
-  const isCompact = forcedIsCompact !== undefined ? forcedIsCompact : internalIsCompact;
+  const isCompact =
+    forcedIsCompact !== undefined ? forcedIsCompact : internalIsCompact;
 
   // 查找实际的滚动容器（可能是父级的 .side-drawer__content）
-  const findScrollContainer = (element: HTMLElement | null): HTMLElement | null => {
+  const findScrollContainer = (
+    element: HTMLElement | null
+  ): HTMLElement | null => {
     let current = element;
     while (current) {
       const style = getComputedStyle(current);
@@ -131,7 +138,9 @@ export const VirtualTaskList: React.FC<VirtualTaskListProps> = ({
     const timer = setTimeout(() => {
       // 查找实际的滚动容器
       const selfScrollable = container.scrollHeight > container.clientHeight;
-      const scrollRoot = selfScrollable ? container : findScrollContainer(container);
+      const scrollRoot = selfScrollable
+        ? container
+        : findScrollContainer(container);
       scrollContainerRef.current = scrollRoot;
 
       if (!scrollRoot) return;
@@ -176,14 +185,18 @@ export const VirtualTaskList: React.FC<VirtualTaskListProps> = ({
     const timer = setTimeout(() => {
       // 先检查自身是否是滚动容器
       const selfScrollable = container.scrollHeight > container.clientHeight;
-      const actualScrollContainer = selfScrollable ? container : findScrollContainer(container);
+      const actualScrollContainer = selfScrollable
+        ? container
+        : findScrollContainer(container);
       scrollContainerRef.current = actualScrollContainer;
 
       if (!actualScrollContainer) return;
 
       const handleScroll = () => {
         // 当滚动超过一屏高度时显示按钮
-        setShowBackToTop(actualScrollContainer.scrollTop > actualScrollContainer.clientHeight);
+        setShowBackToTop(
+          actualScrollContainer.scrollTop > actualScrollContainer.clientHeight
+        );
       };
 
       actualScrollContainer.addEventListener('scroll', handleScroll);
@@ -226,7 +239,8 @@ export const VirtualTaskList: React.FC<VirtualTaskListProps> = ({
 
     // 统一的布局检测函数 - 根据容器宽度判断
     const updateLayout = (containerWidth?: number) => {
-      const width = containerWidth ?? targetElement.getBoundingClientRect().width;
+      const width =
+        containerWidth ?? targetElement.getBoundingClientRect().width;
       setInternalIsCompact(width < COMPACT_LAYOUT_THRESHOLD);
     };
 
@@ -263,7 +277,9 @@ export const VirtualTaskList: React.FC<VirtualTaskListProps> = ({
   // Handle empty state
   if (tasks.length === 0) {
     return (
-      <div className={`virtual-task-list virtual-task-list--empty ${className}`}>
+      <div
+        className={`virtual-task-list virtual-task-list--empty ${className}`}
+      >
         {emptyContent}
       </div>
     );
@@ -283,35 +299,48 @@ export const VirtualTaskList: React.FC<VirtualTaskListProps> = ({
         </div>
       )}
       {/* 分页信息 - 有更多数据待加载时显示 */}
-      {hasMore && !isLoadingMore && totalCount !== undefined && totalCount > 0 && (
-        <div className="virtual-task-list__pagination-info">
-          已加载 {actualLoadedCount} / {totalCount}
-        </div>
-      )}
+      {hasMore &&
+        !isLoadingMore &&
+        totalCount !== undefined &&
+        totalCount > 0 && (
+          <div className="virtual-task-list__pagination-info">
+            已加载 {actualLoadedCount} / {totalCount}
+          </div>
+        )}
       {/* 没有更多数据提示 - 全部加载完成时显示 */}
-      {!hasMore && tasks.length > 0 && totalCount !== undefined && totalCount > 50 && (
-        <div className="virtual-task-list__no-more">
-          {allLoadedHint ? (
-            <Tooltip content={allLoadedHint} theme="light">
-              <span>{allLoadedText || `已加载全部 ${totalCount} 个任务`}</span>
-            </Tooltip>
-          ) : (
-            allLoadedText || `已加载全部 ${totalCount} 个任务`
-          )}
-        </div>
-      )}
+      {!hasMore &&
+        tasks.length > 0 &&
+        totalCount !== undefined &&
+        totalCount > 50 && (
+          <div className="virtual-task-list__no-more">
+            {allLoadedHint ? (
+              <HoverTip content={allLoadedHint}>
+                <span>
+                  {allLoadedText || `已加载全部 ${totalCount} 个任务`}
+                </span>
+              </HoverTip>
+            ) : (
+              allLoadedText || `已加载全部 ${totalCount} 个任务`
+            )}
+          </div>
+        )}
     </>
   );
 
   // Simple rendering for small lists
   if (!useVirtualization) {
     return (
-      <div 
+      <div
         ref={containerRef}
         className={`virtual-task-list-container ${className}`}
-        style={{ height: '100%', position: 'relative', display: 'flex', flexDirection: 'column' }}
+        style={{
+          height: '100%',
+          position: 'relative',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
       >
-        <div 
+        <div
           ref={parentRef}
           className="virtual-task-list-scrollarea"
           style={{ flex: 1, overflow: 'auto' }}

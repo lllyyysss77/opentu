@@ -1,13 +1,16 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import {
-  PlaitBoard,
-  PlaitElement,
-  getRectangleByElements,
-} from '@plait/core';
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useMemo,
+  useCallback,
+} from 'react';
+import { PlaitBoard, PlaitElement, getRectangleByElements } from '@plait/core';
 import { extractTextFromElement } from '../../utils/selection-utils';
 import { scrollToPoint } from '../../utils/selection-utils';
 import { setSearchHighlightQuery } from '@plait-board/react-text';
 import { useI18n } from '../../i18n';
+import { HoverTip } from '../shared';
 import { Search as SearchIcon, X, ChevronUp, ChevronDown } from 'lucide-react';
 import './canvas-search.scss';
 
@@ -27,7 +30,7 @@ interface SearchMatch {
 function collectTextElements(
   elements: PlaitElement[],
   board: PlaitBoard,
-  basePath: number[] = [],
+  basePath: number[] = []
 ): SearchMatch[] {
   const results: SearchMatch[] = [];
 
@@ -42,14 +45,20 @@ function collectTextElements(
 
     // 递归子元素
     if (element.children && Array.isArray(element.children)) {
-      results.push(...collectTextElements(element.children as PlaitElement[], board, path));
+      results.push(
+        ...collectTextElements(element.children as PlaitElement[], board, path)
+      );
     }
   }
 
   return results;
 }
 
-export const CanvasSearch: React.FC<CanvasSearchProps> = ({ open, onClose, board }) => {
+export const CanvasSearch: React.FC<CanvasSearchProps> = ({
+  open,
+  onClose,
+  board,
+}) => {
   const { language } = useI18n();
   const isZh = language === 'zh';
 
@@ -95,7 +104,8 @@ export const CanvasSearch: React.FC<CanvasSearchProps> = ({ open, onClose, board
   const navigateToMatch = useCallback(
     (index: number) => {
       if (matches.length === 0) return;
-      const safeIndex = ((index % matches.length) + matches.length) % matches.length;
+      const safeIndex =
+        ((index % matches.length) + matches.length) % matches.length;
       setCurrentIndex(safeIndex);
 
       const match = matches[safeIndex];
@@ -110,7 +120,7 @@ export const CanvasSearch: React.FC<CanvasSearchProps> = ({ open, onClose, board
         // 静默处理
       }
     },
-    [board, matches],
+    [board, matches]
   );
 
   // 首次匹配时自动导航
@@ -134,7 +144,7 @@ export const CanvasSearch: React.FC<CanvasSearchProps> = ({ open, onClose, board
         }
       }
     },
-    [onClose, navigateToMatch, currentIndex],
+    [onClose, navigateToMatch, currentIndex]
   );
 
   const handleQueryChange = useCallback((value: string) => {
@@ -173,25 +183,31 @@ export const CanvasSearch: React.FC<CanvasSearchProps> = ({ open, onClose, board
         </span>
       )}
       <div className="canvas-search__actions">
-        <button
-          className="canvas-search__btn"
-          onClick={() => navigateToMatch(currentIndex - 1)}
-          disabled={matches.length === 0}
-          title={isZh ? '上一个 (Shift+Enter)' : 'Previous (Shift+Enter)'}
+        <HoverTip
+          content={isZh ? '上一个 (Shift+Enter)' : 'Previous (Shift+Enter)'}
         >
-          <ChevronUp size={14} />
-        </button>
-        <button
-          className="canvas-search__btn"
-          onClick={() => navigateToMatch(currentIndex + 1)}
-          disabled={matches.length === 0}
-          title={isZh ? '下一个 (Enter)' : 'Next (Enter)'}
-        >
-          <ChevronDown size={14} />
-        </button>
-        <button className="canvas-search__btn" onClick={onClose} title="ESC">
-          <X size={14} />
-        </button>
+          <button
+            className="canvas-search__btn"
+            onClick={() => navigateToMatch(currentIndex - 1)}
+            disabled={matches.length === 0}
+          >
+            <ChevronUp size={14} />
+          </button>
+        </HoverTip>
+        <HoverTip content={isZh ? '下一个 (Enter)' : 'Next (Enter)'}>
+          <button
+            className="canvas-search__btn"
+            onClick={() => navigateToMatch(currentIndex + 1)}
+            disabled={matches.length === 0}
+          >
+            <ChevronDown size={14} />
+          </button>
+        </HoverTip>
+        <HoverTip content="ESC">
+          <button className="canvas-search__btn" onClick={onClose}>
+            <X size={14} />
+          </button>
+        </HoverTip>
       </div>
     </div>
   );

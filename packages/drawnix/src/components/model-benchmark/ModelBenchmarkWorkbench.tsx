@@ -1,6 +1,12 @@
-import React, { useEffect, useMemo, useRef, useState, startTransition } from 'react';
+import React, {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  startTransition,
+} from 'react';
 import type { Subscription } from 'rxjs';
-import { Select, Input, MessagePlugin, Tooltip } from 'tdesign-react';
+import { Select, Input, MessagePlugin } from 'tdesign-react';
 import {
   DeleteIcon,
   SearchIcon,
@@ -38,6 +44,7 @@ import {
 import type { ModelConfig } from '../../constants/model-config';
 import { useConfirmDialog } from '../dialog/ConfirmDialog';
 import './model-benchmark-workbench.scss';
+import { HoverTip } from '../shared';
 
 interface ModelBenchmarkWorkbenchProps {
   // props reserved for future use
@@ -65,7 +72,8 @@ const MODE_LABELS: Record<BenchmarkCompareMode, string> = {
 type SessionModalityFilter = 'all' | BenchmarkModality;
 
 const MODE_DESCRIPTIONS: Record<BenchmarkCompareMode, string> = {
-  'cross-provider': '锁定一个模型，横向比较不同供应商的稳定性、速度和效果差异。',
+  'cross-provider':
+    '锁定一个模型，横向比较不同供应商的稳定性、速度和效果差异。',
   'cross-model': '锁定一个供应商，一次跑完同类模型，快速筛掉慢和差的型号。',
   custom: '手动编排供应商与模型组合，适合做定向复测和候选名单对比。',
 };
@@ -129,14 +137,18 @@ function normalizeExportList(values: string[] | null | undefined): string {
     return '';
   }
 
-  return truncateExcelCell(values.map((item) => normalizeExportText(item)).join('\n'));
+  return truncateExcelCell(
+    values.map((item) => normalizeExportText(item)).join('\n')
+  );
 }
 
 function toBooleanLabel(value: boolean): string {
   return value ? '是' : '否';
 }
 
-function averageNullableNumbers(values: Array<number | null | undefined>): number | null {
+function averageNullableNumbers(
+  values: Array<number | null | undefined>
+): number | null {
   let total = 0;
   let count = 0;
 
@@ -151,9 +163,10 @@ function averageNullableNumbers(values: Array<number | null | undefined>): numbe
 }
 
 function buildExportFilename(now = new Date()): string {
-  const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(
-    now.getDate()
-  ).padStart(2, '0')}`;
+  const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(
+    2,
+    '0'
+  )}${String(now.getDate()).padStart(2, '0')}`;
   const timeStr = `${String(now.getHours()).padStart(2, '0')}${String(
     now.getMinutes()
   ).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
@@ -165,23 +178,19 @@ function isNonNullTarget<T>(value: T | null): value is T {
 }
 
 function normalizeQuery(value: string): string[] {
-  return value
-    .trim()
-    .toLowerCase()
-    .split(/\s+/)
-    .filter(Boolean);
+  return value.trim().toLowerCase().split(/\s+/).filter(Boolean);
 }
 
-function matchesQuery(query: string, values: Array<string | null | undefined>): boolean {
+function matchesQuery(
+  query: string,
+  values: Array<string | null | undefined>
+): boolean {
   const tokens = normalizeQuery(query);
   if (tokens.length === 0) {
     return true;
   }
 
-  const haystack = values
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase();
+  const haystack = values.filter(Boolean).join(' ').toLowerCase();
 
   return tokens.every((token) => haystack.includes(token));
 }
@@ -272,7 +281,9 @@ function getSessionModelLabels(session: ModelBenchmarkSession): string[] {
   });
 
   return Array.from(entriesByModelId.values()).map(({ modelId, modelLabel }) =>
-    (labelCounts.get(modelLabel) || 0) > 1 ? `${modelLabel} · ${modelId}` : modelLabel
+    (labelCounts.get(modelLabel) || 0) > 1
+      ? `${modelLabel} · ${modelId}`
+      : modelLabel
   );
 }
 
@@ -313,11 +324,15 @@ function getProfileModels(
   return Array.from(deduped.values());
 }
 
-function getModelDisplayName(model: Pick<ModelConfig, 'id' | 'label' | 'shortLabel'>) {
+function getModelDisplayName(
+  model: Pick<ModelConfig, 'id' | 'label' | 'shortLabel'>
+) {
   return model.shortLabel || model.label || model.id;
 }
 
-function getModelOptionLabel(model: Pick<ModelConfig, 'id' | 'label' | 'shortLabel'>) {
+function getModelOptionLabel(
+  model: Pick<ModelConfig, 'id' | 'label' | 'shortLabel'>
+) {
   const displayName = getModelDisplayName(model);
   return displayName === model.id
     ? displayName
@@ -389,7 +404,9 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
     async (session: ModelBenchmarkSession) => {
       const confirmed = await confirm({
         title: '确认删除会话',
-        description: `确定要删除会话「${session.title || '未命名会话'}」吗？此操作不可撤销。`,
+        description: `确定要删除会话「${
+          session.title || '未命名会话'
+        }」吗？此操作不可撤销。`,
         confirmText: '删除',
         cancelText: '取消',
         danger: true,
@@ -436,7 +453,9 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
 
   useEffect(() => {
     if (launchGuardRef.current) {
-      console.debug('[Benchmark] reconcile profile/prompt: skipped (launchGuard)');
+      console.debug(
+        '[Benchmark] reconcile profile/prompt: skipped (launchGuard)'
+      );
       return;
     }
     if (!availableProfiles.length) {
@@ -458,12 +477,7 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
     if (!selectedProfileId || !profileMap.has(selectedProfileId)) {
       setSelectedProfileId(availableProfiles[0].id);
     }
-  }, [
-    availableProfiles,
-    modality,
-    profileMap,
-    selectedProfileId,
-  ]);
+  }, [availableProfiles, modality, profileMap, selectedProfileId]);
 
   useEffect(() => {
     if (launchGuardRef.current) {
@@ -479,7 +493,10 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
     setSelectedModelIds((current) => {
       const next = reconcileSelection(current, modelIds, { fallback: 'all' });
       if (next !== current) {
-        console.debug('[Benchmark] reconcile modelIds: changed', { from: current, to: next });
+        console.debug('[Benchmark] reconcile modelIds: changed', {
+          from: current,
+          to: next,
+        });
       }
       return next;
     });
@@ -487,7 +504,9 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
 
   useEffect(() => {
     if (launchGuardRef.current) {
-      console.debug('[Benchmark] reconcile selectedModelId: skipped (launchGuard)');
+      console.debug(
+        '[Benchmark] reconcile selectedModelId: skipped (launchGuard)'
+      );
       return;
     }
     const modelIds = crossProviderModels.map((model) => model.id);
@@ -510,7 +529,9 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
         const model = getProfileModels(profile.id, modality).find(
           (item) => item.id === selectedModelId
         );
-        return model ? buildBenchmarkTarget(profile.id, profile.name, model) : null;
+        return model
+          ? buildBenchmarkTarget(profile.id, profile.name, model)
+          : null;
       })
       .filter(isNonNullTarget);
   }, [availableProfiles, modality, selectedModelId]);
@@ -595,7 +616,10 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
     if (!activeSession) {
       return [];
     }
-    return rankBenchmarkEntries(activeSession.entries, activeSession.rankingMode);
+    return rankBenchmarkEntries(
+      activeSession.entries,
+      activeSession.rankingMode
+    );
   }, [activeSession]);
 
   const resolvedTargets = useMemo(() => {
@@ -664,7 +688,8 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
         key: entry.selectionKey,
         modelLabel: entry.modelLabel,
         profileName: entry.profileName,
-        badgeLabel: ENTRY_STATUS_LABELS[entry.status] || ENTRY_STATUS_LABELS.pending,
+        badgeLabel:
+          ENTRY_STATUS_LABELS[entry.status] || ENTRY_STATUS_LABELS.pending,
       }));
     }
 
@@ -676,12 +701,15 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
     }));
   }, [activeSession, isQueuePreviewBoundToActiveSession, resolvedTargets]);
   const displayedSession = activeSession;
-  const displayedSessionSummary = displayedSession ? sessionSummary : getSessionSummary(null);
+  const displayedSessionSummary = displayedSession
+    ? sessionSummary
+    : getSessionSummary(null);
   const displayedSortedEntries = displayedSession ? sortedEntries : [];
   const queuePreviewTotal = queuePreviewEntries.length;
   const queuePreviewTargets = queuePreviewEntries.slice(0, QUEUE_PREVIEW_LIMIT);
   const topEntry =
-    displayedSortedEntries.find((entry) => entry.status === 'completed') || null;
+    displayedSortedEntries.find((entry) => entry.status === 'completed') ||
+    null;
   const filteredCrossModelModels = useMemo(
     () =>
       activeProfileModels.filter((model) => {
@@ -695,7 +723,13 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
           activeProfile?.name,
         ]);
       }),
-    [activeProfile?.name, activeProfileModels, pickerQuery, selectedModelIds, showSelectedOnly]
+    [
+      activeProfile?.name,
+      activeProfileModels,
+      pickerQuery,
+      selectedModelIds,
+      showSelectedOnly,
+    ]
   );
   const filteredCrossProviderCandidates = useMemo(
     () =>
@@ -711,7 +745,12 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
           target.profileId,
         ]);
       }),
-    [crossProviderCandidates, pickerQuery, selectedProviderIds, showSelectedOnly]
+    [
+      crossProviderCandidates,
+      pickerQuery,
+      selectedProviderIds,
+      showSelectedOnly,
+    ]
   );
   const filteredCustomTargets = useMemo(
     () =>
@@ -769,12 +808,17 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
     }
     const signature = JSON.stringify(initialRequest);
     if (launchSignatureRef.current === signature) {
-      console.debug('[Benchmark] useEffect: same signature, skip', { signature });
+      console.debug('[Benchmark] useEffect: same signature, skip', {
+        signature,
+      });
       return;
     }
 
     const nextModality = initialRequest.modality || 'text';
-    const nextProfiles = getAvailableProfilesForModality(profiles, nextModality);
+    const nextProfiles = getAvailableProfilesForModality(
+      profiles,
+      nextModality
+    );
     const requestedProfileId = initialRequest.profileId || '';
     const requestedModelId = initialRequest.modelId || '';
     const requestedProfileState = requestedProfileId
@@ -795,13 +839,16 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
       (requestedProfileState.status === 'idle' ||
         requestedProfileState.status === 'loading')
     ) {
-      console.debug('[Benchmark] useEffect: waiting for requested model discovery', {
-        signature,
-        requestedProfileId,
-        requestedModelId,
-        status: requestedProfileState.status,
-        discoveryVersion,
-      });
+      console.debug(
+        '[Benchmark] useEffect: waiting for requested model discovery',
+        {
+          signature,
+          requestedProfileId,
+          requestedModelId,
+          status: requestedProfileState.status,
+          discoveryVersion,
+        }
+      );
       return;
     }
 
@@ -817,12 +864,12 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
     let matchingProviderIds: string[] = [];
     const requestedCustomKey =
       initialRequest.profileId && initialRequest.modelId
-        ? buildCustomSelectionKey(initialRequest.profileId, initialRequest.modelId)
+        ? buildCustomSelectionKey(
+            initialRequest.profileId,
+            initialRequest.modelId
+          )
         : '';
-    if (
-      requestedCompareMode === 'cross-provider' &&
-      initialRequest.modelId
-    ) {
+    if (requestedCompareMode === 'cross-provider' && initialRequest.modelId) {
       matchingProviderIds = nextProfiles
         .filter((profile) =>
           getProfileModels(profile.id, nextModality).some(
@@ -857,7 +904,10 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
     setPrompt(defaultPreset.prompt);
 
     const effectiveProfileId =
-      initialRequest.profileId || matchingProviderIds[0] || nextProfiles[0]?.id || '';
+      initialRequest.profileId ||
+      matchingProviderIds[0] ||
+      nextProfiles[0]?.id ||
+      '';
     if (effectiveProfileId) {
       setSelectedProfileId(effectiveProfileId);
     }
@@ -869,7 +919,11 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
     } else if (nextCompareMode === 'cross-model' && initialRequest.modelId) {
       // cross-model：只选目标模型，不全选
       setSelectedModelIds([initialRequest.modelId]);
-    } else if (nextCompareMode === 'cross-model' && !initialRequest.modelId && effectiveProfileId) {
+    } else if (
+      nextCompareMode === 'cross-model' &&
+      !initialRequest.modelId &&
+      effectiveProfileId
+    ) {
       // cross-model 无 modelId（测试本组）：全选该 profile 下的所有模型
       const allModels = getProfileModels(effectiveProfileId, nextModality);
       setSelectedModelIds(allModels.map((m) => m.id));
@@ -921,8 +975,7 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
           targets = [];
         }
       } else {
-        const profileId =
-          effectiveProfileId || selectedProfileId;
+        const profileId = effectiveProfileId || selectedProfileId;
         if (profileId) {
           targets = getProfileModels(profileId, nextModality)
             .map((model) => {
@@ -946,7 +999,7 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
 
       console.debug('[Benchmark] setTimeout: creating session', {
         targetCount: targets.length,
-        targets: targets.map(t => `${t.profileName}/${t.modelId}`),
+        targets: targets.map((t) => `${t.profileName}/${t.modelId}`),
         autoRun: initialRequest.autoRun,
       });
 
@@ -1136,7 +1189,10 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
 
           current.latestAt = Math.max(
             current.latestAt,
-            entry.completedAt || entry.startedAt || session.updatedAt || session.createdAt
+            entry.completedAt ||
+              entry.startedAt ||
+              session.updatedAt ||
+              session.createdAt
           );
           modelSummaryMap.set(groupKey, current);
         });
@@ -1174,13 +1230,17 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
           最近测试时间: formatDateTime(item.latestAt),
         }))
         .sort((left, right) => {
-          const scoreDelta = (right['平均评分'] ?? -1) - (left['平均评分'] ?? -1);
+          const scoreDelta =
+            (right['平均评分'] ?? -1) - (left['平均评分'] ?? -1);
           if (scoreDelta !== 0) return scoreDelta;
-          const speedDelta = (left['平均首响ms'] ?? Number.MAX_SAFE_INTEGER) -
+          const speedDelta =
+            (left['平均首响ms'] ?? Number.MAX_SAFE_INTEGER) -
             (right['平均首响ms'] ?? Number.MAX_SAFE_INTEGER);
           if (speedDelta !== 0) return speedDelta;
-          return (left['平均成本'] ?? Number.MAX_SAFE_INTEGER) -
-            (right['平均成本'] ?? Number.MAX_SAFE_INTEGER);
+          return (
+            (left['平均成本'] ?? Number.MAX_SAFE_INTEGER) -
+            (right['平均成本'] ?? Number.MAX_SAFE_INTEGER)
+          );
         });
 
       const workbook = XLSX.utils.book_new();
@@ -1493,7 +1553,11 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
     { label: '全部', value: 'all', icon: <ViewListIcon size={14} /> },
     { label: '图片', value: 'image', icon: <ImageIcon size="14px" /> },
     { label: '视频', value: 'video', icon: <VideoIcon size="14px" /> },
-    { label: '音频', value: 'audio', icon: <Music4 size={14} strokeWidth={1.9} /> },
+    {
+      label: '音频',
+      value: 'audio',
+      icon: <Music4 size={14} strokeWidth={1.9} />,
+    },
     { label: '文本', value: 'text', icon: <TextboxIcon size="14px" /> },
   ];
 
@@ -1522,7 +1586,7 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
           />
           <div className="model-benchmark__sidebar-tabs">
             {sessionModalityTabs.map((tab) => (
-              <Tooltip key={tab.value} content={tab.label} theme="light">
+              <HoverTip key={tab.value} content={tab.label}>
                 <button
                   type="button"
                   className={
@@ -1536,7 +1600,7 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
                 >
                   {tab.icon}
                 </button>
-              </Tooltip>
+              </HoverTip>
             ))}
           </div>
         </div>
@@ -1553,7 +1617,9 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
                         ? 'model-benchmark__session-item--active'
                         : ''
                     }`}
-                    onClick={() => modelBenchmarkService.setActiveSession(session.id)}
+                    onClick={() =>
+                      modelBenchmarkService.setActiveSession(session.id)
+                    }
                   >
                     <span className="model-benchmark__session-title">
                       {session.title}
@@ -1564,7 +1630,8 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
                         : '暂无模型信息'}
                     </span>
                     <span className="model-benchmark__session-meta">
-                      {MODE_LABELS[session.compareMode]} · {session.entries.length} 个目标 ·{' '}
+                      {MODE_LABELS[session.compareMode]} ·{' '}
+                      {session.entries.length} 个目标 ·{' '}
                       {SESSION_STATUS_LABELS[session.status]}
                     </span>
                   </button>
@@ -1573,16 +1640,21 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
                     className="model-benchmark__session-delete"
                     onClick={() => void handleDeleteSession(session)}
                     aria-label={`删除会话 ${session.title}`}
-                    title="删除会话"
                   >
-                    <DeleteIcon />
+                    <HoverTip content="删除会话" showArrow={false}>
+                      <span>
+                        <DeleteIcon />
+                      </span>
+                    </HoverTip>
                   </button>
                 </div>
               );
             })
           ) : (
             <div className="model-benchmark__session-empty">
-              {storeState.sessions.length === 0 ? '暂无历史会话' : '没有匹配的历史会话'}
+              {storeState.sessions.length === 0
+                ? '暂无历史会话'
+                : '没有匹配的历史会话'}
             </div>
           )}
         </div>
@@ -1610,7 +1682,7 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
               <div className="model-benchmark__mode-selector">
                 {(Object.entries(MODE_LABELS) as [string, string][]).map(
                   ([value, label]) => (
-                    <Tooltip
+                    <HoverTip
                       key={value}
                       content={MODE_DESCRIPTIONS[value as BenchmarkCompareMode]}
                       placement="top"
@@ -1624,7 +1696,7 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
                       >
                         {label}
                       </button>
-                    </Tooltip>
+                    </HoverTip>
                   )
                 )}
               </div>
@@ -1638,7 +1710,9 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
                       className="model-benchmark__select"
                       label="目标供应商: "
                       value={selectedProfileId}
-                      onChange={(value) => setSelectedProfileId(value as string)}
+                      onChange={(value) =>
+                        setSelectedProfileId(value as string)
+                      }
                       options={availableProfiles.map((p) => ({
                         label: p.name,
                         value: p.id,
@@ -1672,8 +1746,24 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
                       }}
                       panelTopContent={
                         <div className="model-benchmark__select-actions">
-                          <button type="button" onClick={() => setSelectedProviderIds(crossProviderOptions.map((o) => o.value as string))}>全选</button>
-                          <button type="button" onClick={() => setSelectedProviderIds([])}>清除</button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setSelectedProviderIds(
+                                crossProviderOptions.map(
+                                  (o) => o.value as string
+                                )
+                              )
+                            }
+                          >
+                            全选
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedProviderIds([])}
+                          >
+                            清除
+                          </button>
                         </div>
                       }
                       className="model-benchmark__multi-select"
@@ -1699,8 +1789,22 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
                       }}
                       panelTopContent={
                         <div className="model-benchmark__select-actions">
-                          <button type="button" onClick={() => setSelectedModelIds(activeProfileModels.map((m) => m.id))}>全选</button>
-                          <button type="button" onClick={() => setSelectedModelIds([])}>清除</button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setSelectedModelIds(
+                                activeProfileModels.map((m) => m.id)
+                              )
+                            }
+                          >
+                            全选
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedModelIds([])}
+                          >
+                            清除
+                          </button>
                         </div>
                       }
                       className="model-benchmark__multi-select"
@@ -1729,8 +1833,22 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
                       }}
                       panelTopContent={
                         <div className="model-benchmark__select-actions">
-                          <button type="button" onClick={() => setSelectedCustomKeys(customTargets.map((t) => t.selectionKey))}>全选</button>
-                          <button type="button" onClick={() => setSelectedCustomKeys([])}>清除</button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setSelectedCustomKeys(
+                                customTargets.map((t) => t.selectionKey)
+                              )
+                            }
+                          >
+                            全选
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedCustomKeys([])}
+                          >
+                            清除
+                          </button>
                         </div>
                       }
                       className="model-benchmark__multi-select"
@@ -1768,9 +1886,14 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
                       aria-label="最大并发"
                       value={concurrency}
                       onChange={(event) => {
-                        const digitsOnly = event.target.value.replace(/\D/g, '');
+                        const digitsOnly = event.target.value.replace(
+                          /\D/g,
+                          ''
+                        );
                         const nextValue = Number(digitsOnly);
-                        setConcurrency(Math.min(10, Math.max(1, nextValue || 1)));
+                        setConcurrency(
+                          Math.min(10, Math.max(1, nextValue || 1))
+                        );
                       }}
                     />
                   </div>
@@ -1794,16 +1917,26 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
           <div className="model-benchmark__main-head">
             <div>
               <div className="model-benchmark__eyebrow">
-                {displayedSession ? MODE_LABELS[displayedSession.compareMode] : 'Result Board'}
+                {displayedSession
+                  ? MODE_LABELS[displayedSession.compareMode]
+                  : 'Result Board'}
               </div>
-              <h3>{displayedSession ? displayedSession.title : '还没有测试结果'}</h3>
+              <h3>
+                {displayedSession ? displayedSession.title : '还没有测试结果'}
+              </h3>
               {displayedSession ? (
                 <p className="model-benchmark__main-desc">
                   {displayedSessionSummary.total} 个目标
-                  {displayedSessionSummary.completed > 0 ? `，${displayedSessionSummary.completed} 成功` : ''}
-                  {displayedSessionSummary.failed > 0 ? `，${displayedSessionSummary.failed} 失败` : ''}
-                  {' · '}{SESSION_STATUS_LABELS[displayedSession.status]}
-                  {' · '}{RANKING_LABELS[displayedSession.rankingMode]}
+                  {displayedSessionSummary.completed > 0
+                    ? `，${displayedSessionSummary.completed} 成功`
+                    : ''}
+                  {displayedSessionSummary.failed > 0
+                    ? `，${displayedSessionSummary.failed} 失败`
+                    : ''}
+                  {' · '}
+                  {SESSION_STATUS_LABELS[displayedSession.status]}
+                  {' · '}
+                  {RANKING_LABELS[displayedSession.rankingMode]}
                 </p>
               ) : (
                 <p className="model-benchmark__main-desc">
@@ -1833,7 +1966,9 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
                     </p>
                   </div>
                   <div className="model-benchmark__spotlight-meta">
-                    {topEntry.userScore ? <span>{topEntry.userScore} 分</span> : null}
+                    {topEntry.userScore ? (
+                      <span>{topEntry.userScore} 分</span>
+                    ) : null}
                     {topEntry.favorite ? <span>已收藏</span> : null}
                   </div>
                 </section>
@@ -1846,7 +1981,9 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
                     className={`model-benchmark__result-card model-benchmark__result-card--${entry.status}`}
                   >
                     <header className="model-benchmark__result-head">
-                      <div className="model-benchmark__result-rank">#{index + 1}</div>
+                      <div className="model-benchmark__result-rank">
+                        #{index + 1}
+                      </div>
                       <div className="model-benchmark__result-heading">
                         <div className="model-benchmark__result-title">
                           {entry.modelLabel}
@@ -1870,7 +2007,9 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
 
                     <div className="model-benchmark__result-metrics">
                       <span>首响 {formatDuration(entry.firstResponseMs)}</span>
-                      <span>总耗时 {formatDuration(entry.totalDurationMs)}</span>
+                      <span>
+                        总耗时 {formatDuration(entry.totalDurationMs)}
+                      </span>
                       <span>
                         成本{' '}
                         {entry.estimatedCost === null
@@ -1891,7 +2030,9 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
                     </div>
 
                     {entry.errorSummary ? (
-                      <div className="model-benchmark__error">{entry.errorSummary}</div>
+                      <div className="model-benchmark__error">
+                        {entry.errorSummary}
+                      </div>
                     ) : null}
 
                     <div className="model-benchmark__feedback">
@@ -1910,7 +2051,8 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
                                 displayedSession.id,
                                 entry.id,
                                 {
-                                  userScore: entry.userScore === score ? null : score,
+                                  userScore:
+                                    entry.userScore === score ? null : score,
                                 }
                               )
                             }

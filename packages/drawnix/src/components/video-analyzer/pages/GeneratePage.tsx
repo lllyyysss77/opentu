@@ -29,6 +29,7 @@ import { taskQueueService } from '../../../services/task-queue';
 import { extractFrameFromUrl } from '../../../utils/video-frame-cache';
 import { buildBatchVideoReferenceImages, waitForBatchVideoTask } from '../../../utils/batch-video-generation';
 import { VideoPosterPreview } from '../../shared/VideoPosterPreview';
+import { HoverTip } from '../../shared';
 import {
   readStoredModelSelection,
   writeStoredModelSelection,
@@ -1371,10 +1372,9 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
                       alt="首帧"
                       referrerPolicy="no-referrer"
                       onClick={() => handleShotGenerateFirstFrame(shot)}
-                      title="点击以此帧为参考图生成首帧"
                     />
-                    <button className="va-shot-frame-delete" onClick={() => handleDeleteFrame(shot.id, 'first')}>×</button>
-                    <button className="va-shot-frame-regen" onClick={() => handleShotGenerateFirstFrame(shot)}>↻</button>
+                  <button className="va-shot-frame-delete" onClick={() => handleDeleteFrame(shot.id, 'first')}>×</button>
+                  <button className="va-shot-frame-regen" onClick={() => handleShotGenerateFirstFrame(shot)}>↻</button>
                   </div>
                 ) : (shot.first_frame_prompt || shot.description) ? (
                   <span className="va-shot-frame-btn-group">
@@ -1382,9 +1382,12 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
                     <button
                       className="va-shot-frame-library-btn"
                       onClick={() => handlePickFromLibrary(shot.id, 'first')}
-                      title="从素材库选择"
                     >
-                      <MediaLibraryGridIcon />
+                      <HoverTip content="从素材库选择" showArrow={false}>
+                        <span>
+                          <MediaLibraryGridIcon />
+                        </span>
+                      </HoverTip>
                     </button>
                   </span>
                 ) : null}
@@ -1405,7 +1408,6 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
                           alt="尾帧"
                           referrerPolicy="no-referrer"
                           onClick={() => handleShotGenerateLastFrame(shot, i)}
-                          title="点击以此帧为参考图生成尾帧"
                         />
                         <button className="va-shot-frame-delete" onClick={() => handleDeleteFrame(shot.id, 'last')}>×</button>
                         <button className="va-shot-frame-regen" onClick={() => handleShotGenerateLastFrame(shot, i)}>↻</button>
@@ -1425,7 +1427,6 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
                           alt="尾帧(下一镜头首帧)"
                           referrerPolicy="no-referrer"
                           onClick={() => handleShotGenerateLastFrame(shot, i)}
-                          title="下一镜头首帧，点击以此为参考图生成尾帧"
                         />
                         <span className="va-shot-frame-label">下一镜头首帧</span>
                       </div>
@@ -1438,9 +1439,12 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
                         <button
                           className="va-shot-frame-library-btn"
                           onClick={() => handlePickFromLibrary(shot.id, 'last')}
-                          title="从素材库选择"
                         >
-                          <MediaLibraryGridIcon />
+                          <HoverTip content="从素材库选择" showArrow={false}>
+                            <span>
+                              <MediaLibraryGridIcon />
+                            </span>
+                          </HoverTip>
                         </button>
                       </span>
                     );
@@ -1464,7 +1468,6 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
                       videoProps={{
                         muted: true,
                         preload: 'metadata',
-                        title: '点击重新生成视频',
                       }}
                     />
                     <button className="va-shot-frame-delete" onClick={() => handleDeleteFrame(shot.id, 'video')}>×</button>
@@ -1476,9 +1479,12 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
                     <button
                       className="va-shot-frame-library-btn"
                       onClick={() => handlePickFromLibrary(shot.id, 'video')}
-                      title="从素材库插入视频"
                     >
-                      <MediaLibraryGridIcon />
+                      <HoverTip content="从素材库插入视频" showArrow={false}>
+                        <span>
+                          <MediaLibraryGridIcon />
+                        </span>
+                      </HoverTip>
                     </button>
                   </span>
                 ) : null}

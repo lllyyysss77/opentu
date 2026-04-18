@@ -7,6 +7,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Plus, X, Tag } from 'lucide-react';
 import type { KBTag, KBTagWithCount } from '../../types/knowledge-base.types';
+import { HoverTip } from '../shared';
 
 interface KBTagSelectorProps {
   /** 所有可用标签 */
@@ -100,9 +101,12 @@ export const KBTagSelector: React.FC<KBTagSelectorProps> = ({
             <button
               className="kb-tag-selector__remove"
               onClick={(e) => removeTag(tag.id, e)}
-              title="移除标签"
             >
-              <X size={11} />
+              <HoverTip content="移除标签" showArrow={false}>
+                <span>
+                  <X size={11} />
+                </span>
+              </HoverTip>
             </button>
           </span>
         ))}

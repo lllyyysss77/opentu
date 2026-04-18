@@ -3,9 +3,16 @@
  */
 
 import React from 'react';
-import { RotateCcw, RotateCw, FlipHorizontal, FlipVertical, Check, Scan } from 'lucide-react';
-import { Tooltip } from 'tdesign-react';
+import {
+  RotateCcw,
+  RotateCw,
+  FlipHorizontal,
+  FlipVertical,
+  Check,
+  Scan,
+} from 'lucide-react';
 import { AspectRatioPreset } from './types';
+import { HoverTip } from '../shared';
 
 interface CropPanelProps {
   aspectRatio: number | null;
@@ -48,7 +55,9 @@ export const CropPanel: React.FC<CropPanelProps> = ({
           <div className="crop-panel__section-title">智能裁剪</div>
           <button
             type="button"
-            className={`crop-panel__auto-trim-btn ${isDetectingWhitespace ? 'loading' : ''}`}
+            className={`crop-panel__auto-trim-btn ${
+              isDetectingWhitespace ? 'loading' : ''
+            }`}
             onClick={onAutoTrimWhitespace}
             disabled={isDetectingWhitespace}
           >
@@ -84,7 +93,7 @@ export const CropPanel: React.FC<CropPanelProps> = ({
       <div className="crop-panel__section">
         <div className="crop-panel__section-title">旋转和翻转</div>
         <div className="crop-panel__transform-row">
-          <Tooltip content="向左旋转 90°" theme="light" placement="top">
+          <HoverTip content="向左旋转 90°" placement="top">
             <button
               type="button"
               className="crop-panel__transform-btn"
@@ -92,8 +101,8 @@ export const CropPanel: React.FC<CropPanelProps> = ({
             >
               <RotateCcw size={18} />
             </button>
-          </Tooltip>
-          <Tooltip content="向右旋转 90°" theme="light" placement="top">
+          </HoverTip>
+          <HoverTip content="向右旋转 90°" placement="top">
             <button
               type="button"
               className="crop-panel__transform-btn"
@@ -101,8 +110,8 @@ export const CropPanel: React.FC<CropPanelProps> = ({
             >
               <RotateCw size={18} />
             </button>
-          </Tooltip>
-          <Tooltip content="水平翻转" theme="light" placement="top">
+          </HoverTip>
+          <HoverTip content="水平翻转" placement="top">
             <button
               type="button"
               className={`crop-panel__transform-btn ${flipH ? 'active' : ''}`}
@@ -110,8 +119,8 @@ export const CropPanel: React.FC<CropPanelProps> = ({
             >
               <FlipHorizontal size={18} />
             </button>
-          </Tooltip>
-          <Tooltip content="垂直翻转" theme="light" placement="top">
+          </HoverTip>
+          <HoverTip content="垂直翻转" placement="top">
             <button
               type="button"
               className={`crop-panel__transform-btn ${flipV ? 'active' : ''}`}
@@ -119,12 +128,10 @@ export const CropPanel: React.FC<CropPanelProps> = ({
             >
               <FlipVertical size={18} />
             </button>
-          </Tooltip>
+          </HoverTip>
         </div>
         {rotation !== 0 && (
-          <div className="crop-panel__rotation-info">
-            当前旋转: {rotation}°
-          </div>
+          <div className="crop-panel__rotation-info">当前旋转: {rotation}°</div>
         )}
       </div>
 
@@ -133,16 +140,16 @@ export const CropPanel: React.FC<CropPanelProps> = ({
         <div className="crop-panel__section">
           <button
             type="button"
-            className={`crop-panel__confirm-btn ${hasCropArea ? '' : 'disabled'}`}
+            className={`crop-panel__confirm-btn ${
+              hasCropArea ? '' : 'disabled'
+            }`}
             onClick={onConfirmCrop}
             disabled={!hasCropArea}
           >
             <Check size={16} />
             <span>应用裁剪</span>
           </button>
-          <div className="crop-panel__confirm-hint">
-            按 Enter 键快速确认
-          </div>
+          <div className="crop-panel__confirm-hint">按 Enter 键快速确认</div>
         </div>
       )}
 

@@ -27,7 +27,7 @@ import {
   Redo2,
   Eye,
 } from 'lucide-react';
-import { Tooltip, MessagePlugin } from 'tdesign-react';
+import { MessagePlugin } from 'tdesign-react';
 import {
   EditMode,
   CropArea,
@@ -41,6 +41,7 @@ import {
 import { CropPanel } from './CropPanel';
 import { FilterPanel } from './FilterPanel';
 import './ImageEditorCore.scss';
+import { HoverTip } from '../shared';
 
 // Tooltip z-index 需要高于模态框
 const TOOLTIP_Z_INDEX = 10010;
@@ -67,11 +68,7 @@ function detectWhitespace(
   img: HTMLImageElement,
   options: WhitespaceDetectionOptions = {}
 ): { x: number; y: number; width: number; height: number } | null {
-  const {
-    threshold = 250,
-    tolerance = 0.02,
-    minContentSize = 50,
-  } = options;
+  const { threshold = 250, tolerance = 0.02, minContentSize = 50 } = options;
 
   const width = img.naturalWidth;
   const height = img.naturalHeight;
@@ -154,8 +151,10 @@ function detectWhitespace(
   const cropHeight = bottom - top + 1;
 
   // 检查是否有效裁剪（有白边且内容区域足够大）
-  const hasWhitespace = top > 0 || left > 0 || right < width - 1 || bottom < height - 1;
-  const contentSizeValid = cropWidth >= minContentSize && cropHeight >= minContentSize;
+  const hasWhitespace =
+    top > 0 || left > 0 || right < width - 1 || bottom < height - 1;
+  const contentSizeValid =
+    cropWidth >= minContentSize && cropHeight >= minContentSize;
 
   if (!hasWhitespace || !contentSizeValid) {
     return null;
@@ -211,8 +210,22 @@ export interface ImageEditorCoreRef {
   setState: (state: ImageEditState) => void;
 }
 
-export const ImageEditorCore = forwardRef<ImageEditorCoreRef, ImageEditorCoreProps>(
-  ({ imageUrl, showOverwrite = false, onOverwrite, onInsert, onClose, onSave, className }, ref) => {
+export const ImageEditorCore = forwardRef<
+  ImageEditorCoreRef,
+  ImageEditorCoreProps
+>(
+  (
+    {
+      imageUrl,
+      showOverwrite = false,
+      onOverwrite,
+      onInsert,
+      onClose,
+      onSave,
+      className,
+    },
+    ref
+  ) => {
     // 编辑模式
     const [mode, setMode] = useState<EditMode>('crop');
 
@@ -222,7 +235,9 @@ export const ImageEditorCore = forwardRef<ImageEditorCoreRef, ImageEditorCorePro
 
     // 滤镜状态
     const [filterType, setFilterType] = useState<FilterType>('none');
-    const [filterParams, setFilterParams] = useState<FilterParams>(DEFAULT_FILTER_PARAMS);
+    const [filterParams, setFilterParams] = useState<FilterParams>(
+      DEFAULT_FILTER_PARAMS
+    );
 
     // 变换状态
     const [rotation, setRotation] = useState(0);
@@ -254,7 +269,9 @@ export const ImageEditorCore = forwardRef<ImageEditorCoreRef, ImageEditorCorePro
     const [isComparing, setIsComparing] = useState(false);
 
     // 已确认的裁剪区域（用于在其他模式下预览裁剪效果）
-    const [confirmedCropArea, setConfirmedCropArea] = useState<CropArea | null>(null);
+    const [confirmedCropArea, setConfirmedCropArea] = useState<CropArea | null>(
+      null
+    );
 
     // 智能去白边检测中
     const [isDetectingWhitespace, setIsDetectingWhitespace] = useState(false);
@@ -271,7 +288,10 @@ export const ImageEditorCore = forwardRef<ImageEditorCoreRef, ImageEditorCorePro
 
     // 当图片 URL 变化时重置所有编辑状态
     useEffect(() => {
-      if (prevImageUrlRef.current !== null && prevImageUrlRef.current !== imageUrl) {
+      if (
+        prevImageUrlRef.current !== null &&
+        prevImageUrlRef.current !== imageUrl
+      ) {
         // 图片变化，重置所有状态
         setCropArea(null);
         setConfirmedCropArea(null);
@@ -348,7 +368,7 @@ export const ImageEditorCore = forwardRef<ImageEditorCoreRef, ImageEditorCorePro
       const updateDisplayScale = () => {
         const container = previewRef.current;
         if (!container) return;
-        
+
         const containerWidth = container.clientWidth - 80; // 留出边距
         const containerHeight = container.clientHeight - 80;
 
@@ -358,7 +378,7 @@ export const ImageEditorCore = forwardRef<ImageEditorCoreRef, ImageEditorCorePro
         const scaleX = containerWidth / imageSize.width;
         const scaleY = containerHeight / imageSize.height;
         const newScale = Math.min(scaleX, scaleY, 1);
-        
+
         // 只有当计算出有效的比例时才更新
         if (newScale > 0 && isFinite(newScale)) {
           setDisplayScale(newScale);
@@ -394,7 +414,15 @@ export const ImageEditorCore = forwardRef<ImageEditorCoreRef, ImageEditorCorePro
           clearTimeout(saveTimeoutRef.current);
         }
       };
-    }, [rotation, flipH, flipV, filterType, filterParams, aspectRatio, confirmedCropArea]);
+    }, [
+      rotation,
+      flipH,
+      flipV,
+      filterType,
+      filterParams,
+      aspectRatio,
+      confirmedCropArea,
+    ]);
 
     // 获取当前滤镜 CSS
     const getFilterCSS = useCallback(() => {
@@ -460,7 +488,16 @@ export const ImageEditorCore = forwardRef<ImageEditorCoreRef, ImageEditorCorePro
         flipH,
         flipV,
       }),
-      [cropArea, confirmedCropArea, aspectRatio, filterType, filterParams, rotation, flipH, flipV]
+      [
+        cropArea,
+        confirmedCropArea,
+        aspectRatio,
+        filterType,
+        filterParams,
+        rotation,
+        flipH,
+        flipV,
+      ]
     );
 
     // 应用编辑状态
@@ -534,7 +571,15 @@ export const ImageEditorCore = forwardRef<ImageEditorCoreRef, ImageEditorCorePro
             DEFAULT_FILTER_PARAMS[key as keyof FilterParams]
         )
       );
-    }, [confirmedCropArea, cropArea, rotation, flipH, flipV, filterType, filterParams]);
+    }, [
+      confirmedCropArea,
+      cropArea,
+      rotation,
+      flipH,
+      flipV,
+      filterType,
+      filterParams,
+    ]);
 
     // 重置所有编辑
     const handleReset = useCallback(() => {
@@ -657,9 +702,19 @@ export const ImageEditorCore = forwardRef<ImageEditorCoreRef, ImageEditorCorePro
         setShowSaveOptions(true);
       } catch (error) {
         MessagePlugin.close(loadingInstance);
-        MessagePlugin.error(error instanceof Error ? error.message : '图片处理失败');
+        MessagePlugin.error(
+          error instanceof Error ? error.message : '图片处理失败'
+        );
       }
-    }, [confirmedCropArea, cropArea, rotation, flipH, flipV, getFilterCSS, onSave]);
+    }, [
+      confirmedCropArea,
+      cropArea,
+      rotation,
+      flipH,
+      flipV,
+      getFilterCSS,
+      onSave,
+    ]);
 
     // 处理保存选项
     const handleSaveAction = useCallback(
@@ -691,15 +746,12 @@ export const ImageEditorCore = forwardRef<ImageEditorCoreRef, ImageEditorCorePro
     );
 
     // 处理比例变化
-    const handleAspectRatioChange = useCallback(
-      (ratio: number | null) => {
-        setAspectRatio(ratio);
-        // 重置裁剪区域以应用新比例
-        setCropArea(null);
-        setConfirmedCropArea(null);
-      },
-      []
-    );
+    const handleAspectRatioChange = useCallback((ratio: number | null) => {
+      setAspectRatio(ratio);
+      // 重置裁剪区域以应用新比例
+      setCropArea(null);
+      setConfirmedCropArea(null);
+    }, []);
 
     // 处理滤镜预设选择
     const handleFilterPresetSelect = useCallback((type: FilterType) => {
@@ -758,7 +810,7 @@ export const ImageEditorCore = forwardRef<ImageEditorCoreRef, ImageEditorCorePro
       requestAnimationFrame(() => {
         try {
           const detectedArea = detectWhitespace(img);
-          
+
           if (detectedArea) {
             // 清除固定比例，因为智能裁剪可能不符合预设比例
             setAspectRatio(null);
@@ -800,7 +852,10 @@ export const ImageEditorCore = forwardRef<ImageEditorCoreRef, ImageEditorCorePro
         }
 
         // Ctrl/Cmd + Shift + Z 或 Ctrl/Cmd + Y 重做
-        if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+        if (
+          (e.ctrlKey || e.metaKey) &&
+          (e.key === 'y' || (e.key === 'z' && e.shiftKey))
+        ) {
           e.preventDefault();
           handleRedo();
         }
@@ -840,7 +895,9 @@ export const ImageEditorCore = forwardRef<ImageEditorCoreRef, ImageEditorCorePro
         zoomDelta = -e.deltaY * 0.008;
       }
 
-      setZoom((prev) => Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, prev + zoomDelta)));
+      setZoom((prev) =>
+        Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, prev + zoomDelta))
+      );
     }, []);
 
     // 使用 useEffect 添加 wheel 事件监听器（需要 passive: false 才能 preventDefault）
@@ -943,39 +1000,65 @@ export const ImageEditorCore = forwardRef<ImageEditorCoreRef, ImageEditorCorePro
         <div className="image-editor-core__header">
           <div className="image-editor-core__title">编辑图片</div>
           <div className="image-editor-core__actions">
-            <Tooltip content="撤销 (Ctrl+Z)" theme="light" placement="bottom" zIndex={TOOLTIP_Z_INDEX}>
+            <HoverTip
+              content="撤销 (Ctrl+Z)"
+              theme="light"
+              placement="bottom"
+              zIndex={TOOLTIP_Z_INDEX}
+            >
               <button
                 type="button"
-                className={`image-editor-core__btn ${!canUndo ? 'disabled' : ''}`}
+                className={`image-editor-core__btn ${
+                  !canUndo ? 'disabled' : ''
+                }`}
                 onClick={handleUndo}
                 disabled={!canUndo}
               >
                 <Undo2 size={18} />
               </button>
-            </Tooltip>
-            <Tooltip content="重做 (Ctrl+Y)" theme="light" placement="bottom" zIndex={TOOLTIP_Z_INDEX}>
+            </HoverTip>
+            <HoverTip
+              content="重做 (Ctrl+Y)"
+              theme="light"
+              placement="bottom"
+              zIndex={TOOLTIP_Z_INDEX}
+            >
               <button
                 type="button"
-                className={`image-editor-core__btn ${!canRedo ? 'disabled' : ''}`}
+                className={`image-editor-core__btn ${
+                  !canRedo ? 'disabled' : ''
+                }`}
                 onClick={handleRedo}
                 disabled={!canRedo}
               >
                 <Redo2 size={18} />
               </button>
-            </Tooltip>
+            </HoverTip>
             <div className="image-editor-core__divider" />
-            <Tooltip content="对比原图（按住查看）" theme="light" placement="bottom" zIndex={TOOLTIP_Z_INDEX}>
+            <HoverTip
+              content="对比原图（按住查看）"
+              theme="light"
+              placement="bottom"
+              zIndex={TOOLTIP_Z_INDEX}
+            >
               <button
                 type="button"
-                className={`image-editor-core__btn ${isComparing ? 'active' : ''}`}
+                className={`image-editor-core__btn ${
+                  isComparing ? 'active' : ''
+                }`}
                 onMouseDown={() => setIsComparing(true)}
                 onMouseUp={() => setIsComparing(false)}
                 onMouseLeave={() => setIsComparing(false)}
               >
                 <Eye size={18} />
               </button>
-            </Tooltip>
-            <Tooltip content="重置" theme="light" placement="bottom" zIndex={TOOLTIP_Z_INDEX}>
+            </HoverTip>
+            <HoverTip
+              content="重置"
+              theme="light"
+              placement="bottom"
+              zIndex={TOOLTIP_Z_INDEX}
+            >
               <button
                 type="button"
                 className="image-editor-core__btn"
@@ -983,9 +1066,14 @@ export const ImageEditorCore = forwardRef<ImageEditorCoreRef, ImageEditorCorePro
               >
                 <RotateCcw size={18} />
               </button>
-            </Tooltip>
+            </HoverTip>
             {onClose && (
-              <Tooltip content="取消" theme="light" placement="bottom" zIndex={TOOLTIP_Z_INDEX}>
+              <HoverTip
+                content="取消"
+                theme="light"
+                placement="bottom"
+                zIndex={TOOLTIP_Z_INDEX}
+              >
                 <button
                   type="button"
                   className="image-editor-core__btn"
@@ -993,10 +1081,15 @@ export const ImageEditorCore = forwardRef<ImageEditorCoreRef, ImageEditorCorePro
                 >
                   <X size={18} />
                 </button>
-              </Tooltip>
+              </HoverTip>
             )}
             {(onSave || onOverwrite || onInsert) && (
-              <Tooltip content="保存" theme="light" placement="bottom" zIndex={TOOLTIP_Z_INDEX}>
+              <HoverTip
+                content="保存"
+                theme="light"
+                placement="bottom"
+                zIndex={TOOLTIP_Z_INDEX}
+              >
                 <button
                   type="button"
                   className="image-editor-core__btn image-editor-core__btn--primary"
@@ -1004,7 +1097,7 @@ export const ImageEditorCore = forwardRef<ImageEditorCoreRef, ImageEditorCorePro
                 >
                   <Check size={18} />
                 </button>
-              </Tooltip>
+              </HoverTip>
             )}
           </div>
         </div>
@@ -1017,7 +1110,9 @@ export const ImageEditorCore = forwardRef<ImageEditorCoreRef, ImageEditorCorePro
             <div className="image-editor-core__mode-tabs">
               <button
                 type="button"
-                className={`image-editor-core__mode-tab ${mode === 'crop' ? 'active' : ''}`}
+                className={`image-editor-core__mode-tab ${
+                  mode === 'crop' ? 'active' : ''
+                }`}
                 onClick={() => handleModeChange('crop')}
               >
                 <Crop size={16} />
@@ -1025,7 +1120,9 @@ export const ImageEditorCore = forwardRef<ImageEditorCoreRef, ImageEditorCorePro
               </button>
               <button
                 type="button"
-                className={`image-editor-core__mode-tab ${mode === 'filter' ? 'active' : ''}`}
+                className={`image-editor-core__mode-tab ${
+                  mode === 'filter' ? 'active' : ''
+                }`}
                 onClick={() => handleModeChange('filter')}
               >
                 <Sliders size={16} />
@@ -1085,16 +1182,30 @@ export const ImageEditorCore = forwardRef<ImageEditorCoreRef, ImageEditorCorePro
                 confirmedCropArea ? (
                   // 有裁剪区域时，使用 clip-path 显示相同裁剪位置的原图（不带滤镜）
                   (() => {
-                    const clipTop = (confirmedCropArea.y / imageSize.height) * 100;
-                    const clipRight = ((imageSize.width - confirmedCropArea.x - confirmedCropArea.width) / imageSize.width) * 100;
-                    const clipBottom = ((imageSize.height - confirmedCropArea.y - confirmedCropArea.height) / imageSize.height) * 100;
-                    const clipLeft = (confirmedCropArea.x / imageSize.width) * 100;
-                    
+                    const clipTop =
+                      (confirmedCropArea.y / imageSize.height) * 100;
+                    const clipRight =
+                      ((imageSize.width -
+                        confirmedCropArea.x -
+                        confirmedCropArea.width) /
+                        imageSize.width) *
+                      100;
+                    const clipBottom =
+                      ((imageSize.height -
+                        confirmedCropArea.y -
+                        confirmedCropArea.height) /
+                        imageSize.height) *
+                      100;
+                    const clipLeft =
+                      (confirmedCropArea.x / imageSize.width) * 100;
+
                     return (
                       <div
                         className="image-editor-core__filter-preview"
                         style={{
-                          transform: `${transformCSS} scale(${displayScale * zoom})`.trim(),
+                          transform: `${transformCSS} scale(${
+                            displayScale * zoom
+                          })`.trim(),
                           clipPath: `inset(${clipTop}% ${clipRight}% ${clipBottom}% ${clipLeft}%)`,
                         }}
                       >
@@ -1107,7 +1218,9 @@ export const ImageEditorCore = forwardRef<ImageEditorCoreRef, ImageEditorCorePro
                   <div
                     className="image-editor-core__filter-preview"
                     style={{
-                      transform: `${transformCSS} scale(${displayScale * zoom})`.trim(),
+                      transform: `${transformCSS} scale(${
+                        displayScale * zoom
+                      })`.trim(),
                     }}
                   >
                     <img src={imageUrl} alt="Original" draggable={false} />
@@ -1132,17 +1245,31 @@ export const ImageEditorCore = forwardRef<ImageEditorCoreRef, ImageEditorCorePro
                 // 有已确认的裁剪区域时，使用 clip-path 裁剪效果
                 (() => {
                   // 计算 clip-path inset 值（基于原始图片尺寸的百分比）
-                  const clipTop = (confirmedCropArea.y / imageSize.height) * 100;
-                  const clipRight = ((imageSize.width - confirmedCropArea.x - confirmedCropArea.width) / imageSize.width) * 100;
-                  const clipBottom = ((imageSize.height - confirmedCropArea.y - confirmedCropArea.height) / imageSize.height) * 100;
-                  const clipLeft = (confirmedCropArea.x / imageSize.width) * 100;
-                  
+                  const clipTop =
+                    (confirmedCropArea.y / imageSize.height) * 100;
+                  const clipRight =
+                    ((imageSize.width -
+                      confirmedCropArea.x -
+                      confirmedCropArea.width) /
+                      imageSize.width) *
+                    100;
+                  const clipBottom =
+                    ((imageSize.height -
+                      confirmedCropArea.y -
+                      confirmedCropArea.height) /
+                      imageSize.height) *
+                    100;
+                  const clipLeft =
+                    (confirmedCropArea.x / imageSize.width) * 100;
+
                   return (
                     <div
                       className="image-editor-core__filter-preview"
                       style={{
                         filter: filterCSS,
-                        transform: `${transformCSS} scale(${displayScale * zoom})`.trim(),
+                        transform: `${transformCSS} scale(${
+                          displayScale * zoom
+                        })`.trim(),
                         clipPath: `inset(${clipTop}% ${clipRight}% ${clipBottom}% ${clipLeft}%)`,
                       }}
                     >
@@ -1155,7 +1282,9 @@ export const ImageEditorCore = forwardRef<ImageEditorCoreRef, ImageEditorCorePro
                   className="image-editor-core__filter-preview"
                   style={{
                     filter: filterCSS,
-                    transform: `${transformCSS} scale(${displayScale * zoom})`.trim(),
+                    transform: `${transformCSS} scale(${
+                      displayScale * zoom
+                    })`.trim(),
                   }}
                 >
                   <img src={imageUrl} alt="Preview" draggable={false} />
@@ -1165,7 +1294,12 @@ export const ImageEditorCore = forwardRef<ImageEditorCoreRef, ImageEditorCorePro
 
             {/* 缩放控制栏 */}
             <div className="image-editor-core__zoom-controls">
-              <Tooltip content="缩小" theme="light" placement="top" zIndex={TOOLTIP_Z_INDEX}>
+              <HoverTip
+                content="缩小"
+                theme="light"
+                placement="top"
+                zIndex={TOOLTIP_Z_INDEX}
+              >
                 <button
                   type="button"
                   className="image-editor-core__zoom-btn"
@@ -1174,9 +1308,16 @@ export const ImageEditorCore = forwardRef<ImageEditorCoreRef, ImageEditorCorePro
                 >
                   <ZoomOut size={16} />
                 </button>
-              </Tooltip>
-              <span className="image-editor-core__zoom-value">{Math.round(zoom * 100)}%</span>
-              <Tooltip content="放大" theme="light" placement="top" zIndex={TOOLTIP_Z_INDEX}>
+              </HoverTip>
+              <span className="image-editor-core__zoom-value">
+                {Math.round(zoom * 100)}%
+              </span>
+              <HoverTip
+                content="放大"
+                theme="light"
+                placement="top"
+                zIndex={TOOLTIP_Z_INDEX}
+              >
                 <button
                   type="button"
                   className="image-editor-core__zoom-btn"
@@ -1185,8 +1326,13 @@ export const ImageEditorCore = forwardRef<ImageEditorCoreRef, ImageEditorCorePro
                 >
                   <ZoomIn size={16} />
                 </button>
-              </Tooltip>
-              <Tooltip content="重置视图" theme="light" placement="top" zIndex={TOOLTIP_Z_INDEX}>
+              </HoverTip>
+              <HoverTip
+                content="重置视图"
+                theme="light"
+                placement="top"
+                zIndex={TOOLTIP_Z_INDEX}
+              >
                 <button
                   type="button"
                   className="image-editor-core__zoom-btn"
@@ -1194,7 +1340,7 @@ export const ImageEditorCore = forwardRef<ImageEditorCoreRef, ImageEditorCorePro
                 >
                   <Maximize2 size={16} />
                 </button>
-              </Tooltip>
+              </HoverTip>
             </div>
           </div>
         </div>
@@ -1202,7 +1348,10 @@ export const ImageEditorCore = forwardRef<ImageEditorCoreRef, ImageEditorCorePro
         {/* 保存选项弹窗 */}
         {showSaveOptions && pendingImageUrl && (
           <div className="image-editor-core__save-dialog">
-            <div className="image-editor-core__save-dialog-backdrop" onClick={() => setShowSaveOptions(false)} />
+            <div
+              className="image-editor-core__save-dialog-backdrop"
+              onClick={() => setShowSaveOptions(false)}
+            />
             <div className="image-editor-core__save-dialog-content">
               <h3 className="image-editor-core__save-dialog-title">保存图片</h3>
               <div className="image-editor-core__save-options">
@@ -1214,8 +1363,12 @@ export const ImageEditorCore = forwardRef<ImageEditorCoreRef, ImageEditorCorePro
                   >
                     <Replace size={20} />
                     <div className="image-editor-core__save-option-content">
-                      <span className="image-editor-core__save-option-label">覆盖原图</span>
-                      <span className="image-editor-core__save-option-desc">替换画布中的原图片</span>
+                      <span className="image-editor-core__save-option-label">
+                        覆盖原图
+                      </span>
+                      <span className="image-editor-core__save-option-desc">
+                        替换画布中的原图片
+                      </span>
                     </div>
                   </button>
                 )}
@@ -1227,8 +1380,12 @@ export const ImageEditorCore = forwardRef<ImageEditorCoreRef, ImageEditorCorePro
                   >
                     <ImagePlus size={20} />
                     <div className="image-editor-core__save-option-content">
-                      <span className="image-editor-core__save-option-label">插入新图片</span>
-                      <span className="image-editor-core__save-option-desc">在画布中插入编辑后的图片</span>
+                      <span className="image-editor-core__save-option-label">
+                        插入新图片
+                      </span>
+                      <span className="image-editor-core__save-option-desc">
+                        在画布中插入编辑后的图片
+                      </span>
                     </div>
                   </button>
                 )}
@@ -1239,8 +1396,12 @@ export const ImageEditorCore = forwardRef<ImageEditorCoreRef, ImageEditorCorePro
                 >
                   <Download size={20} />
                   <div className="image-editor-core__save-option-content">
-                    <span className="image-editor-core__save-option-label">下载到本地</span>
-                    <span className="image-editor-core__save-option-desc">保存编辑后的图片到本地</span>
+                    <span className="image-editor-core__save-option-label">
+                      下载到本地
+                    </span>
+                    <span className="image-editor-core__save-option-desc">
+                      保存编辑后的图片到本地
+                    </span>
                   </div>
                 </button>
               </div>
@@ -1363,7 +1524,7 @@ const CropCanvas: React.FC<CropCanvasProps> = ({
       // 根据旋转角度转换屏幕坐标到图片坐标
       const normalizedRotation = ((rotation % 360) + 360) % 360;
       let deltaX: number, deltaY: number;
-      
+
       switch (normalizedRotation) {
         case 90:
           deltaX = screenDeltaY;
@@ -1396,7 +1557,10 @@ const CropCanvas: React.FC<CropCanvasProps> = ({
         );
         newCrop.y = Math.max(
           0,
-          Math.min(initialCrop.y + deltaY, imageSize.height - initialCrop.height)
+          Math.min(
+            initialCrop.y + deltaY,
+            imageSize.height - initialCrop.height
+          )
         );
       } else if (dragType === 'resize' && resizeHandle) {
         const minSize = 20;
@@ -1404,18 +1568,30 @@ const CropCanvas: React.FC<CropCanvasProps> = ({
         // 根据手柄位置调整大小
         switch (resizeHandle) {
           case 'nw':
-            newCrop.x = Math.min(initialCrop.x + deltaX, initialCrop.x + initialCrop.width - minSize);
-            newCrop.y = Math.min(initialCrop.y + deltaY, initialCrop.y + initialCrop.height - minSize);
+            newCrop.x = Math.min(
+              initialCrop.x + deltaX,
+              initialCrop.x + initialCrop.width - minSize
+            );
+            newCrop.y = Math.min(
+              initialCrop.y + deltaY,
+              initialCrop.y + initialCrop.height - minSize
+            );
             newCrop.width = Math.max(minSize, initialCrop.width - deltaX);
             newCrop.height = Math.max(minSize, initialCrop.height - deltaY);
             break;
           case 'ne':
-            newCrop.y = Math.min(initialCrop.y + deltaY, initialCrop.y + initialCrop.height - minSize);
+            newCrop.y = Math.min(
+              initialCrop.y + deltaY,
+              initialCrop.y + initialCrop.height - minSize
+            );
             newCrop.width = Math.max(minSize, initialCrop.width + deltaX);
             newCrop.height = Math.max(minSize, initialCrop.height - deltaY);
             break;
           case 'sw':
-            newCrop.x = Math.min(initialCrop.x + deltaX, initialCrop.x + initialCrop.width - minSize);
+            newCrop.x = Math.min(
+              initialCrop.x + deltaX,
+              initialCrop.x + initialCrop.width - minSize
+            );
             newCrop.width = Math.max(minSize, initialCrop.width - deltaX);
             newCrop.height = Math.max(minSize, initialCrop.height + deltaY);
             break;
@@ -1424,14 +1600,20 @@ const CropCanvas: React.FC<CropCanvasProps> = ({
             newCrop.height = Math.max(minSize, initialCrop.height + deltaY);
             break;
           case 'n':
-            newCrop.y = Math.min(initialCrop.y + deltaY, initialCrop.y + initialCrop.height - minSize);
+            newCrop.y = Math.min(
+              initialCrop.y + deltaY,
+              initialCrop.y + initialCrop.height - minSize
+            );
             newCrop.height = Math.max(minSize, initialCrop.height - deltaY);
             break;
           case 's':
             newCrop.height = Math.max(minSize, initialCrop.height + deltaY);
             break;
           case 'w':
-            newCrop.x = Math.min(initialCrop.x + deltaX, initialCrop.x + initialCrop.width - minSize);
+            newCrop.x = Math.min(
+              initialCrop.x + deltaX,
+              initialCrop.x + initialCrop.width - minSize
+            );
             newCrop.width = Math.max(minSize, initialCrop.width - deltaX);
             break;
           case 'e':
@@ -1470,7 +1652,7 @@ const CropCanvas: React.FC<CropCanvasProps> = ({
         if (aspectRatio) {
           const maxWidthByHeight = newCrop.height * aspectRatio;
           const maxHeightByWidth = newCrop.width / aspectRatio;
-          
+
           if (newCrop.width > maxWidthByHeight) {
             newCrop.width = maxWidthByHeight;
           } else if (newCrop.height > maxHeightByWidth) {
@@ -1516,7 +1698,9 @@ const CropCanvas: React.FC<CropCanvasProps> = ({
   const displayHeight = imageSize.height * displayScale * zoom;
 
   const transformStyle = {
-    transform: `rotate(${rotation}deg) ${flipH ? 'scaleX(-1)' : ''} ${flipV ? 'scaleY(-1)' : ''}`.trim(),
+    transform: `rotate(${rotation}deg) ${flipH ? 'scaleX(-1)' : ''} ${
+      flipV ? 'scaleY(-1)' : ''
+    }`.trim(),
   };
 
   // 根据旋转和翻转状态计算正确的 cursor 样式
@@ -1534,8 +1718,14 @@ const CropCanvas: React.FC<CropCanvasProps> = ({
 
     // 旋转映射表：每 90 度顺时针旋转一次的映射
     const rotateMap: Record<string, string> = {
-      nw: 'ne', ne: 'se', se: 'sw', sw: 'nw',
-      n: 'e', e: 's', s: 'w', w: 'n',
+      nw: 'ne',
+      ne: 'se',
+      se: 'sw',
+      sw: 'nw',
+      n: 'e',
+      e: 's',
+      s: 'w',
+      w: 'n',
     };
 
     let adjustedHandle = handle;
@@ -1543,7 +1733,7 @@ const CropCanvas: React.FC<CropCanvasProps> = ({
     // 先处理旋转（标准化到 0, 90, 180, 270）
     const normalizedRotation = ((rotation % 360) + 360) % 360;
     const rotationSteps = Math.round(normalizedRotation / 90) % 4;
-    
+
     // 应用旋转变换
     for (let i = 0; i < rotationSteps; i++) {
       adjustedHandle = rotateMap[adjustedHandle] || adjustedHandle;
@@ -1581,9 +1771,9 @@ const CropCanvas: React.FC<CropCanvasProps> = ({
           ...transformStyle,
         }}
       >
-        <img 
-          src={imageUrl} 
-          alt="Crop" 
+        <img
+          src={imageUrl}
+          alt="Crop"
           draggable={false}
           style={{ filter: filterCSS || 'none' }}
         />
@@ -1607,7 +1797,9 @@ const CropCanvas: React.FC<CropCanvasProps> = ({
                 className="crop-canvas__crop-image"
                 style={{
                   backgroundImage: `url(${imageUrl})`,
-                  backgroundPosition: `-${cropArea.x * displayScale * zoom}px -${cropArea.y * displayScale * zoom}px`,
+                  backgroundPosition: `-${
+                    cropArea.x * displayScale * zoom
+                  }px -${cropArea.y * displayScale * zoom}px`,
                   backgroundSize: `${displayWidth}px ${displayHeight}px`,
                   filter: filterCSS || 'none',
                 }}

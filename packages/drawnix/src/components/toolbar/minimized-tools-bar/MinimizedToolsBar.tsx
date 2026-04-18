@@ -203,7 +203,7 @@ export const MinimizedToolsBar: React.FC = () => {
                 visible={true}
                 selected={state.status === 'open'}
                 icon={renderIcon(fullTool.icon)}
-                title={contextMenuOpenId === state.instanceId ? undefined : title}
+                tooltip={contextMenuOpenId === state.instanceId ? undefined : title}
                 aria-label={title}
                 data-track="toolbar_click_minimized_tool"
                 data-tool-id={fullTool.id}

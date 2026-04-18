@@ -33,6 +33,7 @@ import { taskQueueService } from '../../../services/task-queue';
 import { buildBatchVideoReferenceImages, waitForBatchVideoTask } from '../../../utils/batch-video-generation';
 import { MediaLibraryModal } from '../../media-library';
 import { VideoPosterPreview } from '../../shared/VideoPosterPreview';
+import { HoverTip } from '../../shared';
 import { SelectionMode, AssetType } from '../../../types/asset.types';
 import type { Asset } from '../../../types/asset.types';
 import {
@@ -1367,14 +1368,20 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
                   <button className="va-shot-frame-regen" onClick={() => handleShotGenerateFirstFrame(shot)}>↻</button>
                 </div>
               ) : (shot.first_frame_prompt || shot.description) ? (
-                <span className="va-shot-frame-btn-group">
-                  <button onClick={() => handleShotGenerateFirstFrame(shot)}>生成首帧</button>
-                  <button className="va-shot-frame-library-btn"
-                    onClick={() => setLibraryTarget({ shotId: shot.id, assetType: 'first' })} title="从素材库选择">
-                    <MediaLibraryGridIcon />
-                  </button>
-                </span>
-              ) : null}
+                  <span className="va-shot-frame-btn-group">
+                    <button onClick={() => handleShotGenerateFirstFrame(shot)}>生成首帧</button>
+                    <HoverTip content="从素材库选择" showArrow={false}>
+                      <button
+                        className="va-shot-frame-library-btn"
+                        onClick={() =>
+                          setLibraryTarget({ shotId: shot.id, assetType: 'first' })
+                        }
+                      >
+                        <MediaLibraryGridIcon />
+                      </button>
+                    </HoverTip>
+                  </span>
+                ) : null}
               {(() => {
                 const lastFrameUrl = getLastFrameUrl(shot, i);
                 if (shot.generated_last_frame_url) {
@@ -1404,10 +1411,16 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
                   return (
                     <span className="va-shot-frame-btn-group">
                       <button onClick={() => handleShotGenerateLastFrame(shot, i)}>生成尾帧</button>
-                      <button className="va-shot-frame-library-btn"
-                        onClick={() => setLibraryTarget({ shotId: shot.id, assetType: 'last' })} title="从素材库选择">
-                        <MediaLibraryGridIcon />
-                      </button>
+                      <HoverTip content="从素材库选择" showArrow={false}>
+                        <button
+                          className="va-shot-frame-library-btn"
+                          onClick={() =>
+                            setLibraryTarget({ shotId: shot.id, assetType: 'last' })
+                          }
+                        >
+                          <MediaLibraryGridIcon />
+                        </button>
+                      </HoverTip>
                     </span>
                   );
                 }
@@ -1436,18 +1449,30 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
                   {(i > 0 || i < shots.length - 1) && (
                     <div className="va-shot-frame-transfer">
                       {i > 0 && (
-                        <button
-                          className="va-shot-frame-transfer-btn"
-                          onClick={() => handleFillFrame(shot, i, 'prev-last')}
-                          title="提取首帧 → 前一片段尾帧"
-                        ><ArrowUpToLine size={12} /></button>
+                        <HoverTip
+                          content="提取首帧 → 前一片段尾帧"
+                          showArrow={false}
+                        >
+                          <button
+                            className="va-shot-frame-transfer-btn"
+                            onClick={() => handleFillFrame(shot, i, 'prev-last')}
+                          >
+                            <ArrowUpToLine size={12} />
+                          </button>
+                        </HoverTip>
                       )}
                       {i < shots.length - 1 && (
-                        <button
-                          className="va-shot-frame-transfer-btn"
-                          onClick={() => handleFillFrame(shot, i, 'next-first')}
-                          title="提取尾帧 → 后一片段首帧"
-                        ><ArrowDownToLine size={12} /></button>
+                        <HoverTip
+                          content="提取尾帧 → 后一片段首帧"
+                          showArrow={false}
+                        >
+                          <button
+                            className="va-shot-frame-transfer-btn"
+                            onClick={() => handleFillFrame(shot, i, 'next-first')}
+                          >
+                            <ArrowDownToLine size={12} />
+                          </button>
+                        </HoverTip>
                       )}
                     </div>
                   )}
@@ -1455,13 +1480,16 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
               ) : shot.description ? (
                 <span className="va-shot-frame-btn-group">
                   <button onClick={() => handleShotGenerateVideo(shot, i)}>生成视频</button>
-                  <button
-                    className="va-shot-frame-library-btn"
-                    onClick={() => setLibraryTarget({ shotId: shot.id, assetType: 'video' })}
-                    title="从素材库插入视频"
-                  >
-                    <MediaLibraryGridIcon />
-                  </button>
+                  <HoverTip content="从素材库插入视频" showArrow={false}>
+                    <button
+                      className="va-shot-frame-library-btn"
+                      onClick={() =>
+                        setLibraryTarget({ shotId: shot.id, assetType: 'video' })
+                      }
+                    >
+                      <MediaLibraryGridIcon />
+                    </button>
+                  </HoverTip>
                 </span>
               ) : null}
             </>
