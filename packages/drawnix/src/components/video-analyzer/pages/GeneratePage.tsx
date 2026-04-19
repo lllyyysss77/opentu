@@ -711,6 +711,12 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
     if (lastFrameUrl) {
       initialImages.push({ url: lastFrameUrl, name: '尾帧' });
     }
+    const draftImages = toDraftImages(draft?.images || []);
+    const resolvedInitialImages = draftImages.length > 0
+      ? draftImages
+      : initialImages.length > 0
+        ? initialImages
+        : undefined;
     const targetModelConfig = getVideoModelConfig(videoModel);
     const durationStr = String(draft?.duration ?? segmentDuration);
     const validDuration = targetModelConfig.durationOptions.some(o => o.value === durationStr)
@@ -722,11 +728,7 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
 
     openDialog(DialogType.aiVideoGeneration, {
       initialPrompt: draft?.prompt || prompt,
-      initialImages: draft
-        ? toDraftImages(draft.images || [])
-        : initialImages.length > 0
-          ? initialImages
-          : undefined,
+      initialImages: resolvedInitialImages,
       initialDuration: validDuration,
       initialSize: validSize,
       initialModel: videoModel || undefined,
