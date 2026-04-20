@@ -1,3 +1,17 @@
+## 0.6.35 (2026-04-20)
+
+### 🚀 Features
+
+- 智能 CDN 优先加载与经验沉淀 ([ef5f2b8a](https://github.com/ljquan/aitu/commit/ef5f2b8a))
+
+### 🩹 Fixes
+
+- 修复版本记录类型定义和函数调用错误 ([e6b944ec](https://github.com/ljquan/aitu/commit/e6b944ec))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+
 ## 0.6.34 (2026-04-20)
 
 ### 🩹 Fixes
