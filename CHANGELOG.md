@@ -1,3 +1,13 @@
+## 0.6.36 (2026-04-20)
+
+### 🔧 Chores
+
+- Add HTML boot loading overlay ([b0bf8db0](https://github.com/ljquan/aitu/commit/b0bf8db0))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+
 ## 0.6.35 (2026-04-20)
 
 ### 🚀 Features
