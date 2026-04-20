@@ -476,16 +476,24 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
     if (downloadItems.length === 0) return;
 
     try {
-      await smartDownload(downloadItems);
-      MessagePlugin.success(
-        task.type === TaskType.AUDIO
-          ? downloadItems.length > 1
-            ? '多条音频已开始下载'
-            : '音频下载成功'
-          : downloadItems.length > 1
-          ? '多图已开始下载'
-          : '下载成功'
-      );
+      const result = await smartDownload(downloadItems);
+      if (result.openedCount > 0 && result.downloadedCount === 0) {
+        MessagePlugin.success(
+          result.openedCount > 1
+            ? `已打开 ${result.openedCount} 个链接，请在新标签页下载`
+            : '资源不支持直接下载，已打开链接'
+        );
+      } else {
+        MessagePlugin.success(
+          task.type === TaskType.AUDIO
+            ? downloadItems.length > 1
+              ? '多条音频已开始下载'
+              : '音频下载成功'
+            : downloadItems.length > 1
+            ? '多图已开始下载'
+            : '下载成功'
+        );
+      }
       onTaskAction?.('download', taskId);
     } catch (error) {
       console.error('Download failed:', error);

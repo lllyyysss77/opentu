@@ -1,9 +1,44 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AssetSource, AssetType, type Asset } from '../../types/asset.types';
 import { TaskStatus, TaskType, type Task } from '../../types/task.types';
+import type { AudioDownloadMetadata } from '../audio-id3';
+
+const {
+  downloadFileMock,
+  openInNewTabMock,
+  downloadFromBlobMock,
+  applyAudioMetadataToBlobMock,
+} = vi.hoisted(() => ({
+  downloadFileMock: vi.fn<(url: string, filename?: string) => Promise<void>>(),
+  openInNewTabMock: vi.fn<(url: string) => void>(),
+  downloadFromBlobMock: vi.fn<(blob: Blob, filename: string) => void>(),
+  applyAudioMetadataToBlobMock: vi.fn<
+    (
+      sourceBlob: Blob,
+      metadata?: AudioDownloadMetadata,
+      sourceUrl?: string
+    ) => Promise<Blob>
+  >(),
+}));
+
+vi.mock('@aitu/utils', async () => {
+  const actual = await vi.importActual<typeof import('@aitu/utils')>('@aitu/utils');
+  return {
+    ...actual,
+    downloadFile: downloadFileMock,
+    openInNewTab: openInNewTabMock,
+    downloadFromBlob: downloadFromBlobMock,
+  };
+});
+
+vi.mock('../audio-id3', () => ({
+  applyAudioMetadataToBlob: applyAudioMetadataToBlobMock,
+}));
+
 import {
   buildAssetDownloadItem,
   buildTaskDownloadItems,
+  smartDownload,
 } from '../download-utils';
 
 function createAsset(overrides: Partial<Asset> = {}): Asset {
@@ -59,6 +94,19 @@ function createTask(overrides: Partial<Task> = {}): Task {
 }
 
 describe('download-utils', () => {
+  beforeEach(() => {
+    downloadFileMock.mockReset();
+    openInNewTabMock.mockReset();
+    downloadFromBlobMock.mockReset();
+    applyAudioMetadataToBlobMock.mockReset();
+    applyAudioMetadataToBlobMock.mockImplementation(async (blob) => blob);
+    vi.unstubAllGlobals();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it('为素材库音频构建带封面的下载项', () => {
     const item = buildAssetDownloadItem(
       createAsset({
@@ -96,4 +144,51 @@ describe('download-utils', () => {
       },
     });
   });
+
+  it('单文件跨域抓取失败时改为打开链接', async () => {
+    downloadFileMock.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+
+    const result = await smartDownload([
+      {
+        url: 'https://cdn.example.com/image.png',
+        type: 'image',
+        filename: 'image.png',
+      },
+    ]);
+
+    expect(openInNewTabMock).toHaveBeenCalledWith(
+      'https://cdn.example.com/image.png'
+    );
+    expect(result).toEqual({
+      openedCount: 1,
+      downloadedCount: 0,
+      failedCount: 0,
+    });
+  });
+
+  it('单音频跨域抓取失败时改为打开链接', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>().mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    );
+
+    const result = await smartDownload([
+      {
+        url: 'https://cdn.example.com/audio.mp3',
+        type: 'audio',
+        filename: 'audio.mp3',
+      },
+    ]);
+
+    expect(openInNewTabMock).toHaveBeenCalledWith(
+      'https://cdn.example.com/audio.mp3'
+    );
+    expect(downloadFromBlobMock).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      openedCount: 1,
+      downloadedCount: 0,
+      failedCount: 0,
+    });
+  });
+
 });

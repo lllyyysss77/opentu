@@ -1272,16 +1272,32 @@ export const PopupToolbar = () => {
                     }
 
                     // 下载普通 URL
+                    let downloadResult;
                     if (processedItems.length > 0) {
-                      await smartDownload(processedItems);
+                      downloadResult = await smartDownload(processedItems);
                     }
 
                     MessagePlugin.close(loadingInstance);
-                    MessagePlugin.success(
-                      downloadItems.length > 1
-                        ? (language === 'zh' ? `已下载 ${downloadItems.length} 个文件` : `Downloaded ${downloadItems.length} files`)
-                        : (language === 'zh' ? '下载成功' : 'Download complete')
-                    );
+                    if (
+                      downloadResult?.openedCount &&
+                      downloadResult.downloadedCount === 0
+                    ) {
+                      MessagePlugin.success(
+                        language === 'zh'
+                          ? downloadResult.openedCount > 1
+                            ? `已打开 ${downloadResult.openedCount} 个链接，请在新标签页下载`
+                            : '资源不支持直接下载，已打开链接'
+                          : downloadResult.openedCount > 1
+                          ? `Opened ${downloadResult.openedCount} links for download`
+                          : 'Opened link for download'
+                      );
+                    } else {
+                      MessagePlugin.success(
+                        downloadItems.length > 1
+                          ? (language === 'zh' ? `已下载 ${downloadItems.length} 个文件` : `Downloaded ${downloadItems.length} files`)
+                          : (language === 'zh' ? '下载成功' : 'Download complete')
+                      );
+                    }
                   } catch (error: any) {
                     MessagePlugin.close(loadingInstance);
                     MessagePlugin.error(error.message || (language === 'zh' ? '下载失败' : 'Download failed'));

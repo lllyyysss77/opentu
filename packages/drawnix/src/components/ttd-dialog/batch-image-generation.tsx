@@ -1683,11 +1683,23 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
         filename: item.filename,
       }));
 
-      await smartDownload(downloadItems, zipFilename);
+      const result = await smartDownload(downloadItems, zipFilename);
 
-      MessagePlugin.success(
-        language === 'zh' ? '下载成功' : 'Download complete'
-      );
+      if (result.openedCount > 0 && result.downloadedCount === 0) {
+        MessagePlugin.success(
+          language === 'zh'
+            ? result.openedCount > 1
+              ? `已打开 ${result.openedCount} 个链接，请在新标签页下载`
+              : '资源不支持直接下载，已打开链接'
+            : result.openedCount > 1
+            ? `Opened ${result.openedCount} links for download`
+            : 'Opened link for download'
+        );
+      } else {
+        MessagePlugin.success(
+          language === 'zh' ? '下载成功' : 'Download complete'
+        );
+      }
     } catch (error) {
       console.error('Download failed:', error);
       MessagePlugin.error(language === 'zh' ? '下载失败' : 'Download failed');
