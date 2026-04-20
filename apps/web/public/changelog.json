@@ -1,6 +1,19 @@
 {
   "versions": [
     {
+      "version": "0.6.34",
+      "date": "2026-04-20",
+      "changes": {
+        "features": [],
+        "fixes": [
+          "跨域下载失败时回退打开链接"
+        ],
+        "improvements": []
+      },
+      "type": "patch",
+      "highlights": "跨域下载失败时回退打开链接"
+    },
+    {
       "version": "0.6.33",
       "date": "2026-04-20",
       "changes": {

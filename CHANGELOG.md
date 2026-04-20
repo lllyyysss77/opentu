@@ -1,3 +1,13 @@
+## 0.6.34 (2026-04-20)
+
+### 🩹 Fixes
+
+- 跨域下载失败时回退打开链接 ([71d4aa7e](https://github.com/ljquan/aitu/commit/71d4aa7e))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+
 ## 0.6.33 (2026-04-20)
 
 ### 🚀 Features
