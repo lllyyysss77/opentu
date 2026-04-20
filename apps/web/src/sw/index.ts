@@ -31,6 +31,7 @@ import {
   getCDNStatusReport,
   resetCDNStatus,
   performHealthCheck,
+  setCDNPreference,
 } from './cdn-fallback';
 import { getSafeErrorMessage } from './task-queue/utils/sanitize-utils';
 
@@ -231,6 +232,9 @@ const STATIC_CACHE_NAME = `drawnix-static-v${APP_VERSION}`;
 const FONT_CACHE_NAME = `drawnix-fonts`;
 const SW_CACHE_DATE_HEADER = 'sw-cache-date';
 const SW_CACHE_CREATED_AT_HEADER = 'sw-cache-created-at';
+const STATIC_SOURCE_HEADER = 'x-sw-source';
+const STATIC_REVISION_HEADER = 'x-sw-revision';
+const STATIC_APP_VERSION_HEADER = 'x-sw-app-version';
 
 // 缓存 URL 前缀 - 用于合并视频、图片等本地缓存资源
 const CACHE_URL_PREFIX = '/__aitu_cache__/';
@@ -1066,6 +1070,103 @@ async function loadPrecacheManifest(): Promise<
   }
 }
 
+function isOriginFirstStaticPath(pathname: string): boolean {
+  return (
+    pathname === '/' ||
+    pathname.endsWith('/index.html') ||
+    pathname.endsWith('/version.json') ||
+    pathname.endsWith('/manifest.json') ||
+    pathname.endsWith('/sw.js') ||
+    pathname.endsWith('/precache-manifest.json')
+  );
+}
+
+function isVersionedStaticResource(request: Request, url: URL): boolean {
+  if (isDevelopment || request.method !== 'GET') {
+    return false;
+  }
+
+  if (request.mode === 'navigate' || request.destination === 'document') {
+    return false;
+  }
+
+  if (isOriginFirstStaticPath(url.pathname)) {
+    return false;
+  }
+
+  return Boolean(
+    url.pathname.match(
+      /\.(js|css|png|jpg|jpeg|gif|webp|svg|woff|woff2|ttf|eot|json|ico)$/i
+    ) ||
+      request.destination === 'script' ||
+      request.destination === 'style' ||
+      request.destination === 'image' ||
+      request.destination === 'font'
+  );
+}
+
+function isStaticHtmlFallbackResponse(
+  request: Request,
+  url: URL,
+  response: Response
+): boolean {
+  const contentType = response.headers.get('Content-Type') || '';
+  return (
+    response.status === 200 &&
+    contentType.includes('text/html') &&
+    isVersionedStaticResource(request, url)
+  );
+}
+
+function decorateStaticCacheResponse(
+  response: Response,
+  metadata: { source: string; revision: string }
+): Response {
+  const headers = new Headers(response.headers);
+  headers.set(STATIC_SOURCE_HEADER, metadata.source);
+  headers.set(STATIC_REVISION_HEADER, metadata.revision);
+  headers.set(STATIC_APP_VERSION_HEADER, APP_VERSION);
+  headers.set('x-sw-cached-at', new Date().toISOString());
+
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+async function cacheStaticResponse(
+  cache: Cache,
+  request: RequestInfo | URL,
+  response: Response,
+  metadata: { source: string; revision: string }
+): Promise<Response> {
+  const cachedResponse = decorateStaticCacheResponse(response, metadata);
+  await cache.put(request, cachedResponse.clone());
+  return cachedResponse;
+}
+
+async function findStaticResponseInOldCaches(
+  request: Request
+): Promise<Response | null> {
+  const allCacheNames = await caches.keys();
+  for (const cacheName of allCacheNames) {
+    if (cacheName.startsWith('drawnix-static-v')) {
+      try {
+        const oldCache = await caches.open(cacheName);
+        const oldCachedResponse = await oldCache.match(request);
+        if (oldCachedResponse) {
+          return oldCachedResponse;
+        }
+      } catch {
+        // Ignore cache errors
+      }
+    }
+  }
+
+  return null;
+}
+
 /**
  * 缓存单个文件
  * - HTML 文件从当前服务器获取（确保最新版本）
@@ -1088,65 +1189,53 @@ async function cacheFile(
     const cachedResponse = await cache.match(url);
 
     if (cachedResponse) {
-      const cachedRevision = cachedResponse.headers.get('x-sw-revision');
-      if (cachedRevision === revision) {
+      const cachedRevision = cachedResponse.headers.get(STATIC_REVISION_HEADER);
+      const cachedVersion = cachedResponse.headers.get(STATIC_APP_VERSION_HEADER);
+      if (cachedRevision === revision && cachedVersion === APP_VERSION) {
         // 文件未变化，跳过
         return { url, success: true, skipped: true };
       }
     }
 
-    // 判断是否是 HTML 文件（必须从当前服务器获取）
-    const isHtml = url.endsWith('.html') || url === '/';
-
     let response: Response | null = null;
     let source = 'server';
+    const requestUrl = new URL(url, self.location.origin);
+    const syntheticRequest = new Request(requestUrl.href, { method: 'GET' });
 
-    // 预缓存时也优先走同源，避免和运行中的主包混用不同来源的静态资源
-    try {
-      response = await fetch(url, { cache: 'reload' });
-      source = 'server';
-    } catch (serverError) {
-      if (isHtml) {
-        throw serverError;
-      }
-    }
-
-    // 同源失败时，非 HTML 文件才回退到 CDN
-    if ((!response || !response.ok) && !isHtml) {
+    if (isVersionedStaticResource(syntheticRequest, requestUrl)) {
       const cdnResult = await fetchFromCDNWithFallback(
-        url.startsWith('/') ? url.slice(1) : url, // 移除开头的 /
+        url.startsWith('/') ? url.slice(1) : url,
         APP_VERSION,
         location.origin
       );
 
-      if (cdnResult && cdnResult.response.ok) {
+      if (cdnResult?.response.ok) {
         response = cdnResult.response;
         source = cdnResult.source;
       }
     }
 
-    // 如果上面还没取到有效响应，再尝试一次同源
     if (!response) {
       response = await fetch(url, { cache: 'reload' });
       source = 'server';
     }
 
+    if (response.ok && isStaticHtmlFallbackResponse(syntheticRequest, requestUrl, response)) {
+      return {
+        url,
+        success: false,
+        status: 404,
+        error: 'html-fallback-for-static-resource',
+      };
+    }
+
     if (response.ok) {
-      // 添加 revision 头用于后续比较
-      const headers = new Headers(response.headers);
-      headers.set('x-sw-revision', revision);
-      headers.set('x-sw-cached-at', new Date().toISOString());
-      headers.set('x-sw-source', source);
-
-      const modifiedResponse = new Response(await response.blob(), {
-        status: response.status,
-        statusText: response.statusText,
-        headers,
-      });
-
       // 使用完整 URL 作为缓存 key，确保与运行时请求匹配
       const fullUrl = new URL(url, self.location.origin).href;
-      await cache.put(fullUrl, modifiedResponse);
+      await cacheStaticResponse(cache, fullUrl, response, {
+        source,
+        revision,
+      });
       return { url, success: true, source };
     }
     return { url, success: false, status: response.status };
@@ -1228,6 +1317,14 @@ sw.addEventListener('activate', (event: ExtendableEvent) => {
   // 这样可以确保 SW 尽快生效，拦截后续请求（如下载失败的 JS/CSS）
   event.waitUntil(
     (async () => {
+      // 预热 CDN 偏好，后续静态资源请求可以直接复用
+      // 失败仅影响优先级排序，不影响激活
+      try {
+        const { ensureCDNPreferenceLoaded } = await import('./cdn-fallback');
+        await ensureCDNPreferenceLoaded();
+      } catch (error) {
+        console.warn('Failed to load persisted CDN preference:', error);
+      }
       await sw.clients.claim();
       // 使用 channelManager 通知所有客户端 SW 已更新
       const cm = getChannelManager();
@@ -1366,11 +1463,15 @@ async function tryFetchStaticResourceFromCDN(
       return null;
     }
 
-    if (request.url.startsWith('http')) {
-      await cache.put(request, cdnResult.response.clone());
+    const requestUrl = new URL(request.url);
+    if (isStaticHtmlFallbackResponse(request, requestUrl, cdnResult.response)) {
+      return null;
     }
 
-    return cdnResult.response;
+    return await cacheStaticResponse(cache, request, cdnResult.response, {
+      source: cdnResult.source,
+      revision: 'runtime',
+    });
   } catch (cdnError) {
     console.warn('[SW CDN] CDN fallback failed:', cdnError);
     return null;
@@ -1381,22 +1482,29 @@ function isSuspiciousStaticCacheResponse(
   request: Request,
   response: Response
 ): boolean {
-  const sourceHeader = response.headers.get('x-sw-source');
-  if (sourceHeader && sourceHeader !== 'server') {
+  const sourceHeader = response.headers.get(STATIC_SOURCE_HEADER);
+  const revisionHeader = response.headers.get(STATIC_REVISION_HEADER);
+  const versionHeader = response.headers.get(STATIC_APP_VERSION_HEADER);
+
+  if (!sourceHeader || !revisionHeader || !versionHeader) {
     return true;
   }
 
-  if (!response.url) {
-    return false;
+  if (versionHeader !== APP_VERSION) {
+    return true;
   }
 
-  try {
-    const requestOrigin = new URL(request.url).origin;
-    const responseOrigin = new URL(response.url).origin;
-    return requestOrigin !== responseOrigin;
-  } catch {
-    return false;
+  if (
+    sourceHeader !== 'server' &&
+    sourceHeader !== 'local' &&
+    sourceHeader !== 'jsdelivr' &&
+    sourceHeader !== 'unpkg'
+  ) {
+    return true;
   }
+
+  const requestUrl = new URL(request.url);
+  return isStaticHtmlFallbackResponse(request, requestUrl, response);
 }
 
 async function purgeSuspiciousStaticCacheEntries(cache: Cache): Promise<void> {
@@ -1475,6 +1583,18 @@ sw.addEventListener('message', (event: ExtendableMessageEvent) => {
         generateThumbnailAsync(blob, url, mediaType);
       })();
     }
+    return;
+  }
+
+  if (event.data && event.data.type === 'SW_CDN_SET_PREFERENCE') {
+    event.waitUntil(
+      setCDNPreference({
+        cdn: event.data.cdn,
+        latency: event.data.latency,
+        timestamp: event.data.timestamp,
+        version: event.data.version,
+      })
+    );
     return;
   }
 
@@ -3742,64 +3862,49 @@ async function handleStaticRequest(request: Request): Promise<Response> {
 
   // Cache miss - determine if this is a CDN-cacheable static resource
   const resourcePath = url.pathname;
-  const isStaticResource =
-    !isDevelopment &&
-    (resourcePath.match(
-      /\.(js|css|png|jpg|jpeg|gif|webp|svg|woff|woff2|ttf|eot|json|ico)$/i
-    ) ||
-      request.destination === 'script' ||
-      request.destination === 'style' ||
-      request.destination === 'image' ||
-      request.destination === 'font');
+  const isSmartCDNResource = isVersionedStaticResource(request, url);
 
-  // 同源优先，只有同源资源异常时才使用 CDN 兜底
+  if (isSmartCDNResource) {
+    const smartResponse = await tryFetchStaticResourceFromCDN(
+      cache,
+      request,
+      resourcePath
+    );
+    if (smartResponse) {
+      return smartResponse;
+    }
+
+    const oldCachedResponse = await findStaticResponseInOldCaches(request);
+    if (oldCachedResponse) {
+      return oldCachedResponse;
+    }
+
+    return new Response('Resource unavailable offline', {
+      status: 503,
+      statusText: 'Service Unavailable',
+      headers: { 'Content-Type': 'text/plain' },
+    });
+  }
+
+  // 入口链路继续保持同源优先
   try {
     const response = await fetchQuick(request);
 
-    // Validate response - don't cache HTML responses for static assets (SPA 404 fallback)
-    const contentType = response.headers.get('Content-Type');
-    const isInvalidResponse =
-      response.status === 200 &&
-      contentType?.includes('text/html') &&
-      (url.pathname.match(
-        /\.(js|css|png|jpg|jpeg|gif|webp|svg|json|woff|woff2|ttf)$/i
-      ) ||
-        request.destination === 'script' ||
-        request.destination === 'style' ||
-        request.destination === 'image' ||
-        request.destination === 'font');
+    const isInvalidResponse = isStaticHtmlFallbackResponse(
+      request,
+      url,
+      response
+    );
 
     if (isInvalidResponse) {
-      if (isStaticResource) {
-        const cdnResponse = await tryFetchStaticResourceFromCDN(
-          cache,
-          request,
-          resourcePath
-        );
-        if (cdnResponse) {
-          return cdnResponse;
-        }
-      }
-
       console.warn(
         'Service Worker: HTML response for static resource (404 fallback), trying old caches:',
         request.url
       );
 
-      // Try to find the resource in any cache (including old version caches)
-      const allCacheNames = await caches.keys();
-      for (const cacheName of allCacheNames) {
-        if (cacheName.startsWith('drawnix-static-v')) {
-          try {
-            const oldCache = await caches.open(cacheName);
-            const oldCachedResponse = await oldCache.match(request);
-            if (oldCachedResponse) {
-              return oldCachedResponse;
-            }
-          } catch (e) {
-            // Ignore cache errors
-          }
-        }
+      const oldCachedResponse = await findStaticResponseInOldCaches(request);
+      if (oldCachedResponse) {
+        return oldCachedResponse;
       }
 
       return new Response('Resource not found', {
@@ -3810,72 +3915,30 @@ async function handleStaticRequest(request: Request): Promise<Response> {
 
     // Cache successful responses
     if (response && response.status === 200 && request.url.startsWith('http')) {
-      cache.put(request, response.clone());
+      return await cacheStaticResponse(cache, request, response, {
+        source: 'server',
+        revision: 'runtime',
+      });
     }
 
     // If server returns error (4xx, 5xx), try to find any cached version from old caches
     // This is particularly useful if the static directory was deleted or server is misconfigured
     if (response.status >= 400) {
-      if (isStaticResource) {
-        const cdnResponse = await tryFetchStaticResourceFromCDN(
-          cache,
-          request,
-          resourcePath
-        );
-        if (cdnResponse) {
-          return cdnResponse;
-        }
-      }
-
       // console.warn(`Service Worker: Server error ${response.status} for static resource:`, request.url);
 
-      // Try to find the resource in any cache (including old version caches)
-      const allCacheNames = await caches.keys();
-      for (const cacheName of allCacheNames) {
-        if (cacheName.startsWith('drawnix-static-v')) {
-          try {
-            const oldCache = await caches.open(cacheName);
-            const oldCachedResponse = await oldCache.match(request);
-            if (oldCachedResponse) {
-              // console.log(`Service Worker: Found resource in ${cacheName}`);
-              return oldCachedResponse;
-            }
-          } catch (e) {
-            // Ignore cache errors
-          }
-        }
+      const oldCachedResponse = await findStaticResponseInOldCaches(request);
+      if (oldCachedResponse) {
+        return oldCachedResponse;
       }
     }
 
     return response;
   } catch (networkError) {
-    if (isStaticResource) {
-      const cdnResponse = await tryFetchStaticResourceFromCDN(
-        cache,
-        request,
-        resourcePath
-      );
-      if (cdnResponse) {
-        return cdnResponse;
-      }
-    }
-
     console.warn('[SW] Network failed, trying old caches:', request.url);
 
-    // Try to find the resource in any cache (including old version caches)
-    const allCacheNames = await caches.keys();
-    for (const cacheName of allCacheNames) {
-      if (cacheName.startsWith('drawnix-static-v')) {
-        try {
-          const oldCache = await caches.open(cacheName);
-          const oldCachedResponse = await oldCache.match(request);
-          if (oldCachedResponse) {
-            return oldCachedResponse;
-          }
-        } catch (e) {
-          // Ignore cache errors
-        }
-      }
+    const oldCachedResponse = await findStaticResponseInOldCaches(request);
+    if (oldCachedResponse) {
+      return oldCachedResponse;
     }
 
     // 所有来源都失败了

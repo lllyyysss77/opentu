@@ -47,6 +47,110 @@ const isLocalDev = typeof window !== 'undefined' &&
 const forceReport = typeof window !== 'undefined' && 
   new URLSearchParams(window.location.search).get('report') === '1';
 const shouldEnableReporting = forceReport || (!isLocalDev && import.meta.env.PROD);
+const APP_VERSION =
+  import.meta.env.VITE_APP_VERSION ||
+  document
+    .querySelector('meta[name="app-version"]')
+    ?.getAttribute('content') ||
+  '0.0.0';
+
+type CDNName = 'jsdelivr' | 'unpkg' | 'local';
+
+interface RuntimeCDNPreference {
+  cdn: CDNName;
+  latency: number;
+  timestamp: number;
+}
+
+interface RuntimeCDNApi {
+  selectBestCDN: () => Promise<RuntimeCDNPreference | null>;
+}
+
+declare global {
+  interface Window {
+    __OPENTU_CDN__?: RuntimeCDNPreference | null;
+    __AITU_CDN__?: RuntimeCDNPreference | null;
+    __OPENTU_CDN_API__?: RuntimeCDNApi;
+    __AITU_CDN_API__?: RuntimeCDNApi;
+  }
+}
+
+function isValidCDNName(value: unknown): value is CDNName {
+  return value === 'jsdelivr' || value === 'unpkg' || value === 'local';
+}
+
+function getRuntimeCDNPreference(): RuntimeCDNPreference | null {
+  const preference = window.__OPENTU_CDN__ || window.__AITU_CDN__;
+  if (!preference || !isValidCDNName(preference.cdn)) {
+    return null;
+  }
+
+  return {
+    cdn: preference.cdn,
+    latency:
+      Number.isFinite(preference.latency) && preference.latency >= 0
+        ? preference.latency
+        : 0,
+    timestamp:
+      Number.isFinite(preference.timestamp) && preference.timestamp > 0
+        ? preference.timestamp
+        : Date.now(),
+  };
+}
+
+function postCDNPreferenceToServiceWorker(
+  registration: ServiceWorkerRegistration | null
+): void {
+  const preference = getRuntimeCDNPreference();
+  if (!preference) {
+    return;
+  }
+
+  const payload = {
+    type: 'SW_CDN_SET_PREFERENCE' as const,
+    ...preference,
+    version: APP_VERSION,
+  };
+
+  const targets = new Set<ServiceWorker>();
+  const maybeWorkers = [
+    navigator.serviceWorker.controller,
+    registration?.active,
+    registration?.waiting,
+    registration?.installing,
+  ];
+
+  for (const worker of maybeWorkers) {
+    if (worker) {
+      targets.add(worker);
+    }
+  }
+
+  targets.forEach((worker) => {
+    worker.postMessage(payload);
+  });
+}
+
+function scheduleCDNPreferenceSync(
+  registration: ServiceWorkerRegistration | null
+): void {
+  postCDNPreferenceToServiceWorker(registration);
+
+  const api = window.__OPENTU_CDN_API__ || window.__AITU_CDN_API__;
+  if (api?.selectBestCDN) {
+    api
+      .selectBestCDN()
+      .then((preference) => {
+        if (preference && isValidCDNName(preference.cdn)) {
+          window.__OPENTU_CDN__ = preference;
+        }
+        postCDNPreferenceToServiceWorker(registration);
+      })
+      .catch((error) => {
+        console.warn('[Main] Failed to sync CDN preference to Service Worker:', error);
+      });
+  }
+}
 
 Sentry.init({
   dsn: "https://a18e755345995baaa0e1972c4cf24497@o4510700882296832.ingest.us.sentry.io/4510700883869696",
@@ -165,6 +269,7 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js')
     .then(registration => {
       swRegistration = registration;
+      scheduleCDNPreferenceSync(registration);
 
       // 在开发模式下，强制检查更新并处理等待中的Worker
       if (isDevelopment) {
@@ -317,6 +422,8 @@ if ('serviceWorker' in navigator) {
   // 监听controller变化（新的Service Worker接管）
   // 只有用户主动确认升级后才刷新页面
   navigator.serviceWorker.addEventListener('controllerchange', () => {
+    scheduleCDNPreferenceSync(swRegistration);
+
     // 只有用户主动确认升级后才刷新页面
     if (!userConfirmedUpgrade) {
       return;
