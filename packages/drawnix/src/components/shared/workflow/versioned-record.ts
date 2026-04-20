@@ -2,16 +2,24 @@ type VersionWithId = {
   id: string;
 };
 
-type VersionedRecord<TKey extends string, TVersion> = {
+type VersionedRecord<TKey extends string> = {
   activeVersionId?: string;
-} & Partial<Record<TKey, TVersion[]>>;
+} & Partial<Record<TKey, VersionWithId[]>>;
+
+type RecordVersion<
+  TRecord,
+  TKey extends keyof TRecord,
+> = Extract<
+  NonNullable<TRecord[TKey]> extends Array<infer TVersion> ? TVersion : never,
+  VersionWithId
+>;
 
 export const DEFAULT_ORIGINAL_VERSION_ID = 'original';
 
 export function appendVersionToRecord<
-  TVersion extends VersionWithId,
   TKey extends string,
-  TRecord extends VersionedRecord<TKey, TVersion>,
+  TRecord extends VersionedRecord<TKey>,
+  TVersion extends RecordVersion<TRecord, TKey>,
   TPatch extends object,
 >(
   record: TRecord,
@@ -30,16 +38,15 @@ export function appendVersionToRecord<
 }
 
 export function switchVersionInRecord<
-  TVersion extends VersionWithId,
   TKey extends string,
-  TRecord extends VersionedRecord<TKey, TVersion>,
+  TRecord extends VersionedRecord<TKey>,
   TPatch extends object,
 >(
   record: TRecord,
   versionsKey: TKey,
   versionId: string,
   options: {
-    getVersionPatch: (version: TVersion) => TPatch;
+    getVersionPatch: (version: RecordVersion<TRecord, TKey>) => TPatch;
     getOriginalPatch?: (record: TRecord) => TPatch | null;
     originalVersionId?: string;
   }
@@ -55,7 +62,9 @@ export function switchVersionInRecord<
       : null;
   }
 
-  const version = ((record[versionsKey] || []) as TVersion[]).find((item) => item.id === versionId);
+  const version = ((record[versionsKey] || []) as RecordVersion<TRecord, TKey>[]).find(
+    (item) => item.id === versionId
+  );
   if (!version) {
     return null;
   }

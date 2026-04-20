@@ -115,7 +115,7 @@ export async function syncVideoAnalyzerTask(task: Task): Promise<{
     return null;
   }
 
-  const raw = getTaskChatResponse(task);
+  const raw = readTaskChatResponse(task);
   const structuredEditedShots = getStructuredEditedShots(task);
   const editedShots = structuredEditedShots
     ? structuredEditedShots

@@ -1,6 +1,6 @@
 {
   "version": "0.6.34",
-  "buildTime": "2026-04-20T10:42:29.140Z",
+  "buildTime": "2026-04-20T10:42:30.003Z",
   "gitCommit": "unknown",
   "changelog": [
     "跨域下载失败时回退打开链接"

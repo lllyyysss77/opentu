@@ -179,7 +179,8 @@ export async function syncMusicAnalyzerTask(task: Task): Promise<{
     return null;
   }
 
-  const rewriteResult = getStructuredRewriteResult(task) || parseLyricsRewriteResult(getTaskChatResponse(task));
+  const rewriteResult =
+    getStructuredRewriteResult(task) || parseLyricsRewriteResult(readTaskChatResponse(task));
 
   // 创建歌词版本快照
   const versionCount = (target.lyricsVersions || []).length;
@@ -214,7 +215,7 @@ function parseLyricsGenResult(task: Task): LyricsRewriteResult | null {
     return structured;
   }
 
-  const rawChatResponse = getTaskChatResponse(task);
+  const rawChatResponse = readTaskChatResponse(task);
   if (rawChatResponse) {
     try {
       return parseLyricsRewriteResult(rawChatResponse);

@@ -117,7 +117,7 @@ export const EraserSettingsToolbar: React.FC = () => {
             onSizeChange={handleSizeChange}
             presets={ERASER_WIDTH_PRESETS}
             previewColor="#999"
-            tooltip={t('toolbar.eraserSize')}
+            title={t('toolbar.eraserSize')}
             container={container}
           />
           {/* 分隔线 */}

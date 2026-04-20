@@ -37,8 +37,8 @@ export function sortRelatedTaskGroups<TGroup extends string>(
   map: Map<string, Record<TGroup, Task[]>>
 ): Map<string, Record<TGroup, Task[]>> {
   for (const related of map.values()) {
-    for (const tasks of Object.values(related)) {
-      tasks.sort((a, b) => b.createdAt - a.createdAt);
+    for (const group of Object.keys(related) as TGroup[]) {
+      related[group].sort((a, b) => b.createdAt - a.createdAt);
     }
   }
 
