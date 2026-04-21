@@ -1572,8 +1572,17 @@ const SEEDREAM_IMAGE_MODEL_IDS = [
   'doubao-seedream-5-0-260128',
 ];
 
-/** GPT 图片模型 ID（仅支持有限尺寸） */
-const GPT_IMAGE_MODEL_IDS = ['gpt-image-2-vip', 'gpt-image-2', 'gpt-image-1.5'];
+/** GPT Image 2 模型 ID（支持扩展比例） */
+const GPT_IMAGE_2_MODEL_IDS = ['gpt-image-2-vip', 'gpt-image-2'];
+
+/** 旧版 GPT 图片模型 ID（仅支持有限尺寸） */
+const LEGACY_GPT_IMAGE_MODEL_IDS = ['gpt-image-1.5'];
+
+/** 所有 GPT 图片模型 ID */
+const GPT_IMAGE_MODEL_IDS = [
+  ...GPT_IMAGE_2_MODEL_IDS,
+  ...LEGACY_GPT_IMAGE_MODEL_IDS,
+];
 const MJ_IMAGE_MODEL_IDS = ['mj-imagine'];
 const GEMINI_31_FLASH_IMAGE_MODEL_IDS = ['gemini-3.1-flash-image-preview'];
 
@@ -2038,7 +2047,31 @@ export const AUDIO_PARAMS: ParamConfig[] = [
  * 'auto' 表示不传尺寸参数，让模型自动决定
  */
 export const IMAGE_PARAMS: ParamConfig[] = [
-  // GPT 图片模型尺寸（仅支持有限尺寸）
+  // GPT Image 2 模型尺寸
+  {
+    id: 'size',
+    label: '图片尺寸',
+    shortLabel: '尺寸',
+    description: '生成图片的尺寸比例',
+    valueType: 'enum',
+    options: [
+      { value: 'auto', label: '自动' },
+      { value: '1x1', label: '1:1 方形' },
+      { value: '2x3', label: '2:3 竖版' },
+      { value: '3x2', label: '3:2 横版' },
+      { value: '3x4', label: '3:4 竖版' },
+      { value: '4x3', label: '4:3 横版' },
+      { value: '4x5', label: '4:5 竖版' },
+      { value: '5x4', label: '5:4 横版' },
+      { value: '9x16', label: '9:16 竖版' },
+      { value: '16x9', label: '16:9 横版' },
+      { value: '21x9', label: '21:9 超宽' },
+    ],
+    defaultValue: 'auto',
+    compatibleModels: GPT_IMAGE_2_MODEL_IDS,
+    modelType: 'image',
+  },
+  // 旧版 GPT 图片模型尺寸（仅支持有限尺寸）
   {
     id: 'size',
     label: '图片尺寸',
@@ -2052,7 +2085,7 @@ export const IMAGE_PARAMS: ParamConfig[] = [
       { value: '2x3', label: '2:3 竖版' },
     ],
     defaultValue: 'auto',
-    compatibleModels: GPT_IMAGE_MODEL_IDS,
+    compatibleModels: LEGACY_GPT_IMAGE_MODEL_IDS,
     modelType: 'image',
   },
   // Gemini 图片模型尺寸（支持完整尺寸）
