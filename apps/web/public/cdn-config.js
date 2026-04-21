@@ -62,7 +62,7 @@
     cacheExpiry: 3600000, // 缓存过期时间（1小时）
   };
 
-  // CDN 源列表
+  // 运行时 CDN 候选：主 CDN 优先，备用 CDN 兜底
   var CDN_SOURCES = [
     {
       name: 'jsdelivr',

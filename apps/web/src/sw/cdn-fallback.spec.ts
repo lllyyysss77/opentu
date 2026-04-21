@@ -9,6 +9,8 @@ import {
 
 describe('cdn-fallback', () => {
   beforeEach(async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-04-22T00:00:00.000Z'));
     resetCDNStatus();
     await setCDNPreference(null);
     vi.restoreAllMocks();
@@ -23,6 +25,7 @@ describe('cdn-fallback', () => {
     await setCDNPreference(null);
     resetCDNStatus();
     vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   it('uses persisted preference to reorder available CDNs for the current version', async () => {
@@ -115,6 +118,43 @@ describe('cdn-fallback', () => {
     markCDNFailure('jsdelivr', 'timeout');
 
     expect(getAvailableCDNs('1.0.0').map((item) => item.name)).toEqual([
+      'unpkg',
+    ]);
+  });
+
+  it('extends cooldown after consecutive failures for backup CDN', () => {
+    markCDNFailure('unpkg', 'timeout');
+    markCDNFailure('unpkg', 'timeout');
+    markCDNFailure('unpkg', 'timeout');
+
+    expect(getAvailableCDNs('1.0.0').map((item) => item.name)).toEqual([
+      'jsdelivr',
+    ]);
+
+    vi.advanceTimersByTime(5 * 60 * 1000);
+    expect(getAvailableCDNs('1.0.0').map((item) => item.name)).toEqual([
+      'jsdelivr',
+    ]);
+
+    vi.advanceTimersByTime(5 * 60 * 1000 + 1);
+    expect(getAvailableCDNs('1.0.0').map((item) => item.name)).toEqual([
+      'jsdelivr',
+      'unpkg',
+    ]);
+
+    markCDNFailure('unpkg', 'timeout');
+    expect(getAvailableCDNs('1.0.0').map((item) => item.name)).toEqual([
+      'jsdelivr',
+    ]);
+
+    vi.advanceTimersByTime(10 * 60 * 1000);
+    expect(getAvailableCDNs('1.0.0').map((item) => item.name)).toEqual([
+      'jsdelivr',
+    ]);
+
+    vi.advanceTimersByTime(10 * 60 * 1000 + 1);
+    expect(getAvailableCDNs('1.0.0').map((item) => item.name)).toEqual([
+      'jsdelivr',
       'unpkg',
     ]);
   });

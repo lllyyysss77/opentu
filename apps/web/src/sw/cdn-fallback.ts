@@ -36,6 +36,11 @@ export interface CDNSource {
   priority: number;
 }
 
+interface CDNDegradePolicy {
+  baseTimeout: number;
+  maxTimeout: number;
+}
+
 // CDN 健康状态
 interface CDNHealthStatus {
   name: string;
@@ -60,6 +65,17 @@ const CDN_CONFIG = {
     typeof location !== 'undefined'
       ? new URL('/__sw__/cdn-preference', location.origin).href
       : 'https://opentu.local/__sw__/cdn-preference',
+};
+
+const CDN_DEGRADE_POLICIES: Record<Exclude<CDNName, 'local'>, CDNDegradePolicy> = {
+  jsdelivr: {
+    baseTimeout: 60 * 1000,
+    maxTimeout: 5 * 60 * 1000,
+  },
+  unpkg: {
+    baseTimeout: 10 * 60 * 1000,
+    maxTimeout: 60 * 60 * 1000,
+  },
 };
 
 // CDN 源列表（按默认优先级排序）
@@ -243,6 +259,21 @@ export function markCDNFailure(cdnName: string, reason?: string): void {
   }
 }
 
+function getCDNDegradeTimeout(cdnName: string, failCount: number): number {
+  const policy =
+    CDN_DEGRADE_POLICIES[cdnName as Exclude<CDNName, 'local'>] ?? {
+      baseTimeout: CDN_CONFIG.degradeTimeout,
+      maxTimeout: CDN_CONFIG.degradeTimeout,
+    };
+
+  const consecutiveFailures = Math.max(
+    0,
+    failCount - CDN_CONFIG.failThreshold
+  );
+  const multiplier = 2 ** consecutiveFailures;
+  return Math.min(policy.baseTimeout * multiplier, policy.maxTimeout);
+}
+
 export function isCDNAvailable(cdnName: string): boolean {
   const status = cdnHealthStatus.get(cdnName);
   if (!status) return false;
@@ -250,8 +281,11 @@ export function isCDNAvailable(cdnName: string): boolean {
   if (status.isHealthy) return true;
 
   const now = Date.now();
-  if (now - status.lastCheckTime > CDN_CONFIG.degradeTimeout) {
-    console.log(`[CDN Fallback] Trying to recover ${cdnName}...`);
+  const degradeTimeout = getCDNDegradeTimeout(cdnName, status.failCount);
+  if (now - status.lastCheckTime > degradeTimeout) {
+    console.log(
+      `[CDN Fallback] Trying to recover ${cdnName} after ${degradeTimeout}ms cooldown...`
+    );
     return true;
   }
 

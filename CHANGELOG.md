@@ -1,3 +1,28 @@
+## 0.6.43 (2026-04-21)
+
+### 🚀 Features
+
+- add keyboard shortcuts during pen creation ([141a8d35](https://github.com/ljquan/aitu/commit/141a8d35))
+- 扩展 gpt-image-2 图片比例支持 ([26436ce5](https://github.com/ljquan/aitu/commit/26436ce5))
+
+### 🩹 Fixes
+
+- 修复版本更新后懒加载 chunk 失效白屏 ([de9e370f](https://github.com/ljquan/aitu/commit/de9e370f))
+
+### 🔧 Chores
+
+- bump version to 0.6.42 ([03f28821](https://github.com/ljquan/aitu/commit/03f28821))
+- 更新版本号至0.6.41并修复错误处理 ([a5c1e0a9](https://github.com/ljquan/aitu/commit/a5c1e0a9))
+- bump version to 0.6.41 ([d8d36ff6](https://github.com/ljquan/aitu/commit/d8d36ff6))
+- docs: 更新网站元数据、SEO配置与用户手册内容 ([ff696ac3](https://github.com/ljquan/aitu/commit/ff696ac3))
+- refactor: 调整视频模型默认配置与选择器排序 ([6308cfd5](https://github.com/ljquan/aitu/commit/6308cfd5))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+- SaulgoodMan-C <271131037+SaulgoodMan-C@users.noreply.github.com>
+- gongchengtu <1817063960@qq.com>
+
 ## 0.6.42 (2026-04-21)
 
 ### 🔧 Chores

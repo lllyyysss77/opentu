@@ -27,6 +27,7 @@ try {
 const IDLE_PREFETCH_GROUPS = [
   'ai-chat',
   'tool-windows',
+  'diagram-engines',
   'office-data',
   'external-skills',
 ] as const;
