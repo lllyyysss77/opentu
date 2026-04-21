@@ -6,7 +6,7 @@
 import React, { useCallback, useState } from 'react';
 import classNames from 'classnames';
 import type { EyeDropperProps } from './types';
-import { HoverTip } from '../shared';
+import { HoverTip } from '../shared/hover';
 
 // EyeDropper API 类型声明
 declare global {

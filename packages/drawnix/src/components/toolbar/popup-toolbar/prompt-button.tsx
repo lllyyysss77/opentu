@@ -18,7 +18,7 @@ import { MindElement } from '@plait/mind';
 import { PlaitDrawElement, isDrawElementsIncludeText } from '@plait/draw';
 import { Popover, PopoverTrigger, PopoverContent } from '../../popover/popover';
 import { useConfirmDialog } from '../../dialog/ConfirmDialog';
-import { HoverTip } from '../../shared';
+import { HoverTip } from '../../shared/hover';
 import { ToolButton } from '../../tool-button';
 import { AI_IMAGE_PROMPTS } from '../../../constants/prompts';
 import { usePromptHistory } from '../../../hooks/usePromptHistory';

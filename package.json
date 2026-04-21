@@ -68,6 +68,7 @@
     "npm:publish": "node scripts/publish-npm.js",
     "npm:publish:dry": "node scripts/publish-npm.js --dry-run",
     "npm:publish:skip-build": "node scripts/publish-npm.js --skip-build",
+    "verify:startup": "node scripts/validate-startup-bundle.js",
     "deploy:upload-script": "node scripts/upload-deploy-script.js",
     "deploy:upload": "node scripts/upload-and-deploy.js",
     "deploy:nginx": "node scripts/upload-nginx-config.js"

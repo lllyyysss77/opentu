@@ -5,7 +5,7 @@
 
 import type { ErrorInfo } from 'react';
 import { getDiagnosticData } from '../crash-logger';
-import { crashRecoveryService, unifiedLogService } from '@drawnix/drawnix';
+import { crashRecoveryService, unifiedLogService } from '@drawnix/drawnix/runtime';
 
 export interface ErrorLogData {
   exportTime: string;

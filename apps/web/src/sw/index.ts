@@ -70,7 +70,9 @@ const channelManager = initChannelManager(sw);
 
 // 设置调试客户端数量变化回调
 // 当调试页面连接时自动启用调试模式，当所有调试页面关闭时自动禁用
-channelManager.setDebugClientCountChangedCallback(handleDebugClientCountChanged);
+channelManager.setDebugClientCountChangedCallback(
+  handleDebugClientCountChanged
+);
 
 // ============================================================================
 // SW Console Log Capture（应用页面 + Service Worker 日志均需捕获）
@@ -87,30 +89,33 @@ const originalSWConsole = {
 // 检查是否应该过滤掉日志（防止死循环）
 function shouldFilterLog(args: unknown[]): boolean {
   const message = args[0]?.toString() || '';
-  
+
   // 过滤 postmessage-duplex 库的日志（避免广播时死循环）
-  if (message.includes('[ServiceWorkerChannel]') ||
-      message.includes('[BaseChannel]') ||
-      message.includes('Invalid message structure') ||
-      message.includes('broadcast:') ||
-      message.includes('publish:') ||
-      message.includes('subscribe:')) {
+  if (
+    message.includes('[ServiceWorkerChannel]') ||
+    message.includes('[BaseChannel]') ||
+    message.includes('Invalid message structure') ||
+    message.includes('broadcast:') ||
+    message.includes('publish:') ||
+    message.includes('subscribe:')
+  ) {
     return true;
   }
-  
+
   // 过滤来自主线程转发的重复消息（主线程通过 console:report 独立上报，不走 SW console）
   // 注意：不在此过滤 "Service Worker"，否则会误拦 SW 自身的日志如 "Service Worker [Video-xxx]: fetch failed"
-  if (message.includes('[Main]') ||
-      message.includes('[SW Console Capture]')) {
+  if (message.includes('[Main]') || message.includes('[SW Console Capture]')) {
     return true;
   }
-  
+
   // 过滤 channel-manager 广播相关的日志
-  if (message.includes('[SWChannelManager]') && 
-      (message.includes('broadcast') || message.includes('sendConsoleLog'))) {
+  if (
+    message.includes('[SWChannelManager]') &&
+    (message.includes('broadcast') || message.includes('sendConsoleLog'))
+  ) {
     return true;
   }
-  
+
   return false;
 }
 
@@ -154,7 +159,10 @@ function formatLogArgs(args: unknown[]): { message: string; stack?: string } {
     try {
       // Error 或类 Error 对象（跨 realm 时 instanceof 可能为 false）
       const err = arg as { name?: string; message?: string; stack?: string };
-      if (arg instanceof Error || (arg && typeof arg === 'object' && typeof err.message === 'string')) {
+      if (
+        arg instanceof Error ||
+        (arg && typeof arg === 'object' && typeof err.message === 'string')
+      ) {
         extractedStack = err.stack || extractedStack;
         parts.push(`${err.name || 'Error'}: ${err.message || ''}`);
       } else if (typeof arg === 'object' && arg !== null) {
@@ -193,7 +201,10 @@ function forwardSWConsoleLog(
       });
     }
   } catch (e) {
-    originalSWConsole.error('[SW Console Capture] forwardSWConsoleLog failed:', e);
+    originalSWConsole.error(
+      '[SW Console Capture] forwardSWConsoleLog failed:',
+      e
+    );
   }
 }
 
@@ -358,7 +369,7 @@ const completedImageRequests = new Map<string, CompletedRequestEntry>();
 const COMPLETED_REQUEST_CACHE_TTL = 30 * 1000;
 
 interface VideoRequestEntry {
-  promise: Promise<Blob | null | symbol>;  // symbol = VIDEO_LOAD_ERROR 表示下载失败
+  promise: Promise<Blob | null | symbol>; // symbol = VIDEO_LOAD_ERROR 表示下载失败
   timestamp: number;
   count: number;
   requestId: string;
@@ -550,7 +561,8 @@ async function loadConsoleLogsFromDB(): Promise<DebugLogEntry[]> {
     const transaction = db.transaction(['logs'], 'readonly');
     const store = transaction.objectStore('logs');
     const index = store.index('timestamp');
-    const expirationTime = Date.now() - CONSOLE_LOG_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+    const expirationTime =
+      Date.now() - CONSOLE_LOG_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
     return new Promise((resolve, reject) => {
       const request = index.openCursor(null, 'prev'); // 按时间倒序
@@ -797,7 +809,9 @@ function enableDebugMode(): void {
   setDebugFetchEnabled(true);
   setMessageSenderDebugMode(true);
 
-  originalSWConsole.log('Service Worker: Debug mode enabled (debug page connected)');
+  originalSWConsole.log(
+    'Service Worker: Debug mode enabled (debug page connected)'
+  );
 }
 
 // 禁用调试模式（当所有调试页面关闭时自动禁用）
@@ -1046,6 +1060,77 @@ interface PrecacheManifest {
   files: Array<{ url: string; revision: string }>;
 }
 
+interface IdlePrefetchManifest {
+  version: string;
+  timestamp: string;
+  defaults?: string[];
+  groups: Record<string, Array<{ url: string; revision: string }>>;
+}
+
+type SWBootProgressPhase =
+  | 'idle'
+  | 'installing'
+  | 'precache'
+  | 'activating'
+  | 'activated'
+  | 'development'
+  | 'error';
+
+interface SWBootProgressState {
+  phase: SWBootProgressPhase;
+  percent: number;
+  completed: number;
+  total: number;
+  failed: number;
+  message?: string;
+  version: string;
+  updatedAt: number;
+}
+
+let swBootProgressState: SWBootProgressState = {
+  phase: 'idle',
+  percent: 0,
+  completed: 0,
+  total: 0,
+  failed: 0,
+  version: APP_VERSION,
+  updatedAt: Date.now(),
+};
+
+async function broadcastSWBootProgress(target?: Client | null): Promise<void> {
+  const payload = {
+    type: 'SW_BOOT_PROGRESS' as const,
+    ...swBootProgressState,
+  };
+
+  if (target) {
+    target.postMessage(payload);
+    return;
+  }
+
+  const clients = await sw.clients.matchAll({
+    type: 'window',
+    includeUncontrolled: true,
+  });
+
+  for (const client of clients) {
+    client.postMessage(payload);
+  }
+}
+
+function setSWBootProgress(
+  patch: Partial<SWBootProgressState>,
+  target?: Client | null
+): void {
+  swBootProgressState = {
+    ...swBootProgressState,
+    ...patch,
+    version: APP_VERSION,
+    updatedAt: Date.now(),
+  };
+  void broadcastSWBootProgress(target);
+}
+
 /**
  * 从 precache-manifest.json 加载预缓存文件列表
  * 如果加载失败（开发模式没有此文件），返回 null 表示不需要预缓存
@@ -1068,6 +1153,31 @@ async function loadPrecacheManifest(): Promise<
     // 加载失败，不预缓存
     return null;
   }
+}
+
+let idlePrefetchManifestPromise: Promise<IdlePrefetchManifest | null> | null =
+  null;
+
+async function loadIdlePrefetchManifest(): Promise<IdlePrefetchManifest | null> {
+  try {
+    const response = await fetch('./idle-prefetch-manifest.json', {
+      cache: 'reload',
+    });
+    if (!response.ok) {
+      return null;
+    }
+
+    return (await response.json()) as IdlePrefetchManifest;
+  } catch {
+    return null;
+  }
+}
+
+async function getIdlePrefetchManifest(): Promise<IdlePrefetchManifest | null> {
+  if (!idlePrefetchManifestPromise) {
+    idlePrefetchManifestPromise = loadIdlePrefetchManifest();
+  }
+  return idlePrefetchManifestPromise;
 }
 
 function isOriginFirstStaticPath(pathname: string): boolean {
@@ -1190,7 +1300,9 @@ async function cacheFile(
 
     if (cachedResponse) {
       const cachedRevision = cachedResponse.headers.get(STATIC_REVISION_HEADER);
-      const cachedVersion = cachedResponse.headers.get(STATIC_APP_VERSION_HEADER);
+      const cachedVersion = cachedResponse.headers.get(
+        STATIC_APP_VERSION_HEADER
+      );
       if (cachedRevision === revision && cachedVersion === APP_VERSION) {
         // 文件未变化，跳过
         return { url, success: true, skipped: true };
@@ -1220,7 +1332,10 @@ async function cacheFile(
       source = 'server';
     }
 
-    if (response.ok && isStaticHtmlFallbackResponse(syntheticRequest, requestUrl, response)) {
+    if (
+      response.ok &&
+      isStaticHtmlFallbackResponse(syntheticRequest, requestUrl, response)
+    ) {
       return {
         url,
         success: false,
@@ -1255,6 +1370,21 @@ async function precacheStaticFiles(
 ): Promise<void> {
   const CONCURRENCY = 6; // 并发数
   const allResults: { success: boolean; source?: string }[] = [];
+  const total = files.length;
+  let completed = 0;
+  let failed = 0;
+
+  setSWBootProgress({
+    phase: 'precache',
+    total,
+    completed: 0,
+    failed: 0,
+    percent: total > 0 ? 0 : 100,
+    message:
+      total > 0
+        ? `正在预热启动资源（0/${total}）...`
+        : '没有需要预热的启动资源',
+  });
 
   // 分批处理
   for (let i = 0; i < files.length; i += CONCURRENCY) {
@@ -1270,10 +1400,30 @@ async function precacheStaticFiles(
           success: result.value.success,
           source: result.value.source,
         });
+        completed += 1;
+        if (!result.value.success) {
+          failed += 1;
+        }
       } else {
         allResults.push({ success: false });
+        completed += 1;
+        failed += 1;
       }
     }
+
+    setSWBootProgress({
+      phase: 'precache',
+      total,
+      completed,
+      failed,
+      percent: total > 0 ? Math.round((completed / total) * 100) : 100,
+      message:
+        total > 0
+          ? `正在预热启动资源（${completed}/${total}${
+              failed > 0 ? `，${failed} 项回退` : ''
+            }）...`
+          : '没有需要预热的启动资源',
+    });
   }
 
   const successCount = allResults.filter((r) => r.success).length;
@@ -1284,7 +1434,40 @@ async function precacheStaticFiles(
   const serverCount = allResults.filter(
     (r) => r.success && r.source === 'server'
   ).length;
+}
 
+async function prefetchIdleGroups(groupNames: string[]): Promise<void> {
+  if (groupNames.length === 0) {
+    return;
+  }
+
+  const manifest = await getIdlePrefetchManifest();
+  if (!manifest) {
+    return;
+  }
+
+  const files = new Map<string, { url: string; revision: string }>();
+  for (const groupName of groupNames) {
+    const entries = manifest.groups[groupName] || [];
+    for (const entry of entries) {
+      files.set(entry.url, entry);
+    }
+  }
+
+  if (files.size === 0) {
+    return;
+  }
+
+  const cache = await caches.open(STATIC_CACHE_NAME);
+  const queue = Array.from(files.values());
+  const CONCURRENCY = 2;
+
+  for (let index = 0; index < queue.length; index += CONCURRENCY) {
+    const batch = queue.slice(index, index + CONCURRENCY);
+    await Promise.allSettled(
+      batch.map(({ url, revision }) => cacheFile(cache, url, revision))
+    );
+  }
 }
 
 sw.addEventListener('install', (event: ExtendableEvent) => {
@@ -1292,6 +1475,15 @@ sw.addEventListener('install', (event: ExtendableEvent) => {
   // 这样 SW 可以尽快进入 activate → claim，拦截后续的 JS/CSS 请求
   // precache 在后台继续执行，cache miss 时走 CDN 回退
   sw.skipWaiting();
+
+  setSWBootProgress({
+    phase: 'installing',
+    percent: 0,
+    completed: 0,
+    total: 0,
+    failed: 0,
+    message: '正在读取启动资源清单...',
+  });
 
   // 后台预缓存，不阻塞激活
   event.waitUntil(
@@ -1302,8 +1494,21 @@ sw.addEventListener('install', (event: ExtendableEvent) => {
         if (files && files.length > 0) {
           const cache = await caches.open(STATIC_CACHE_NAME);
           await precacheStaticFiles(cache, files);
+        } else if (isDevelopment) {
+          setSWBootProgress({
+            phase: 'development',
+            percent: 100,
+            completed: 0,
+            total: 0,
+            failed: 0,
+            message: '开发模式下跳过静态预缓存',
+          });
         }
       } catch (err) {
+        setSWBootProgress({
+          phase: 'error',
+          message: `启动资源预热失败：${getSafeErrorMessage(err)}`,
+        });
         console.warn('Service Worker: Precache failed:', err);
       }
     })()
@@ -1312,6 +1517,12 @@ sw.addEventListener('install', (event: ExtendableEvent) => {
 
 sw.addEventListener('activate', (event: ExtendableEvent) => {
   // console.log('Service Worker activated');
+
+  setSWBootProgress({
+    phase: 'activating',
+    percent: 100,
+    message: '启动缓存服务正在接管页面...',
+  });
 
   // 立即接管所有页面，不等待缓存清理
   // 这样可以确保 SW 尽快生效，拦截后续请求（如下载失败的 JS/CSS）
@@ -1331,6 +1542,11 @@ sw.addEventListener('activate', (event: ExtendableEvent) => {
       if (cm) {
         cm.sendSWActivated(APP_VERSION);
       }
+      setSWBootProgress({
+        phase: 'activated',
+        percent: 100,
+        message: '启动缓存服务已就绪',
+      });
     })()
   );
 
@@ -1427,8 +1643,6 @@ sw.addEventListener('activate', (event: ExtendableEvent) => {
       taskQueueStorage.archiveOldTasks(100).catch((err) => {
         console.warn('Failed to archive old tasks:', err);
       });
-
-
     })
   );
 });
@@ -1517,7 +1731,10 @@ async function purgeSuspiciousStaticCacheEntries(cache: Cache): Promise<void> {
         await cache.delete(request);
       }
     } catch (error) {
-      console.warn('Service Worker: Failed to inspect static cache entry:', error);
+      console.warn(
+        'Service Worker: Failed to inspect static cache entry:',
+        error
+      );
     }
   }
 }
@@ -1531,10 +1748,11 @@ sw.addEventListener('message', (event: ExtendableMessageEvent) => {
   // - Native messages: event.data.type
   // - postmessage-duplex requests: event.data.cmdname
   // - postmessage-duplex responses: event.data.req.cmdname
-  const messageType = event.data?.type 
-    || event.data?.cmdname 
-    || event.data?.req?.cmdname 
-    || 'unknown';
+  const messageType =
+    event.data?.type ||
+    event.data?.cmdname ||
+    event.data?.req?.cmdname ||
+    'unknown';
   const clientId = (event.source as Client)?.id || '';
   const clientUrl = (event.source as WindowClient)?.url || '';
 
@@ -1542,10 +1760,12 @@ sw.addEventListener('message', (event: ExtendableMessageEvent) => {
   // via enableGlobalRouting() in channel-manager.ts. No manual SW_CHANNEL_CONNECT handling needed.
   // postmessage-duplex messages (with __key__ or requestId) are automatically handled
   // by the channel's internal message listener.
-  
+
   // 跳过 postmessage-duplex 的消息，它们会在 wrapRpcHandler 中被记录为 RPC:xxx 格式
   // postmessage-duplex 消息特征：有 cmdname 字段（RPC 请求）或 requestId+ret 字段（RPC 响应）
-  const isDuplexMessage = event.data?.cmdname || (event.data?.requestId && event.data?.ret !== undefined);
+  const isDuplexMessage =
+    event.data?.cmdname ||
+    (event.data?.requestId && event.data?.ret !== undefined);
 
   // Log received message only if debug mode is enabled
   // This ensures postMessage logging doesn't affect performance when debug mode is off
@@ -1576,10 +1796,12 @@ sw.addEventListener('message', (event: ExtendableMessageEvent) => {
       const blob = new Blob([arrayBuffer], {
         type: mimeType || (mediaType === 'video' ? 'video/mp4' : 'image/png'),
       });
-      
+
       // 异步生成预览图
       (async () => {
-        const { generateThumbnailAsync } = await import('./task-queue/utils/thumbnail-utils');
+        const { generateThumbnailAsync } = await import(
+          './task-queue/utils/thumbnail-utils'
+        );
         generateThumbnailAsync(blob, url, mediaType);
       })();
     }
@@ -1598,6 +1820,22 @@ sw.addEventListener('message', (event: ExtendableMessageEvent) => {
     return;
   }
 
+  if (event.data && event.data.type === 'SW_BOOT_PROGRESS_GET') {
+    const client = event.source as Client | null;
+    void broadcastSWBootProgress(client);
+    return;
+  }
+
+  if (event.data && event.data.type === 'SW_PREFETCH_GROUPS') {
+    const groups = Array.isArray(event.data.groups)
+      ? event.data.groups.filter(
+          (group: unknown): group is string => typeof group === 'string'
+        )
+      : [];
+    event.waitUntil(prefetchIdleGroups(groups));
+    return;
+  }
+
   if (event.data && event.data.type === 'SKIP_WAITING') {
     // 主线程请求立即升级（用户主动触发）
     // console.log('Service Worker: 收到主线程的 SKIP_WAITING 请求');
@@ -1613,7 +1851,7 @@ sw.addEventListener('message', (event: ExtendableMessageEvent) => {
   } else if (event.data && event.data.type === 'FORCE_UPGRADE') {
     // 主线程强制升级
     sw.skipWaiting();
-    
+
     // 使用 channelManager 通知客户端 SW 已更新
     const cm = getChannelManager();
     if (cm) {
@@ -1695,13 +1933,15 @@ sw.addEventListener('message', (event: ExtendableMessageEvent) => {
       cm.sendDebugStatusChanged(false);
     }
   }
-  
+
   // 为调试页面提供原生 postMessage 支持（调试页面不使用 postmessage-duplex）
   // LLM API 日志查询
   if (event.data && event.data.type === 'SW_DEBUG_GET_LLM_API_LOGS') {
     (async () => {
       try {
-        const { getAllLLMApiLogs } = await import('./task-queue/llm-api-logger');
+        const { getAllLLMApiLogs } = await import(
+          './task-queue/llm-api-logger'
+        );
         const logs = await getAllLLMApiLogs();
         const client = event.source as Client;
         if (client) {
@@ -1716,12 +1956,14 @@ sw.addEventListener('message', (event: ExtendableMessageEvent) => {
     })();
     return;
   }
-  
+
   // LLM API 日志清理
   if (event.data && event.data.type === 'SW_DEBUG_CLEAR_LLM_API_LOGS') {
     (async () => {
       try {
-        const { clearAllLLMApiLogs } = await import('./task-queue/llm-api-logger');
+        const { clearAllLLMApiLogs } = await import(
+          './task-queue/llm-api-logger'
+        );
         await clearAllLLMApiLogs();
         const client = event.source as Client;
         if (client) {
@@ -1735,7 +1977,7 @@ sw.addEventListener('message', (event: ExtendableMessageEvent) => {
     })();
     return;
   }
-  
+
   // 调试状态查询
   if (event.data && event.data.type === 'SW_DEBUG_GET_STATUS') {
     const client = event.source as Client;
@@ -1750,19 +1992,24 @@ sw.addEventListener('message', (event: ExtendableMessageEvent) => {
     }
     return;
   }
-  
+
   // Fetch 日志查询
   if (event.data && event.data.type === 'SW_DEBUG_GET_LOGS') {
     (async () => {
       try {
-        const { getInternalFetchLogs } = await import('./task-queue/debug-fetch');
+        const { getInternalFetchLogs } = await import(
+          './task-queue/debug-fetch'
+        );
         const logs = getDebugLogs();
         const internalLogs = getInternalFetchLogs();
         const client = event.source as Client;
         if (client) {
           client.postMessage({
             type: 'SW_DEBUG_LOGS',
-            logs: [...logs, ...internalLogs.map(l => ({ ...l, type: 'fetch' }))],
+            logs: [
+              ...logs,
+              ...internalLogs.map((l) => ({ ...l, type: 'fetch' })),
+            ],
           });
         }
       } catch (error) {
@@ -1771,7 +2018,7 @@ sw.addEventListener('message', (event: ExtendableMessageEvent) => {
     })();
     return;
   }
-  
+
   // Console 日志查询
   if (event.data && event.data.type === 'SW_DEBUG_GET_CONSOLE_LOGS') {
     (async () => {
@@ -1789,7 +2036,7 @@ sw.addEventListener('message', (event: ExtendableMessageEvent) => {
     })();
     return;
   }
-  
+
   // PostMessage 日志查询
   if (event.data && event.data.type === 'SW_DEBUG_GET_POSTMESSAGE_LOGS') {
     (async () => {
@@ -2289,8 +2536,12 @@ async function checkStorageQuota(): Promise<void> {
 
       // 如果使用率超过 90%，发送警告
       if (percentage > 90) {
-        console.warn('Service Worker: Storage quota warning:', { usage, quota, percentage });
-        
+        console.warn('Service Worker: Storage quota warning:', {
+          usage,
+          quota,
+          percentage,
+        });
+
         // 使用 channelManager 发送配额警告
         const cm = getChannelManager();
         if (cm) {
@@ -2319,9 +2570,9 @@ function isLikelyExpiredUrl(url: string): boolean {
   // 匹配 URL 中的日期路径 /YYYY/MM/DD/ 或 /YYYYMMDD/
   const datePathMatch = url.match(/\/(\d{4})\/(\d{2})\/(\d{2})\//);
   const dateCompactMatch = url.match(/\/(\d{4})(\d{2})(\d{2})\//);
-  
+
   let urlDate: Date | null = null;
-  
+
   if (datePathMatch) {
     urlDate = new Date(
       parseInt(datePathMatch[1]),
@@ -2335,18 +2586,19 @@ function isLikelyExpiredUrl(url: string): boolean {
       parseInt(dateCompactMatch[3])
     );
   }
-  
+
   if (!urlDate) {
     // 没有日期路径，可能是新生成的资源，不缓存失败
     return false;
   }
-  
+
   // 如果 URL 日期是今天，不认为是过期的（可能还在处理中）
   const today = new Date();
-  const isToday = urlDate.getFullYear() === today.getFullYear() &&
-                  urlDate.getMonth() === today.getMonth() &&
-                  urlDate.getDate() === today.getDate();
-  
+  const isToday =
+    urlDate.getFullYear() === today.getFullYear() &&
+    urlDate.getMonth() === today.getMonth() &&
+    urlDate.getDate() === today.getDate();
+
   return !isToday;
 }
 
@@ -2365,7 +2617,7 @@ function markUrlAsFailed(url: string): void {
   if (!isLikelyExpiredUrl(url)) {
     return;
   }
-  
+
   // 清理过期条目
   if (failedUrlCache.size >= MAX_FAILED_URL_CACHE_SIZE) {
     const now = Date.now();
@@ -2692,7 +2944,9 @@ sw.addEventListener('fetch', (event: FetchEvent) => {
         status: 404,
         duration: 0,
       });
-      event.respondWith(new Response('', { status: 404, statusText: 'Not Found (cached)' }));
+      event.respondWith(
+        new Response('', { status: 404, statusText: 'Not Found (cached)' })
+      );
       return;
     }
 
@@ -3008,43 +3262,43 @@ async function handleCacheUrlRequest(request: Request): Promise<Response> {
 
   // 通过路径或扩展名判断是否为视频
   const isVideo =
-    url.pathname.includes('/video/') ||
-    /\.(mp4|webm|mov)$/i.test(url.pathname);
+    url.pathname.includes('/video/') || /\.(mp4|webm|mov)$/i.test(url.pathname);
 
   // 参数优先级：bypass_sw > _retry > thumbnail
   const bypassCache =
-    url.searchParams.has('bypass_sw') ||
-    url.searchParams.has('direct_fetch');
+    url.searchParams.has('bypass_sw') || url.searchParams.has('direct_fetch');
   const isRetryRequest = url.searchParams.has('_retry');
-  
+
   // 检测是否为预览图请求（只有在没有 bypass_sw 和 _retry 时才处理）
-  const isThumbnailRequest = 
-    url.searchParams.has('thumbnail') && 
-    !bypassCache && 
-    !isRetryRequest;
-    
+  const isThumbnailRequest =
+    url.searchParams.has('thumbnail') && !bypassCache && !isRetryRequest;
+
   if (isThumbnailRequest) {
     // 获取预览图尺寸（small 或 large，默认 small）
-    const thumbnailSize = (url.searchParams.get('thumbnail') || 'small') as 'small' | 'large';
+    const thumbnailSize = (url.searchParams.get('thumbnail') || 'small') as
+      | 'small'
+      | 'large';
     // 构建缓存 key：移除所有控制参数
     const originalUrlForCache = new URL(url.toString());
     originalUrlForCache.searchParams.delete('thumbnail');
     originalUrlForCache.searchParams.delete('bypass_sw');
     originalUrlForCache.searchParams.delete('direct_fetch');
     originalUrlForCache.searchParams.delete('_retry');
-    
-    const { findThumbnailWithFallback, createThumbnailResponse } = await import('./task-queue/utils/thumbnail-utils');
+
+    const { findThumbnailWithFallback, createThumbnailResponse } = await import(
+      './task-queue/utils/thumbnail-utils'
+    );
     const result = await findThumbnailWithFallback(
       originalUrlForCache.toString(),
       thumbnailSize,
       [url.pathname] // 备用 key：pathname
     );
-    
+
     if (result) {
       const blob = await result.response.blob();
       return createThumbnailResponse(blob);
     }
-    
+
     // 预览图不存在，回退到原图（继续正常流程）
   }
 
@@ -3065,7 +3319,9 @@ async function handleCacheUrlRequest(request: Request): Promise<Response> {
 
       // 如果是预览图请求且预览图不存在，异步生成预览图（不阻塞响应）
       if (isThumbnailRequest && !isVideo) {
-        const { generateThumbnailAsync } = await import('./task-queue/utils/thumbnail-utils');
+        const { generateThumbnailAsync } = await import(
+          './task-queue/utils/thumbnail-utils'
+        );
         generateThumbnailAsync(blob, url.pathname, 'image');
       }
 
@@ -3124,35 +3380,36 @@ async function handleAssetLibraryRequest(request: Request): Promise<Response> {
 
   // 使用完整路径作为缓存 key
   const cacheKey = url.pathname;
-  
+
   // 参数优先级：bypass_sw > _retry > thumbnail
   const bypassCache =
-    url.searchParams.has('bypass_sw') ||
-    url.searchParams.has('direct_fetch');
+    url.searchParams.has('bypass_sw') || url.searchParams.has('direct_fetch');
   const isRetryRequest = url.searchParams.has('_retry');
-  
+
   // 检测是否为预览图请求（只有在没有 bypass_sw 和 _retry 时才处理）
-  const isThumbnailRequest = 
-    url.searchParams.has('thumbnail') && 
-    !bypassCache && 
-    !isRetryRequest;
-    
+  const isThumbnailRequest =
+    url.searchParams.has('thumbnail') && !bypassCache && !isRetryRequest;
+
   if (isThumbnailRequest) {
     // 获取预览图尺寸（small 或 large，默认 small）
-    const thumbnailSize = (url.searchParams.get('thumbnail') || 'small') as 'small' | 'large';
-    
-    const { findThumbnailWithFallback, createThumbnailResponse } = await import('./task-queue/utils/thumbnail-utils');
+    const thumbnailSize = (url.searchParams.get('thumbnail') || 'small') as
+      | 'small'
+      | 'large';
+
+    const { findThumbnailWithFallback, createThumbnailResponse } = await import(
+      './task-queue/utils/thumbnail-utils'
+    );
     const result = await findThumbnailWithFallback(
       cacheKey,
       thumbnailSize,
       [cacheKey] // 备用 key：cacheKey（pathname）
     );
-    
+
     if (result) {
       const blob = await result.response.blob();
       return createThumbnailResponse(blob);
     }
-    
+
     // 预览图不存在，回退到原图（继续正常流程）
   }
 
@@ -3173,7 +3430,9 @@ async function handleAssetLibraryRequest(request: Request): Promise<Response> {
 
       // 如果是预览图请求且预览图不存在，异步生成预览图（不阻塞响应）
       if (isThumbnailRequest && !isVideo) {
-        const { generateThumbnailAsync } = await import('./task-queue/utils/thumbnail-utils');
+        const { generateThumbnailAsync } = await import(
+          './task-queue/utils/thumbnail-utils'
+        );
         generateThumbnailAsync(blob, cacheKey, 'image');
       }
 
@@ -3267,16 +3526,17 @@ async function handleAudioRequest(request: Request): Promise<Response> {
 
     if (response.type === 'opaque') {
       cache.put(dedupeKey, response.clone()).catch((error) => {
-        console.warn(`Service Worker [Audio-${requestId}]: Failed to cache opaque audio response:`, error);
+        console.warn(
+          `Service Worker [Audio-${requestId}]: Failed to cache opaque audio response:`,
+          error
+        );
       });
       return response;
     }
 
     const blob = await response.blob();
     const mimeType =
-      response.headers.get('Content-Type') ||
-      blob.type ||
-      'audio/mpeg';
+      response.headers.get('Content-Type') || blob.type || 'audio/mpeg';
     const now = Date.now().toString();
     const cacheResponse = new Response(blob, {
       status: 200,
@@ -3298,7 +3558,10 @@ async function handleAudioRequest(request: Request): Promise<Response> {
 
     return createAudioResponse(blob, rangeHeader, requestId, mimeType);
   } catch (error) {
-    console.error(`Service Worker [Audio-${requestId}]: Audio loading failed:`, error);
+    console.error(
+      `Service Worker [Audio-${requestId}]: Audio loading failed:`,
+      error
+    );
     const cache = await caches.open(IMAGE_CACHE_NAME);
     let cachedResponse = await cache.match(dedupeKey);
     if (!cachedResponse && dedupeKey !== request.url) {
@@ -3339,28 +3602,28 @@ async function handleVideoRequest(request: Request): Promise<Response> {
 
     // 参数优先级：bypass_sw > _retry > thumbnail
     const bypassCache =
-      url.searchParams.has('bypass_sw') ||
-      url.searchParams.has('direct_fetch');
+      url.searchParams.has('bypass_sw') || url.searchParams.has('direct_fetch');
     const isRetryRequest = url.searchParams.has('_retry');
-    
+
     // 检测是否为预览图请求（只有在没有 bypass_sw 和 _retry 时才处理）
-    const isThumbnailRequest = 
-      url.searchParams.has('thumbnail') && 
-      !bypassCache && 
-      !isRetryRequest;
+    const isThumbnailRequest =
+      url.searchParams.has('thumbnail') && !bypassCache && !isRetryRequest;
 
     // 创建去重键（移除缓存破坏参数）
     const dedupeUrl = buildNormalizedCacheUrl(url);
     const dedupeKey = dedupeUrl.toString();
-    
+
     // 如果是预览图请求（没有 bypass_sw 和 _retry），查找预览图
     if (isThumbnailRequest) {
       // 获取预览图尺寸（small 或 large，默认 small）
-      const thumbnailSize = (url.searchParams.get('thumbnail') || 'small') as 'small' | 'large';
-      
-      const { findThumbnailWithFallback, createThumbnailResponse } = await import('./task-queue/utils/thumbnail-utils');
+      const thumbnailSize = (url.searchParams.get('thumbnail') || 'small') as
+        | 'small'
+        | 'large';
+
+      const { findThumbnailWithFallback, createThumbnailResponse } =
+        await import('./task-queue/utils/thumbnail-utils');
       const result = await findThumbnailWithFallback(dedupeKey, thumbnailSize);
-      
+
       if (result) {
         const blob = await result.response.blob();
         return createThumbnailResponse(blob);
@@ -3368,7 +3631,9 @@ async function handleVideoRequest(request: Request): Promise<Response> {
 
       void (async () => {
         try {
-          const { generateThumbnailAsync } = await import('./task-queue/utils/thumbnail-utils');
+          const { generateThumbnailAsync } = await import(
+            './task-queue/utils/thumbnail-utils'
+          );
           generateThumbnailAsync(
             new Blob([], { type: 'video/mp4' }),
             dedupeKey,
@@ -3515,13 +3780,14 @@ async function handleVideoRequest(request: Request): Promise<Response> {
               },
             });
             await cache.put(dedupeKey, cacheResponse);
-            const { generateThumbnailAsync } = await import('./task-queue/utils/thumbnail-utils');
+            const { generateThumbnailAsync } = await import(
+              './task-queue/utils/thumbnail-utils'
+            );
             generateThumbnailAsync(videoBlob, dedupeKey, 'video');
           } catch {
             // 持久化到 Cache API 失败，内存缓存仍可用
           }
         }
-
 
         return videoBlob;
       } catch {
@@ -4103,28 +4369,28 @@ async function handleImageRequest(request: Request): Promise<Response> {
 
     // 创建原始URL（不带缓存破坏参数）用于缓存键和去重键
     const originalUrl = new URL(request.url);
-    
+
     // 参数优先级：bypass_sw > _retry > thumbnail
     // 检测是否要求绕过缓存检查（最高优先级）
     const bypassCache =
       originalUrl.searchParams.has('bypass_sw') ||
       originalUrl.searchParams.has('direct_fetch');
-    
+
     // 检测是否为强制重试请求（次高优先级）
     const isRetryRequest = originalUrl.searchParams.has('_retry');
-    
+
     // 检测是否为预览图请求（最低优先级，只有在没有 bypass_sw 和 _retry 时才处理）
     // bypass_sw 和 _retry 的存在表示用户明确要求获取原图或重新请求
-    const isThumbnailRequest = 
-      originalUrl.searchParams.has('thumbnail') && 
-      !bypassCache && 
+    const isThumbnailRequest =
+      originalUrl.searchParams.has('thumbnail') &&
+      !bypassCache &&
       !isRetryRequest;
-    
+
     // 在删除参数之前先获取预览图尺寸
-    const thumbnailSize = isThumbnailRequest 
-      ? (originalUrl.searchParams.get('thumbnail') || 'small')
+    const thumbnailSize = isThumbnailRequest
+      ? originalUrl.searchParams.get('thumbnail') || 'small'
       : 'small';
-    
+
     const normalizedCacheUrl = buildNormalizedCacheUrl(originalUrl);
     const originalRequest = new Request(normalizedCacheUrl.toString(), {
       method: request.method,
@@ -4133,23 +4399,24 @@ async function handleImageRequest(request: Request): Promise<Response> {
       credentials: request.credentials,
     });
     const dedupeKey = normalizedCacheUrl.toString();
-    
+
     // 如果是预览图请求（没有 bypass_sw 和 _retry），在移除参数后查找预览图
     if (isThumbnailRequest) {
-      const { findThumbnailWithFallback, createThumbnailResponse } = await import('./task-queue/utils/thumbnail-utils');
-      
+      const { findThumbnailWithFallback, createThumbnailResponse } =
+        await import('./task-queue/utils/thumbnail-utils');
+
       // 尝试使用 dedupeKey 和 originalRequest.url 作为备用 key
       const result = await findThumbnailWithFallback(
         dedupeKey,
         thumbnailSize as 'small' | 'large',
         [request.url, originalRequest.url] // 备用 key：兼容历史签名 URL 与 canonical key
       );
-      
+
       if (result) {
         const blob = await result.response.blob();
         return createThumbnailResponse(blob);
       }
-      
+
       // 如果都没找到，回退到原图（继续正常流程）
     }
 
@@ -4321,7 +4588,7 @@ async function handleImageRequestInternal(
     if (!bypassCache) {
       // 尝试多种 key 格式匹配（兼容不同的缓存 key 格式）
       let cachedResponse = await cache.match(originalRequest);
-      
+
       // 如果没找到，尝试使用 URL 字符串匹配
       if (!cachedResponse) {
         cachedResponse = await cache.match(originalRequest.url);
@@ -4331,7 +4598,7 @@ async function handleImageRequestInternal(
       if (!cachedResponse && requestUrl !== originalRequest.url) {
         cachedResponse = await cache.match(requestUrl);
       }
-      
+
       // 如果还没找到，尝试使用 dedupeKey 匹配
       if (!cachedResponse) {
         cachedResponse = await cache.match(dedupeKey);
@@ -4353,15 +4620,18 @@ async function handleImageRequestInternal(
         } else {
           // 如果是预览图请求且预览图不存在，异步生成预览图（不阻塞响应）
           if (requestedThumbnailSize) {
-            const { generateThumbnailAsync } = await import('./task-queue/utils/thumbnail-utils');
+            const { generateThumbnailAsync } = await import(
+              './task-queue/utils/thumbnail-utils'
+            );
             generateThumbnailAsync(blob, originalRequest.url, 'image');
           }
-          
+
           const cacheDate = cachedResponse.headers.get(SW_CACHE_DATE_HEADER);
           if (cacheDate) {
             const now = Date.now();
             const cacheCreatedAt =
-              cachedResponse.headers.get(SW_CACHE_CREATED_AT_HEADER) || cacheDate;
+              cachedResponse.headers.get(SW_CACHE_CREATED_AT_HEADER) ||
+              cacheDate;
 
             // 再次访问时延长缓存时间 - 创建新的响应并更新缓存
             const refreshedResponse = new Response(blob, {
@@ -4720,10 +4990,12 @@ async function handleImageRequestInternal(
           await notifyImageCached(dedupeKey, blob.size, blob.type);
           // 检查存储配额
           await checkStorageQuota();
-          
+
           // 异步生成预览图（不阻塞主流程）
           // 使用 canonical key 作为预览图 key，避免同图因签名参数变化生成多套缩略图
-          const { generateThumbnailAsync } = await import('./task-queue/utils/thumbnail-utils');
+          const { generateThumbnailAsync } = await import(
+            './task-queue/utils/thumbnail-utils'
+          );
           generateThumbnailAsync(blob, dedupeKey, 'image');
         }
       } catch (cacheError) {
@@ -4744,9 +5016,11 @@ async function handleImageRequestInternal(
             // console.log(`Service Worker: Normal response cached after cleanup (${imageSizeMB.toFixed(2)}MB)`);
             // 通知主线程图片已缓存
             await notifyImageCached(dedupeKey, blob.size, blob.type);
-            
+
             // 异步生成预览图（不阻塞主流程）
-            const { generateThumbnailAsync } = await import('./task-queue/utils/thumbnail-utils');
+            const { generateThumbnailAsync } = await import(
+              './task-queue/utils/thumbnail-utils'
+            );
             generateThumbnailAsync(blob, dedupeKey, 'image');
           }
         } catch (retryError) {

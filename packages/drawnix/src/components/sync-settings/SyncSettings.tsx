@@ -341,7 +341,7 @@ export function SyncSettings({ visible, onClose }: SyncSettingsProps) {
         // 刷新页面以加载新数据
         setTimeout(() => {
           console.log('[SyncSettings] Refreshing page...');
-          safeReload();
+          void safeReload();
         }, 1000);
       } else if (result.needsPassword) {
         // 需要输入密码
@@ -750,7 +750,7 @@ export function SyncSettings({ visible, onClose }: SyncSettingsProps) {
                 isConnected={isConnected}
                 onRefresh={() => {
                   // 恢复画板后刷新页面
-                  safeReload();
+                  void safeReload();
                 }}
               />
 

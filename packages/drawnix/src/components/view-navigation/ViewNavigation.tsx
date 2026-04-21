@@ -15,7 +15,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '../popover/popover';
 import { Z_INDEX } from '../../constants/z-index';
 import { useI18n } from '../../i18n';
 import { fitFrame } from '../../utils/fit-frame';
-import { HoverTip } from '../shared';
+import { HoverTip } from '../shared/hover';
 import './view-navigation.scss';
 
 export interface ViewNavigationProps {

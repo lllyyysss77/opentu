@@ -20,7 +20,7 @@ import {
   Transforms,
   getViewportOrigination,
 } from '@plait/core';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import { useBoard } from '@plait-board/react-board';
 import { flip, offset, shift, useFloating } from '@floating-ui/react';
 import { Island } from '../../island';
@@ -77,11 +77,9 @@ import { splitAndInsertImages } from '../../../utils/image-splitter';
 import { smartDownload, BatchDownloadItem, buildDownloadFilename } from '../../../utils/download-utils';
 import { MessagePlugin } from 'tdesign-react';
 import { mergeVideos } from '../../../services/video-merge-webcodecs';
-import { ImageEditor } from '../../image-editor';
 import { insertImageFromUrl } from '../../../data/image';
 import { calculateEditedImagePoints } from '../../../utils/image';
 import { isFrameElement } from '../../../types/frame.types';
-import { FrameSlideshow } from '../../project-drawer/FrameSlideshow';
 import { isCardElement } from '../../../types/card.types';
 import { duplicateFrame, focusFrame } from '../../../utils/frame-duplicate';
 import { isPlaitMind, findMindRootFromSelection } from '../../../services/ppt';
@@ -109,6 +107,18 @@ import {
   getCanvasSpeechText,
   type CanvasSpeechTextResult,
 } from './text-to-speech-utils';
+
+const ImageEditor = lazy(() =>
+  import('../../image-editor').then((module) => ({
+    default: module.ImageEditor,
+  }))
+);
+
+const FrameSlideshow = lazy(() =>
+  import('../../project-drawer/FrameSlideshow').then((module) => ({
+    default: module.FrameSlideshow,
+  }))
+);
 
 export const PopupToolbar = () => {
   const board = useBoard();
@@ -1720,17 +1730,68 @@ export const PopupToolbar = () => {
 
       {/* 图片编辑器 */}
       {showImageEditor && editingImageUrl && (
-        <ImageEditor
-          visible={showImageEditor}
-          imageUrl={editingImageUrl}
-          showOverwrite={!!editingImageElement}
-          onClose={() => {
-            setShowImageEditor(false);
-            setEditingImageUrl('');
-            setEditingImageElement(null);
-          }}
-          onOverwrite={async (editedImageUrl: string) => {
-            if (editingImageElement) {
+        <Suspense fallback={null}>
+          <ImageEditor
+            visible={showImageEditor}
+            imageUrl={editingImageUrl}
+            showOverwrite={!!editingImageElement}
+            onClose={() => {
+              setShowImageEditor(false);
+              setEditingImageUrl('');
+              setEditingImageElement(null);
+            }}
+            onOverwrite={async (editedImageUrl: string) => {
+              if (editingImageElement) {
+                try {
+                  // 创建虚拟路径 URL 缓存编辑后的图片
+                  const { unifiedCacheService } = await import('../../../services/unified-cache-service');
+                  const taskId = `edited-image-${Date.now()}`;
+                  const stableUrl = `/__aitu_cache__/image/${taskId}.png`;
+
+                  // 将 data URL 转换为 Blob
+                  const response = await fetch(editedImageUrl);
+                  const blob = await response.blob();
+
+                  // 缓存到 Cache API
+                  await unifiedCacheService.cacheMediaFromBlob(stableUrl, blob, 'image', { taskId });
+
+                  // 加载编辑后的图片获取其实际尺寸
+                  const img = new Image();
+                  await new Promise<void>((resolve, reject) => {
+                    img.onload = () => resolve();
+                    img.onerror = () => reject(new Error('Failed to load edited image'));
+                    img.src = editedImageUrl;
+                  });
+
+                  // 使用 Transforms.setNode 更新画布中的图片元素
+                  const elementIndex = board.children.findIndex(child => child.id === editingImageElement.id);
+                  if (elementIndex >= 0) {
+                    const element = board.children[elementIndex] as any;
+                    const { newPoints } = await calculateEditedImagePoints(
+                      {
+                        url: element.url,
+                        width: element.width,
+                        height: element.height,
+                        points: element.points || [[0, 0], [0, 0]],
+                      },
+                      img.naturalWidth,
+                      img.naturalHeight
+                    );
+
+                    Transforms.setNode(board, {
+                      url: stableUrl,
+                      width: img.naturalWidth,
+                      height: img.naturalHeight,
+                      points: newPoints,
+                    } as Partial<PlaitElement>, [elementIndex]);
+                  }
+                } catch (error) {
+                  console.error('Failed to update image:', error);
+                  MessagePlugin.error(language === 'zh' ? '更新失败' : 'Update failed');
+                }
+              }
+            }}
+            onInsert={async (editedImageUrl: string) => {
               try {
                 // 创建虚拟路径 URL 缓存编辑后的图片
                 const { unifiedCacheService } = await import('../../../services/unified-cache-service');
@@ -1744,7 +1805,7 @@ export const PopupToolbar = () => {
                 // 缓存到 Cache API
                 await unifiedCacheService.cacheMediaFromBlob(stableUrl, blob, 'image', { taskId });
 
-                // 加载编辑后的图片获取其实际尺寸
+                // 加载图片获取尺寸
                 const img = new Image();
                 await new Promise<void>((resolve, reject) => {
                   img.onload = () => resolve();
@@ -1752,79 +1813,30 @@ export const PopupToolbar = () => {
                   img.src = editedImageUrl;
                 });
 
-                // 使用 Transforms.setNode 更新画布中的图片元素
-                const elementIndex = board.children.findIndex(child => child.id === editingImageElement.id);
-                if (elementIndex >= 0) {
-                  const element = board.children[elementIndex] as any;
-                  const { newPoints } = await calculateEditedImagePoints(
-                    {
-                      url: element.url,
-                      width: element.width,
-                      height: element.height,
-                      points: element.points || [[0, 0], [0, 0]],
-                    },
-                    img.naturalWidth,
-                    img.naturalHeight
-                  );
-                  
-                  Transforms.setNode(board, {
-                    url: stableUrl,
-                    width: img.naturalWidth,
-                    height: img.naturalHeight,
-                    points: newPoints,
-                  } as Partial<PlaitElement>, [elementIndex]);
-                }
+                // 在当前图片旁边插入新图片
+                const origination = getViewportOrigination(board);
+                const offsetX = editingImageElement ? (editingImageElement.points[1][0] - editingImageElement.points[0][0] + 20) : 0;
+                const baseX = editingImageElement ? editingImageElement.points[0][0] : (origination ? origination[0] + 100 : 100);
+                const baseY = editingImageElement ? editingImageElement.points[0][1] : (origination ? origination[1] + 100 : 100);
+
+                // 使用 insertImageFromUrl 插入图片
+                const insertPoint: [number, number] = [baseX + offsetX, baseY];
+                await insertImageFromUrl(
+                  board,
+                  stableUrl,
+                  insertPoint,
+                  false,
+                  { width: img.naturalWidth, height: img.naturalHeight },
+                  false,
+                  true
+                );
               } catch (error) {
-                console.error('Failed to update image:', error);
-                MessagePlugin.error(language === 'zh' ? '更新失败' : 'Update failed');
+                console.error('Failed to insert image:', error);
+                MessagePlugin.error(language === 'zh' ? '插入失败' : 'Insert failed');
               }
-            }
-          }}
-          onInsert={async (editedImageUrl: string) => {
-            try {
-              // 创建虚拟路径 URL 缓存编辑后的图片
-              const { unifiedCacheService } = await import('../../../services/unified-cache-service');
-              const taskId = `edited-image-${Date.now()}`;
-              const stableUrl = `/__aitu_cache__/image/${taskId}.png`;
-
-              // 将 data URL 转换为 Blob
-              const response = await fetch(editedImageUrl);
-              const blob = await response.blob();
-
-              // 缓存到 Cache API
-              await unifiedCacheService.cacheMediaFromBlob(stableUrl, blob, 'image', { taskId });
-
-              // 加载图片获取尺寸
-              const img = new Image();
-              await new Promise<void>((resolve, reject) => {
-                img.onload = () => resolve();
-                img.onerror = () => reject(new Error('Failed to load edited image'));
-                img.src = editedImageUrl;
-              });
-
-              // 在当前图片旁边插入新图片
-              const origination = getViewportOrigination(board);
-              const offsetX = editingImageElement ? (editingImageElement.points[1][0] - editingImageElement.points[0][0] + 20) : 0;
-              const baseX = editingImageElement ? editingImageElement.points[0][0] : (origination ? origination[0] + 100 : 100);
-              const baseY = editingImageElement ? editingImageElement.points[0][1] : (origination ? origination[1] + 100 : 100);
-
-              // 使用 insertImageFromUrl 插入图片
-              const insertPoint: [number, number] = [baseX + offsetX, baseY];
-              await insertImageFromUrl(
-                board,
-                stableUrl,
-                insertPoint,
-                false,
-                { width: img.naturalWidth, height: img.naturalHeight },
-                false,
-                true
-              );
-            } catch (error) {
-              console.error('Failed to insert image:', error);
-              MessagePlugin.error(language === 'zh' ? '插入失败' : 'Insert failed');
-            }
-          }}
-        />
+            }}
+          />
+        </Suspense>
       )}
 
       {/* 文本属性设置面板 */}
@@ -1842,15 +1854,19 @@ export const PopupToolbar = () => {
       )}
 
       {/* Frame 幻灯片播放 */}
-      <FrameSlideshow
-        visible={showSlideshow}
-        board={board}
-        onClose={() => {
-          setShowSlideshow(false);
-          setSlideshowFrameId(undefined);
-        }}
-        initialFrameId={slideshowFrameId}
-      />
+      {showSlideshow && (
+        <Suspense fallback={null}>
+          <FrameSlideshow
+            visible={showSlideshow}
+            board={board}
+            onClose={() => {
+              setShowSlideshow(false);
+              setSlideshowFrameId(undefined);
+            }}
+            initialFrameId={slideshowFrameId}
+          />
+        </Suspense>
+      )}
     </>
   );
 };

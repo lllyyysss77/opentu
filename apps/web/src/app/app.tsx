@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { Drawnix } from '@drawnix/drawnix';
 import {
-  Drawnix,
   WorkspaceService,
   migrateToWorkspace,
   isWorkspaceMigrationCompleted,
@@ -11,7 +11,7 @@ import {
   safeReload,
   useDocumentTitle,
   markTabSyncVersion,
-} from '@drawnix/drawnix';
+} from '@drawnix/drawnix/runtime';
 import {
   PlaitBoard,
   PlaitElement,
@@ -468,7 +468,7 @@ export function App() {
     } catch (error) {
       console.error('[App] Failed to sync board data:', error);
       // 如果同步失败，降级到刷新页面
-      safeReload();
+      void safeReload();
     } finally {
       // 延迟清除同步标志，等待 React 重渲染完成后 onChange 触发的保存被跳过
       // React 18 的批量更新可能在下一帧才执行，所以使用 setTimeout 确保足够延迟
@@ -632,7 +632,7 @@ export function App() {
     appInitialized = false;
     // 使用 setTimeout 确保状态更新后再触发 useEffect
     setTimeout(() => {
-      safeReload();
+      void safeReload();
     }, 100);
   }, []);
 

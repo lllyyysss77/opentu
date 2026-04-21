@@ -3,7 +3,15 @@
  * Image Fill Panel Component
  */
 
-import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import React, {
+  Suspense,
+  lazy,
+  useState,
+  useCallback,
+  useRef,
+  useEffect,
+  useMemo,
+} from 'react';
 import classNames from 'classnames';
 import { throttle } from '@aitu/utils';
 import { useI18n } from '../../i18n';
@@ -15,11 +23,16 @@ import {
 } from '../icons';
 import type { ImageFillConfig, ImageFillMode } from '../../types/fill.types';
 import { DEFAULT_IMAGE_FILL } from '../../types/fill.types';
-import { MediaLibraryModal } from '../media-library/MediaLibraryModal';
 import { AssetType, SelectionMode } from '../../types/asset.types';
 import type { Asset } from '../../types/asset.types';
 import { compressImageBlob, getCompressionStrategy } from '@aitu/utils';
 import './image-fill-panel.scss';
+
+const MediaLibraryModal = lazy(() =>
+  import('../media-library/MediaLibraryModal').then((module) => ({
+    default: module.MediaLibraryModal,
+  }))
+);
 
 export interface ImageFillPanelProps {
   value?: ImageFillConfig;
@@ -421,14 +434,16 @@ export const ImageFillPanel: React.FC<ImageFillPanelProps> = ({
 
       {/* 素材库弹窗 - 仅在内部控制时渲染 */}
       {!externalMediaLibraryControl && showMediaLibrary && (
-        <MediaLibraryModal
-          isOpen={showMediaLibrary}
-          onClose={() => setShowMediaLibrary(false)}
-          mode={SelectionMode.SELECT}
-          filterType={AssetType.IMAGE}
-          onSelect={handleSelectFromLibrary}
-          selectButtonText={language === 'zh' ? '使用此图片' : 'Use this image'}
-        />
+        <Suspense fallback={null}>
+          <MediaLibraryModal
+            isOpen={showMediaLibrary}
+            onClose={() => setShowMediaLibrary(false)}
+            mode={SelectionMode.SELECT}
+            filterType={AssetType.IMAGE}
+            onSelect={handleSelectFromLibrary}
+            selectButtonText={language === 'zh' ? '使用此图片' : 'Use this image'}
+          />
+        </Suspense>
       )}
     </div>
   );

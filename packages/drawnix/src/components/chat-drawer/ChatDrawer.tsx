@@ -46,6 +46,7 @@ import { useTextSelection } from '../../hooks/useTextSelection';
 
 import { analytics } from '../../utils/posthog-analytics';
 import { HoverTip } from '../shared';
+import './chat-drawer.scss';
 
 const ChatMessagesArea = React.lazy(() => import('./ChatMessagesArea'));
 

@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import classNames from 'classnames';
 import { Volume2, VolumeX } from 'lucide-react';
-import { HoverTip } from '../shared';
+import { HoverTip } from '../shared/hover';
 
 interface CanvasAudioPlayerVolumeProps {
   volume: number;

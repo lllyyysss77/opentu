@@ -110,7 +110,7 @@
       name="viewport"
       content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"
     />
-    <meta name="app-version" content="0.6.35" />
+    <meta name="app-version" content="0.6.36" />
     <style>
       :root {
         --app-boot-bg: radial-gradient(
@@ -136,6 +136,15 @@
         padding: 24px;
         background: var(--app-boot-bg);
         transition: opacity 0.28s ease, visibility 0.28s ease;
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+      }
+
+      #app-boot-loading.is-visible {
+        opacity: 1;
+        visibility: visible;
+        pointer-events: auto;
       }
 
       #app-boot-loading.is-leaving {
@@ -156,21 +165,24 @@
       }
 
       .app-boot-mark {
-        width: 52px;
+        min-width: 52px;
         height: 52px;
+        padding: 0 16px;
         margin: 0 auto 16px;
         border-radius: 16px;
-        display: grid;
-        place-items: center;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
         background: linear-gradient(
           135deg,
           rgba(243, 156, 18, 0.18),
           rgba(90, 79, 207, 0.12)
         );
         color: var(--app-boot-accent);
-        font-size: 22px;
+        font-size: 16px;
         font-weight: 700;
-        letter-spacing: 0.08em;
+        letter-spacing: 0.02em;
+        white-space: nowrap;
       }
 
       .app-boot-title {
@@ -189,11 +201,12 @@
       }
 
       .app-boot-progress {
-        display: inline-flex;
+        display: flex;
         align-items: center;
-        gap: 8px;
+        justify-content: center;
+        gap: 12px;
         margin-top: 18px;
-        padding: 8px 12px;
+        padding: 10px 14px;
         border-radius: 999px;
         background: var(--app-boot-accent-soft);
         color: var(--app-boot-accent);
@@ -201,20 +214,33 @@
         font-weight: 600;
       }
 
-      .app-boot-dot {
-        width: 8px;
+      .app-boot-progress-track {
+        position: relative;
+        width: min(180px, 42vw);
         height: 8px;
+        overflow: hidden;
         border-radius: 999px;
-        background: currentColor;
-        animation: app-boot-pulse 1.2s ease-in-out infinite;
+        background: rgba(243, 156, 18, 0.16);
       }
 
-      .app-boot-dot:nth-child(2) {
-        animation-delay: 0.18s;
+      .app-boot-progress-fill {
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: 0%;
+        border-radius: inherit;
+        background: linear-gradient(
+          90deg,
+          rgba(243, 156, 18, 0.72),
+          rgba(243, 156, 18, 1)
+        );
+        box-shadow: 0 0 16px rgba(243, 156, 18, 0.3);
+        transition: width 0.24s ease;
       }
 
-      .app-boot-dot:nth-child(3) {
-        animation-delay: 0.36s;
+      .app-boot-progress-value {
+        min-width: 44px;
+        text-align: right;
+        font-variant-numeric: tabular-nums;
       }
 
       .app-boot-note {
@@ -229,17 +255,17 @@
         color: #e91e63;
       }
 
-      @keyframes app-boot-pulse {
-        0%,
-        80%,
-        100% {
-          opacity: 0.32;
-          transform: translateY(0);
-        }
-        40% {
-          opacity: 1;
-          transform: translateY(-2px);
-        }
+      html.app-boot-error .app-boot-progress-track {
+        background: rgba(233, 30, 99, 0.16);
+      }
+
+      html.app-boot-error .app-boot-progress-fill {
+        background: linear-gradient(
+          90deg,
+          rgba(233, 30, 99, 0.72),
+          rgba(233, 30, 99, 1)
+        );
+        box-shadow: 0 0 16px rgba(233, 30, 99, 0.22);
       }
 
       @media (max-width: 640px) {
@@ -252,6 +278,16 @@
     <script>
       (function () {
         var bootReady = false;
+        var bootProgress = 0;
+        var hasSWProgress = false;
+        var simulationStartAt = Date.now();
+        var simulationTimer = 0;
+        var showDelayTimer = window.setTimeout(function () {
+          var bootRoot = getBootRoot();
+          if (bootRoot && !bootReady) {
+            bootRoot.classList.add('is-visible');
+          }
+        }, 360);
         var slowTipTimer = window.setTimeout(function () {
           var tip = document.querySelector('[data-app-boot-tip]');
           if (tip) {
@@ -262,6 +298,10 @@
         var removeTimer = 0;
 
         function clearBootTimers() {
+          if (showDelayTimer) {
+            window.clearTimeout(showDelayTimer);
+            showDelayTimer = 0;
+          }
           if (slowTipTimer) {
             window.clearTimeout(slowTipTimer);
             slowTipTimer = 0;
@@ -270,16 +310,113 @@
             window.clearTimeout(removeTimer);
             removeTimer = 0;
           }
+          if (simulationTimer) {
+            window.clearInterval(simulationTimer);
+            simulationTimer = 0;
+          }
         }
 
         function getBootRoot() {
           return document.getElementById('app-boot-loading');
         }
 
+        function clampProgress(value) {
+          if (!isFinite(value)) {
+            return bootProgress;
+          }
+          return Math.max(0, Math.min(100, value));
+        }
+
+        function renderProgress() {
+          var progressRoot = document.querySelector(
+            '[data-app-boot-progress]'
+          );
+          var progressFill = document.querySelector(
+            '[data-app-boot-progress-fill]'
+          );
+          var progressValue = document.querySelector(
+            '[data-app-boot-progress-value]'
+          );
+          var safeProgress = Math.round(clampProgress(bootProgress));
+
+          if (progressRoot) {
+            progressRoot.setAttribute('aria-valuenow', String(safeProgress));
+          }
+          if (progressFill) {
+            progressFill.style.width = safeProgress + '%';
+          }
+          if (progressValue) {
+            progressValue.textContent = safeProgress + '%';
+          }
+        }
+
+        function startSimulatedProgress() {
+          if (simulationTimer) {
+            return;
+          }
+
+          simulationTimer = window.setInterval(function () {
+            if (bootReady || hasSWProgress) {
+              window.clearInterval(simulationTimer);
+              simulationTimer = 0;
+              return;
+            }
+
+            var elapsed = Date.now() - simulationStartAt;
+            var simulatedProgress = Math.min(50, (elapsed / 2000) * 50);
+            if (simulatedProgress > bootProgress) {
+              bootProgress = simulatedProgress;
+              renderProgress();
+            }
+
+            if (simulatedProgress >= 50) {
+              window.clearInterval(simulationTimer);
+              simulationTimer = 0;
+            }
+          }, 60);
+        }
+
+        function setProgress(value, options) {
+          if (bootReady) {
+            return;
+          }
+
+          if (options && options.source === 'sw') {
+            hasSWProgress = true;
+            if (simulationTimer) {
+              window.clearInterval(simulationTimer);
+              simulationTimer = 0;
+            }
+          }
+
+          if (typeof value === 'number' && isFinite(value)) {
+            bootProgress = Math.max(bootProgress, clampProgress(value));
+          }
+
+          var title = document.querySelector('[data-app-boot-title]');
+          var tip = document.querySelector('[data-app-boot-tip]');
+          var note = document.querySelector('[data-app-boot-note]');
+
+          if (options && typeof options.title === 'string' && title) {
+            title.textContent = options.title;
+          }
+          if (options && typeof options.tip === 'string' && tip) {
+            tip.textContent = options.tip;
+          }
+          if (options && typeof options.note === 'string' && note) {
+            note.textContent = options.note;
+          }
+
+          renderProgress();
+        }
+
         function markReady() {
           if (bootReady) {
             return;
           }
+          setProgress(100, {
+            tip: '启动完成，正在进入工作台...',
+          });
           bootReady = true;
           clearBootTimers();
           var bootRoot = getBootRoot();
@@ -302,7 +439,12 @@
           if (bootReady) {
             return;
           }
+          setProgress(100);
           clearBootTimers();
+          var bootRoot = getBootRoot();
+          if (bootRoot) {
+            bootRoot.classList.add('is-visible');
+          }
           document.documentElement.classList.add('app-boot-error');
           var title = document.querySelector('[data-app-boot-title]');
           var tip = document.querySelector('[data-app-boot-tip]');
@@ -317,7 +459,11 @@
         window.__OPENTU_BOOT__ = {
           markReady: markReady,
           markError: markError,
+          setProgress: setProgress,
         };
+
+        renderProgress();
+        startSimulatedProgress();
 
         window.addEventListener(
           'error',
@@ -391,17 +537,33 @@
       aria-label="应用正在加载"
     >
       <div class="app-boot-card">
-        <div class="app-boot-mark" aria-hidden="true">O</div>
+        <div class="app-boot-mark" aria-hidden="true">OpenTu.ai</div>
         <p class="app-boot-title" data-app-boot-title>正在唤起工作台</p>
         <p class="app-boot-tip" data-app-boot-tip>
           脚本与资源加载中，马上就好...
         </p>
-        <div class="app-boot-progress" aria-hidden="true">
-          <span class="app-boot-dot"></span>
-          <span class="app-boot-dot"></span>
-          <span class="app-boot-dot"></span>
+        <div
+          class="app-boot-progress"
+          role="progressbar"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          aria-valuenow="0"
+          data-app-boot-progress
+        >
+          <span class="app-boot-progress-track" aria-hidden="true">
+            <span
+              class="app-boot-progress-fill"
+              data-app-boot-progress-fill
+            ></span>
+          </span>
+          <span
+            class="app-boot-progress-value"
+            data-app-boot-progress-value
+          >
+            0%
+          </span>
         </div>
-        <div class="app-boot-note">
+        <div class="app-boot-note" data-app-boot-note>
           这一步主要是在准备编辑器运行环境，页面无需重复刷新。
         </div>
       </div>

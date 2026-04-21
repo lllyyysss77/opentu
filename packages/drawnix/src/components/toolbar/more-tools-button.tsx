@@ -62,7 +62,7 @@ import Menu from '../menu/menu';
 import MenuItem from '../menu/menu-item';
 import Stack from '../stack';
 import { THEME_OPTIONS, CheckIcon, isBasicPointer, EmptyIcon } from './toolbar-shared';
-import { HoverTip } from '../shared';
+import { HoverTip } from '../shared/hover';
 
 interface MoreToolsButtonProps {
   /** 是否嵌入模式 */

@@ -6,7 +6,7 @@
  * - log/info: 仅在调试模式开启时捕获（用于调试分析）
  */
 
-import { swChannelClient } from '@drawnix/drawnix';
+import { swChannelClient } from '@drawnix/drawnix/runtime';
 
 let isInitialized = false;
 

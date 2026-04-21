@@ -1,4 +1,11 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, {
+  Suspense,
+  lazy,
+  useEffect,
+  useState,
+  useRef,
+  useCallback,
+} from 'react';
 import { useBoard } from '@plait-board/react-board';
 import { flip, offset, shift, useFloating } from '@floating-ui/react';
 import { Island } from '../../island';
@@ -34,7 +41,6 @@ import { ShapePicker } from '../../shape-picker';
 import { ArrowPicker } from '../../arrow-picker';
 import { FreehandPanel } from '../freehand-panel/freehand-panel';
 import { Z_INDEX } from '../../../constants/z-index';
-import { MediaLibraryModal } from '../../media-library/MediaLibraryModal';
 import { SelectionMode, Asset, AssetType } from '../../../types/asset.types';
 import { insertImageFromUrl } from '../../../data/image';
 import { insertVideoFromUrl } from '../../../data/video';
@@ -42,10 +48,17 @@ import { insertAudioFromUrl } from '../../../data/audio';
 import { MessagePlugin } from 'tdesign-react';
 import './quick-creation-toolbar.scss';
 
+const MediaLibraryModal = lazy(() =>
+  import('../../media-library/MediaLibraryModal').then((module) => ({
+    default: module.MediaLibraryModal,
+  }))
+);
+
 export interface QuickCreationToolbarProps {
   position: [number, number] | null; // 屏幕坐标
   visible: boolean;
   onClose: () => void;
+  onOpenMediaLibrary?: () => void;
 }
 
 enum PopupKey {
@@ -58,6 +71,7 @@ export const QuickCreationToolbar: React.FC<QuickCreationToolbarProps> = ({
   position,
   visible,
   onClose,
+  onOpenMediaLibrary,
 }) => {
   const board = useBoard();
   const { t } = useI18n();
@@ -113,12 +127,13 @@ export const QuickCreationToolbar: React.FC<QuickCreationToolbarProps> = ({
 
       // 检查是否点击了工具栏、Popover 内容或素材库
       const isInsideToolbar = target.closest('.quick-creation-toolbar');
-      const isInsidePopover = target.closest('.quick-toolbar-popover') ||
-                             target.closest('[data-radix-popper-content-wrapper]') ||
-                             target.closest('.plait-popover') ||
-                             target.closest('.shape-picker') ||
-                             target.closest('.arrow-picker') ||
-                             target.closest('.freehand-panel');
+      const isInsidePopover =
+        target.closest('.quick-toolbar-popover') ||
+        target.closest('[data-radix-popper-content-wrapper]') ||
+        target.closest('.plait-popover') ||
+        target.closest('.shape-picker') ||
+        target.closest('.arrow-picker') ||
+        target.closest('.freehand-panel');
       const isInsideMediaLibrary = target.closest('.media-library-modal');
 
       if (!isInsideToolbar && !isInsidePopover && !isInsideMediaLibrary) {
@@ -177,6 +192,11 @@ export const QuickCreationToolbar: React.FC<QuickCreationToolbarProps> = ({
 
   const handleMediaLibraryClick = () => {
     resetAllPopovers();
+    if (onOpenMediaLibrary) {
+      onOpenMediaLibrary();
+      onClose();
+      return;
+    }
     setMediaLibraryOpen(true);
   };
 
@@ -203,17 +223,22 @@ export const QuickCreationToolbar: React.FC<QuickCreationToolbarProps> = ({
           providerTaskId: asset.providerTaskId,
         });
       }
-      MessagePlugin.success(t('toolbar.assetInserted' as any) || '素材已插入到画板');
+      MessagePlugin.success(
+        t('toolbar.assetInserted' as any) || '素材已插入到画板'
+      );
       setMediaLibraryOpen(false);
       onClose();
     } catch (error) {
       console.error('Failed to insert asset:', error);
-      MessagePlugin.error(t('toolbar.assetInsertFailed' as any) || '插入素材失败');
+      MessagePlugin.error(
+        t('toolbar.assetInsertFailed' as any) || '插入素材失败'
+      );
     }
   };
 
   // 保存最后选择的画笔类型
-  const [lastFreehandPointer, setLastFreehandPointer] = useState<DrawnixPointerType>(FreehandShape.feltTipPen);
+  const [lastFreehandPointer, setLastFreehandPointer] =
+    useState<DrawnixPointerType>(FreehandShape.feltTipPen);
 
   // Hover 展开延迟计时器
   const HOVER_DELAY = 300; // 毫秒
@@ -410,15 +435,17 @@ export const QuickCreationToolbar: React.FC<QuickCreationToolbarProps> = ({
 
       {/* 素材库弹窗 */}
       {mediaLibraryOpen && (
-        <MediaLibraryModal
-          isOpen={mediaLibraryOpen}
-          onClose={() => {
-            setMediaLibraryOpen(false);
-          }}
-          mode={SelectionMode.SELECT}
-          onSelect={handleInsertAsset}
-          selectButtonText={t('toolbar.insert' as any) || '插入'}
-        />
+        <Suspense fallback={null}>
+          <MediaLibraryModal
+            isOpen={mediaLibraryOpen}
+            onClose={() => {
+              setMediaLibraryOpen(false);
+            }}
+            mode={SelectionMode.SELECT}
+            onSelect={handleInsertAsset}
+            selectButtonText={t('toolbar.insert' as any) || '插入'}
+          />
+        </Suspense>
       )}
     </>
   );

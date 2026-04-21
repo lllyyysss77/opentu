@@ -19,7 +19,15 @@ import {
   Transforms,
   type Point,
 } from '@plait/core';
-import React, { useState, useRef, useEffect, useMemo, useCallback, lazy, Suspense } from 'react';
+import React, {
+  useState,
+  useRef,
+  useEffect,
+  useMemo,
+  useCallback,
+  lazy,
+  Suspense,
+} from 'react';
 import { withGroup } from '@plait/common';
 import { withDraw, BasicShapes, DrawTransforms } from '@plait/draw';
 import { MindThemeColors, withMind } from '@plait/mind';
@@ -41,7 +49,10 @@ import {
   useDrawnix,
 } from './hooks/use-drawnix';
 import { ClosePencilToolbar } from './components/toolbar/pencil-mode-toolbar';
-import { PencilSettingsToolbar, EraserSettingsToolbar } from './components/toolbar/pencil-settings-toolbar';
+import {
+  PencilSettingsToolbar,
+  EraserSettingsToolbar,
+} from './components/toolbar/pencil-settings-toolbar';
 import { PenSettingsToolbar } from './components/toolbar/pen-settings-toolbar';
 import { CleanConfirm } from './components/clean-confirm/clean-confirm';
 import { buildTextLinkPlugin } from './plugins/with-text-link';
@@ -57,7 +68,7 @@ import {
   AUDIO_PLAYLIST_CANVAS_AUDIO_ID,
   AUDIO_PLAYLIST_CANVAS_AUDIO_LABEL,
 } from './types/audio-playlist.types';
-import { UnifiedMediaViewer, type MediaItem as UnifiedMediaItem } from './components/shared/media-preview';
+import type { MediaItem as UnifiedMediaItem } from './components/shared/media-preview/types';
 import { PlaitDrawElement } from '@plait/draw';
 import { withTracking } from './plugins/tracking';
 import { withUnknownElementFallback } from './plugins/with-unknown-element-fallback';
@@ -69,36 +80,21 @@ import { withTextResize } from './plugins/with-text-resize';
 import { withImageGenerationAnchor } from './plugins/with-image-generation-anchor';
 import { withWorkZone } from './plugins/with-workzone';
 import { MultiSelectionHandles } from './components/multi-selection-handles';
-import { ActiveTaskWarning } from './components/task-queue/ActiveTaskWarning';
-import { useTaskStorage } from './hooks/useTaskStorage';
-import { useTaskExecutor } from './hooks/useTaskExecutor';
-import { useAutoInsertToCanvas } from './hooks/useAutoInsertToCanvas';
-import { useImageGenerationAnchorSync } from './hooks/useImageGenerationAnchorSync';
-import { useBeforeUnload } from './hooks/useBeforeUnload';
-import { ChatDrawer } from './components/chat-drawer';
-import { ChatDrawerProvider, useChatDrawer } from './contexts/ChatDrawerContext';
-import { ModelHealthProvider } from './contexts/ModelHealthContext';
-import { fontManagerService } from './services/font-manager-service';
-import { WorkflowProvider } from './contexts/WorkflowContext';
+import {
+  ChatDrawerProvider,
+  useChatDrawer,
+} from './contexts/ChatDrawerContext';
 import { useWorkspace } from './hooks/useWorkspace';
-import { workspaceService } from './services/workspace-service';
 import { Board as WorkspaceBoard } from './types/workspace.types';
 import { toolTestHelper } from './utils/tool-test-helper';
 import { ViewNavigation } from './components/view-navigation';
 import { AssetProvider } from './contexts/AssetContext';
 import { AudioPlaylistProvider } from './contexts/AudioPlaylistContext';
-import { initializeAssetIntegration } from './services/asset-integration-service';
 import { ToolbarConfigProvider } from './hooks/use-toolbar-config';
-import { AIInputBar } from './components/ai-input-bar';
-import { VersionUpdatePrompt } from './components/version-update/version-update-prompt';
-import { PerformancePanel } from './components/performance-panel';
 import { QuickCreationToolbar } from './components/toolbar/quick-creation-toolbar/quick-creation-toolbar';
 import { CacheQuotaProvider } from './components/cache-quota-provider/CacheQuotaProvider';
 import { RecentColorsProvider } from './components/unified-color-picker';
-import { GitHubSyncProvider } from './contexts/GitHubSyncContext';
-import { SyncSettings } from './components/sync-settings';
 import { usePencilCursor } from './hooks/usePencilCursor';
-import { useToolFromUrl } from './hooks/useToolFromUrl';
 import { withArrowLineAutoCompleteExtend } from './plugins/with-arrow-line-auto-complete-extend';
 import { withFlowchartShortcut } from './plugins/with-flowchart-shortcut';
 import { withFrame } from './plugins/with-frame';
@@ -106,39 +102,68 @@ import { withCard } from './plugins/with-card';
 import { withCardResize } from './plugins/with-card-resize';
 import { withAudioNode } from './plugins/with-audio-node';
 import { withAudioNodeResize } from './plugins/with-audio-node-resize';
-import { toolWindowService } from './services/tool-window-service';
-import { BUILT_IN_TOOLS } from './constants/built-in-tools';
 import { AutoCompleteShapePicker } from './components/auto-complete-shape-picker';
 import { useAutoCompleteShapePicker } from './hooks/useAutoCompleteShapePicker';
-import { ToolWinBoxManager } from './components/toolbox-drawer/ToolWinBoxManager';
 import { withDefaultFill } from './plugins/with-default-fill';
 import { withGradientFill } from './plugins/with-gradient-fill';
 import { withFrameResize } from './plugins/with-frame-resize';
 import { withLassoSelection } from './plugins/with-lasso-selection';
 import { withLockedElement } from './plugins/with-locked-element';
-import { API_AUTH_ERROR_EVENT, ApiAuthErrorDetail } from './utils/api-auth-error-event';
+import {
+  API_AUTH_ERROR_EVENT,
+  ApiAuthErrorDetail,
+} from './utils/api-auth-error-event';
 import { MessagePlugin } from 'tdesign-react';
 import { calculateEditedImagePoints } from './utils/image';
 import { isCardElement } from './types/card.types';
 import { openCardInKnowledgeBase } from './utils/card-actions';
 import { useI18n } from './i18n';
 import { safeReload } from './utils/active-tasks';
-import { CommandPalette } from './components/command-palette/command-palette';
-import { CanvasSearch } from './components/canvas-search/canvas-search';
 import { useTabSync } from './hooks/useTabSync';
-import { CanvasAudioPlayer } from './components/audio-node-element/CanvasAudioPlayer';
 import { canvasAudioPlaybackService } from './services/canvas-audio-playback-service';
 import { useCanvasAudioPlaybackSelector } from './hooks/useCanvasAudioPlayback';
 import { isAudioNodeElement } from './types/audio-node.types';
-import { useProviderProfiles } from './hooks/use-provider-profiles';
-import { modelPricingService } from './utils/model-pricing-service';
+import {
+  requestServiceWorkerIdlePrefetch,
+  type IdlePrefetchGroup,
+} from './utils/startup-prefetch';
+import { DeferredAIInputBar } from './components/startup/DeferredAIInputBar';
+import { ChatDrawer } from './components/chat-drawer';
 
-const TTDDialog = lazy(() => import('./components/ttd-dialog/ttd-dialog').then(module => ({ default: module.TTDDialog })));
-const SettingsDialog = lazy(() => import('./components/settings-dialog/settings-dialog').then(module => ({ default: module.SettingsDialog })));
-const ProjectDrawer = lazy(() => import('./components/project-drawer').then(module => ({ default: module.ProjectDrawer })));
-const ToolboxDrawer = lazy(() => import('./components/toolbox-drawer/ToolboxDrawer').then(module => ({ default: module.ToolboxDrawer })));
-const MediaLibraryModal = lazy(() => import('./components/media-library').then(module => ({ default: module.MediaLibraryModal })));
-const BackupRestoreDialog = lazy(() => import('./components/backup-restore').then(module => ({ default: module.BackupRestoreDialog })));
+const DrawnixDeferredFeatures = lazy(() =>
+  import('./components/startup/DrawnixDeferredFeatures').then((module) => ({
+    default: module.DrawnixDeferredFeatures,
+  }))
+);
+const DrawnixDeferredRuntime = lazy(() =>
+  import('./components/startup/DrawnixDeferredRuntime').then((module) => ({
+    default: module.DrawnixDeferredRuntime,
+  }))
+);
+const TTDDialog = lazy(() =>
+  import('./components/ttd-dialog/ttd-dialog').then((module) => ({
+    default: module.TTDDialog,
+  }))
+);
+const SettingsDialog = lazy(() =>
+  import('./components/settings-dialog/settings-dialog').then((module) => ({
+    default: module.SettingsDialog,
+  }))
+);
+const UnifiedMediaViewer = lazy(() =>
+  import('./components/shared/media-preview/UnifiedMediaViewer').then(
+    (module) => ({
+      default: module.UnifiedMediaViewer,
+    })
+  )
+);
+const CanvasAudioPlayer = lazy(() =>
+  import('./components/audio-node-element/CanvasAudioPlayer').then(
+    (module) => ({
+      default: module.CanvasAudioPlayer,
+    })
+  )
+);
 
 export type DrawnixProps = {
   value: PlaitElement[];
@@ -159,6 +184,11 @@ export type DrawnixProps = {
   /** 当前画板 ID（用于 tab 同步过滤） */
   currentBoardId?: string | null;
 } & Omit<React.HTMLAttributes<HTMLDivElement>, 'onChange'>;
+
+const DEFAULT_IDLE_PREFETCH_GROUPS: IdlePrefetchGroup[] = [
+  'ai-chat',
+  'tool-windows',
+];
 
 export const Drawnix: React.FC<DrawnixProps> = ({
   value,
@@ -182,10 +212,6 @@ export const Drawnix: React.FC<DrawnixProps> = ({
     themeColors: MindThemeColors,
   };
 
-  // Initialize task storage synchronization
-  const isTaskStorageReady = useTaskStorage();
-  const providerProfiles = useProviderProfiles();
-
   const [appState, setAppState] = useState<DrawnixState>(() => {
     // TODO: need to consider how to maintenance the pointer state in future
     const md = new MobileDetect(window.navigator.userAgent);
@@ -208,20 +234,11 @@ export const Drawnix: React.FC<DrawnixProps> = ({
   const [mediaLibraryOpen, setMediaLibraryOpen] = useState(false);
   const [backupRestoreOpen, setBackupRestoreOpen] = useState(false);
   const [cloudSyncOpen, setCloudSyncOpen] = useState(false);
-
-  useEffect(() => {
-    if (providerProfiles.length === 0) {
-      return;
-    }
-
-    const timer = window.setTimeout(() => {
-      modelPricingService.warmupProfiles(providerProfiles);
-    }, 0);
-
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [providerProfiles]);
+  const [deferredRuntimeEnabled, setDeferredRuntimeEnabled] = useState(false);
+  const [versionUpdateEnabled, setVersionUpdateEnabled] = useState(false);
+  const [performancePanelEnabled, setPerformancePanelEnabled] = useState(false);
+  const [toolWindowManagerEnabled, setToolWindowManagerEnabled] =
+    useState(false);
 
   // 使用 ref 来保存 board 的最新引用,避免 useCallback 依赖问题
   const boardRef = useRef<DrawnixBoard | null>(null);
@@ -233,80 +250,153 @@ export const Drawnix: React.FC<DrawnixProps> = ({
     setTaskPanelExpanded(false);
     setMediaLibraryOpen(false);
   }, []);
-  // 获取知识库工具定义
-  const kbTool = BUILT_IN_TOOLS.find(t => t.id === 'knowledge-base')!;
+
+  const enableDeferredRuntime = useCallback(
+    (groups: IdlePrefetchGroup[] = DEFAULT_IDLE_PREFETCH_GROUPS) => {
+      requestServiceWorkerIdlePrefetch(groups);
+      setDeferredRuntimeEnabled(true);
+    },
+    []
+  );
+
+  const enableToolWindows = useCallback(
+    (groups: IdlePrefetchGroup[] = ['tool-windows']) => {
+      enableDeferredRuntime(groups);
+      setToolWindowManagerEnabled(true);
+    },
+    [enableDeferredRuntime]
+  );
 
   // 处理知识库切换（通过 WinBox 打开）
   const handleKnowledgeBaseToggle = useCallback(() => {
-    const state = toolWindowService.getToolState('knowledge-base');
-    if (state && state.status === 'open') {
-      toolWindowService.closeTool('knowledge-base');
-    } else {
-      toolWindowService.openTool(kbTool);
-    }
-  }, [kbTool]);
+    enableToolWindows(['tool-windows']);
+    void Promise.all([
+      import('./services/tool-window-service'),
+      import('./constants/built-in-tools'),
+    ]).then(([{ toolWindowService }, { BUILT_IN_TOOLS }]) => {
+      const kbTool = BUILT_IN_TOOLS.find(
+        (tool) => tool.id === 'knowledge-base'
+      );
+      if (!kbTool) {
+        return;
+      }
+
+      const state = toolWindowService.getToolState(kbTool.id);
+      if (state && state.status === 'open') {
+        toolWindowService.closeTool(kbTool.id);
+      } else {
+        toolWindowService.openTool(kbTool);
+      }
+    });
+  }, [enableToolWindows]);
 
   // 监听 kb:open 事件，支持从 popup-toolbar 等外部打开知识库并定位到指定笔记
   useEffect(() => {
     const handleKBOpen = (e: Event) => {
       const { noteId } = (e as CustomEvent<{ noteId?: string }>).detail;
-      const isAlreadyOpen = toolWindowService.isToolOpen(kbTool.id);
-      toolWindowService.openTool(kbTool, {
-        componentProps: noteId ? { initialNoteId: noteId } : {},
+      enableToolWindows(['tool-windows']);
+      void Promise.all([
+        import('./services/tool-window-service'),
+        import('./constants/built-in-tools'),
+      ]).then(([{ toolWindowService }, { BUILT_IN_TOOLS }]) => {
+        const kbTool = BUILT_IN_TOOLS.find(
+          (tool) => tool.id === 'knowledge-base'
+        );
+        if (!kbTool) {
+          return;
+        }
+
+        const isAlreadyOpen = toolWindowService.isToolOpen(kbTool.id);
+        toolWindowService.openTool(kbTool, {
+          componentProps: noteId ? { initialNoteId: noteId } : {},
+        });
+
+        if (isAlreadyOpen && noteId) {
+          window.setTimeout(() => {
+            window.dispatchEvent(
+              new CustomEvent('kb:open-note', { detail: { noteId } })
+            );
+          }, 50);
+        }
       });
-      // 如果知识库已经打开，initialNoteId prop 不会触发重新定位
-      // 需要额外发送 kb:open-note 事件让已挂载的组件动态定位
-      if (isAlreadyOpen && noteId) {
-        setTimeout(() => {
-          window.dispatchEvent(new CustomEvent('kb:open-note', { detail: { noteId } }));
-        }, 50);
-      }
     };
     window.addEventListener('kb:open', handleKBOpen);
     return () => window.removeEventListener('kb:open', handleKBOpen);
-  }, [kbTool]);
+  }, [enableToolWindows]);
 
   // 处理项目抽屉切换（互斥逻辑）
   const handleProjectDrawerToggle = useCallback(() => {
-    setProjectDrawerOpen((prev) => {
-      if (!prev) closeAllDrawers();
-      return !prev;
-    });
-  }, [closeAllDrawers]);
+    enableToolWindows(['tool-windows']);
+    if (projectDrawerOpen) {
+      setProjectDrawerOpen(false);
+      return;
+    }
+
+    setToolboxDrawerOpen(false);
+    setTaskPanelExpanded(false);
+    setMediaLibraryOpen(false);
+    setProjectDrawerOpen(true);
+  }, [enableToolWindows, projectDrawerOpen]);
 
   // 处理工具箱抽屉切换（互斥逻辑）
   const handleToolboxDrawerToggle = useCallback(() => {
-    setToolboxDrawerOpen((prev) => {
-      if (!prev) closeAllDrawers();
-      return !prev;
-    });
-  }, [closeAllDrawers]);
+    enableToolWindows(['tool-windows']);
+    if (toolboxDrawerOpen) {
+      setToolboxDrawerOpen(false);
+      return;
+    }
+
+    setProjectDrawerOpen(false);
+    setTaskPanelExpanded(false);
+    setMediaLibraryOpen(false);
+    setToolboxDrawerOpen(true);
+  }, [enableToolWindows, toolboxDrawerOpen]);
 
   // 处理任务面板切换（互斥逻辑）
   const handleTaskPanelToggle = useCallback(() => {
-    setTaskPanelExpanded((prev) => {
-      if (!prev) closeAllDrawers();
-      return !prev;
-    });
-  }, [closeAllDrawers]);
+    enableDeferredRuntime(['tool-windows']);
+    if (taskPanelExpanded) {
+      setTaskPanelExpanded(false);
+      return;
+    }
+
+    setProjectDrawerOpen(false);
+    setToolboxDrawerOpen(false);
+    setMediaLibraryOpen(false);
+    setTaskPanelExpanded(true);
+  }, [enableDeferredRuntime, taskPanelExpanded]);
 
   // 打开素材库（用于缓存满提示）
   const handleOpenMediaLibrary = useCallback(() => {
+    enableToolWindows(['tool-windows']);
     closeAllDrawers();
     setMediaLibraryOpen(true);
-  }, [closeAllDrawers]);
+  }, [closeAllDrawers, enableToolWindows]);
+
+  const handleOpenBackupRestore = useCallback(() => {
+    enableDeferredRuntime(['tool-windows']);
+    setBackupRestoreOpen(true);
+  }, [enableDeferredRuntime]);
+
+  const handleOpenCloudSync = useCallback(() => {
+    enableDeferredRuntime(['tool-windows']);
+    setCloudSyncOpen(true);
+  }, [enableDeferredRuntime]);
 
   // 使用 useCallback 稳定 setAppState 函数引用，支持函数式更新
-  const stableSetAppState = useCallback((newAppState: DrawnixState | ((prev: DrawnixState) => DrawnixState)) => {
-    if (typeof newAppState === 'function') {
-      setAppState(newAppState);
-    } else {
-      setAppState(newAppState);
-    }
-  }, []);
+  const stableSetAppState = useCallback(
+    (newAppState: DrawnixState | ((prev: DrawnixState) => DrawnixState)) => {
+      if (typeof newAppState === 'function') {
+        setAppState(newAppState);
+      } else {
+        setAppState(newAppState);
+      }
+    },
+    []
+  );
 
   const updateAppState = useCallback((newAppState: Partial<DrawnixState>) => {
-    setAppState(prevState => ({
+    setAppState((prevState) => ({
       ...prevState,
       ...newAppState,
     }));
@@ -321,109 +411,110 @@ export const Drawnix: React.FC<DrawnixProps> = ({
     }
   }, [board, appState, stableSetAppState]);
 
-  // Initialize asset integration service on mount
   useEffect(() => {
-    const cleanup = initializeAssetIntegration();
-    return cleanup;
-  }, []);
+    let disposed = false;
+    const shouldLoadImmediately = new URLSearchParams(
+      window.location.search
+    ).has('tool');
 
-  // 预加载画布中使用的字体（当 value 变化时）
-  // 延迟执行以避免阻塞首屏渲染
-  useEffect(() => {
-    if (value && value.length > 0) {
-      const preloadFonts = () => {
-        fontManagerService.preloadBoardFonts(value).then(() => {
-          // 字体加载完成后，强制重新渲染
-          // PlaitBoard 没有 redraw 方法，字体加载后会自动应用
-        }).catch(error => {
-          console.warn('Failed to preload board fonts:', error);
-        });
-      };
-
-      // 延迟字体预加载，优先渲染画布
-      if ('requestIdleCallback' in window) {
-        (window as Window).requestIdleCallback(preloadFonts, { timeout: 2000 });
-      } else {
-        setTimeout(preloadFonts, 300);
+    const startDeferredRuntime = () => {
+      if (!disposed) {
+        enableDeferredRuntime(
+          shouldLoadImmediately
+            ? ['tool-windows']
+            : DEFAULT_IDLE_PREFETCH_GROUPS
+        );
       }
-    }
-  }, [value]);
-
-  // Initialize video recovery service to restore expired blob URLs
-  // 延迟执行以避免阻塞首屏渲染
-  useEffect(() => {
-    if (board) {
-      const initVideoRecovery = () => {
-        import('./services/video-recovery-service').then(({ initVideoRecoveryService }) => {
-          initVideoRecoveryService(board);
-        });
-      };
-
-      if ('requestIdleCallback' in window) {
-        (window as Window).requestIdleCallback(initVideoRecovery, { timeout: 3000 });
-      } else {
-        setTimeout(initVideoRecovery, 500);
-      }
-    }
-  }, [board]);
-
-  // Initialize fallback media executor to resume pending tasks
-  useEffect(() => {
-    if (!isTaskStorageReady) return;
-
-    const resumeTasks = async () => {
-      console.warn('[drawnix] resumeTasks: waiting for workflow recovery...');
-      // Wait for workflow recovery to complete before resuming tasks,
-      // so useTaskWorkflowSync can find the step mappings
-      try {
-        const { workflowRecoveryPromise } = await import('./hooks/useWorkflowSubmission');
-        await Promise.race([
-          workflowRecoveryPromise,
-          new Promise<void>(resolve => setTimeout(resolve, 5000)),
-        ]);
-      } catch {
-        // Continue even if import fails
-      }
-      console.warn('[drawnix] resumeTasks: workflow recovery done, calling resumePendingTasks');
-
-      const [{ fallbackMediaExecutor }, { taskQueueService }] = await Promise.all([
-        import('./services/media-executor/fallback-executor'),
-        import('./services/task-queue')
-      ]);
-      const allTasks = taskQueueService.getAllTasks();
-      console.warn('[drawnix] Starting resumePendingTasks, in-memory tasks:', allTasks.length);
-      fallbackMediaExecutor.resumePendingTasks(
-        (taskId, status, updates) => {
-          console.warn(`[drawnix] resumePendingTasks callback: task=${taskId} status=${status}`);
-          taskQueueService.updateTaskStatus(taskId, status, updates);
-        },
-        allTasks
-      );
     };
 
-    if ('requestIdleCallback' in window) {
-      (window as Window).requestIdleCallback(resumeTasks, { timeout: 5000 });
-    } else {
-      setTimeout(resumeTasks, 1000);
+    if (shouldLoadImmediately) {
+      enableToolWindows(['tool-windows']);
+      return;
     }
-  }, [isTaskStorageReady]);
+
+    const idleCallback = (
+      window as Window & {
+        requestIdleCallback?: (
+          callback: () => void,
+          options?: { timeout: number }
+        ) => number;
+        cancelIdleCallback?: (id: number) => void;
+      }
+    ).requestIdleCallback;
+
+    if (typeof idleCallback === 'function') {
+      const id = idleCallback(startDeferredRuntime, { timeout: 1800 });
+      return () => {
+        disposed = true;
+        (
+          window as Window & {
+            cancelIdleCallback?: (callbackId: number) => void;
+          }
+        ).cancelIdleCallback?.(id);
+      };
+    }
+
+    const timer = window.setTimeout(startDeferredRuntime, 700);
+    return () => {
+      disposed = true;
+      window.clearTimeout(timer);
+    };
+  }, [enableDeferredRuntime, enableToolWindows]);
+
+  useEffect(() => {
+    const idleCallback = (
+      window as Window & {
+        requestIdleCallback?: (
+          callback: () => void,
+          options?: { timeout: number }
+        ) => number;
+        cancelIdleCallback?: (id: number) => void;
+      }
+    ).requestIdleCallback;
+
+    let idleId: number | undefined;
+    const timer = window.setTimeout(() => {
+      const enableNonCriticalUi = () => {
+        setVersionUpdateEnabled(true);
+        setPerformancePanelEnabled(true);
+      };
+
+      if (typeof idleCallback === 'function') {
+        idleId = idleCallback(enableNonCriticalUi, { timeout: 2500 });
+        return;
+      }
+
+      enableNonCriticalUi();
+    }, 1200);
+
+    return () => {
+      window.clearTimeout(timer);
+      if (typeof idleId === 'number') {
+        (
+          window as Window & {
+            cancelIdleCallback?: (callbackId: number) => void;
+          }
+        ).cancelIdleCallback?.(idleId);
+      }
+    };
+  }, []);
 
   // 监听 API 认证错误事件，自动打开设置对话框
   useEffect(() => {
     const handleApiAuthError = (event: Event) => {
       const customEvent = event as CustomEvent<ApiAuthErrorDetail>;
       const { message } = customEvent.detail;
-      
+
       // 显示错误提示
       MessagePlugin.error({
         content: 'API Key 无效或已过期，请重新配置',
         duration: 5000,
       });
-      
+
       console.error('[Drawnix] API auth error:', message);
-      
+
       // 打开设置对话框
-      setAppState(prev => ({ ...prev, openSettings: true }));
+      setAppState((prev) => ({ ...prev, openSettings: true }));
     };
 
     window.addEventListener(API_AUTH_ERROR_EVENT, handleApiAuthError);
@@ -431,346 +522,6 @@ export const Drawnix: React.FC<DrawnixProps> = ({
       window.removeEventListener(API_AUTH_ERROR_EVENT, handleApiAuthError);
     };
   }, []);
-
-  // Handle interrupted WorkZone elements after page refresh
-  // Query task status from main-thread task queue and restore workflow state
-  useEffect(() => {
-    if (!isTaskStorageReady) return;
-
-    if (board && value && value.length > 0) {
-      const restoreWorkZones = async () => {
-        const { WorkZoneTransforms } = await import('./plugins/with-workzone');
-        const { TaskStatus } = await import('./types/task.types');
-
-        // 数据迁移已移至 useTaskStorage 中统一处理（确保迁移在读取之前完成）
-
-        const { taskQueueService } = await import('./services/task-queue');
-
-        const workzones = WorkZoneTransforms.getAllWorkZones(board);
-
-        for (const workzone of workzones) {
-          const currentWorkflow = { ...workzone.workflow, steps: [...workzone.workflow.steps] };
-
-          // 检查工作流是否已完成，如果是则自动删除 WorkZone
-          const hasPendingOrRunningSteps = currentWorkflow.steps.some(
-            step => step.status === 'running' || step.status === 'pending'
-          );
-          
-          if (currentWorkflow.status === 'completed' && !hasPendingOrRunningSteps) {
-            WorkZoneTransforms.removeWorkZone(board, workzone.id);
-            continue;
-          }
-
-          const hasRunningSteps = hasPendingOrRunningSteps;
-          if (!hasRunningSteps) continue;
-
-          // Update steps based on task queue status
-          const updatedSteps = currentWorkflow.steps.map(step => {
-            if (step.status !== 'running' && step.status !== 'pending') {
-              return step;
-            }
-
-            // Get taskId from step result
-            const taskId = (step.result as { taskId?: string })?.taskId;
-            if (!taskId) {
-              // For media generation steps, keep status for fallback engine to resume
-              const mediaGenerationSteps = ['generate_image', 'generate_video', 'generate_grid_image', 'generate_inspiration_board'];
-              if (step.mcp === 'ai_analyze' || mediaGenerationSteps.includes(step.mcp)) {
-                return step;
-              }
-              
-              // For other steps without taskId (like insert_mindmap, insert_mermaid),
-              // they are synchronous and should have completed before refresh
-              if (step.status === 'running') {
-                return {
-                  ...step,
-                  status: 'failed' as const,
-                  error: '页面刷新导致中断，请删除后重新发起',
-                };
-              }
-              return step;
-            }
-
-            // Query task status from task queue
-            const task = taskQueueService.getTask(taskId);
-            if (!task) {
-              return {
-                ...step,
-                status: 'failed' as const,
-                error: '任务未找到，请重试',
-              };
-            }
-
-            // Update step status based on task status
-            switch (task.status) {
-              case TaskStatus.COMPLETED:
-                return {
-                  ...step,
-                  status: 'completed' as const,
-                  result: { taskId, result: task.result },
-                };
-              case TaskStatus.FAILED:
-                return {
-                  ...step,
-                  status: 'failed' as const,
-                  error: task.error?.message || '任务执行失败',
-                };
-              case TaskStatus.CANCELLED:
-                return {
-                  ...step,
-                  status: 'skipped' as const,
-                };
-              case TaskStatus.PENDING:
-              case TaskStatus.PROCESSING:
-                return step;
-              default:
-                return step;
-            }
-          });
-
-          // Check if any steps were updated
-          const hasChanges = updatedSteps.some((step, i) =>
-            step.status !== currentWorkflow.steps[i]?.status
-          );
-
-          if (hasChanges) {
-            WorkZoneTransforms.updateWorkflow(board, workzone.id, {
-              steps: updatedSteps,
-            });
-          }
-        }
-      };
-
-      // 使用 requestIdleCallback 延迟执行 WorkZone 恢复逻辑
-      // 避免阻塞首屏渲染
-      const scheduleRestore = () => {
-        if ('requestIdleCallback' in window) {
-          (window as Window).requestIdleCallback(() => {
-            restoreWorkZones().catch(error => {
-              console.error('[Drawnix] Failed to restore WorkZones:', error);
-            });
-          }, { timeout: 2000 });
-        } else {
-          setTimeout(() => {
-            restoreWorkZones().catch(error => {
-              console.error('[Drawnix] Failed to restore WorkZones:', error);
-            });
-          }, 500);
-        }
-      };
-
-      scheduleRestore();
-    }
-  }, [board, isTaskStorageReady]); // Only run once when board is initialized and task storage is ready
-
-  // Subscribe to workflow status updates from SW and sync to WorkZone
-  // This ensures WorkZone UI stays in sync even after page refresh
-  useEffect(() => {
-    if (!board) return;
-
-    let subscription: { unsubscribe: () => void } | null = null;
-
-    const setupWorkflowSync = async () => {
-      const workflowModule = await import('./services/workflow-submission-service');
-      const { WorkZoneTransforms } = await import('./plugins/with-workzone');
-      const { workflowSubmissionService } = workflowModule;
-
-      // Subscribe to all workflow events
-      subscription = workflowSubmissionService.subscribeToAllEvents((event) => {
-        const workflowEvent = event as { 
-          type: string; 
-          workflowId: string; 
-          stepId?: string; 
-          status?: string; 
-          result?: unknown; 
-          error?: string; 
-          duration?: number;
-          steps?: Array<{ id: string; mcp: string; args: Record<string, unknown>; description: string; status: string }>;
-        };
-        // console.log('[Drawnix] Workflow event:', workflowEvent.type, workflowEvent.workflowId);
-        
-        // Find WorkZone with this workflow ID
-        const workzones = WorkZoneTransforms.getAllWorkZones(board);
-        const workzone = workzones.find(wz => wz.workflow.id === workflowEvent.workflowId);
-        
-        if (!workzone) {
-          // console.log('[Drawnix] No WorkZone found for workflow:', workflowEvent.workflowId);
-          return;
-        }
-
-        switch (workflowEvent.type) {
-          case 'step': {
-            // Update specific step status
-            const updatedSteps = workzone.workflow.steps.map(step => {
-              if (step.id === workflowEvent.stepId) {
-                return {
-                  ...step,
-                  status: (workflowEvent.status || step.status) as 'pending' | 'running' | 'completed' | 'failed' | 'skipped',
-                  result: workflowEvent.result ?? step.result,
-                  error: workflowEvent.error ?? step.error,
-                  duration: workflowEvent.duration ?? step.duration,
-                };
-              }
-              return step;
-            });
-            WorkZoneTransforms.updateWorkflow(board, workzone.id, {
-              steps: updatedSteps,
-            });
-            break;
-          }
-
-          case 'steps_added': {
-            // Add new steps to workflow
-            const newSteps = (workflowEvent.steps || []).map(step => ({
-              id: step.id,
-              mcp: step.mcp,
-              args: step.args,
-              description: step.description,
-              status: step.status as 'pending' | 'running' | 'completed' | 'failed' | 'skipped',
-            }));
-            WorkZoneTransforms.updateWorkflow(board, workzone.id, {
-              steps: [...workzone.workflow.steps, ...newSteps],
-            });
-            break;
-          }
-
-          case 'completed':
-          case 'failed': {
-            // Workflow completed or failed - update all pending/running steps
-            const finalStatus = workflowEvent.type === 'completed' ? 'completed' : 'failed';
-            const updatedSteps = workzone.workflow.steps.map(step => {
-              if (step.status === 'running' || step.status === 'pending') {
-                // For steps with taskId, don't force status change - let task queue handle it
-                const stepResult = step.result as { taskId?: string } | undefined;
-                if (stepResult?.taskId) {
-                  return step;
-                }
-                return {
-                  ...step,
-                  status: finalStatus as 'completed' | 'failed',
-                  error: workflowEvent.type === 'failed' ? workflowEvent.error : undefined,
-                };
-              }
-              return step;
-            });
-            WorkZoneTransforms.updateWorkflow(board, workzone.id, {
-              steps: updatedSteps,
-            });
-            break;
-          }
-
-          case 'recovered': {
-            // Full workflow recovery - sync all steps and status
-            const swWorkflow = (workflowEvent as any).workflow;
-            if (swWorkflow) {
-              WorkZoneTransforms.updateWorkflow(board, workzone.id, {
-                steps: swWorkflow.steps,
-                status: swWorkflow.status,
-              });
-            }
-            break;
-          }
-        }
-      });
-    };
-
-    setupWorkflowSync().catch(error => {
-      console.error('[Drawnix] Failed to setup workflow sync:', error);
-    });
-
-    return () => {
-      subscription?.unsubscribe();
-    };
-  }, [board]);
-
-  // Subscribe to task queue updates to sync WorkZone status
-  // This handles real-time updates for tasks running in the background (e.g. video generation)
-  useEffect(() => {
-    if (!isTaskStorageReady || !board) return;
-
-    let subscription: { unsubscribe: () => void } | null = null;
-
-    const setupTaskQueueSync = async () => {
-      const { taskQueueService } = await import('./services/task-queue');
-      const { WorkZoneTransforms } = await import('./plugins/with-workzone');
-      const { TaskStatus } = await import('./types/task.types');
-
-      subscription = taskQueueService.observeTaskUpdates().subscribe((event) => {
-        // Only care about task updates that might affect WorkZone steps
-        if (event.type !== 'taskUpdated' && event.type !== 'taskCompleted' && event.type !== 'taskFailed') {
-          return;
-        }
-        
-        const task = event.task;
-        if (!task) return;
-
-        // Find WorkZone steps that are waiting for this task
-        const workzones = WorkZoneTransforms.getAllWorkZones(board);
-        
-        for (const workzone of workzones) {
-          const currentWorkflow = { ...workzone.workflow, steps: [...workzone.workflow.steps] };
-          let hasChanges = false;
-          
-          const updatedSteps = currentWorkflow.steps.map(step => {
-            const stepResult = step.result as { taskId?: string } | undefined;
-            
-            // Only update steps that are linked to this task
-            if (stepResult?.taskId === task.id) {
-              let newStatus = step.status;
-              let newError = step.error;
-              let newResult = step.result;
-
-              // Map task status to step status
-              switch (task.status) {
-                case TaskStatus.COMPLETED:
-                  newStatus = 'completed';
-                  newResult = { taskId: task.id, result: task.result };
-                  break;
-                case TaskStatus.FAILED:
-                  newStatus = 'failed';
-                  newError = task.error?.message || '任务失败';
-                  break;
-                case TaskStatus.PROCESSING:
-                  newStatus = 'running';
-                  break;
-                case TaskStatus.PENDING:
-                  newStatus = 'pending';
-                  break;
-                case TaskStatus.CANCELLED:
-                  newStatus = 'skipped';
-                  break;
-              }
-
-              if (newStatus !== step.status || newError !== step.error) {
-                hasChanges = true;
-                return {
-                  ...step,
-                  status: newStatus as any,
-                  error: newError,
-                  result: newResult
-                };
-              }
-            }
-            return step;
-          });
-
-          if (hasChanges) {
-            WorkZoneTransforms.updateWorkflow(board, workzone.id, {
-              steps: updatedSteps,
-            });
-          }
-        }
-      });
-    };
-
-    setupTaskQueueSync().catch(console.error);
-
-    return () => {
-      if (subscription) {
-        subscription.unsubscribe();
-      }
-    };
-  }, [board, isTaskStorageReady]);
 
   const plugins: PlaitPlugin[] = [
     withDraw,
@@ -809,18 +560,6 @@ export const Drawnix: React.FC<DrawnixProps> = ({
 
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Initialize task executor for background processing
-  useTaskExecutor();
-
-  // Auto-insert completed tasks to canvas
-  useAutoInsertToCanvas({ enabled: true, insertPrompt: false, groupSimilarTasks: true });
-
-  // Image generation anchor sync skeleton
-  useImageGenerationAnchorSync({ board, enabled: isTaskStorageReady });
-
-  // Warn users before leaving page with active tasks
-  useBeforeUnload();
-
   // Workspace management
   const { saveBoard, createBoard, switchBoard } = useWorkspace();
 
@@ -841,47 +580,67 @@ export const Drawnix: React.FC<DrawnixProps> = ({
   const handleCreateProjectForMemory = useCallback(async () => {
     // 先保存当前画布
     await handleBeforeSwitch();
-    
+
     // 创建新画布
     const newBoard = await createBoard({
       name: '新画布',
     });
-    
+
     if (newBoard) {
       // 切换到新画布
       await switchBoard(newBoard.id);
-      
+
       // 延迟刷新页面，让用户看到切换效果
       setTimeout(() => {
-        safeReload();
+        void safeReload();
       }, 500);
     }
   }, [handleBeforeSwitch, createBoard, switchBoard]);
 
   // 处理选中状态变化,保存最近选中的元素IDs
-  const handleSelectionChange = useCallback((selection: Selection | null) => {
-    const currentBoard = boardRef.current;
-    if (currentBoard && selection) {
-      // 使用Plait的getSelectedElements函数来获取选中的元素
-      const selectedElements = getSelectedElements(currentBoard);
+  const handleSelectionChange = useCallback(
+    (selection: Selection | null) => {
+      const currentBoard = boardRef.current;
+      if (currentBoard && selection) {
+        // 使用Plait的getSelectedElements函数来获取选中的元素
+        const selectedElements = getSelectedElements(currentBoard);
 
-      const elementIds = selectedElements.map((el: any) => el.id).filter(Boolean);
+        const elementIds = selectedElements
+          .map((el: any) => el.id)
+          .filter(Boolean);
 
-      // 更新lastSelectedElementIds（包括清空的情况）
-      // console.log('Selection changed, saving element IDs:', elementIds);
-      updateAppState({ lastSelectedElementIds: elementIds });
-    }
+        // 更新lastSelectedElementIds（包括清空的情况）
+        // console.log('Selection changed, saving element IDs:', elementIds);
+        updateAppState({ lastSelectedElementIds: elementIds });
+      }
 
-    // 调用外部的onSelectionChange回调
-    onSelectionChange && onSelectionChange(selection);
-  }, [onSelectionChange, updateAppState]);
+      // 调用外部的onSelectionChange回调
+      onSelectionChange && onSelectionChange(selection);
+    },
+    [onSelectionChange, updateAppState]
+  );
 
   // 使用 useMemo 稳定 DrawnixContext.Provider 的 value
-  const contextValue = useMemo(() => ({
-    appState,
-    setAppState: stableSetAppState,
-    board
-  }), [appState, stableSetAppState, board]);
+  const contextValue = useMemo(
+    () => ({
+      appState,
+      setAppState: stableSetAppState,
+      board,
+    }),
+    [appState, stableSetAppState, board]
+  );
+
+  const shouldRenderDeferredFeatures =
+    versionUpdateEnabled ||
+    performancePanelEnabled ||
+    toolWindowManagerEnabled ||
+    appState.openCommandPalette ||
+    appState.openCanvasSearch ||
+    projectDrawerOpen ||
+    toolboxDrawerOpen ||
+    mediaLibraryOpen ||
+    backupRestoreOpen ||
+    cloudSyncOpen;
 
   return (
     <I18nProvider>
@@ -890,62 +649,56 @@ export const Drawnix: React.FC<DrawnixProps> = ({
           <AudioPlaylistProvider>
             <ToolbarConfigProvider>
               <CacheQuotaProvider onOpenMediaLibrary={handleOpenMediaLibrary}>
-                <ModelHealthProvider>
-                  <GitHubSyncProvider>
-                    <ChatDrawerProvider>
-                      <WorkflowProvider>
-                        <DrawnixContext.Provider value={contextValue}>
-                        <DrawnixContent
-                        value={value}
-                        viewport={viewport}
-                        theme={theme}
-                        options={options}
-                        plugins={plugins}
-                        containerRef={containerRef}
-                        appState={appState}
-                        board={board}
-                        setBoard={setBoard}
-                        projectDrawerOpen={projectDrawerOpen}
-                        toolboxDrawerOpen={toolboxDrawerOpen}
-                        taskPanelExpanded={taskPanelExpanded}
-                        mediaLibraryOpen={mediaLibraryOpen}
-                        backupRestoreOpen={backupRestoreOpen}
-                        onChange={onChange}
-                        onSelectionChange={handleSelectionChange}
-                        onViewportChange={onViewportChange}
-                        onThemeChange={onThemeChange}
-                        onValueChange={onValueChange}
-                        afterInit={afterInit}
-                        onBoardSwitch={onBoardSwitch}
-                        onTabSyncNeeded={onTabSyncNeeded}
-                        handleProjectDrawerToggle={handleProjectDrawerToggle}
-                        handleToolboxDrawerToggle={handleToolboxDrawerToggle}
-                        handleKnowledgeBaseToggle={handleKnowledgeBaseToggle}
-                        handleTaskPanelToggle={handleTaskPanelToggle}
-                        setProjectDrawerOpen={setProjectDrawerOpen}
-                        setToolboxDrawerOpen={setToolboxDrawerOpen}
-                        setMediaLibraryOpen={setMediaLibraryOpen}
-                        setBackupRestoreOpen={setBackupRestoreOpen}
-                        cloudSyncOpen={cloudSyncOpen}
-                        setCloudSyncOpen={setCloudSyncOpen}
-                        handleBeforeSwitch={handleBeforeSwitch}
-                        isDataReady={isDataReady}
-                        onCreateProjectForMemory={handleCreateProjectForMemory}
-                        currentBoardId={currentBoardId}
-                      />
-                      {mediaLibraryOpen && (
-                        <Suspense fallback={null}>
-                          <MediaLibraryModal
-                            isOpen={mediaLibraryOpen}
-                            onClose={() => setMediaLibraryOpen(false)}
-                          />
-                        </Suspense>
-                      )}
-                        </DrawnixContext.Provider>
-                      </WorkflowProvider>
-                    </ChatDrawerProvider>
-                  </GitHubSyncProvider>
-                </ModelHealthProvider>
+                <ChatDrawerProvider>
+                  <DrawnixContext.Provider value={contextValue}>
+                    <DrawnixContent
+                      value={value}
+                      viewport={viewport}
+                      theme={theme}
+                      options={options}
+                      plugins={plugins}
+                      containerRef={containerRef}
+                      appState={appState}
+                      board={board}
+                      setBoard={setBoard}
+                      projectDrawerOpen={projectDrawerOpen}
+                      toolboxDrawerOpen={toolboxDrawerOpen}
+                      taskPanelExpanded={taskPanelExpanded}
+                      mediaLibraryOpen={mediaLibraryOpen}
+                      backupRestoreOpen={backupRestoreOpen}
+                      onChange={onChange}
+                      onSelectionChange={handleSelectionChange}
+                      onViewportChange={onViewportChange}
+                      onThemeChange={onThemeChange}
+                      onValueChange={onValueChange}
+                      afterInit={afterInit}
+                      onBoardSwitch={onBoardSwitch}
+                      onTabSyncNeeded={onTabSyncNeeded}
+                      handleProjectDrawerToggle={handleProjectDrawerToggle}
+                      handleToolboxDrawerToggle={handleToolboxDrawerToggle}
+                      handleKnowledgeBaseToggle={handleKnowledgeBaseToggle}
+                      handleTaskPanelToggle={handleTaskPanelToggle}
+                      handleOpenMediaLibrary={handleOpenMediaLibrary}
+                      handleOpenBackupRestore={handleOpenBackupRestore}
+                      handleOpenCloudSync={handleOpenCloudSync}
+                      setProjectDrawerOpen={setProjectDrawerOpen}
+                      setToolboxDrawerOpen={setToolboxDrawerOpen}
+                      setMediaLibraryOpen={setMediaLibraryOpen}
+                      setBackupRestoreOpen={setBackupRestoreOpen}
+                      cloudSyncOpen={cloudSyncOpen}
+                      setCloudSyncOpen={setCloudSyncOpen}
+                      handleBeforeSwitch={handleBeforeSwitch}
+                      isDataReady={isDataReady}
+                      onCreateProjectForMemory={handleCreateProjectForMemory}
+                      currentBoardId={currentBoardId}
+                      deferredRuntimeEnabled={deferredRuntimeEnabled}
+                      shouldRenderDeferredFeatures={shouldRenderDeferredFeatures}
+                      versionUpdateEnabled={versionUpdateEnabled}
+                      performancePanelEnabled={performancePanelEnabled}
+                      toolWindowManagerEnabled={toolWindowManagerEnabled}
+                    />
+                  </DrawnixContext.Provider>
+                </ChatDrawerProvider>
               </CacheQuotaProvider>
             </ToolbarConfigProvider>
           </AudioPlaylistProvider>
@@ -971,6 +724,11 @@ interface DrawnixContentProps {
   taskPanelExpanded: boolean;
   mediaLibraryOpen: boolean;
   backupRestoreOpen: boolean;
+  deferredRuntimeEnabled: boolean;
+  shouldRenderDeferredFeatures: boolean;
+  versionUpdateEnabled: boolean;
+  performancePanelEnabled: boolean;
+  toolWindowManagerEnabled: boolean;
   onChange?: (value: BoardChangeData) => void;
   onSelectionChange: (selection: Selection | null) => void;
   onViewportChange?: (value: Viewport) => void;
@@ -983,6 +741,9 @@ interface DrawnixContentProps {
   handleToolboxDrawerToggle: () => void;
   handleKnowledgeBaseToggle: () => void;
   handleTaskPanelToggle: () => void;
+  handleOpenMediaLibrary: () => void;
+  handleOpenBackupRestore: () => void;
+  handleOpenCloudSync: () => void;
   setProjectDrawerOpen: React.Dispatch<React.SetStateAction<boolean>>;
   setToolboxDrawerOpen: React.Dispatch<React.SetStateAction<boolean>>;
   setMediaLibraryOpen: React.Dispatch<React.SetStateAction<boolean>>;
@@ -1008,7 +769,13 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
   projectDrawerOpen,
   toolboxDrawerOpen,
   taskPanelExpanded,
+  mediaLibraryOpen,
   backupRestoreOpen,
+  deferredRuntimeEnabled,
+  shouldRenderDeferredFeatures,
+  versionUpdateEnabled,
+  performancePanelEnabled,
+  toolWindowManagerEnabled,
   cloudSyncOpen,
   onChange,
   onSelectionChange,
@@ -1022,8 +789,12 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
   handleToolboxDrawerToggle,
   handleKnowledgeBaseToggle,
   handleTaskPanelToggle,
+  handleOpenMediaLibrary,
+  handleOpenBackupRestore,
+  handleOpenCloudSync,
   setProjectDrawerOpen,
   setToolboxDrawerOpen,
+  setMediaLibraryOpen,
   setBackupRestoreOpen,
   setCloudSyncOpen,
   handleBeforeSwitch,
@@ -1031,18 +802,26 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
   onCreateProjectForMemory,
   currentBoardId,
 }) => {
-  const { chatDrawerRef } = useChatDrawer();
   const { setAppState: updateState } = useDrawnix();
+  const { chatDrawerRef } = useChatDrawer();
   const { language } = useI18n();
   const playbackError = useCanvasAudioPlaybackSelector((state) => state.error);
+  const hasCanvasAudioPlayerActivity = useCanvasAudioPlaybackSelector(
+    (state) => {
+      return (
+        state.playing ||
+        Boolean(state.activeAudioUrl) ||
+        Boolean(state.activeReadingSourceId)
+      );
+    }
+  );
   const lastPlaybackErrorRef = useRef<string | undefined>(undefined);
+  const [canvasAudioPlayerEnabled, setCanvasAudioPlayerEnabled] = useState(
+    hasCanvasAudioPlayerActivity
+  );
 
   // 画笔自定义光标
   usePencilCursor({ board, pointer: appState.pointer });
-
-  // 处理 URL 参数中的工具打开请求
-  // 当访问 ?tool=xxx 时，自动以 WinBox 全屏形式打开指定工具并设为常驻
-  useToolFromUrl();
 
   // 标签页同步
   useTabSync({
@@ -1052,7 +831,7 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
         onTabSyncNeeded();
       } else {
         // 否则降级到刷新页面（向后兼容）
-        safeReload();
+        void safeReload();
       }
     }, [onTabSyncNeeded]),
     enabled: true,
@@ -1061,7 +840,9 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
 
   // 快捷工具栏状态
   const [quickToolbarVisible, setQuickToolbarVisible] = useState(false);
-  const [quickToolbarPosition, setQuickToolbarPosition] = useState<[number, number] | null>(null);
+  const [quickToolbarPosition, setQuickToolbarPosition] = useState<
+    [number, number] | null
+  >(null);
 
   // 浮动文本输入状态（文本工具单击画布时使用）
   const [inlineTextInput, setInlineTextInput] = useState<{
@@ -1074,7 +855,9 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
 
   // 媒体预览状态
   const [mediaPreviewVisible, setMediaPreviewVisible] = useState(false);
-  const [mediaPreviewItems, setMediaPreviewItems] = useState<UnifiedMediaItem[]>([]);
+  const [mediaPreviewItems, setMediaPreviewItems] = useState<
+    UnifiedMediaItem[]
+  >([]);
   const [mediaPreviewInitialIndex, setMediaPreviewInitialIndex] = useState(0);
 
   useEffect(() => {
@@ -1092,7 +875,15 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
   }, [playbackError]);
 
   useEffect(() => {
-    canvasAudioPlaybackService.setCanvasQueue(getCanvasAudioPlaybackQueue(value));
+    if (hasCanvasAudioPlayerActivity) {
+      setCanvasAudioPlayerEnabled(true);
+    }
+  }, [hasCanvasAudioPlayerActivity]);
+
+  useEffect(() => {
+    canvasAudioPlaybackService.setCanvasQueue(
+      getCanvasAudioPlaybackQueue(value)
+    );
   }, [value]);
 
   useEffect(() => {
@@ -1102,7 +893,10 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
   }, []);
 
   // 收集画布上所有图片和视频元素
-  const collectCanvasMediaItems = useCallback((): { items: UnifiedMediaItem[]; elementIds: string[] } => {
+  const collectCanvasMediaItems = useCallback((): {
+    items: UnifiedMediaItem[];
+    elementIds: string[];
+  } => {
     if (!board || !board.children) return { items: [], elementIds: [] };
 
     const items: UnifiedMediaItem[] = [];
@@ -1117,7 +911,9 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
       }
 
       // 检查是否为图片元素
-      const isImage = PlaitDrawElement.isDrawElement(element) && PlaitDrawElement.isImage(element);
+      const isImage =
+        PlaitDrawElement.isDrawElement(element) &&
+        PlaitDrawElement.isImage(element);
       // 检查是否为视频元素
       const isVideo = isVideoElement(element);
 
@@ -1136,17 +932,20 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
   }, [board]);
 
   // 打开媒体预览
-  const openMediaPreview = useCallback((targetElementId: string) => {
-    const { items, elementIds } = collectCanvasMediaItems();
-    if (items.length === 0) return;
+  const openMediaPreview = useCallback(
+    (targetElementId: string) => {
+      const { items, elementIds } = collectCanvasMediaItems();
+      if (items.length === 0) return;
 
-    const targetIndex = elementIds.indexOf(targetElementId);
-    if (targetIndex === -1) return;
+      const targetIndex = elementIds.indexOf(targetElementId);
+      if (targetIndex === -1) return;
 
-    setMediaPreviewItems(items);
-    setMediaPreviewInitialIndex(targetIndex);
-    setMediaPreviewVisible(true);
-  }, [collectCanvasMediaItems]);
+      setMediaPreviewItems(items);
+      setMediaPreviewInitialIndex(targetIndex);
+      setMediaPreviewVisible(true);
+    },
+    [collectCanvasMediaItems]
+  );
 
   // 关闭媒体预览
   const closeMediaPreview = useCallback(() => {
@@ -1154,108 +953,131 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
   }, []);
 
   // 处理图片编辑覆盖保存（内置编辑器回调）
-  const handleMediaEditorOverwrite = useCallback(async (editedImageUrl: string, originalItem: UnifiedMediaItem) => {
-    const elementId = originalItem.id;
-    if (!elementId || !board) return;
-    
-    try {
-      // 导入必要服务
-      const { unifiedCacheService } = await import('./services/unified-cache-service');
-      const { Transforms } = await import('@plait/core');
-      
-      const taskId = `edited-image-${Date.now()}`;
-      const stableUrl = `/__aitu_cache__/image/${taskId}.png`;
-      
-      // 将 data URL 转换为 Blob
-      const response = await fetch(editedImageUrl);
-      const blob = await response.blob();
-      
-      // 缓存到 Cache API
-      await unifiedCacheService.cacheMediaFromBlob(stableUrl, blob, 'image', { taskId });
-      
-      // 加载图片获取尺寸
-      const img = new Image();
-      await new Promise<void>((resolve, reject) => {
-        img.onload = () => resolve();
-        img.onerror = () => reject(new Error('Failed to load edited image'));
-        img.src = editedImageUrl;
-      });
-      
-      // 找到元素并更新
-      const elementIndex = board.children.findIndex(child => child.id === elementId);
-      if (elementIndex >= 0) {
-        const element = board.children[elementIndex] as any;
-        const { newPoints } = await calculateEditedImagePoints(
-          {
-            url: element.url,
-            width: element.width,
-            height: element.height,
-            points: element.points || [[0, 0], [0, 0]],
-          },
-          img.naturalWidth,
-          img.naturalHeight
+  const handleMediaEditorOverwrite = useCallback(
+    async (editedImageUrl: string, originalItem: UnifiedMediaItem) => {
+      const elementId = originalItem.id;
+      if (!elementId || !board) return;
+
+      try {
+        // 导入必要服务
+        const { unifiedCacheService } = await import(
+          './services/unified-cache-service'
         );
-        
-        Transforms.setNode(board, {
-          url: stableUrl,
-          width: img.naturalWidth,
-          height: img.naturalHeight,
-          points: newPoints,
-        } as any, [elementIndex]);
+        const { Transforms } = await import('@plait/core');
+
+        const taskId = `edited-image-${Date.now()}`;
+        const stableUrl = `/__aitu_cache__/image/${taskId}.png`;
+
+        // 将 data URL 转换为 Blob
+        const response = await fetch(editedImageUrl);
+        const blob = await response.blob();
+
+        // 缓存到 Cache API
+        await unifiedCacheService.cacheMediaFromBlob(stableUrl, blob, 'image', {
+          taskId,
+        });
+
+        // 加载图片获取尺寸
+        const img = new Image();
+        await new Promise<void>((resolve, reject) => {
+          img.onload = () => resolve();
+          img.onerror = () => reject(new Error('Failed to load edited image'));
+          img.src = editedImageUrl;
+        });
+
+        // 找到元素并更新
+        const elementIndex = board.children.findIndex(
+          (child) => child.id === elementId
+        );
+        if (elementIndex >= 0) {
+          const element = board.children[elementIndex] as any;
+          const { newPoints } = await calculateEditedImagePoints(
+            {
+              url: element.url,
+              width: element.width,
+              height: element.height,
+              points: element.points || [
+                [0, 0],
+                [0, 0],
+              ],
+            },
+            img.naturalWidth,
+            img.naturalHeight
+          );
+
+          Transforms.setNode(
+            board,
+            {
+              url: stableUrl,
+              width: img.naturalWidth,
+              height: img.naturalHeight,
+              points: newPoints,
+            } as any,
+            [elementIndex]
+          );
+        }
+      } catch (error) {
+        console.error('Failed to update image:', error);
+        MessagePlugin.error('更新失败');
       }
-    } catch (error) {
-      console.error('Failed to update image:', error);
-      MessagePlugin.error('更新失败');
-    }
-  }, [board]);
+    },
+    [board]
+  );
 
   // 处理图片编辑插入到画布
-  const handleMediaEditorInsert = useCallback(async (editedImageUrl: string) => {
-    if (!board) return;
-    
-    try {
-      const { unifiedCacheService } = await import('./services/unified-cache-service');
-      const { insertImageFromUrl } = await import('./data/image');
-      
-      const taskId = `edited-image-${Date.now()}`;
-      const stableUrl = `/__aitu_cache__/image/${taskId}.png`;
-      
-      // 将 data URL 转换为 Blob
-      const response = await fetch(editedImageUrl);
-      const blob = await response.blob();
-      
-      // 缓存到 Cache API
-      await unifiedCacheService.cacheMediaFromBlob(stableUrl, blob, 'image', { taskId });
-      
-      // 加载图片获取尺寸
-      const img = new Image();
-      await new Promise<void>((resolve, reject) => {
-        img.onload = () => resolve();
-        img.onerror = () => reject(new Error('Failed to load edited image'));
-        img.src = editedImageUrl;
-      });
-      
-      // 在当前视口中心位置插入图片
-      const origination = getViewportOrigination(board);
-      const insertPoint: [number, number] = [
-        (origination?.[0] ?? 0) + 100,
-        (origination?.[1] ?? 0) + 100
-      ];
-      
-      await insertImageFromUrl(
-        board,
-        stableUrl,
-        insertPoint,
-        false,
-        { width: img.naturalWidth, height: img.naturalHeight },
-        false,
-        true
-      );
-    } catch (error) {
-      console.error('Failed to insert image:', error);
-      MessagePlugin.error('插入失败');
-    }
-  }, [board]);
+  const handleMediaEditorInsert = useCallback(
+    async (editedImageUrl: string) => {
+      if (!board) return;
+
+      try {
+        const { unifiedCacheService } = await import(
+          './services/unified-cache-service'
+        );
+        const { insertImageFromUrl } = await import('./data/image');
+
+        const taskId = `edited-image-${Date.now()}`;
+        const stableUrl = `/__aitu_cache__/image/${taskId}.png`;
+
+        // 将 data URL 转换为 Blob
+        const response = await fetch(editedImageUrl);
+        const blob = await response.blob();
+
+        // 缓存到 Cache API
+        await unifiedCacheService.cacheMediaFromBlob(stableUrl, blob, 'image', {
+          taskId,
+        });
+
+        // 加载图片获取尺寸
+        const img = new Image();
+        await new Promise<void>((resolve, reject) => {
+          img.onload = () => resolve();
+          img.onerror = () => reject(new Error('Failed to load edited image'));
+          img.src = editedImageUrl;
+        });
+
+        // 在当前视口中心位置插入图片
+        const origination = getViewportOrigination(board);
+        const insertPoint: [number, number] = [
+          (origination?.[0] ?? 0) + 100,
+          (origination?.[1] ?? 0) + 100,
+        ];
+
+        await insertImageFromUrl(
+          board,
+          stableUrl,
+          insertPoint,
+          false,
+          { width: img.naturalWidth, height: img.naturalHeight },
+          false,
+          true
+        );
+      } catch (error) {
+        console.error('Failed to insert image:', error);
+        MessagePlugin.error('插入失败');
+      }
+    },
+    [board]
+  );
 
   // 自动完成形状选择器状态
   const {
@@ -1280,7 +1102,7 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
     const text = inlineTextRef.current.innerText || '';
     if (text.trim()) {
       DrawTransforms.insertText(board, inlineTextInput.worldPoint, text);
-      
+
       // 修正可能的 Infinity 高度问题
       requestAnimationFrame(() => {
         const lastElement = board.children[board.children.length - 1];
@@ -1288,14 +1110,16 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
           const textEl = lastElement as any;
           if (!isFinite(textEl.textHeight)) {
             const rect = RectangleClient.getRectangleByPoints(textEl.points);
-            Transforms.setNode(board, { textHeight: rect.height }, [board.children.length - 1]);
+            Transforms.setNode(board, { textHeight: rect.height }, [
+              board.children.length - 1,
+            ]);
           }
         }
       });
     }
     setInlineTextInput(null);
     BoardTransforms.updatePointerType(board, PlaitPointerType.selection);
-    updateState(prev => ({ ...prev, pointer: PlaitPointerType.selection }));
+    updateState((prev) => ({ ...prev, pointer: PlaitPointerType.selection }));
   }, [board, inlineTextInput, updateState]);
 
   // 监听双击事件 - 处理图片/视频预览和空白区域快捷工具栏
@@ -1306,20 +1130,28 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
       const target = event.target as HTMLElement;
 
       // 只处理画布区域内的双击（正向判断，避免维护浮层组件列表）
-      const isInsideCanvas = target.closest('.board-host-svg') ||
-                             target.closest('.plait-board-container');
+      const isInsideCanvas =
+        target.closest('.board-host-svg') ||
+        target.closest('.plait-board-container');
 
       if (!isInsideCanvas) {
         return;
       }
 
       // 检查双击位置是否命中了画布上的元素
-      const viewBoxPoint = toViewBoxPoint(board, toHostPoint(board, event.clientX, event.clientY));
+      const viewBoxPoint = toViewBoxPoint(
+        board,
+        toHostPoint(board, event.clientX, event.clientY)
+      );
       const hitElement = getHitElementByPoint(board, viewBoxPoint);
 
       // 如果双击了 Card 元素，打开知识库
       if (hitElement && isCardElement(hitElement)) {
-        openCardInKnowledgeBase(board, hitElement as any, language as 'zh' | 'en');
+        openCardInKnowledgeBase(
+          board,
+          hitElement as any,
+          language as 'zh' | 'en'
+        );
         event.preventDefault();
         event.stopPropagation();
         return;
@@ -1335,7 +1167,9 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
 
         const url = (hitElement as any).url;
         if (url && typeof url === 'string') {
-          const isImage = PlaitDrawElement.isDrawElement(hitElement) && PlaitDrawElement.isImage(hitElement);
+          const isImage =
+            PlaitDrawElement.isDrawElement(hitElement) &&
+            PlaitDrawElement.isImage(hitElement);
           const isVideo = isVideoElement(hitElement);
 
           if (isImage || isVideo) {
@@ -1349,9 +1183,10 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
       }
 
       // 如果命中了 Plait 元素，或者双击的是工具容器内部（针对 foreignObject 元素）
-      const isInsideInteractive = target.closest('.plait-tool-container') || 
-                                   target.closest('.plait-workzone-container') ||
-                                   target.closest('foreignObject');
+      const isInsideInteractive =
+        target.closest('.plait-tool-container') ||
+        target.closest('.plait-workzone-container') ||
+        target.closest('foreignObject');
 
       // 只有双击空白区域时才处理
       if (!hitElement && !isInsideInteractive) {
@@ -1381,8 +1216,9 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
       const target = event.target as HTMLElement;
 
       // 只处理画布区域内的点击
-      const isInsideCanvas = target.closest('.board-host-svg') ||
-                             target.closest('.plait-board-container');
+      const isInsideCanvas =
+        target.closest('.board-host-svg') ||
+        target.closest('.plait-board-container');
 
       if (!isInsideCanvas) {
         return;
@@ -1399,30 +1235,34 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
         isAudioElement(hitElement) &&
         !isAudioNodeElement(hitElement)
       ) {
+        setCanvasAudioPlayerEnabled(true);
         const playbackSource = getAudioPlaybackSourceFromElement(hitElement);
         if (playbackSource) {
           event.preventDefault();
           event.stopPropagation();
-          void canvasAudioPlaybackService.togglePlaybackInQueue(
-            playbackSource,
-            getCanvasAudioPlaybackQueue(board.children),
-            {
-              queueSource: 'canvas',
-              queueId: AUDIO_PLAYLIST_CANVAS_AUDIO_ID,
-              queueName: AUDIO_PLAYLIST_CANVAS_AUDIO_LABEL,
-            }
-          ).catch(() => {
-            // Error feedback is surfaced from the playback store.
-          });
+          void canvasAudioPlaybackService
+            .togglePlaybackInQueue(
+              playbackSource,
+              getCanvasAudioPlaybackQueue(board.children),
+              {
+                queueSource: 'canvas',
+                queueId: AUDIO_PLAYLIST_CANVAS_AUDIO_ID,
+                queueName: AUDIO_PLAYLIST_CANVAS_AUDIO_LABEL,
+              }
+            )
+            .catch(() => {
+              // Error feedback is surfaced from the playback store.
+            });
           return;
         }
       }
 
       // 文本工具激活时：单击空白区域显示浮动文本输入
       if (PlaitBoard.isPointer(board, BasicShapes.text)) {
-        const isInsideInteractive = target.closest('.plait-tool-container') ||
-                                     target.closest('.plait-workzone-container') ||
-                                     target.closest('foreignObject');
+        const isInsideInteractive =
+          target.closest('.plait-tool-container') ||
+          target.closest('.plait-workzone-container') ||
+          target.closest('foreignObject');
         if (!isInsideInteractive) {
           if (!hitElement) {
             setInlineTextInput({
@@ -1457,7 +1297,14 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
         container.removeEventListener('click', handleClick);
       }
     };
-  }, [board, containerRef, projectDrawerOpen, toolboxDrawerOpen, setProjectDrawerOpen, setToolboxDrawerOpen]);
+  }, [
+    board,
+    containerRef,
+    projectDrawerOpen,
+    toolboxDrawerOpen,
+    setProjectDrawerOpen,
+    setToolboxDrawerOpen,
+  ]);
 
   return (
     <div
@@ -1491,13 +1338,6 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
                 toolTestHelper.setBoard(board);
               }
 
-              // 预加载画布中使用的字体
-              if (board.children && board.children.length > 0) {
-                fontManagerService.preloadBoardFonts(board.children).catch(error => {
-                  console.warn('Failed to preload board fonts:', error);
-                });
-              }
-
               afterInit && afterInit(board);
 
               // 手动触发 afterChange 以初始化渐变填充等插件
@@ -1518,11 +1358,17 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
             onToolboxDrawerToggle={handleToolboxDrawerToggle}
             taskPanelExpanded={taskPanelExpanded}
             onTaskPanelToggle={handleTaskPanelToggle}
-            onOpenBackupRestore={() => setBackupRestoreOpen(true)}
-            onOpenCloudSync={() => setCloudSyncOpen(true)}
+            onOpenBackupRestore={handleOpenBackupRestore}
+            onOpenCloudSync={handleOpenCloudSync}
             onKnowledgeBaseToggle={handleKnowledgeBaseToggle}
+            onOpenMediaLibrary={handleOpenMediaLibrary}
+            deferredFeaturesEnabled={toolWindowManagerEnabled}
           />
-          <CanvasAudioPlayer />
+          {canvasAudioPlayerEnabled && (
+            <Suspense fallback={null}>
+              <CanvasAudioPlayer />
+            </Suspense>
+          )}
 
           <PopupToolbar></PopupToolbar>
           <LinkPopup></LinkPopup>
@@ -1535,52 +1381,19 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
               <TTDDialog container={containerRef.current}></TTDDialog>
             </Suspense>
           )}
-          <CleanConfirm container={containerRef.current}></CleanConfirm>
           {appState.openSettings && (
             <Suspense fallback={null}>
               <SettingsDialog container={containerRef.current}></SettingsDialog>
             </Suspense>
           )}
-          {backupRestoreOpen && (
-            <Suspense fallback={null}>
-              <BackupRestoreDialog
-                open={backupRestoreOpen}
-                onOpenChange={setBackupRestoreOpen}
-                container={containerRef.current}
-                onBeforeImport={async () => {
-                  // 导入前先保存当前画板数据到 IndexedDB
-                  if (handleBeforeSwitch) {
-                    await handleBeforeSwitch();
-                  }
-                }}
-                onSwitchBoard={async (boardId, viewport) => {
-                  // 注意：这里不调用 handleBeforeSwitch
-                  // 因为在备份恢复时，onBeforeImport 已经保存了当前画板
-                  // 如果在这里再保存，会用旧的内存数据覆盖 IndexedDB 中刚合并的新数据
-                  
-                  // 切换到目标画板（使用已导入的 workspaceService 单例，确保数据一致性）
-                  const board = await workspaceService.switchBoard(boardId);
-                  if (board && onBoardSwitch) {
-                    // 如果有 viewport，合并到 board 中
-                    if (viewport) {
-                      board.viewport = viewport;
-                    }
-                    onBoardSwitch(board);
-                  }
-                }}
-              />
-            </Suspense>
-          )}
-          {/* Cloud Sync Settings - 云端同步设置 */}
-          <SyncSettings
-            visible={cloudSyncOpen}
-            onClose={() => setCloudSyncOpen(false)}
-          />
+          <CleanConfirm container={containerRef.current}></CleanConfirm>
+          <DeferredAIInputBar isDataReady={isDataReady} activationKey={0} />
           {/* Quick Creation Toolbar - 双击空白区域显示的快捷工具栏 */}
           <QuickCreationToolbar
             position={quickToolbarPosition}
             visible={quickToolbarVisible}
             onClose={() => setQuickToolbarVisible(false)}
+            onOpenMediaLibrary={handleOpenMediaLibrary}
           />
           {/* 浮动文本输入 - 文本工具双击画布时出现 */}
           {inlineTextInput && (
@@ -1591,7 +1404,7 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
               style={{
                 position: 'fixed',
                 left: inlineTextInput.screenX,
-                top: inlineTextInput.screenY - 14 * inlineTextInput.zoom / 2,
+                top: inlineTextInput.screenY - (14 * inlineTextInput.zoom) / 2,
                 minWidth: '2px',
                 minHeight: '1.5em',
                 outline: 'none',
@@ -1615,17 +1428,21 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
             />
           )}
           {/* Media Viewer - 画布图片/视频预览（支持内置编辑模式） */}
-          <UnifiedMediaViewer
-            visible={mediaPreviewVisible}
-            items={mediaPreviewItems}
-            initialIndex={mediaPreviewInitialIndex}
-            onClose={closeMediaPreview}
-            showThumbnails={true}
-            useBuiltInEditor={true}
-            showEditOverwrite={true}
-            onEditOverwrite={handleMediaEditorOverwrite}
-            onEditInsert={handleMediaEditorInsert}
-          />
+          {mediaPreviewVisible && (
+            <Suspense fallback={null}>
+              <UnifiedMediaViewer
+                visible={mediaPreviewVisible}
+                items={mediaPreviewItems}
+                initialIndex={mediaPreviewInitialIndex}
+                onClose={closeMediaPreview}
+                showThumbnails={true}
+                useBuiltInEditor={true}
+                showEditOverwrite={true}
+                onEditOverwrite={handleMediaEditorOverwrite}
+                onEditInsert={handleMediaEditorInsert}
+              />
+            </Suspense>
+          )}
           {/* Auto Complete Shape Picker - 自动完成形状选择器 */}
           <AutoCompleteShapePicker
             visible={autoCompleteState.visible}
@@ -1635,53 +1452,37 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
             onClose={closeAutoCompletePicker}
             container={containerRef.current}
           />
-          {/* AI Input Bar - 底部 AI 输入框 */}
-          <AIInputBar isDataReady={isDataReady} />
-          {/* Version Update Prompt - 顶部右上角升级提示 */}
-          <VersionUpdatePrompt />
           {/* ViewNavigation - 视图导航（缩放 + 小地图） */}
           <ViewNavigation />
-          <ToolWinBoxManager />
         </Wrapper>
-        {/* Command Palette - 命令面板 (Cmd+K) */}
-        <CommandPalette
-          open={appState.openCommandPalette || false}
-          onClose={useCallback(() => {
-            updateState((prev) => ({ ...prev, openCommandPalette: false }));
-          }, [updateState])}
-          board={board}
-          container={containerRef.current}
-        />
-        {/* Canvas Search - 画布搜索 (Cmd+F) */}
-        <CanvasSearch
-          open={appState.openCanvasSearch || false}
-          onClose={useCallback(() => {
-            updateState((prev) => ({ ...prev, openCanvasSearch: false }));
-          }, [updateState])}
-          board={board}
-        />
-        <ActiveTaskWarning />
-        {/* Performance Panel - 性能监控面板 */}
-        <PerformancePanel 
-          container={containerRef.current} 
-          onCreateProject={onCreateProjectForMemory}
-          elements={board?.children || value}
-        />
         <ChatDrawer ref={chatDrawerRef} />
-        {/* 知识库通过 ToolWinBoxManager 以 WinBox 方式打开 */}
-        <Suspense fallback={null}>
-          <ProjectDrawer
-            isOpen={projectDrawerOpen}
-            onOpenChange={setProjectDrawerOpen}
-            onBeforeSwitch={handleBeforeSwitch}
-            onBoardSwitch={onBoardSwitch}
-          />
-        </Suspense>
-        {toolboxDrawerOpen && (
+        {deferredRuntimeEnabled && (
           <Suspense fallback={null}>
-            <ToolboxDrawer
-              isOpen={toolboxDrawerOpen}
-              onOpenChange={setToolboxDrawerOpen}
+            <DrawnixDeferredRuntime board={board} value={value} />
+          </Suspense>
+        )}
+        {shouldRenderDeferredFeatures && (
+          <Suspense fallback={null}>
+            <DrawnixDeferredFeatures
+              board={board}
+              value={value}
+              containerRef={containerRef}
+              versionUpdateEnabled={versionUpdateEnabled}
+              performancePanelEnabled={performancePanelEnabled}
+              toolWindowManagerEnabled={toolWindowManagerEnabled}
+              projectDrawerOpen={projectDrawerOpen}
+              toolboxDrawerOpen={toolboxDrawerOpen}
+              mediaLibraryOpen={mediaLibraryOpen}
+              backupRestoreOpen={backupRestoreOpen}
+              cloudSyncOpen={cloudSyncOpen}
+              onBoardSwitch={onBoardSwitch}
+              setProjectDrawerOpen={setProjectDrawerOpen}
+              setToolboxDrawerOpen={setToolboxDrawerOpen}
+              setMediaLibraryOpen={setMediaLibraryOpen}
+              setBackupRestoreOpen={setBackupRestoreOpen}
+              setCloudSyncOpen={setCloudSyncOpen}
+              handleBeforeSwitch={handleBeforeSwitch}
+              onCreateProjectForMemory={onCreateProjectForMemory}
             />
           </Suspense>
         )}

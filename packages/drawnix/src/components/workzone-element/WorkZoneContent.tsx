@@ -9,7 +9,7 @@ import React, { useMemo, useEffect, useRef, useState, useCallback } from 'react'
 import { Trash2, RotateCcw, EyeOff } from 'lucide-react';
 import type { WorkflowMessageData } from '../../types/chat.types';
 import { ConfirmDialog } from '../dialog/ConfirmDialog';
-import { HoverTip } from '../shared';
+import { HoverTip } from '../shared/hover';
 import './workzone-content.scss';
 
 // 状态图标映射

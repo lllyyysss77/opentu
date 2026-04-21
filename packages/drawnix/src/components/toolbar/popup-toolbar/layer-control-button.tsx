@@ -5,7 +5,7 @@
 
 import React, { useState, useCallback, useMemo } from 'react';
 import classNames from 'classnames';
-import { HoverTip } from '../../shared';
+import { HoverTip } from '../../shared/hover';
 import { ToolButton } from '../../tool-button';
 import { Popover, PopoverContent, PopoverTrigger } from '../../popover/popover';
 import { Island } from '../../island';

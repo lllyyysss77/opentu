@@ -8,7 +8,7 @@ import { AbortError } from '../errors';
 import { isPromiseLike } from '@aitu/utils';
 import classNames from 'classnames';
 import { EventPointerType } from '../types';
-import { HoverTip } from './shared';
+import { HoverTip } from './shared/hover';
 
 export type ToolButtonSize = 'small' | 'medium';
 

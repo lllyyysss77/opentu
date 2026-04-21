@@ -37,7 +37,7 @@ import {
   StrokeStyleDoubleIcon,
 } from '../../icons';
 import './pencil-settings-toolbar.scss';
-import { HoverTip } from '../../shared';
+import { HoverTip } from '../../shared/hover';
 
 // 模拟光标预览组件
 const CursorPreview: React.FC<{

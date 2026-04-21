@@ -36,7 +36,7 @@ import {
 } from '../../services/canvas-audio-playback-service';
 import { MUSIC_PLAYER_TOOL_ID } from '../../tools/tool-ids';
 import { AudioCover } from '../shared/AudioCover';
-import { HoverTip } from '../shared';
+import { HoverTip } from '../shared/hover';
 import { CanvasAudioPlayerVolume } from './CanvasAudioPlayerVolume';
 import { CanvasAudioPlayerPlaylist } from './CanvasAudioPlayerPlaylist';
 import './canvas-audio-player.scss';

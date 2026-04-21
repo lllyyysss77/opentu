@@ -13,6 +13,17 @@ const DEFAULT_AUTO_PIN_TOOL: ToolDefinition = {
   },
 };
 
+const SECOND_AUTO_PIN_TOOL: ToolDefinition = {
+  id: 'mv-creator',
+  name: 'MV 创作',
+  category: 'ai-tools',
+  component: 'mv-creator',
+  supportsMultipleWindows: true,
+  defaultWindowBehavior: {
+    autoPinOnOpen: true,
+  },
+};
+
 describe('tool-window-service default window behavior', () => {
   beforeEach(() => {
     vi.resetModules();
@@ -58,5 +69,38 @@ describe('tool-window-service default window behavior', () => {
 
     toolWindowService.openTool(DEFAULT_AUTO_PIN_TOOL);
     expect(toolWindowService.isPinned(DEFAULT_AUTO_PIN_TOOL.id)).toBe(false);
+  });
+
+  it('已常驻工具在打开后仍保持工具栏中的原有顺序', async () => {
+    const { toolWindowService } = await import('../tool-window-service');
+
+    const firstInstanceId = toolWindowService.openTool(DEFAULT_AUTO_PIN_TOOL);
+    toolWindowService.closeTool(firstInstanceId!);
+
+    const secondInstanceId = toolWindowService.openTool(SECOND_AUTO_PIN_TOOL);
+    toolWindowService.closeTool(secondInstanceId!);
+
+    expect(toolWindowService.getToolbarTools().map((state) => state.toolId)).toEqual([
+      DEFAULT_AUTO_PIN_TOOL.id,
+      SECOND_AUTO_PIN_TOOL.id,
+    ]);
+
+    toolWindowService.openTool(SECOND_AUTO_PIN_TOOL);
+
+    expect(
+      toolWindowService.getToolbarTools().map((state) => ({
+        toolId: state.toolId,
+        isLauncher: state.isLauncher,
+      }))
+    ).toEqual([
+      {
+        toolId: DEFAULT_AUTO_PIN_TOOL.id,
+        isLauncher: true,
+      },
+      {
+        toolId: SECOND_AUTO_PIN_TOOL.id,
+        isLauncher: false,
+      },
+    ]);
   });
 });

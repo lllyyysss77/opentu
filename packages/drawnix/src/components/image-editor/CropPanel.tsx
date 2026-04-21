@@ -12,7 +12,7 @@ import {
   Scan,
 } from 'lucide-react';
 import { AspectRatioPreset } from './types';
-import { HoverTip } from '../shared';
+import { HoverTip } from '../shared/hover';
 
 interface CropPanelProps {
   aspectRatio: number | null;

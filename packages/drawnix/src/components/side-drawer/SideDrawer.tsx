@@ -8,7 +8,7 @@
 import React, { useCallback, useEffect, useState, useRef } from 'react';
 import { Button } from 'tdesign-react';
 import { CloseIcon } from 'tdesign-icons-react';
-import { HoverTip } from '../shared';
+import { HoverTip } from '../shared/hover';
 import './side-drawer.scss';
 
 export type DrawerPosition = 'toolbar-right' | 'screen-left';

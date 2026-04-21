@@ -47,6 +47,14 @@ export interface UnifiedToolbarProps {
    * (可选) 知识库开关回调
    */
   onKnowledgeBaseToggle?: () => void;
+  /**
+   * (可选) 素材库打开回调
+   */
+  onOpenMediaLibrary?: () => void;
+  /**
+   * 延后功能层是否已启用
+   */
+  deferredFeaturesEnabled?: boolean;
 }
 
 /**
@@ -69,4 +77,14 @@ export interface ToolbarSectionProps {
    * @default false
    */
   iconMode?: boolean;
+
+  /**
+   * 素材库打开回调
+   */
+  onOpenMediaLibrary?: () => void;
+
+  /**
+   * 延后功能层是否已启用
+   */
+  deferredFeaturesEnabled?: boolean;
 }

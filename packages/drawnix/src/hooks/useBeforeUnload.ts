@@ -6,15 +6,17 @@
  */
 
 import { useEffect } from 'react';
-import { hasActiveLLMTasks } from '../utils/active-tasks';
+import { hasActiveLLMTasksSync } from '../utils/active-tasks';
 
 /**
  * Hook to prevent accidental page navigation when LLM tasks are active
  */
 export function useBeforeUnload(): void {
   useEffect(() => {
-    const handleBeforeUnload = (event: BeforeUnloadEvent): string | undefined => {
-      if (hasActiveLLMTasks()) {
+    const handleBeforeUnload = (
+      event: BeforeUnloadEvent
+    ): string | undefined => {
+      if (hasActiveLLMTasksSync()) {
         event.preventDefault();
         event.returnValue = '';
         return '';

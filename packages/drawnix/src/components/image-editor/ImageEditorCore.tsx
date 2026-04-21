@@ -41,7 +41,7 @@ import {
 import { CropPanel } from './CropPanel';
 import { FilterPanel } from './FilterPanel';
 import './ImageEditorCore.scss';
-import { HoverTip } from '../shared';
+import { HoverTip } from '../shared/hover';
 
 // Tooltip z-index 需要高于模态框
 const TOOLTIP_Z_INDEX = 10010;

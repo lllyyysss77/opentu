@@ -4,16 +4,21 @@
  * 复用 MarkdownEditor 进行 Markdown 内容展示（只读模式）
  * Card 在画布上仅作只读展示，编辑通过知识库进行
  */
-import React, { useCallback, useMemo } from 'react';
+import React, { Suspense, lazy, useCallback, useMemo } from 'react';
 import { BookOpen } from 'lucide-react';
-import { MarkdownEditor } from '../MarkdownEditor';
-import { HoverTip } from '../shared';
+import { HoverTip } from '../shared/hover';
 import {
   getTitleColor,
   getBodyColor,
   getCardDisplayTitle,
 } from '../../constants/card-colors';
 import type { PlaitCard } from '../../types/card.types';
+
+const MarkdownEditor = lazy(() =>
+  import('../MarkdownEditor').then((module) => ({
+    default: module.MarkdownEditor ?? module.default,
+  }))
+);
 
 /**
  * 将纯文本中的单个换行转为 Markdown 硬换行（行尾双空格），
@@ -96,30 +101,42 @@ export const CardElement: React.FC<CardElementProps> = ({ element }) => {
   const displayTitle = getCardDisplayTitle(element.title);
   const titleColor = getTitleColor(element.fillColor);
   const bodyColor = getBodyColor(element.fillColor);
-  const displayBody = useMemo(() => preserveLineBreaks(element.body), [element.body]);
+  const displayBody = useMemo(
+    () => preserveLineBreaks(element.body),
+    [element.body]
+  );
   const hasKnowledgeBaseLink = !!element.noteId;
 
   const handleWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
     const target = e.currentTarget;
     const { scrollTop, scrollHeight, clientHeight } = target;
     const atTop = scrollTop === 0 && e.deltaY < 0;
-    const atBottom = scrollTop + clientHeight >= scrollHeight - 1 && e.deltaY > 0;
+    const atBottom =
+      scrollTop + clientHeight >= scrollHeight - 1 && e.deltaY > 0;
     if (!atTop && !atBottom) {
       e.stopPropagation();
     }
   }, []);
 
-  const handleOpenKnowledgeBase = useCallback((e: React.MouseEvent | React.PointerEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!element.noteId) return;
-    window.dispatchEvent(new CustomEvent('kb:open', { detail: { noteId: element.noteId } }));
-  }, [element.noteId]);
+  const handleOpenKnowledgeBase = useCallback(
+    (e: React.MouseEvent | React.PointerEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!element.noteId) return;
+      window.dispatchEvent(
+        new CustomEvent('kb:open', { detail: { noteId: element.noteId } })
+      );
+    },
+    [element.noteId]
+  );
 
-  const stopPointerPropagation = useCallback((e: React.MouseEvent | React.PointerEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-  }, []);
+  const stopPointerPropagation = useCallback(
+    (e: React.MouseEvent | React.PointerEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+    },
+    []
+  );
 
   return (
     <div
@@ -210,13 +227,31 @@ export const CardElement: React.FC<CardElementProps> = ({ element }) => {
         onPointerDown={(e) => e.stopPropagation()}
         onWheel={handleWheel}
       >
-        <MarkdownEditor
-          markdown={displayBody}
-          readOnly={true}
-          showModeSwitch={false}
-          enableAssetEmbeds={true}
-          className="card-markdown-viewer"
-        />
+        <Suspense
+          fallback={
+            <div
+              className="card-markdown-viewer card-markdown-viewer--fallback"
+              style={{
+                padding: '12px 14px',
+                fontSize: 13,
+                lineHeight: 1.6,
+                color: '#333',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+              }}
+            >
+              {displayBody}
+            </div>
+          }
+        >
+          <MarkdownEditor
+            markdown={displayBody}
+            readOnly={true}
+            showModeSwitch={false}
+            enableAssetEmbeds={true}
+            className="card-markdown-viewer"
+          />
+        </Suspense>
       </div>
     </div>
   );

@@ -188,41 +188,52 @@ class ToolWindowService {
   }
 
   getToolbarTools(): ToolWindowState[] {
-    const pinnedOrder = new Map(
-      Array.from(this.pinnedToolIds).map((toolId, index) => [toolId, index])
-    );
-    const instances = this.getToolStates().sort((a, b) => {
-      if (a.toolId === b.toolId) {
-        return a.instanceIndex - b.instanceIndex;
+    const instanceEntries = this.getToolStates().map((state, index) => ({
+      state,
+      originalIndex: index,
+    }));
+    const pinnedInstancesByToolId = new Map<string, ToolWindowState[]>();
+    const unpinnedEntries: Array<{
+      state: ToolWindowState;
+      originalIndex: number;
+    }> = [];
+
+    instanceEntries.forEach((entry) => {
+      if (this.pinnedToolIds.has(entry.state.toolId)) {
+        const instances = pinnedInstancesByToolId.get(entry.state.toolId) || [];
+        instances.push(entry.state);
+        pinnedInstancesByToolId.set(entry.state.toolId, instances);
+        return;
       }
 
-      const aPinnedOrder = pinnedOrder.get(a.toolId);
-      const bPinnedOrder = pinnedOrder.get(b.toolId);
-
-      if (aPinnedOrder !== undefined && bPinnedOrder !== undefined) {
-        return aPinnedOrder - bPinnedOrder;
-      }
-      if (aPinnedOrder !== undefined) {
-        return -1;
-      }
-      if (bPinnedOrder !== undefined) {
-        return 1;
-      }
-
-      if (a.activationOrder !== b.activationOrder) {
-        return a.activationOrder - b.activationOrder;
-      }
-
-      return a.toolId.localeCompare(b.toolId);
+      unpinnedEntries.push(entry);
     });
 
-    const toolIdsWithInstances = new Set(instances.map((state) => state.toolId));
-    const launchers = Array.from(this.pinnedToolIds)
-      .filter((toolId) => !toolIdsWithInstances.has(toolId))
-      .map((toolId) => this.createLauncherState(toolId))
-      .filter((state): state is ToolWindowState => !!state);
+    const pinnedItems = Array.from(this.pinnedToolIds).flatMap((toolId) => {
+      const instances = pinnedInstancesByToolId.get(toolId);
+      if (instances && instances.length > 0) {
+        return [...instances].sort((a, b) => {
+          if (a.instanceIndex !== b.instanceIndex) {
+            return a.instanceIndex - b.instanceIndex;
+          }
+          return a.activationOrder - b.activationOrder;
+        });
+      }
 
-    return [...instances, ...launchers];
+      const launcher = this.createLauncherState(toolId);
+      return launcher ? [launcher] : [];
+    });
+
+    const unpinnedItems = unpinnedEntries
+      .sort((a, b) => {
+        if (a.state.toolId === b.state.toolId) {
+          return a.state.instanceIndex - b.state.instanceIndex;
+        }
+        return a.originalIndex - b.originalIndex;
+      })
+      .map((entry) => entry.state);
+
+    return [...pinnedItems, ...unpinnedItems];
   }
 
   getToolInstances(toolId: string): ToolWindowState[] {

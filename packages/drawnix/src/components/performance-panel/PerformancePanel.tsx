@@ -267,7 +267,7 @@ export const PerformancePanel: React.FC<PerformancePanelProps> = ({
 
   // 刷新页面释放内存
   const handleRefresh = useCallback(() => {
-    safeReload();
+    void safeReload();
   }, []);
 
   const handleRefreshClick = useCallback(async () => {

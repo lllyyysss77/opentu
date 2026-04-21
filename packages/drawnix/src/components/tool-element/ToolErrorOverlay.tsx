@@ -8,7 +8,7 @@
 import React from 'react';
 import { Button } from 'tdesign-react';
 import { ToolErrorType } from '../../types/tool-error.types';
-import { HoverTip } from '../shared';
+import { HoverTip } from '../shared/hover';
 
 export interface ToolErrorOverlayProps {
   /** 错误类型 */
