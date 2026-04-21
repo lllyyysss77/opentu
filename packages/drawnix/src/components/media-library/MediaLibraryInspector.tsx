@@ -76,6 +76,17 @@ export function MediaLibraryInspector({
     const count = isCache ? countElementsByAssetUrls(board, asset.dedupeUrls || [asset.url]) : 0;
     return { isCacheAsset: isCache, canvasElementCount: count };
   }, [asset, board]);
+  const inspectorTrackParams = useMemo(() => {
+    if (!asset) {
+      return undefined;
+    }
+
+    return JSON.stringify({
+      assetId: asset.id,
+      assetType: asset.type,
+      assetSource: asset.source,
+    });
+  }, [asset]);
 
   // 开始重命名
   const handleStartRename = useCallback(() => {
@@ -309,6 +320,7 @@ export function MediaLibraryInspector({
             icon={<CheckCircle size={16} />}
             onClick={handleSelect}
             data-track="inspector_use_asset"
+            data-track-params={inspectorTrackParams}
             className="inspector-btn-select"
           >
             {selectButtonText}
@@ -320,6 +332,7 @@ export function MediaLibraryInspector({
           icon={<Download size={16} />}
           onClick={handleDownload}
           data-track="inspector_download"
+          data-track-params={inspectorTrackParams}
           className="inspector-btn-download"
         >
           下载
@@ -331,6 +344,7 @@ export function MediaLibraryInspector({
           icon={<Trash2 size={16} />}
           onClick={handleOpenDeleteDialog}
           data-track="inspector_delete"
+          data-track-params={inspectorTrackParams}
           className="inspector-btn-delete"
         >
           删除

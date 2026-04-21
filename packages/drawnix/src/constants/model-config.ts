@@ -201,6 +201,8 @@ const BUILT_IN_MODEL_RECOMMENDATION_SCORES: Readonly<Record<string, number>> = {
   'gemini-3-pro-image-preview-async': 98,
   'gemini-3-pro-image-preview-2k-async': 97,
   'gemini-2.5-flash-image-vip': 96,
+  'gpt-image-2-vip': 96,
+  'gpt-image-2': 95,
   'gemini-2.5-flash-image': 95,
   'doubao-seedream-4-0-250828': 94,
   'gemini-3.1-flash-image-preview': 93,
@@ -208,7 +210,7 @@ const BUILT_IN_MODEL_RECOMMENDATION_SCORES: Readonly<Record<string, number>> = {
   'gpt-image-1.5': 91,
   'gemini-3-pro-image-preview-vip': 90,
   'gemini-3-pro-image-preview-2k-vip': 89,
-  'gpt-4o-image': 88,
+  'gpt-4o-image': -999,
   'gpt-image-1': 87,
   'qwen-image-2.0': 86,
   'gemini-3-pro-image-preview-2k': 85,
@@ -400,6 +402,29 @@ export const IMAGE_MODEL_MORE_OPTIONS: ModelConfig[] = [
     vendor: ModelVendor.MIDJOURNEY,
     supportsTools: true,
     imageDefaults: IMAGE_DEFAULT_PARAMS,
+  },
+  {
+    id: 'gpt-image-2-vip',
+    label: 'gpt-image-2-vip',
+    shortCode: 'gpt2v',
+    description: 'OpenAI GPT Image 2 VIP 图片生成模型',
+    type: 'image',
+    vendor: ModelVendor.GPT,
+    isVip: true,
+    supportsTools: true,
+    imageDefaults: IMAGE_DEFAULT_PARAMS,
+    tags: ['new'],
+  },
+  {
+    id: 'gpt-image-2',
+    label: 'gpt-image-2',
+    shortCode: 'gpt2',
+    description: 'OpenAI GPT Image 2 图片生成模型',
+    type: 'image',
+    vendor: ModelVendor.GPT,
+    supportsTools: true,
+    imageDefaults: IMAGE_DEFAULT_PARAMS,
+    tags: ['new'],
   },
   {
     id: 'gpt-image-1.5',
@@ -599,7 +624,6 @@ export const IMAGE_MODEL_MORE_OPTIONS: ModelConfig[] = [
     vendor: ModelVendor.GPT,
     supportsTools: true,
     imageDefaults: IMAGE_DEFAULT_PARAMS,
-    tags: ['new'],
   },
   {
     id: 'qwen-image-2.0',
@@ -1443,7 +1467,7 @@ export const AUDIO_MODEL_SELECT_OPTIONS = AUDIO_MODELS.map((model) => ({
 /**
  * 默认图片模型 ID
  */
-export const DEFAULT_IMAGE_MODEL_ID = 'gemini-3-pro-image-preview-vip';
+export const DEFAULT_IMAGE_MODEL_ID = 'gpt-image-2';
 
 /**
  * 获取默认图片模型 ID（优先使用环境变量）
@@ -1549,7 +1573,7 @@ const SEEDREAM_IMAGE_MODEL_IDS = [
 ];
 
 /** GPT 图片模型 ID（仅支持有限尺寸） */
-const GPT_IMAGE_MODEL_IDS = ['gpt-image-1.5'];
+const GPT_IMAGE_MODEL_IDS = ['gpt-image-2-vip', 'gpt-image-2', 'gpt-image-1.5'];
 const MJ_IMAGE_MODEL_IDS = ['mj-imagine'];
 const GEMINI_31_FLASH_IMAGE_MODEL_IDS = ['gemini-3.1-flash-image-preview'];
 

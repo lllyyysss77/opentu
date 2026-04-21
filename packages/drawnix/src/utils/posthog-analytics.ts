@@ -49,6 +49,69 @@ enum APICallEvent {
   API_CALL_RETRY = 'api_call_retry',
 }
 
+type AnalyticsEventData = Record<string, any>;
+
+function inferDeploymentEnv(hostname: string): 'local' | 'preview' | 'staging' | 'production' {
+  const normalized = hostname.toLowerCase();
+  if (
+    normalized === 'localhost' ||
+    normalized === '127.0.0.1' ||
+    normalized === '0.0.0.0' ||
+    normalized.endsWith('.local')
+  ) {
+    return 'local';
+  }
+  if (
+    normalized.includes('preview') ||
+    normalized.includes('vercel') ||
+    normalized.includes('netlify')
+  ) {
+    return 'preview';
+  }
+  if (
+    normalized.includes('staging') ||
+    normalized.includes('test') ||
+    normalized.includes('dev')
+  ) {
+    return 'staging';
+  }
+  return 'production';
+}
+
+function getCommonEventProperties(): AnalyticsEventData {
+  if (typeof window === 'undefined') {
+    return {};
+  }
+
+  const { hostname, pathname } = window.location;
+  return {
+    hostname,
+    route_name: pathname || '/',
+    deployment_env: inferDeploymentEnv(hostname),
+  };
+}
+
+function buildAICompatProperties(params: {
+  taskId: string;
+  taskType: 'image' | 'video' | 'audio' | 'chat';
+  model: string;
+  duration: number;
+  status: 'success' | 'failed';
+  error?: string;
+}): AnalyticsEventData {
+  return {
+    $ai_model: params.model,
+    $ai_latency: params.duration,
+    $ai_is_error: params.status === 'failed',
+    task_id: params.taskId,
+    task_type: params.taskType,
+    status: params.status,
+    model: params.model,
+    duration_ms: params.duration,
+    ...(params.error ? { error: params.error } : {}),
+  };
+}
+
 /** Analytics utility class */
 class PostHogAnalytics {
   /**
@@ -56,14 +119,19 @@ class PostHogAnalytics {
    * SECURITY: Event data is sanitized before being sent to PostHog
    */
   track(eventName: string, eventData?: Record<string, any>): void {
-    if (!window.posthog) {
+    if (typeof window === 'undefined' || !window.posthog) {
       return;
     }
     const doTrack = (): void => {
       try {
-        const sanitizedData = eventData
-          ? (sanitizeObject(eventData) as Record<string, any>)
-          : undefined;
+        const payload = {
+          ...getCommonEventProperties(),
+          ...(eventData || {}),
+        };
+        const sanitizedData =
+          Object.keys(payload).length > 0
+            ? (sanitizeObject(payload) as Record<string, any>)
+            : undefined;
         window.posthog!.capture(eventName, sanitizedData);
       } catch (error) {
         console.debug('[Analytics] track failed', error);
@@ -132,6 +200,16 @@ class PostHogAnalytics {
       chat: AIGenerationEvent.CHAT_GENERATION_SUCCESS,
     };
     this.trackAIGeneration(eventMap[params.taskType], params);
+    this.track(
+      '$ai_generation',
+      buildAICompatProperties({
+        taskId: params.taskId,
+        taskType: params.taskType,
+        model: params.model,
+        duration: params.duration,
+        status: 'success',
+      })
+    );
   }
 
   /** Track failed model call */
@@ -149,6 +227,17 @@ class PostHogAnalytics {
       chat: AIGenerationEvent.CHAT_GENERATION_FAILED,
     };
     this.trackAIGeneration(eventMap[params.taskType], params);
+    this.track(
+      '$ai_generation',
+      buildAICompatProperties({
+        taskId: params.taskId,
+        taskType: params.taskType,
+        model: params.model,
+        duration: params.duration,
+        status: 'failed',
+        error: params.error,
+      })
+    );
   }
 
   /** Track task cancellation */

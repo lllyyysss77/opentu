@@ -30,6 +30,7 @@ import { taskStorageReader } from './task-storage-reader';
 import { executorFactory, waitForTaskCompletion } from './media-executor';
 import { hasInvocationRouteCredentials } from '../utils/settings-manager';
 import { DEFAULT_AUDIO_MODEL_ID } from '../constants/model-config';
+import { analytics } from '../utils/posthog-analytics';
 import {
   getAdapterContextFromSettings,
   resolveAdapterForInvocation,
@@ -78,6 +79,49 @@ const MUSIC_REWRITE_SIMULATED_DURATION_MS = 2 * 60 * 1000;
 const MUSIC_REWRITE_SIMULATED_INTERVAL_MS = 2000;
 const MUSIC_REWRITE_SIMULATED_START_PROGRESS = 20;
 const MUSIC_REWRITE_SIMULATED_END_PROGRESS = 95;
+
+type InsertionSource = 'manual' | 'auto_insert';
+
+function getTaskResultCount(task: Task): number {
+  if (Array.isArray(task.result?.urls) && task.result.urls.length > 0) {
+    return task.result.urls.length;
+  }
+  if (task.result?.url || task.result?.chatResponse || task.result?.lyricsText) {
+    return 1;
+  }
+  return 0;
+}
+
+function buildTaskAnalyticsPayload(task: Task): Record<string, unknown> {
+  return {
+    taskId: task.id,
+    taskType: task.type,
+    taskStatus: task.status,
+    model:
+      typeof task.params.model === 'string' && task.params.model.trim()
+        ? task.params.model
+        : undefined,
+    executionPhase: task.executionPhase,
+    hasRemoteId: Boolean(task.remoteId),
+    resultCount: getTaskResultCount(task) || undefined,
+    hasReferenceImage: Boolean(
+      task.params.referenceImages?.length ||
+        task.params.uploadedImages?.length ||
+        task.params.uploadedImage
+    ),
+  };
+}
+
+function trackTaskAnalytics(
+  eventName: string,
+  task: Task,
+  extras?: Record<string, unknown>
+): void {
+  analytics.track(eventName, {
+    ...buildTaskAnalyticsPayload(task),
+    ...(extras || {}),
+  });
+}
 
 function normalizeImageDataUrl(value: string, fallbackMimeType = 'image/png'): string {
   const trimmed = value.trim();
@@ -1469,6 +1513,11 @@ class TaskQueueService {
 
     // Reset task for retry - set to PROCESSING for immediate execution
     const now = Date.now();
+    trackTaskAnalytics('generation_retry_after_failure', task, {
+      previousStatus: task.status,
+      previousErrorCode: task.error?.code,
+      previousErrorMessage: task.error?.message,
+    });
     this.blockedTaskIds.delete(taskId);
     this.updateTaskStatus(taskId, TaskStatus.PROCESSING, {
       error: undefined,
@@ -1628,6 +1677,14 @@ class TaskQueueService {
 
       this.blockedTaskIds.delete(restoredTask.id);
       this.tasks.set(restoredTask.id, restoredTask);
+      if (
+        restoredTask.status === TaskStatus.PENDING ||
+        restoredTask.status === TaskStatus.PROCESSING
+      ) {
+        trackTaskAnalytics('task_recovered_after_reload', restoredTask, {
+          restoredAgeMs: Math.max(0, Date.now() - restoredTask.createdAt),
+        });
+      }
       restoredCount++;
     });
 
@@ -1680,12 +1737,21 @@ class TaskQueueService {
    * Marks a task as inserted to canvas
    * @param taskId - The task ID to mark as inserted
    */
-  markAsInserted(taskId: string): void {
+  markAsInserted(taskId: string, source: InsertionSource = 'manual'): void {
     const task = this.tasks.get(taskId);
     if (!task) {
       console.warn(`[TaskQueueService] Task ${taskId} not found`);
       return;
     }
+
+    if (task.insertedToCanvas) {
+      return;
+    }
+
+    trackTaskAnalytics('generation_result_insert_canvas', task, {
+      source,
+      insertedToCanvas: true,
+    });
 
     this.updateTaskStatus(taskId, task.status, {
       insertedToCanvas: true,

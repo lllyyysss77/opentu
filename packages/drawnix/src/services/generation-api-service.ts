@@ -34,6 +34,19 @@ import {
 } from './model-adapters';
 import type { ModelRef } from '../utils/settings-manager';
 
+function resolveAnalyticsModelName(
+  routeModel: string | ModelRef | null | undefined,
+  fallback: string
+): string {
+  if (typeof routeModel === 'string' && routeModel) {
+    return routeModel;
+  }
+  if (routeModel?.modelId) {
+    return routeModel.modelId;
+  }
+  return fallback;
+}
+
 /**
  * Generation API Service
  * Manages API calls for content generation with timeout and cancellation support
@@ -69,6 +82,13 @@ class GenerationAPIService {
         : type === TaskType.VIDEO
         ? 'video'
         : 'audio';
+    const modelName =
+      params.model ||
+      (taskType === 'image'
+        ? DEFAULT_IMAGE_MODEL_ID
+        : taskType === 'video'
+        ? 'gemini-video'
+        : DEFAULT_AUDIO_MODEL_ID);
 
     // Track model call start with enhanced parameters
     const hasRefImage =
@@ -78,13 +98,7 @@ class GenerationAPIService {
     analytics.trackModelCall({
       taskId,
       taskType,
-      model:
-        params.model ||
-        (taskType === 'image'
-          ? 'gemini-image'
-          : taskType === 'video'
-          ? 'gemini-video'
-          : DEFAULT_AUDIO_MODEL_ID),
+      model: modelName,
       promptLength: params.prompt.length,
       hasUploadedImage: hasRefImage,
       startTime,
@@ -131,12 +145,7 @@ class GenerationAPIService {
       analytics.trackModelSuccess({
         taskId,
         taskType,
-        model:
-          taskType === 'image'
-            ? 'gemini-image'
-            : taskType === 'video'
-            ? 'gemini-video'
-            : DEFAULT_AUDIO_MODEL_ID,
+        model: modelName,
         duration,
         resultSize: result.size,
       });
@@ -154,12 +163,7 @@ class GenerationAPIService {
         analytics.trackModelFailure({
           taskId,
           taskType,
-          model:
-            taskType === 'image'
-              ? 'gemini-image'
-              : taskType === 'video'
-              ? 'gemini-video'
-              : DEFAULT_AUDIO_MODEL_ID,
+          model: modelName,
           duration,
           error: 'TIMEOUT',
         });
@@ -188,12 +192,7 @@ class GenerationAPIService {
       analytics.trackModelFailure({
         taskId,
         taskType,
-        model:
-          taskType === 'image'
-            ? 'gemini-image'
-            : taskType === 'video'
-            ? 'gemini-video'
-            : DEFAULT_AUDIO_MODEL_ID,
+        model: modelName,
         duration,
         error: error.message || 'UNKNOWN_ERROR',
       });
@@ -605,12 +604,13 @@ class GenerationAPIService {
     routeModel?: string | ModelRef | null
   ): Promise<TaskResult> {
     const startTime = Date.now();
+    const modelName = resolveAnalyticsModelName(routeModel, 'gemini-video');
 
     // Track resumed task
     analytics.trackModelCall({
       taskId,
       taskType: 'video',
-      model: 'gemini-video',
+      model: modelName,
       promptLength: 0, // Unknown for resumed tasks
       hasUploadedImage: false,
       startTime,
@@ -649,7 +649,7 @@ class GenerationAPIService {
       analytics.trackModelSuccess({
         taskId,
         taskType: 'video',
-        model: 'gemini-video',
+        model: modelName,
         duration,
         resultSize: 0,
       });
@@ -677,7 +677,7 @@ class GenerationAPIService {
       analytics.trackModelFailure({
         taskId,
         taskType: 'video',
-        model: 'gemini-video',
+        model: modelName,
         duration,
         error: error.message || 'UNKNOWN_ERROR',
       });
@@ -695,11 +695,15 @@ class GenerationAPIService {
     routeModel?: string | ModelRef | null
   ): Promise<TaskResult> {
     const startTime = Date.now();
+    const modelName = resolveAnalyticsModelName(
+      routeModel,
+      DEFAULT_AUDIO_MODEL_ID
+    );
 
     analytics.trackModelCall({
       taskId,
       taskType: 'audio',
-      model: DEFAULT_AUDIO_MODEL_ID,
+      model: modelName,
       promptLength: 0,
       hasUploadedImage: false,
       startTime,
@@ -728,7 +732,7 @@ class GenerationAPIService {
       analytics.trackModelSuccess({
         taskId,
         taskType: 'audio',
-        model: DEFAULT_AUDIO_MODEL_ID,
+        model: modelName,
         duration,
         resultSize: 0,
       });
@@ -761,7 +765,7 @@ class GenerationAPIService {
       analytics.trackModelFailure({
         taskId,
         taskType: 'audio',
-        model: DEFAULT_AUDIO_MODEL_ID,
+        model: modelName,
         duration,
         error: error.message || 'UNKNOWN_ERROR',
       });

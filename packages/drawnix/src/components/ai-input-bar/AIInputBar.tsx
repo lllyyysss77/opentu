@@ -234,6 +234,15 @@ function getModelRefFromConfig(model?: ModelConfig | null): ModelRef | null {
   return createModelRef(model.sourceProfileId || null, model.id);
 }
 
+function getPromptLengthBucket(length: number): string {
+  if (length <= 0) return '0';
+  if (length <= 20) return '1-20';
+  if (length <= 100) return '21-100';
+  if (length <= 300) return '101-300';
+  if (length <= 800) return '301-800';
+  return '800+';
+}
+
 function findMatchingSelectableModel(
   models: ModelConfig[],
   modelId?: string | null,
@@ -3482,6 +3491,24 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
       []
     );
 
+    const sendButtonTrackParams = useMemo(
+      () =>
+        JSON.stringify({
+          generationType,
+          model: selectedModel,
+          profileId: selectedModelRef?.profileId || null,
+          hasAttachedContent: allContent.length > 0,
+          attachedCount: allContent.length,
+          promptLengthBucket: getPromptLengthBucket(prompt.trim().length),
+        }),
+      [
+        allContent.length,
+        generationType,
+        prompt,
+        selectedModel,
+        selectedModelRef?.profileId,
+      ]
+    );
     const canGenerate = prompt.trim().length > 0 || allContent.length > 0;
     const showInspirationBoard = isCanvasEmpty === true;
     const hasSelectedTextContent = selectedContent.some(
@@ -3632,6 +3659,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
               onClick={() => handleGenerate()}
               disabled={!canGenerate || isSubmitting}
               data-track="ai_input_click_send"
+              data-track-params={sendButtonTrackParams}
               data-testid="ai-send-btn"
             >
               <Send size={18} />
