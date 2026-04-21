@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   fetchFromCDNWithFallback,
   getAvailableCDNs,
+  getCDNStatusReport,
   markCDNFailure,
   resetCDNStatus,
   setCDNPreference,
@@ -157,5 +158,25 @@ describe('cdn-fallback', () => {
       'jsdelivr',
       'unpkg',
     ]);
+  });
+
+  it('includes fail count and cooldown info in status report', () => {
+    markCDNFailure('unpkg', 'timeout');
+    markCDNFailure('unpkg', 'timeout');
+    markCDNFailure('unpkg', 'timeout');
+
+    const unpkgStatus = getCDNStatusReport().find((item) => item.name === 'unpkg');
+
+    expect(unpkgStatus).toMatchObject({
+      preferred: false,
+      cooldownMs: 10 * 60 * 1000,
+      cooldownUntil: Date.now() + 10 * 60 * 1000,
+      remainingCooldownMs: 10 * 60 * 1000,
+      status: {
+        failCount: 3,
+        isHealthy: false,
+        lastFailureReason: 'timeout',
+      },
+    });
   });
 });

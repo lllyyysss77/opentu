@@ -252,8 +252,13 @@ export function markCDNFailure(cdnName: string, reason?: string): void {
 
     if (status.failCount >= CDN_CONFIG.failThreshold) {
       status.isHealthy = false;
+      const cooldown = getCDNCooldownSnapshot(status);
       console.warn(
-        `[CDN Fallback] ${cdnName} marked as unhealthy after ${status.failCount} failures`
+        `[CDN Fallback] ${cdnName} marked as unhealthy after ${status.failCount} failures, cooldown=${cooldown.cooldownMs}ms, reason=${reason ?? 'unknown'}`
+      );
+    } else {
+      console.warn(
+        `[CDN Fallback] ${cdnName} failure count=${status.failCount}, reason=${reason ?? 'unknown'}`
       );
     }
   }
@@ -272,6 +277,21 @@ function getCDNDegradeTimeout(cdnName: string, failCount: number): number {
   );
   const multiplier = 2 ** consecutiveFailures;
   return Math.min(policy.baseTimeout * multiplier, policy.maxTimeout);
+}
+
+function getCDNCooldownSnapshot(status: CDNHealthStatus): {
+  cooldownMs: number;
+  cooldownUntil: number;
+  remainingCooldownMs: number;
+} {
+  const cooldownMs = getCDNDegradeTimeout(status.name, status.failCount);
+  const cooldownUntil = status.lastCheckTime + cooldownMs;
+
+  return {
+    cooldownMs,
+    cooldownUntil,
+    remainingCooldownMs: Math.max(0, cooldownUntil - Date.now()),
+  };
 }
 
 export function isCDNAvailable(cdnName: string): boolean {
@@ -516,6 +536,9 @@ export function getCDNStatusReport(): Array<{
   name: string;
   status: CDNHealthStatus;
   preferred: boolean;
+  cooldownMs: number;
+  cooldownUntil: number;
+  remainingCooldownMs: number;
 }> {
   const preferredName = isFreshPreference(persistedCDNPreference)
     ? persistedCDNPreference?.cdn
@@ -525,6 +548,7 @@ export function getCDNStatusReport(): Array<{
     name,
     status,
     preferred: preferredName === name,
+    ...getCDNCooldownSnapshot(status),
   }));
 }
 

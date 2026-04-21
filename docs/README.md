@@ -16,6 +16,7 @@
 
 ### 🚀 部署相关文档  
 - **[CFPAGE-DEPLOY.md](./CFPAGE-DEPLOY.md)** - Cloudflare Pages 部署指南
+- **[SMART_CDN_LOADING_LESSONS.md](./SMART_CDN_LOADING_LESSONS.md)** - 多 CDN、发布门禁、熔断退避与首屏稳定性复盘
 
 ### 📱 PWA 相关文档
 - **[PWA_ICONS.md](./PWA_ICONS.md)** - PWA 图标生成指南
@@ -120,6 +121,7 @@ opentu/ (项目根目录)
 ### 2026-04-22
 - 📝 新增埋点观测与 SEO 优化经验总结
 - 🔗 补充 docs 索引，便于后续复用
+- 🌐 补充 CDN 加载与发布稳定性经验总结，沉淀多 CDN 熔断和保守切分原则
 
 ---
 
