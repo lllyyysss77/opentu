@@ -1,6 +1,6 @@
 {
   "version": "0.6.40",
-  "buildTime": "2026-04-21T10:01:08.067Z",
+  "buildTime": "2026-04-21T10:04:04.764Z",
   "gitCommit": "unknown",
   "changelog": [
     "Refine boot error handling and idle prefetch defaults",
