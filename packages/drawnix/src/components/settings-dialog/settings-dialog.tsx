@@ -1,8 +1,17 @@
 import { useDrawnix } from '../../hooks/use-drawnix';
 import { useDeviceType } from '../../hooks/useDeviceType';
 import './settings-dialog.scss';
-import { memo, useCallback, useDeferredValue, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { MessagePlugin, Tooltip, Switch } from 'tdesign-react';
+import {
+  memo,
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from 'react';
+import { MessagePlugin, Switch } from 'tdesign-react';
 import { InfoCircleIcon } from 'tdesign-icons-react';
 import {
   AlertTriangle,
@@ -19,7 +28,10 @@ import {
 import { LS_KEYS } from '../../constants/storage-keys';
 import { ModelDiscoveryDialog } from './model-discovery-dialog';
 import { PricingFieldGroup } from './pricing-field-group';
-import { useFormattedModelPrice, useModelMeta } from '../../hooks/use-model-pricing';
+import {
+  useFormattedModelPrice,
+  useModelMeta,
+} from '../../hooks/use-model-pricing';
 import {
   getDefaultAudioModel,
   getDefaultImageModel,
@@ -68,11 +80,13 @@ import {
   useContextMenuState,
   type ContextMenuEntry,
 } from '../shared/ContextMenu';
+import { useConfirmDialog } from '../dialog/ConfirmDialog';
 import { ModelDropdown } from '../ai-input-bar/ModelDropdown';
 import { WinBoxWindow } from '../winbox';
 import { TtsSettingsPanel } from '../project-drawer/TtsSettingsPanel';
 import { openModelBenchmarkTool } from '../../services/model-benchmark-launcher';
 import { modelBenchmarkService } from '../../services/model-benchmark-service';
+import { HoverTip } from '../shared';
 
 export { IMAGE_MODEL_GROUPED_SELECT_OPTIONS as IMAGE_MODEL_GROUPED_OPTIONS } from '../../constants/model-config';
 export { VIDEO_MODEL_SELECT_OPTIONS as VIDEO_MODEL_OPTIONS } from '../../constants/model-config';
@@ -141,14 +155,16 @@ const ModelIdWithDesc = memo(function ModelIdWithDesc({
 }) {
   const meta = useModelMeta(profileId, modelId);
   if (!meta?.description) {
-    return <span className="settings-dialog__model-type-item-id">{modelId}</span>;
+    return (
+      <span className="settings-dialog__model-type-item-id">{modelId}</span>
+    );
   }
   return (
-    <Tooltip content={meta.description} placement="top" theme="light">
+    <HoverTip content={meta.description} placement="top">
       <span className="settings-dialog__model-type-item-id settings-dialog__model-type-item-id--has-desc">
         {modelId}
       </span>
-    </Tooltip>
+    </HoverTip>
   );
 });
 
@@ -175,7 +191,12 @@ function buildModelSelectionChangeMessage(
   return `已从 ${profileName} 移除 ${removedCount} 个模型`;
 }
 
-const MODEL_SUMMARY_GROUP_ORDER: ModelType[] = ['text', 'image', 'video', 'audio'];
+const MODEL_SUMMARY_GROUP_ORDER: ModelType[] = [
+  'text',
+  'image',
+  'video',
+  'audio',
+];
 
 const PROVIDER_TYPE_META: Record<
   ProviderProfile['providerType'],
@@ -267,8 +288,8 @@ function getConfiguredRouteCount(preset: InvocationPreset | null): number {
     return 0;
   }
 
-  return (['image', 'video', 'audio', 'text'] as ModelType[]).filter((routeType) =>
-    Boolean(getRouteModelId(preset[routeType]))
+  return (['image', 'video', 'audio', 'text'] as ModelType[]).filter(
+    (routeType) => Boolean(getRouteModelId(preset[routeType]))
   ).length;
 }
 
@@ -361,17 +382,17 @@ function createProfile(index: number): ProviderProfile {
   };
 }
 
-function readPendingProviderNavigationIntent():
-  | ProviderNavigationIntent
-  | null {
+function readPendingProviderNavigationIntent(): ProviderNavigationIntent | null {
   if (typeof window === 'undefined') {
     return null;
   }
 
   const intent =
-    (window as typeof window & {
-      __aituPendingProviderNavigationIntent?: ProviderNavigationIntent;
-    }).__aituPendingProviderNavigationIntent || null;
+    (
+      window as typeof window & {
+        __aituPendingProviderNavigationIntent?: ProviderNavigationIntent;
+      }
+    ).__aituPendingProviderNavigationIntent || null;
 
   (
     window as typeof window & {
@@ -506,9 +527,7 @@ function buildPresetRouteModels(
       ...model,
       sourceProfileId: profile.id,
       sourceProfileName: profile.name,
-      selectionKey:
-        model.selectionKey ||
-        `${profile.id}::${model.id}`,
+      selectionKey: model.selectionKey || `${profile.id}::${model.id}`,
     }))
   );
 }
@@ -519,6 +538,7 @@ export const SettingsDialog = ({
   container: HTMLElement | null;
 }) => {
   const { appState, setAppState } = useDrawnix();
+  const { confirm, confirmDialog } = useConfirmDialog({ container });
   const {
     isMobile: isMobileDevice,
     viewportWidth,
@@ -601,8 +621,7 @@ export const SettingsDialog = ({
 
   const enabledProfiles = profilesDraft.filter((profile) => profile.enabled);
   const isCompactLayout =
-    isMobileDevice ||
-    viewportWidth <= SETTINGS_DIALOG_COMPACT_BREAKPOINT;
+    isMobileDevice || viewportWidth <= SETTINGS_DIALOG_COMPACT_BREAKPOINT;
 
   const isSinglePanel =
     isCompactLayout &&
@@ -727,7 +746,9 @@ export const SettingsDialog = ({
     const pendingProviderIntent = readPendingProviderNavigationIntent();
     const nextSelectedProfileId =
       pendingProviderIntent?.action === 'select' &&
-      nextProfiles.some((profile) => profile.id === pendingProviderIntent.profileId)
+      nextProfiles.some(
+        (profile) => profile.id === pendingProviderIntent.profileId
+      )
         ? pendingProviderIntent.profileId
         : nextProfiles[0]?.id || LEGACY_DEFAULT_PROVIDER_PROFILE_ID;
 
@@ -992,9 +1013,7 @@ export const SettingsDialog = ({
       return;
     }
 
-    const handleProviderNavigation = (
-      event: Event
-    ) => {
+    const handleProviderNavigation = (event: Event) => {
       const detail = (event as CustomEvent<ProviderNavigationIntent>).detail;
       if (!detail) {
         return;
@@ -1015,8 +1034,23 @@ export const SettingsDialog = ({
     };
   }, [appState.openSettings, isCompactLayout, profilesDraft]);
 
-  const handleDeleteProfile = (profileId: string) => {
+  const handleDeleteProfile = async (profileId: string) => {
     if (isManagedProviderProfile(profileId)) {
+      return;
+    }
+
+    const profile = profilesDraft.find((item) => item.id === profileId);
+    const confirmed = await confirm({
+      title: '确认删除供应商',
+      description: `确定要删除供应商「${
+        profile?.name || '未命名供应商'
+      }」吗？相关预设里的路由会被清空。`,
+      confirmText: '删除',
+      cancelText: '取消',
+      danger: true,
+    });
+
+    if (!confirmed) {
       return;
     }
 
@@ -1103,8 +1137,23 @@ export const SettingsDialog = ({
     }
   };
 
-  const handleDeletePreset = (presetId: string) => {
+  const handleDeletePreset = async (presetId: string) => {
     if (presetsDraft.length <= 1) {
+      return;
+    }
+
+    const preset = presetsDraft.find((item) => item.id === presetId);
+    const confirmed = await confirm({
+      title: '确认删除预设',
+      description: `确定要删除预设「${
+        preset?.name || '未命名预设'
+      }」吗？此操作不可撤销。`,
+      confirmText: '删除',
+      cancelText: '取消',
+      danger: true,
+    });
+
+    if (!confirmed) {
       return;
     }
 
@@ -1312,21 +1361,23 @@ export const SettingsDialog = ({
           text: { ...preset.text },
         };
 
-        (['image', 'video', 'audio', 'text'] as ModelType[]).forEach((routeType) => {
-          const route = nextPreset[routeType];
-          const routeProfileId = getRouteProfileId(route);
-          const routeModelId = getRouteModelId(route);
-          if (routeProfileId && !profileIds.has(routeProfileId)) {
-            nextPreset[routeType] = createRouteConfig(
-              createModelRef(null, routeModelId)
-            );
-            return;
-          }
+        (['image', 'video', 'audio', 'text'] as ModelType[]).forEach(
+          (routeType) => {
+            const route = nextPreset[routeType];
+            const routeProfileId = getRouteProfileId(route);
+            const routeModelId = getRouteModelId(route);
+            if (routeProfileId && !profileIds.has(routeProfileId)) {
+              nextPreset[routeType] = createRouteConfig(
+                createModelRef(null, routeModelId)
+              );
+              return;
+            }
 
-          nextPreset[routeType] = createRouteConfig(
-            createModelRef(routeProfileId, routeModelId)
-          );
-        });
+            nextPreset[routeType] = createRouteConfig(
+              createModelRef(routeProfileId, routeModelId)
+            );
+          }
+        );
 
         return nextPreset;
       });
@@ -1857,7 +1908,7 @@ export const SettingsDialog = ({
                 <label className="settings-dialog__label settings-dialog__label--stacked">
                   API Key
                 </label>
-                <Tooltip
+                <HoverTip
                   content={
                     <div style={{ maxWidth: 480 }}>
                       您可以从以下地址获取 API Key:
@@ -1909,7 +1960,7 @@ export const SettingsDialog = ({
                   overlayStyle={{ maxWidth: 'none' }}
                 >
                   <InfoCircleIcon className="settings-dialog__tooltip-icon" />
-                </Tooltip>
+                </HoverTip>
               </div>
               <div
                 style={{
@@ -1965,7 +2016,9 @@ export const SettingsDialog = ({
 
         <PricingFieldGroup
           profile={selectedProfile}
-          onUpdateProfile={(updater) => updateProfile(selectedProfile.id, updater)}
+          onUpdateProfile={(updater) =>
+            updateProfile(selectedProfile.id, updater)
+          }
         />
 
         {selectedProfile.id === LEGACY_DEFAULT_PROVIDER_PROFILE_ID ? (
@@ -2050,8 +2103,7 @@ export const SettingsDialog = ({
       Boolean(modelSearch);
     const shouldShowErrorState =
       runtimeState.status === 'error' && displayModels.length === 0;
-    const shouldShowHintState =
-      !canManageModels && displayModels.length === 0;
+    const shouldShowHintState = !canManageModels && displayModels.length === 0;
 
     return (
       <div className="settings-dialog__section">
@@ -2177,14 +2229,23 @@ export const SettingsDialog = ({
                             }
                           >
                             <span className="settings-dialog__model-type-item-logo">
-                              <ModelVendorMark vendor={model.vendor} size={16} />
+                              <ModelVendorMark
+                                vendor={model.vendor}
+                                size={16}
+                              />
                             </span>
                             <div className="settings-dialog__model-type-item-copy">
-                              <ModelIdWithDesc profileId={selectedProfile!.id} modelId={model.id} />
+                              <ModelIdWithDesc
+                                profileId={selectedProfile!.id}
+                                modelId={model.id}
+                              />
                               <span className="settings-dialog__model-type-item-vendor">
                                 {getDiscoveryVendorLabel(model.vendor)}
                               </span>
-                              <ModelPriceLabel profileId={selectedProfile!.id} modelId={model.id} />
+                              <ModelPriceLabel
+                                profileId={selectedProfile!.id}
+                                modelId={model.id}
+                              />
                             </div>
                             <div className="settings-dialog__model-type-item-btns">
                               {(() => {
@@ -2195,54 +2256,74 @@ export const SettingsDialog = ({
                                   );
                                 if (st === 'completed')
                                   return (
-                                    <span
-                                      className="settings-dialog__model-status settings-dialog__model-status--ok"
-                                      title="上次测试成功"
-                                    />
+                                    <HoverTip
+                                      content="上次测试成功"
+                                      showArrow={false}
+                                    >
+                                      <span className="settings-dialog__model-tip-trigger">
+                                        <span className="settings-dialog__model-status settings-dialog__model-status--ok" />
+                                      </span>
+                                    </HoverTip>
                                   );
                                 if (st === 'failed')
                                   return (
-                                    <span
-                                      className="settings-dialog__model-status settings-dialog__model-status--fail"
-                                      title="上次测试失败"
-                                    />
+                                    <HoverTip
+                                      content="上次测试失败"
+                                      showArrow={false}
+                                    >
+                                      <span className="settings-dialog__model-tip-trigger">
+                                        <span className="settings-dialog__model-status settings-dialog__model-status--fail" />
+                                      </span>
+                                    </HoverTip>
                                   );
                                 return null;
                               })()}
-                              <button
-                                type="button"
-                                className="settings-dialog__model-icon-btn settings-dialog__model-icon-btn--test"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  if (!selectedProfile) return;
-                                  handleLaunchModelBenchmark({
-                                    profileId: selectedProfile.id,
-                                    modality: type,
-                                    modelId: model.id,
-                                    compareMode: 'cross-provider',
-                                  });
-                                }}
-                                disabled={!canLaunchBenchmark}
-                                title={
+                              <HoverTip
+                                content={
                                   canLaunchBenchmark
                                     ? '测试'
                                     : '请先保存供应商配置并确保 API Key 可用'
                                 }
+                                showArrow={false}
                               >
-                                <FlaskConical size={14} />
-                              </button>
+                                <span className="settings-dialog__model-tip-trigger">
+                                  <button
+                                    type="button"
+                                    className="settings-dialog__model-icon-btn settings-dialog__model-icon-btn--test"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      if (!selectedProfile) return;
+                                      handleLaunchModelBenchmark({
+                                        profileId: selectedProfile.id,
+                                        modality: type,
+                                        modelId: model.id,
+                                        compareMode: 'cross-provider',
+                                      });
+                                    }}
+                                    disabled={!canLaunchBenchmark}
+                                  >
+                                    <FlaskConical size={14} />
+                                  </button>
+                                </span>
+                              </HoverTip>
                               {canRemoveModel ? (
-                                <button
-                                  type="button"
-                                  className="settings-dialog__model-icon-btn settings-dialog__model-icon-btn--delete"
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    handleRemoveModel(model.id);
-                                  }}
-                                  title="移除此模型"
+                                <HoverTip
+                                  content="移除此模型"
+                                  showArrow={false}
                                 >
-                                  <Trash2 size={14} />
-                                </button>
+                                  <span className="settings-dialog__model-tip-trigger">
+                                    <button
+                                      type="button"
+                                      className="settings-dialog__model-icon-btn settings-dialog__model-icon-btn--delete"
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        handleRemoveModel(model.id);
+                                      }}
+                                    >
+                                      <Trash2 size={14} />
+                                    </button>
+                                  </span>
+                                </HoverTip>
                               ) : null}
                             </div>
                           </div>
@@ -2607,7 +2688,9 @@ export const SettingsDialog = ({
             isCompactLayout ? 'settings-dialog__workspace--show-sidebar' : ''
           }`}
         >
-          <aside className="settings-dialog__sidebar">{renderPresetList()}</aside>
+          <aside className="settings-dialog__sidebar">
+            {renderPresetList()}
+          </aside>
           {renderPresetManagement(false)}
         </div>
       );
@@ -2625,7 +2708,9 @@ export const SettingsDialog = ({
           isCompactLayout ? 'settings-dialog__workspace--show-sidebar' : ''
         }`}
       >
-        <aside className="settings-dialog__sidebar">{renderProviderList()}</aside>
+        <aside className="settings-dialog__sidebar">
+          {renderProviderList()}
+        </aside>
         {renderProviderForm(false)}
       </div>
     );
@@ -2694,6 +2779,7 @@ export const SettingsDialog = ({
           });
         }}
       />
+      {confirmDialog}
     </>
   );
 };

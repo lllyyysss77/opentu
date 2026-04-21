@@ -15,7 +15,6 @@ import React, {
   Suspense,
 } from 'react';
 import { CloseIcon, AddIcon, ViewListIcon } from 'tdesign-icons-react';
-import { Tooltip } from 'tdesign-react';
 import { type ChatHandler } from '@llamaindex/chat-ui';
 import { ATTACHED_ELEMENT_CLASS_NAME } from '@plait/core';
 import { SessionList } from './SessionList';
@@ -46,6 +45,8 @@ import type { Message } from '@llamaindex/chat-ui';
 import { useTextSelection } from '../../hooks/useTextSelection';
 
 import { analytics } from '../../utils/posthog-analytics';
+import { HoverTip } from '../shared';
+import './chat-drawer.scss';
 
 const ChatMessagesArea = React.lazy(() => import('./ChatMessagesArea'));
 
@@ -1339,7 +1340,7 @@ export const ChatDrawer = forwardRef<ChatDrawerRef, ChatDrawerProps>(
           <div ref={domRef} className="chat-drawer__body">
             <div className="chat-drawer__header">
               <div className="chat-drawer__header-top">
-                <Tooltip content="关闭" theme="light">
+                <HoverTip content="关闭">
                   <button
                     className="chat-drawer__close-btn"
                     data-track="chat_click_drawer_close"
@@ -1348,7 +1349,7 @@ export const ChatDrawer = forwardRef<ChatDrawerRef, ChatDrawerProps>(
                   >
                     <CloseIcon size={16} />
                   </button>
-                </Tooltip>
+                </HoverTip>
                 {isEditingTitle ? (
                   <input
                     ref={titleInputRef}
@@ -1381,7 +1382,7 @@ export const ChatDrawer = forwardRef<ChatDrawerRef, ChatDrawerProps>(
                   }}
                 />
                 <div className="chat-drawer__session-actions">
-                  <Tooltip content="会话列表" theme="light">
+                  <HoverTip content="会话列表">
                     <button
                       ref={toggleButtonRef}
                       className={`chat-drawer__close-btn ${
@@ -1393,8 +1394,8 @@ export const ChatDrawer = forwardRef<ChatDrawerRef, ChatDrawerProps>(
                     >
                       <ViewListIcon size={16} />
                     </button>
-                  </Tooltip>
-                  <Tooltip content="新对话" theme="light">
+                  </HoverTip>
+                  <HoverTip content="新对话">
                     <button
                       className="chat-drawer__close-btn"
                       data-track="chat_click_new_session"
@@ -1403,7 +1404,7 @@ export const ChatDrawer = forwardRef<ChatDrawerRef, ChatDrawerProps>(
                     >
                       <AddIcon size={16} />
                     </button>
-                  </Tooltip>
+                  </HoverTip>
                 </div>
               </div>
             </div>

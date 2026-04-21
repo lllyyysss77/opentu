@@ -24,6 +24,7 @@ import {
 import { Z_INDEX } from '../../constants/z-index';
 import type { KBDirectory, KBNoteMeta, KBTag } from '../../types/knowledge-base.types';
 import { SYSTEM_SKILLS, EXTERNAL_SKILL_NOTE_PREFIX, getExternalSkills } from '../../constants/skills';
+import { HoverTip } from '../shared';
 
 /** 系统内置 Skill 虚拟笔记的 ID 前缀 */
 export const SYSTEM_SKILL_NOTE_PREFIX = '__system_skill__';
@@ -417,28 +418,40 @@ const DirectoryNode: React.FC<DirectoryNodeProps> = ({
         <span className="kb-tree__dir-count">{noteCount}</span>
 
         <div className="kb-tree__dir-actions">
-          <button
-            className="kb-tree__icon-btn"
-            onClick={(e) => { e.stopPropagation(); onCreateNote(); }}
-            title="新建笔记"
-          >
-            <Plus size={12} />
-          </button>
-          <>
+          <HoverTip content="新建笔记" showArrow={false}>
             <button
               className="kb-tree__icon-btn"
-              onClick={(e) => { e.stopPropagation(); onStartRename(); }}
-              title="重命名"
+              onClick={(e) => {
+                e.stopPropagation();
+                onCreateNote();
+              }}
             >
-              <Pencil size={12} />
+              <Plus size={12} />
             </button>
-            <button
-              className="kb-tree__icon-btn kb-tree__icon-btn--danger"
-              onClick={(e) => { e.stopPropagation(); onDeleteDir(); }}
-              title="删除"
-            >
-              <Trash2 size={12} />
-            </button>
+          </HoverTip>
+          <>
+            <HoverTip content="重命名" showArrow={false}>
+              <button
+                className="kb-tree__icon-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onStartRename();
+                }}
+              >
+                <Pencil size={12} />
+              </button>
+            </HoverTip>
+            <HoverTip content="删除" showArrow={false}>
+              <button
+                className="kb-tree__icon-btn kb-tree__icon-btn--danger"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDeleteDir();
+                }}
+              >
+                <Trash2 size={12} />
+              </button>
+            </HoverTip>
           </>
         </div>
       </div>

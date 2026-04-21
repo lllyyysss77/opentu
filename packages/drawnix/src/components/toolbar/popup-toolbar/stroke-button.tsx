@@ -126,7 +126,7 @@ export const PopupStrokeButton: React.FC<PopupStrokeButtonProps> = ({
           visible={true}
           icon={icon}
           type="button"
-          title={title}
+          tooltip={title}
           aria-label={title}
           onPointerUp={() => {
             setIsStrokePropertyOpen(!isStrokePropertyOpen);
@@ -183,7 +183,7 @@ export const PopupStrokeButton: React.FC<PopupStrokeButtonProps> = ({
                     visible={true}
                     icon={<StrokeStyleNormalIcon />}
                     type="button"
-                    title="实线"
+                    tooltip="实线"
                     aria-label="实线"
                     onPointerUp={() => setStrokeStyle(StrokeStyle.solid)}
                   ></ToolButton>
@@ -191,7 +191,7 @@ export const PopupStrokeButton: React.FC<PopupStrokeButtonProps> = ({
                     visible={true}
                     icon={<StrokeStyleDashedIcon />}
                     type="button"
-                    title="虚线"
+                    tooltip="虚线"
                     aria-label="虚线"
                     onPointerUp={() => setStrokeStyle(StrokeStyle.dashed)}
                   ></ToolButton>
@@ -199,7 +199,7 @@ export const PopupStrokeButton: React.FC<PopupStrokeButtonProps> = ({
                     visible={true}
                     icon={<StrokeStyleDotedIcon />}
                     type="button"
-                    title="点线"
+                    tooltip="点线"
                     aria-label="点线"
                     onPointerUp={() => setStrokeStyle(StrokeStyle.dotted)}
                   ></ToolButton>

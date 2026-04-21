@@ -88,7 +88,7 @@ export const ShapePicker: React.FC<ShapePickerProps> = ({
                     size={'small'}
                     visible={true}
                     icon={shape.icon}
-                    title={shape.title}
+                    tooltip={shape.title}
                     aria-label={shape.title}
                     onPointerDown={() => {
                       // 切换工具前，结束钢笔绘制

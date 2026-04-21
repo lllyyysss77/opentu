@@ -20,7 +20,10 @@ import {
 import { MessagePlugin } from 'tdesign-react';
 import { assetStorageService } from '../services/asset-storage-service';
 import { taskQueueService } from '../services/task-queue';
-import { taskStorageReader } from '../services/task-storage-reader';
+import {
+  taskStorageReader,
+  type AssetTaskRecord,
+} from '../services/task-storage-reader';
 import {
   unifiedCacheService,
   type CachedMedia,
@@ -36,7 +39,7 @@ import type {
   StorageStatus,
 } from '../types/asset.types';
 import { AssetType as AssetTypeEnum, AssetSource as AssetSourceEnum, DEFAULT_FILTER_STATE } from '../types/asset.types';
-import { TaskStatus, TaskType } from '../types/task.types';
+import { TaskType } from '../types/task.types';
 import { AssetContext } from './asset-context-instance';
 import { audioPlaylistService } from '../services/audio-playlist-service';
 import { setGlobalAssetMap } from '../stores/asset-map-store';
@@ -59,6 +62,8 @@ interface AssetProviderProps {
   children: ReactNode;
 }
 
+const LOAD_ASSETS_CACHE_TTL_MS = 8000;
+
 function getLocalDedupeKey(asset: Asset): string | undefined {
   return getLocalAssetGroupKey(asset) || undefined;
 }
@@ -70,6 +75,11 @@ function isUnifiedCacheAsset(asset: Asset): boolean {
 interface CacheAssetTaskContext {
   completedTaskIds: Set<string>;
   completedTaskUrls: Set<string>;
+}
+
+interface CacheAssetLoadResult {
+  assets: Asset[];
+  metadataByNormalizedUrl: Map<string, CachedMedia>;
 }
 
 function isPlaybackCachePollution(
@@ -105,6 +115,151 @@ function hasAIGeneratedCacheMetadata(item: {
     item.metadata?.taskId &&
     (item.metadata.prompt || item.metadata.model || item.metadata.params)
   );
+}
+
+function isInternalLibraryExcludedCache(item: Pick<CachedMedia, 'metadata'>): boolean {
+  return item.metadata?.source === 'video-frame';
+}
+
+function getNormalizedClipId(asset: Pick<Asset, 'clipId'>): string | undefined {
+  const clipId = typeof asset.clipId === 'string' ? asset.clipId.trim() : '';
+  return clipId || undefined;
+}
+
+function getAudioAssetIdentityKeys(asset: Pick<Asset, 'clipId' | 'contentHash' | 'url'>): string[] {
+  const keys: string[] = [];
+  const clipId = getNormalizedClipId(asset);
+  const contentHash = getAssetContentHash(asset);
+  const normalizedUrl = normalizeAssetUrl(asset.url);
+
+  if (clipId) {
+    keys.push(`clip:${clipId}`);
+  }
+  if (contentHash) {
+    keys.push(`hash:${contentHash}`);
+  }
+  if (normalizedUrl) {
+    keys.push(`url:${normalizedUrl}`);
+  }
+
+  return keys.length > 0 ? keys : [`url:${asset.url}`];
+}
+
+function getAudioAssetRepresentativeScore(asset: Asset): number {
+  let score = 0;
+
+  if (asset.source === AssetSourceEnum.AI_GENERATED) score += 50;
+  if (!isUnifiedCacheAsset(asset)) score += 100;
+  if (asset.thumbnail) score += 20;
+  if (typeof asset.duration === 'number' && Number.isFinite(asset.duration) && asset.duration > 0) score += 10;
+  if (asset.clipId) score += 8;
+  if (asset.contentHash) score += 4;
+  if (asset.providerTaskId) score += 2;
+
+  return score;
+}
+
+function mergeAudioAssetMetadata(preferred: Asset, fallback: Asset): Asset {
+  const mergedUrls = new Set([
+    ...(preferred.dedupeUrls || []),
+    ...(fallback.dedupeUrls || []),
+    normalizeAssetUrl(preferred.url),
+    normalizeAssetUrl(fallback.url),
+  ]);
+  const mergedAssetIds = new Set([
+    ...(preferred.dedupeAssetIds || []),
+    ...(fallback.dedupeAssetIds || []),
+    ...(isUnifiedCacheAsset(preferred) ? [] : [preferred.id]),
+    ...(isUnifiedCacheAsset(fallback) ? [] : [fallback.id]),
+  ]);
+
+  return {
+    ...fallback,
+    ...preferred,
+    id: preferred.id,
+    url: preferred.url,
+    name: preferred.name || fallback.name,
+    mimeType: preferred.mimeType || fallback.mimeType,
+    createdAt: Math.max(preferred.createdAt, fallback.createdAt),
+    size: preferred.size || fallback.size,
+    contentHash: getAssetContentHash(preferred) || getAssetContentHash(fallback),
+    thumbnail: preferred.thumbnail || fallback.thumbnail,
+    duration: preferred.duration ?? fallback.duration,
+    taskId: preferred.taskId || fallback.taskId,
+    providerTaskId:
+      preferred.providerTaskId ||
+      fallback.providerTaskId ||
+      preferred.taskId ||
+      fallback.taskId,
+    clipId: preferred.clipId || fallback.clipId,
+    prompt: preferred.prompt || fallback.prompt,
+    modelName: preferred.modelName || fallback.modelName,
+    dedupeUrls: Array.from(mergedUrls),
+    dedupeAssetIds: Array.from(mergedAssetIds),
+  };
+}
+
+function combineAudioAssets(existing: Asset, candidate: Asset): Asset {
+  const existingScore = getAudioAssetRepresentativeScore(existing);
+  const candidateScore = getAudioAssetRepresentativeScore(candidate);
+
+  if (candidateScore > existingScore) {
+    return mergeAudioAssetMetadata(candidate, existing);
+  }
+  if (candidateScore < existingScore) {
+    return mergeAudioAssetMetadata(existing, candidate);
+  }
+  if (candidate.createdAt > existing.createdAt) {
+    return mergeAudioAssetMetadata(candidate, existing);
+  }
+  return mergeAudioAssetMetadata(existing, candidate);
+}
+
+function mergeAIGeneratedAudioAssets(assets: Asset[]): Asset[] {
+  const groups: Array<{
+    representative: Asset;
+    members: Asset[];
+    keys: Set<string>;
+  }> = [];
+
+  for (const asset of assets) {
+    const identityKeys = getAudioAssetIdentityKeys(asset);
+    const matchedIndexes = groups
+      .map((group, index) => (
+        identityKeys.some((key) => group.keys.has(key)) ? index : -1
+      ))
+      .filter((index) => index >= 0);
+
+    if (matchedIndexes.length === 0) {
+      groups.push({
+        representative: asset,
+        members: [asset],
+        keys: new Set(identityKeys),
+      });
+      continue;
+    }
+
+    const primaryGroup = groups[matchedIndexes[0]];
+    primaryGroup.representative = combineAudioAssets(primaryGroup.representative, asset);
+    primaryGroup.members.push(asset);
+    identityKeys.forEach((key) => primaryGroup.keys.add(key));
+
+    const secondaryIndexes = matchedIndexes.slice(1).sort((left, right) => right - left);
+    for (const index of secondaryIndexes) {
+      const [mergedGroup] = groups.splice(index, 1);
+      if (!mergedGroup) {
+        continue;
+      }
+      primaryGroup.representative = combineAudioAssets(
+        primaryGroup.representative,
+        mergedGroup.representative
+      );
+      mergedGroup.members.forEach((member) => primaryGroup.members.push(member));
+      mergedGroup.keys.forEach((key) => primaryGroup.keys.add(key));
+    }
+  }
+
+  return groups.map((group) => group.representative);
 }
 
 function mergeLocalAssets(assets: Asset[]): Asset[] {
@@ -211,6 +366,8 @@ export function AssetProvider({ children }: AssetProviderProps) {
 
   // ref 供初始化 effect 延迟调用 loadAssets
   const loadAssetsRef = useRef<(() => void) | null>(null);
+  const loadAssetsPromiseRef = useRef<Promise<void> | null>(null);
+  const lastSuccessfulLoadRef = useRef<{ loadedAt: number; assetCount: number } | null>(null);
 
   /**
    * Initialize service on mount
@@ -242,14 +399,12 @@ export function AssetProvider({ children }: AssetProviderProps) {
    * Convert completed task to Asset
    * 将已完成的任务转换为素材
    */
-  const taskToAsset = useCallback((task: {
-    id: string;
-    type: TaskType;
-    result: { url: string; format?: string; size?: number; previewImageUrl?: string; title?: string };
-    params: { prompt?: string; model?: string; title?: string };
-    completedAt?: number;
-    createdAt: number;
-  }): Asset => {
+  const taskToAssets = useCallback((task: AssetTaskRecord): Asset[] => {
+    const result = task.result;
+    if (!result) {
+      return [];
+    }
+
     const assetType = task.type === TaskType.IMAGE
       ? AssetTypeEnum.IMAGE
       : task.type === TaskType.AUDIO
@@ -258,30 +413,92 @@ export function AssetProvider({ children }: AssetProviderProps) {
 
     const mimeType = task.type === TaskType.AUDIO
       ? 'audio/mpeg'
-      : task.result.format === 'mp4'
+      : result.format === 'mp4'
       ? 'video/mp4'
-      : task.result.format === 'webm'
+      : result.format === 'webm'
       ? 'video/webm'
-      : `image/${task.result.format || 'png'}`;
+      : `image/${result.format || 'png'}`;
 
-    // 音频优先用 result.title / params.title 作为名称
+    if (task.type === TaskType.AUDIO) {
+      const clipAssets = (result.clips || [])
+        .map((clip, index): Asset | null => {
+          const audioUrl =
+            typeof clip.audioUrl === 'string' && clip.audioUrl.trim()
+              ? clip.audioUrl
+              : result.urls?.[index];
+          if (!audioUrl) {
+            return null;
+          }
+
+          const fallbackBaseName =
+            result.title ||
+            task.params.title ||
+            task.params.prompt?.substring(0, 30) ||
+            'AI音频';
+          const clipKey = clip.clipId || clip.id || String(index);
+          const clipDuration =
+            typeof clip.duration === 'number' ? clip.duration : result.duration;
+
+          return {
+            id: `${task.id}::${clipKey}`,
+            taskId: task.id,
+            type: AssetTypeEnum.AUDIO,
+            source: AssetSourceEnum.AI_GENERATED,
+            url: audioUrl,
+            name:
+              clip.title ||
+              ((result.clips?.length || result.urls?.length || 0) > 1
+                ? `${fallbackBaseName} ${index + 1}`
+                : fallbackBaseName),
+            mimeType,
+            createdAt: task.completedAt || task.createdAt,
+            size: result.size,
+            prompt: task.params.prompt,
+            modelName: task.params.model,
+            duration: clipDuration,
+            clipId: clip.clipId || clip.id,
+            providerTaskId: result.providerTaskId || task.remoteId || task.id,
+            thumbnail:
+              clip.imageLargeUrl ||
+              clip.imageUrl ||
+              result.previewImageUrl,
+          };
+        })
+        .filter((asset): asset is Asset => asset !== null);
+
+      if (clipAssets.length > 0) {
+        return clipAssets;
+      }
+    }
+
     const name = task.type === TaskType.AUDIO
-      ? (task.result.title || task.params.title || task.params.prompt?.substring(0, 30) || 'AI音频')
+      ? (result.title || task.params.title || task.params.prompt?.substring(0, 30) || 'AI音频')
       : (task.params.prompt?.substring(0, 30) || 'AI生成');
 
-    return {
+    return [{
       id: task.id,
+      taskId: task.id,
       type: assetType,
       source: AssetSourceEnum.AI_GENERATED,
-      url: task.result.url,
+      url: result.url,
       name,
       mimeType,
       createdAt: task.completedAt || task.createdAt,
-      size: task.result.size,
+      size: result.size,
       prompt: task.params.prompt,
       modelName: task.params.model,
-      ...(task.result.previewImageUrl && { thumbnail: task.result.previewImageUrl }),
-    };
+      duration:
+        task.type === TaskType.AUDIO ? result.duration : undefined,
+      providerTaskId:
+        task.type === TaskType.AUDIO
+          ? result.providerTaskId || task.remoteId || task.id
+          : undefined,
+      clipId:
+        task.type === TaskType.AUDIO
+          ? result.primaryClipId || result.clipIds?.[0]
+          : undefined,
+      ...(result.previewImageUrl && { thumbnail: result.previewImageUrl }),
+    }];
   }, []);
 
   /**
@@ -291,13 +508,14 @@ export function AssetProvider({ children }: AssetProviderProps) {
    */
   const getAssetsFromCacheStorage = useCallback(async (
     taskContext?: CacheAssetTaskContext
-  ): Promise<Asset[]> => {
+  ): Promise<CacheAssetLoadResult> => {
     try {
       // 直接从 IndexedDB 获取所有缓存媒体的元数据
       // 这比遍历 Cache Storage 快得多
       const cachedMediaList = await unifiedCacheService.getAllCachedMedia();
 
       const assets: Asset[] = [];
+      const metadataByNormalizedUrl = new Map<string, CachedMedia>();
       
       for (const item of cachedMediaList) {
         // 统一使用 pathname
@@ -315,7 +533,12 @@ export function AssetProvider({ children }: AssetProviderProps) {
         
         if (!isAituCache && !isAssetLibrary && !isAIGeneratedAudio) continue;
 
+        // 视频分析 / 爆款视频工具生成的帧截图属于内部工作缓存，
+        // 不能混入素材库，也不能参与本地素材去重，否则会导致选中与插入错位。
+        if (isInternalLibraryExcludedCache(item)) continue;
+
         const normalizedPathname = normalizeAssetUrl(pathname);
+        metadataByNormalizedUrl.set(normalizedPathname, item);
         const isDuplicatedByCompletedTask = Boolean(
           taskContext &&
           (
@@ -328,8 +551,8 @@ export function AssetProvider({ children }: AssetProviderProps) {
 
         const filename = pathname.split('/').pop() || '';
 
-        // 跳过辅助缓存条目（如音频封面图 *-cover.png）
-        if (/-cover\.\w+$/i.test(filename)) continue;
+        // 跳过辅助缓存条目（如音频封面图 *-cover.png / *-cover_1.jpg）
+        if (/-cover(?:_\d+)?\.\w+$/i.test(filename)) continue;
 
         const isVideo = item.type === 'video' ||
                         pathname.includes('/video/') ||
@@ -371,14 +594,33 @@ export function AssetProvider({ children }: AssetProviderProps) {
           createdAt: item.cachedAt,
           size: item.size,
           contentHash: item.contentHash || getAssetContentHash({ url: normalizedPathname }),
+          taskId: item.metadata?.taskId,
+          providerTaskId:
+            typeof item.metadata?.providerTaskId === 'string'
+              ? item.metadata.providerTaskId
+              : item.metadata?.taskId,
+          clipId:
+            typeof item.metadata?.clipId === 'string'
+              ? item.metadata.clipId
+              : undefined,
+          duration:
+            typeof item.metadata?.duration === 'number'
+              ? item.metadata.duration
+              : undefined,
           ...(thumbnail && { thumbnail }),
         });
       }
       
-      return assets;
+      return {
+        assets,
+        metadataByNormalizedUrl,
+      };
     } catch (error) {
       console.error('[AssetContext] Failed to get assets from IndexedDB:', error);
-      return [];
+      return {
+        assets: [],
+        metadataByNormalizedUrl: new Map(),
+      };
     }
   }, []);
 
@@ -388,125 +630,191 @@ export function AssetProvider({ children }: AssetProviderProps) {
    * 合并本地上传的素材、任务队列中已完成的 AI 生成任务、以及 Cache Storage 中的媒体
    */
   const loadAssets = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+    const now = Date.now();
+    const lastSuccessfulLoad = lastSuccessfulLoadRef.current;
+    const cachedAgeMs =
+      lastSuccessfulLoad ? now - lastSuccessfulLoad.loadedAt : null;
 
-    try {
-      // 1. 加载本地上传的素材（只包含 LOCAL 来源）
-      const localAssets = await assetStorageService.getAllAssets();
+    if (loadAssetsPromiseRef.current) {
+      return loadAssetsPromiseRef.current;
+    }
 
-      // 2. 从任务队列获取已完成的 AI 生成任务
-      // 统一从 IndexedDB 直接读取，SW 模式和降级模式使用同一个数据库
-      const completedTasks = await taskStorageReader.getAllTasks({ status: TaskStatus.COMPLETED });
-      const aiAssets = completedTasks
-        .filter((task): task is typeof task & { result: NonNullable<typeof task.result> } =>
-          (task.type === TaskType.IMAGE || task.type === TaskType.VIDEO || task.type === TaskType.AUDIO) &&
-          !!task.result?.url
-        )
-        .map(taskToAsset);
-      const aiAssetIds = new Set(aiAssets.map(asset => asset.id));
-      const aiAssetUrls = new Set(aiAssets.map(asset => normalizeAssetUrl(asset.url)));
+    if (cachedAgeMs !== null && cachedAgeMs < LOAD_ASSETS_CACHE_TTL_MS) {
+      return;
+    }
 
-      // 3. 从 Cache Storage 获取媒体（优先级最低，用于补充）
-      const cacheStorageAssets = await getAssetsFromCacheStorage({
-        completedTaskIds: aiAssetIds,
-        completedTaskUrls: aiAssetUrls,
-      });
-      const localCacheAssets = cacheStorageAssets.filter(
-        asset => asset.source === AssetSourceEnum.LOCAL
-      );
-      const generatedCacheAssets = cacheStorageAssets.filter(
-        asset => asset.source === AssetSourceEnum.AI_GENERATED
-      );
+    const run = (async () => {
+      setLoading(true);
+      setError(null);
 
-      // 4. 本地来源按内容去重；AI 结果保持独立
-      const groupedLocalAssets = mergeLocalAssets([
-        ...localAssets,
-        ...localCacheAssets,
-      ]);
-      const supplementalGeneratedAssets = generatedCacheAssets.filter(
-        asset => !aiAssetUrls.has(normalizeAssetUrl(asset.url))
-      );
+      try {
+        // 1. 加载本地上传的素材（只包含 LOCAL 来源）
+        const localAssets = await assetStorageService.getAllAssets();
 
-      // 5. 合并所有来源，按创建时间倒序排列
-      const allAssets = [...groupedLocalAssets, ...supplementalGeneratedAssets, ...aiAssets].sort(
-        (a, b) => b.createdAt - a.createdAt
-      );
+        // 2. 从任务队列获取已完成的 AI 生成任务
+        // 统一从 IndexedDB 直接读取，SW 模式和降级模式使用同一个数据库
+        // includeArchived: 归档任务的媒体仍在 Cache Storage 中，需要读取元数据
+        const completedTasks = await taskStorageReader.getAssetTasks({ includeArchived: true });
+        const preliminaryAiAssets = completedTasks.flatMap(taskToAssets);
+        const completedTaskIds = new Set(completedTasks.map(task => task.id));
+        const aiAssetUrls = new Set(preliminaryAiAssets.map(asset => normalizeAssetUrl(asset.url)));
 
-      setAssets(allAssets);
+        // 3. 从 Cache Storage 获取媒体（优先级最低，用于补充）
+        const {
+          assets: cacheStorageAssets,
+          metadataByNormalizedUrl,
+        } = await getAssetsFromCacheStorage({
+          completedTaskIds,
+          completedTaskUrls: aiAssetUrls,
+        });
+        const aiAssets = preliminaryAiAssets.map((asset) => {
+          const cachedMetadata = metadataByNormalizedUrl.get(normalizeAssetUrl(asset.url));
+          const cachedDuration =
+            typeof cachedMetadata?.metadata?.duration === 'number'
+              ? cachedMetadata.metadata.duration
+              : undefined;
+          const cachedClipId =
+            typeof cachedMetadata?.metadata?.clipId === 'string'
+              ? cachedMetadata.metadata.clipId
+              : undefined;
+          const cachedProviderTaskId =
+            typeof cachedMetadata?.metadata?.providerTaskId === 'string'
+              ? cachedMetadata.metadata.providerTaskId
+              : cachedMetadata?.metadata?.taskId;
 
-      // 7. 延迟异步填充缺失的文件大小（不阻塞加载）
-      // 使用 requestIdleCallback 在浏览器空闲时执行
-      const fillMissingSizes = () => {
-        const assetsNeedingSize = allAssets.filter(a => !a.size || a.size === 0);
-        if (assetsNeedingSize.length === 0) return;
+          return {
+            ...asset,
+            contentHash:
+              getAssetContentHash(asset) || cachedMetadata?.contentHash,
+            duration: asset.duration ?? cachedDuration,
+            clipId: asset.clipId || cachedClipId,
+            providerTaskId: asset.providerTaskId || cachedProviderTaskId,
+            taskId: asset.taskId || cachedMetadata?.metadata?.taskId,
+          };
+        });
+        const localCacheAssets = cacheStorageAssets.filter(
+          asset => asset.source === AssetSourceEnum.LOCAL
+        );
+        const generatedCacheAssets = cacheStorageAssets.filter(
+          asset => asset.source === AssetSourceEnum.AI_GENERATED
+        );
 
-        // 分批获取，每批最多 10 个，避免一次性发起太多请求
-        const batchSize = 10;
-        let currentIndex = 0;
+        // 4. 本地来源按内容去重；AI 结果保持独立
+        const groupedLocalAssets = mergeLocalAssets([
+          ...localAssets,
+          ...localCacheAssets,
+        ]);
+        const supplementalGeneratedAssets = generatedCacheAssets.filter(
+          (asset) => asset.type === AssetTypeEnum.AUDIO || !aiAssetUrls.has(normalizeAssetUrl(asset.url))
+        );
+        const aiAudioAssets = aiAssets.filter((asset) => asset.type === AssetTypeEnum.AUDIO);
+        const generatedAudioAssets = supplementalGeneratedAssets.filter(
+          (asset) => asset.type === AssetTypeEnum.AUDIO
+        );
+        const mergedAIAudioAssets = mergeAIGeneratedAudioAssets([
+          ...aiAudioAssets,
+          ...generatedAudioAssets,
+        ]);
+        const nonAudioGeneratedAssets = supplementalGeneratedAssets.filter(
+          (asset) => asset.type !== AssetTypeEnum.AUDIO
+        );
+        const nonAudioAiAssets = aiAssets.filter(
+          (asset) => asset.type !== AssetTypeEnum.AUDIO
+        );
 
-        const processBatch = async () => {
-          const batch = assetsNeedingSize.slice(currentIndex, currentIndex + batchSize);
-          if (batch.length === 0) return;
+        // 5. 合并所有来源，按创建时间倒序排列
+        const allAssets = [
+          ...groupedLocalAssets,
+          ...nonAudioGeneratedAssets,
+          ...nonAudioAiAssets,
+          ...mergedAIAudioAssets,
+        ].sort(
+          (a, b) => b.createdAt - a.createdAt
+        );
 
-          const sizePromises = batch.map(async (asset) => {
-            const size = await getAssetSizeFromCache(asset.url);
-            return { id: asset.id, size };
-          });
+        setAssets(allAssets);
+        lastSuccessfulLoadRef.current = {
+          loadedAt: Date.now(),
+          assetCount: allAssets.length,
+        };
 
-          const sizeResults = await Promise.all(sizePromises);
-          const sizeMap = new Map(
-            sizeResults
-              .filter(r => r.size !== null && r.size > 0)
-              .map(r => [r.id, r.size as number])
-          );
+        // 7. 延迟异步填充缺失的文件大小（不阻塞加载）
+        // 使用 requestIdleCallback 在浏览器空闲时执行
+        const fillMissingSizes = () => {
+          const assetsNeedingSize = allAssets.filter(a => !a.size || a.size === 0);
+          if (assetsNeedingSize.length === 0) return;
 
-          if (sizeMap.size > 0) {
-            setAssets(prev =>
-              prev.map(asset =>
-                sizeMap.has(asset.id)
-                  ? { ...asset, size: sizeMap.get(asset.id) }
-                  : asset
-              )
+          // 分批获取，每批最多 10 个，避免一次性发起太多请求
+          const batchSize = 10;
+          let currentIndex = 0;
+
+          const processBatch = async () => {
+            const batch = assetsNeedingSize.slice(currentIndex, currentIndex + batchSize);
+            if (batch.length === 0) return;
+
+            const sizePromises = batch.map(async (asset) => {
+              const size = await getAssetSizeFromCache(asset.url);
+              return { id: asset.id, size };
+            });
+
+            const sizeResults = await Promise.all(sizePromises);
+            const sizeMap = new Map(
+              sizeResults
+                .filter(r => r.size !== null && r.size > 0)
+                .map(r => [r.id, r.size as number])
             );
-          }
 
-          currentIndex += batchSize;
-          if (currentIndex < assetsNeedingSize.length) {
-            // 继续处理下一批
-            if ('requestIdleCallback' in window) {
-              (window as Window).requestIdleCallback(processBatch);
-            } else {
-              setTimeout(processBatch, 50);
+            if (sizeMap.size > 0) {
+              setAssets(prev =>
+                prev.map(asset =>
+                  sizeMap.has(asset.id)
+                    ? { ...asset, size: sizeMap.get(asset.id) }
+                    : asset
+                )
+              );
             }
+
+            currentIndex += batchSize;
+            if (currentIndex < assetsNeedingSize.length) {
+              // 继续处理下一批
+              if ('requestIdleCallback' in window) {
+                (window as Window).requestIdleCallback(processBatch);
+              } else {
+                setTimeout(processBatch, 50);
+              }
+            }
+          };
+
+          // 启动第一批
+          if ('requestIdleCallback' in window) {
+            (window as Window).requestIdleCallback(processBatch);
+          } else {
+            setTimeout(processBatch, 100);
           }
         };
 
-        // 启动第一批
+        // 使用 requestIdleCallback 延迟执行，不阻塞加载
         if ('requestIdleCallback' in window) {
-          (window as Window).requestIdleCallback(processBatch);
+          (window as Window).requestIdleCallback(fillMissingSizes, { timeout: 3000 });
         } else {
-          setTimeout(processBatch, 100);
+          setTimeout(fillMissingSizes, 200);
         }
-      };
-
-      // 使用 requestIdleCallback 延迟执行，不阻塞加载
-      if ('requestIdleCallback' in window) {
-        (window as Window).requestIdleCallback(fillMissingSizes, { timeout: 3000 });
-      } else {
-        setTimeout(fillMissingSizes, 200);
+      } catch (err: unknown) {
+        console.error('Failed to load assets:', err);
+        setError(err instanceof Error ? err.message : String(err));
+        MessagePlugin.error({
+          content: '加载素材失败，请刷新页面重试',
+          duration: 3000,
+        });
+      } finally {
+        loadAssetsPromiseRef.current = null;
+        setLoading(false);
       }
-    } catch (err: unknown) {
-      console.error('Failed to load assets:', err);
-      setError(err instanceof Error ? err.message : String(err));
-      MessagePlugin.error({
-        content: '加载素材失败，请刷新页面重试',
-        duration: 3000,
-      });
-    } finally {
-      setLoading(false);
-    }
-  }, [taskToAsset, getAssetsFromCacheStorage]);
+    })();
+
+    loadAssetsPromiseRef.current = run;
+    return run;
+  }, [taskToAssets, getAssetsFromCacheStorage]);
 
   // 供初始化 effect 延迟调用
   loadAssetsRef.current = loadAssets;
@@ -646,7 +954,7 @@ export function AssetProvider({ children }: AssetProviderProps) {
         }
       } else if (asset?.source === AssetSourceEnum.AI_GENERATED) {
         // AI 生成的素材：删除任务 + 清理缓存
-        taskQueueService.deleteTask(id);
+        taskQueueService.deleteTask(asset.taskId || id);
         if (asset.url) {
           await unifiedCacheService.deleteCache(asset.url).catch((e) => {
             console.debug('[AssetContext] AI asset cache delete skipped:', e);
@@ -782,7 +1090,7 @@ export function AssetProvider({ children }: AssetProviderProps) {
       for (const id of aiIds) {
         try {
           const asset = assets.find(a => a.id === id);
-          taskQueueService.deleteTask(id);
+          taskQueueService.deleteTask(asset?.taskId || id);
           if (asset?.url) {
             await unifiedCacheService.deleteCache(asset.url).catch((e) => {
               console.debug('[AssetContext] AI asset cache delete skipped:', e);

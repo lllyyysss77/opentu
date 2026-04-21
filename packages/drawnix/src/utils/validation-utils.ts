@@ -43,8 +43,6 @@ export function validateGenerationParams(
     errors.push('Prompt is required and must be a string');
   } else if (params.prompt.trim().length === 0) {
     errors.push('Prompt cannot be empty');
-  } else if (params.prompt.length > 5000) {
-    errors.push('Prompt must not exceed 5000 characters');
   }
   
   // Validate optional numeric fields
@@ -87,6 +85,23 @@ export function validateGenerationParams(
       if (typeof params.continueAt !== 'number' || params.continueAt < 0) {
         errors.push('continueAt must be a non-negative number');
       }
+    }
+    if (params.infillStartS !== undefined) {
+      if (typeof params.infillStartS !== 'number' || params.infillStartS < 0) {
+        errors.push('infillStartS must be a non-negative number');
+      }
+    }
+    if (params.infillEndS !== undefined) {
+      if (typeof params.infillEndS !== 'number' || params.infillEndS < 0) {
+        errors.push('infillEndS must be a non-negative number');
+      }
+    }
+    if (
+      typeof params.infillStartS === 'number' &&
+      typeof params.infillEndS === 'number' &&
+      params.infillStartS >= params.infillEndS
+    ) {
+      errors.push('infillStartS must be smaller than infillEndS');
     }
     if (
       params.continueClipId !== undefined &&

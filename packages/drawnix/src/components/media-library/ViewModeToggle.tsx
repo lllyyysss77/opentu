@@ -4,10 +4,10 @@
  */
 
 import { memo, useCallback } from 'react';
-import { Tooltip } from 'tdesign-react';
 import { Grid3X3, LayoutGrid, List } from 'lucide-react';
 import type { ViewMode } from '../../types/asset.types';
 import './ViewModeToggle.scss';
+import { HoverTip } from '../shared';
 
 interface ViewModeToggleProps {
   viewMode: ViewMode;
@@ -38,16 +38,18 @@ export const ViewModeToggle = memo<ViewModeToggleProps>(
     return (
       <div className="view-mode-toggle">
         {VIEW_MODE_CONFIG.map(({ mode, icon, label }) => (
-          <Tooltip key={mode} content={label} theme="light">
+          <HoverTip key={mode} content={label}>
             <button
-              className={`view-mode-toggle__btn ${viewMode === mode ? 'view-mode-toggle__btn--active' : ''}`}
+              className={`view-mode-toggle__btn ${
+                viewMode === mode ? 'view-mode-toggle__btn--active' : ''
+              }`}
               onClick={() => handleModeChange(mode)}
               data-track={`view_mode_${mode}`}
               aria-label={label}
             >
               {icon}
             </button>
-          </Tooltip>
+          </HoverTip>
         ))}
       </div>
     );

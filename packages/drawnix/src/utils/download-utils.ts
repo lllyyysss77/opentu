@@ -22,6 +22,69 @@ import type { Task } from '../types/task.types';
 import { TaskType } from '../types/task.types';
 import { applyAudioMetadataToBlob, type AudioDownloadMetadata } from './audio-id3';
 
+export interface SmartDownloadResult {
+  openedCount: number;
+  downloadedCount: number;
+  failedCount: number;
+}
+
+function createDownloadResult(
+  overrides: Partial<SmartDownloadResult> = {}
+): SmartDownloadResult {
+  return {
+    openedCount: 0,
+    downloadedCount: 0,
+    failedCount: 0,
+    ...overrides,
+  };
+}
+
+function isCrossOriginUrl(url: string): boolean {
+  if (typeof window === 'undefined' || typeof window.location === 'undefined') {
+    return /^https?:\/\//i.test(url);
+  }
+
+  try {
+    const resolvedUrl = new URL(url, window.location.href);
+    return resolvedUrl.origin !== window.location.origin;
+  } catch {
+    return false;
+  }
+}
+
+function isLikelyFetchFailure(error: unknown): boolean {
+  if (error instanceof TypeError) {
+    return true;
+  }
+
+  const message = error instanceof Error ? error.message : String(error);
+  return /Failed to fetch|Load failed|NetworkError/i.test(message);
+}
+
+function shouldOpenUrlOnDownloadFailure(url: string, error: unknown): boolean {
+  return isCrossOriginUrl(url) && isLikelyFetchFailure(error);
+}
+
+function openUrlForDownload(url: string): SmartDownloadResult {
+  openInNewTab(url);
+  return createDownloadResult({ openedCount: 1 });
+}
+
+async function runSingleDownloadWithFallback(
+  url: string,
+  download: () => Promise<void>
+): Promise<SmartDownloadResult> {
+  try {
+    await download();
+    return createDownloadResult({ downloadedCount: 1 });
+  } catch (error) {
+    if (shouldOpenUrlOnDownloadFailure(url, error)) {
+      return openUrlForDownload(url);
+    }
+    throw error;
+  }
+}
+
 /**
  * Download a media file with auto-generated filename from prompt
  * For Volces (火山引擎) domains that don't support CORS, opens in new tab instead
@@ -38,34 +101,37 @@ export async function downloadMediaFile(
   format: string,
   fallbackName = 'media',
   audioMetadata?: AudioDownloadMetadata
-): Promise<{ opened: boolean } | void> {
+): Promise<SmartDownloadResult> {
   const normalizedUrl = normalizeImageDataUrl(url);
 
   // For Volces domains (火山引擎), open in new tab due to CORS restrictions
   if (isVolcesDomain(normalizedUrl)) {
-    openInNewTab(normalizedUrl);
-    return { opened: true };
+    return openUrlForDownload(normalizedUrl);
   }
 
   const sanitizedPrompt = sanitizeFilename(prompt);
   const filename = `${sanitizedPrompt || fallbackName}.${format}`;
 
   if (fallbackName === 'audio') {
-    const response = await fetch(url, { referrerPolicy: 'no-referrer' });
-    if (!response.ok) {
-      throw new Error(`Failed to fetch ${url}: ${response.status}`);
-    }
-    const sourceBlob = await response.blob();
-    const blob = await applyAudioMetadataToBlob(
-      sourceBlob,
-      audioMetadata,
-      url
-    );
-    downloadFromBlob(blob, filename);
-    return;
+    return runSingleDownloadWithFallback(normalizedUrl, async () => {
+      const response = await fetch(normalizedUrl, { referrerPolicy: 'no-referrer' });
+      if (!response.ok) {
+        throw new Error(`Failed to fetch ${normalizedUrl}: ${response.status}`);
+      }
+      const sourceBlob = await response.blob();
+      const blob = await applyAudioMetadataToBlob(
+        sourceBlob,
+        audioMetadata,
+        normalizedUrl
+      );
+      downloadFromBlob(blob, filename);
+    });
   }
 
-  return downloadFile(normalizedUrl, filename);
+  return runSingleDownloadWithFallback(
+    normalizedUrl,
+    async () => downloadFile(normalizedUrl, filename)
+  );
 }
 
 export function buildDownloadFilename(
@@ -285,7 +351,7 @@ export async function downloadAsZip(
   items: BatchDownloadItem[],
   zipFilename?: string,
   onProgress?: DownloadProgressCallback
-): Promise<void> {
+): Promise<SmartDownloadResult> {
   if (items.length === 0) {
     throw new Error('No files to download');
   }
@@ -295,6 +361,7 @@ export async function downloadAsZip(
   const finalZipName = zipFilename || `aitu_download_${timestamp}.zip`;
   const seenFilenames = new Map<string, number>();
   let processedCount = 0;
+  let addedCount = 0;
 
   reportProgress(onProgress, 0);
 
@@ -329,6 +396,7 @@ export async function downloadAsZip(
         );
 
         zip.file(filename, blob);
+        addedCount += 1;
       } catch (error) {
         console.error(`Failed to add file to zip:`, error);
       } finally {
@@ -342,6 +410,10 @@ export async function downloadAsZip(
     3 // 并发限制为 3
   );
 
+  if (addedCount === 0) {
+    throw new Error('No files available to download');
+  }
+
   // 生成 ZIP 并下载
   const content = await zip.generateAsync(
     { type: 'blob' },
@@ -351,6 +423,10 @@ export async function downloadAsZip(
   );
   downloadFromBlob(content, finalZipName);
   reportProgress(onProgress, 100);
+  return createDownloadResult({
+    downloadedCount: addedCount,
+    failedCount: items.length - addedCount,
+  });
 }
 
 /**
@@ -364,7 +440,7 @@ export async function smartDownload(
   items: BatchDownloadItem[],
   zipFilename?: string,
   onProgress?: DownloadProgressCallback
-): Promise<void> {
+): Promise<SmartDownloadResult> {
   if (items.length === 0) {
     throw new Error('No files to download');
   }
@@ -373,21 +449,23 @@ export async function smartDownload(
     const item = items[0];
     const assetUrl = item.type === 'image' ? normalizeImageDataUrl(item.url) : item.url;
     if (item.type === 'audio') {
-      const response = await fetch(assetUrl, { referrerPolicy: 'no-referrer' });
-      if (!response.ok) {
-        throw new Error(`Failed to fetch ${assetUrl}: ${response.status}`);
-      }
-      const sourceBlob = await response.blob();
-      const blob = await applyAudioMetadataToBlob(
-        sourceBlob,
-        item.audioMetadata,
-        assetUrl
-      );
-      const ext = getFileExtension(assetUrl, blob.type) || 'mp3';
-      const filename = item.filename || `${item.type}_download.${ext}`;
-      downloadFromBlob(blob, filename);
+      const result = await runSingleDownloadWithFallback(assetUrl, async () => {
+        const response = await fetch(assetUrl, { referrerPolicy: 'no-referrer' });
+        if (!response.ok) {
+          throw new Error(`Failed to fetch ${assetUrl}: ${response.status}`);
+        }
+        const sourceBlob = await response.blob();
+        const blob = await applyAudioMetadataToBlob(
+          sourceBlob,
+          item.audioMetadata,
+          assetUrl
+        );
+        const ext = getFileExtension(assetUrl, blob.type) || 'mp3';
+        const filename = item.filename || `${item.type}_download.${ext}`;
+        downloadFromBlob(blob, filename);
+      });
       reportProgress(onProgress, 100);
-      return;
+      return result;
     }
 
     // Use getFileExtension to detect correct extension (handles SVG, PNG, etc.)
@@ -395,9 +473,13 @@ export async function smartDownload(
       getFileExtension(assetUrl) ||
       (item.type === 'image' ? 'png' : item.type === 'video' ? 'mp4' : 'mp3');
     const filename = item.filename || `${item.type}_download.${ext}`;
-    await downloadFile(assetUrl, filename);
+    const result = await runSingleDownloadWithFallback(
+      assetUrl,
+      async () => downloadFile(assetUrl, filename)
+    );
     reportProgress(onProgress, 100);
+    return result;
   } else {
-    await downloadAsZip(items, zipFilename, onProgress);
+    return downloadAsZip(items, zipFilename, onProgress);
   }
 }

@@ -6,7 +6,7 @@
  * - log/info: 仅在调试模式开启时捕获（用于调试分析）
  */
 
-import { swChannelClient } from '@drawnix/drawnix';
+import { swChannelClient } from '@drawnix/drawnix/runtime';
 
 let isInitialized = false;
 
@@ -36,6 +36,8 @@ interface QueuedLog {
 }
 const logQueue: QueuedLog[] = [];
 let initPromise: Promise<void> | null = null;
+let nextInitRetryAt = 0;
+const INIT_RETRY_COOLDOWN_MS = 15000;
 
 // 保存原始的 console 方法
 const originalConsole = {
@@ -89,18 +91,32 @@ function sendToSW(level: string, message: string, stack?: string) {
     }
   };
 
+  const ensureSWChannelReady = () => {
+    const now = Date.now();
+    if (initPromise || now < nextInitRetryAt) {
+      return;
+    }
+
+    initPromise = swChannelClient.initialize().then((success) => {
+      if (!success) {
+        nextInitRetryAt = Date.now() + INIT_RETRY_COOLDOWN_MS;
+        return;
+      }
+
+      nextInitRetryAt = 0;
+      flushQueue();
+    }).catch(() => {
+      nextInitRetryAt = Date.now() + INIT_RETRY_COOLDOWN_MS;
+    }).finally(() => {
+      initPromise = null;
+    });
+  };
+
   if (swChannelClient.isInitialized()) {
     doSend();
   } else {
     logQueue.push({ level, message, stack });
-    // 触发初始化（复用同一 promise 避免重复调用）
-    if (!initPromise) {
-      initPromise = swChannelClient.initialize().then(() => {
-        flushQueue();
-      }).catch(() => {}).finally(() => {
-        initPromise = null;
-      });
-    }
+    ensureSWChannelReady();
   }
 }
 
@@ -165,9 +181,15 @@ export function initSWConsoleCapture(): void {
         setDebugModeToStorage(enabled);
       });
     } else {
-      // 主动触发连接（SW 需在 load 后注册，此处延迟执行）
-      if (!initPromise) {
-        initPromise = swChannelClient.initialize().then(() => {
+      const now = Date.now();
+      if (!initPromise && now >= nextInitRetryAt) {
+        initPromise = swChannelClient.initialize().then((success) => {
+          if (!success) {
+            nextInitRetryAt = Date.now() + INIT_RETRY_COOLDOWN_MS;
+            return;
+          }
+
+          nextInitRetryAt = 0;
           while (logQueue.length > 0 && swChannelClient.isInitialized()) {
             const item = logQueue.shift()!;
             swChannelClient.reportConsoleLog(
@@ -176,7 +198,9 @@ export function initSWConsoleCapture(): void {
               Date.now()
             ).catch(() => {});
           }
-        }).catch(() => {}).finally(() => {
+        }).catch(() => {
+          nextInitRetryAt = Date.now() + INIT_RETRY_COOLDOWN_MS;
+        }).finally(() => {
           initPromise = null;
         });
       }

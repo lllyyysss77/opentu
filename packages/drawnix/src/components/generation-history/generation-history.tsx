@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { HistoryIcon } from 'tdesign-icons-react';
 import { useI18n } from '../../i18n';
+import { HoverTip } from '../shared';
 import './generation-history.scss';
 
 // 通用历史记录项接口
@@ -81,7 +82,12 @@ export const GenerationHistory: React.FC<GenerationHistoryProps> = ({
             // 视频类型，使用统一的 imageUrl 字段
             item.imageUrl ? (
               <div className="history-video-thumbnail">
-                <video src={item.imageUrl }/>
+                <img
+                  src={item.imageUrl}
+                  alt="Video history thumbnail"
+                  className="history-item-image"
+                  loading="lazy"
+                />
               </div>
 
             ) : (
@@ -92,11 +98,13 @@ export const GenerationHistory: React.FC<GenerationHistoryProps> = ({
           )}
         </div>
         <div className="history-item-info">
-          <div className="history-item-prompt" title={item.prompt}>
-            {item.prompt.length > 25 
-              ? `${item.prompt.slice(0, 25)}...` 
-              : item.prompt}
-          </div>
+          <HoverTip content={item.prompt} showArrow={false}>
+            <div className="history-item-prompt">
+              {item.prompt.length > 25
+                ? `${item.prompt.slice(0, 25)}...`
+                : item.prompt}
+            </div>
+          </HoverTip>
           <div className="history-item-time">
             {new Date(item.timestamp).toLocaleDateString()}
           </div>

@@ -90,7 +90,7 @@ export const PopupFontSizeButton: React.FC<PopupFontSizeButtonProps> = ({
           selected={isOpen}
           visible={true}
           type="button"
-          title={title}
+          tooltip={title}
           aria-label={title}
           onPointerUp={() => setIsOpen(!isOpen)}
         >

@@ -11,14 +11,7 @@ import React, {
   useRef,
   useMemo,
 } from 'react';
-import {
-  MessagePlugin,
-  Dialog,
-  Tooltip,
-  DialogPlugin,
-  Button,
-  Checkbox,
-} from 'tdesign-react';
+import { MessagePlugin, Dialog, Button, Checkbox } from 'tdesign-react';
 import {
   DownloadIcon,
   FilePasteIcon,
@@ -35,6 +28,7 @@ import {
 import { ImageUploadIcon, MediaLibraryIcon } from '../icons';
 import { useI18n } from '../../i18n';
 import { MediaViewer } from '../shared/MediaViewer';
+import { useConfirmDialog } from '../dialog/ConfirmDialog';
 import { useMediaViewer, urlsToMediaItems } from '../../hooks/useMediaViewer';
 import { smartDownload } from '../../utils/download-utils';
 import { useTaskQueue } from '../../hooks/useTaskQueue';
@@ -65,6 +59,7 @@ import {
 import type { ModelConfig } from '../../constants/model-config';
 import './batch-image-generation.scss';
 import { trackMemory } from '../../utils/common';
+import { HoverTip } from '../shared';
 
 // 本地缓存 key
 const BATCH_IMAGE_CACHE_KEY = LS_KEYS_TO_MIGRATE.BATCH_IMAGE_CACHE;
@@ -159,6 +154,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
   onModelRefChange,
 }) => {
   const { language } = useI18n();
+  const { confirm, confirmDialog } = useConfirmDialog();
   const imageModels = useSelectableModels('image');
   const { createTask, tasks: queueTasks } = useTaskQueue();
   const { addAsset, assets: libraryAssets, loadAssets } = useAssets();
@@ -1687,11 +1683,23 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
         filename: item.filename,
       }));
 
-      await smartDownload(downloadItems, zipFilename);
+      const result = await smartDownload(downloadItems, zipFilename);
 
-      MessagePlugin.success(
-        language === 'zh' ? '下载成功' : 'Download complete'
-      );
+      if (result.openedCount > 0 && result.downloadedCount === 0) {
+        MessagePlugin.success(
+          language === 'zh'
+            ? result.openedCount > 1
+              ? `已打开 ${result.openedCount} 个链接，请在新标签页下载`
+              : '资源不支持直接下载，已打开链接'
+            : result.openedCount > 1
+            ? `Opened ${result.openedCount} links for download`
+            : 'Opened link for download'
+        );
+      } else {
+        MessagePlugin.success(
+          language === 'zh' ? '下载成功' : 'Download complete'
+        );
+      }
     } catch (error) {
       console.error('Download failed:', error);
       MessagePlugin.error(language === 'zh' ? '下载失败' : 'Download failed');
@@ -1902,31 +1910,23 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
           ? `${warningMessage}，是否继续？`
           : `${warningMessage}. Continue?`;
 
-      // 使用 DialogPlugin 弹窗确认
-      const dialog = DialogPlugin.confirm({
-        header: language === 'zh' ? '生成提醒' : 'Generation Warning',
-        body: confirmMessage,
-        confirmBtn: language === 'zh' ? '继续生成' : 'Continue',
-        cancelBtn: language === 'zh' ? '取消' : 'Cancel',
-        theme: 'warning',
-        closeBtn: true,
-        onConfirm: () => {
-          dialog.destroy();
+      void confirm({
+        title: language === 'zh' ? '生成提醒' : 'Generation Warning',
+        description: confirmMessage,
+        confirmText: language === 'zh' ? '继续生成' : 'Continue',
+        cancelText: language === 'zh' ? '取消' : 'Cancel',
+        confirmTheme: 'warning',
+      }).then((confirmed) => {
+        if (confirmed) {
           executeSubmit(validTasks);
-        },
-        onCancel: () => {
-          dialog.destroy();
-        },
-        onClose: () => {
-          dialog.destroy();
-        },
+        }
       });
       return;
     }
 
     // 没有超限，直接提交
     executeSubmit(validTasks);
-  }, [tasks, selectedRows, language, executeSubmit, getRowTasksInfo]);
+  }, [confirm, tasks, selectedRows, language, executeSubmit, getRowTasksInfo]);
 
   // 键盘导航和直接输入
   useEffect(() => {
@@ -2643,7 +2643,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
                   {rowInfo.tasks[0].error.message}
                 </span>
                 {rowInfo.tasks[0].error.details?.originalError && (
-                  <Tooltip
+                  <HoverTip
                     content={
                       <div className="error-details-tooltip">
                         <div className="error-details-title">原始错误信息:</div>
@@ -2657,7 +2657,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
                     showArrow={false}
                   >
                     <span className="preview-error-details-link">[详情]</span>
-                  </Tooltip>
+                  </HoverTip>
                 )}
               </div>
             )}
@@ -2736,7 +2736,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
 
           <div className="toolbar-left">
             {/* 1. 数据导入区 - 先下载模板 → 导入Excel → 批量导入图片 */}
-            <Tooltip
+            <HoverTip
               content={language === 'zh' ? '下载模板' : 'Download Template'}
               theme="light"
             >
@@ -2747,8 +2747,8 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
                 onClick={downloadExcelTemplate}
                 data-track="batch_download_template_click"
               />
-            </Tooltip>
-            <Tooltip
+            </HoverTip>
+            <HoverTip
               content={language === 'zh' ? '导入 Excel' : 'Import Excel'}
               theme="light"
             >
@@ -2759,8 +2759,8 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
                 onClick={() => excelImportInputRef.current?.click()}
                 data-track="batch_import_excel_click"
               />
-            </Tooltip>
-            <Tooltip
+            </HoverTip>
+            <HoverTip
               content={
                 language === 'zh' ? '批量导入图片' : 'Batch Import Images'
               }
@@ -2774,12 +2774,12 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
                 data-track="batch_import_images_click"
                 data-track-params={JSON.stringify({ source: 'toolbar' })}
               />
-            </Tooltip>
+            </HoverTip>
 
             <span className="toolbar-divider"></span>
 
             {/* 2. 选择操作区 - 导入后选择要处理的行 */}
-            <Tooltip
+            <HoverTip
               content={language === 'zh' ? '选择失败行' : 'Select Failed Rows'}
               theme="light"
             >
@@ -2790,8 +2790,8 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
                 onClick={selectFailedRows}
                 data-track="batch_select_failed_click"
               />
-            </Tooltip>
-            <Tooltip
+            </HoverTip>
+            <HoverTip
               content={language === 'zh' ? '反选' : 'Invert Selection'}
               theme="light"
             >
@@ -2802,7 +2802,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
                 onClick={invertSelection}
                 data-track="batch_invert_selection_click"
               />
-            </Tooltip>
+            </HoverTip>
 
             <span className="toolbar-divider"></span>
 
@@ -2891,7 +2891,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
             <span className="toolbar-divider"></span>
 
             {!hideLibrarySidebar && !showLibrary && (
-              <Tooltip
+              <HoverTip
                 content={language === 'zh' ? '显示素材库' : 'Show Library'}
                 theme="light"
               >
@@ -2902,7 +2902,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
                   onClick={() => setShowLibrary(true)}
                   data-track="batch_library_show_click"
                 />
-              </Tooltip>
+              </HoverTip>
             )}
           </div>
         </div>
@@ -2920,7 +2920,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
             <thead>
               <tr>
                 <th className="col-checkbox">
-                  <Tooltip
+                  <HoverTip
                     content={
                       selectedInfoText ||
                       (language === 'zh'
@@ -2946,13 +2946,13 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
                         onChange={toggleSelectAll}
                       />
                     </div>
-                  </Tooltip>
+                  </HoverTip>
                 </th>
                 <th className="row-number">#</th>
                 <th className="col-prompt">
                   <div className="th-content">
                     {language === 'zh' ? '提示词' : 'Prompt'}
-                    <Tooltip
+                    <HoverTip
                       content={language === 'zh' ? '向下填充' : 'Fill down'}
                       theme="light"
                     >
@@ -2966,13 +2966,13 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
                         data-track="batch_fill_column_click"
                         data-track-params={JSON.stringify({ column: 'prompt' })}
                       />
-                    </Tooltip>
+                    </HoverTip>
                   </div>
                 </th>
                 <th className="col-size">
                   <div className="th-content">
                     {language === 'zh' ? '尺寸' : 'Size'}
-                    <Tooltip
+                    <HoverTip
                       content={language === 'zh' ? '向下填充' : 'Fill down'}
                       theme="light"
                     >
@@ -2986,13 +2986,13 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
                         data-track="batch_fill_column_click"
                         data-track-params={JSON.stringify({ column: 'size' })}
                       />
-                    </Tooltip>
+                    </HoverTip>
                   </div>
                 </th>
                 <th className="col-images">
                   <div className="th-content">
                     {language === 'zh' ? '参考图片' : 'Ref Images'}
-                    <Tooltip
+                    <HoverTip
                       content={language === 'zh' ? '向下填充' : 'Fill down'}
                       theme="light"
                     >
@@ -3006,13 +3006,13 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
                         data-track="batch_fill_column_click"
                         data-track-params={JSON.stringify({ column: 'images' })}
                       />
-                    </Tooltip>
+                    </HoverTip>
                   </div>
                 </th>
                 <th className="col-count">
                   <div className="th-content">
                     {language === 'zh' ? '数量' : 'Count'}
-                    <Tooltip
+                    <HoverTip
                       content={language === 'zh' ? '向下填充' : 'Fill down'}
                       theme="light"
                     >
@@ -3026,7 +3026,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
                         data-track="batch_fill_column_click"
                         data-track-params={JSON.stringify({ column: 'count' })}
                       />
-                    </Tooltip>
+                    </HoverTip>
                   </div>
                 </th>
                 <th className="col-preview">
@@ -3414,6 +3414,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
           onSelect={handleMediaLibrarySelect}
         />
       )}
+      {confirmDialog}
     </div>
   );
 };

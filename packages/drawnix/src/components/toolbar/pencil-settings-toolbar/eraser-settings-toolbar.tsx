@@ -6,7 +6,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { useBoard } from '@plait-board/react-board';
 import { PlaitBoard } from '@plait/core';
-import { Tooltip, Button } from 'tdesign-react';
+import { Button } from 'tdesign-react';
 import { Circle, Square } from 'lucide-react';
 import { Island } from '../../island';
 import Stack from '../../stack';
@@ -24,6 +24,7 @@ import { updateEraserCursor } from '../../../hooks/usePencilCursor';
 import { CursorPreview } from './cursor-preview';
 import { SizePicker } from './size-picker';
 import './pencil-settings-toolbar.scss';
+import { HoverTip } from '../../shared/hover';
 
 // 预设橡皮擦大小（步长更大，最大256px）
 const ERASER_WIDTH_PRESETS = [16, 32, 48, 64, 96, 128, 192, 256];
@@ -36,7 +37,7 @@ export const EraserSettingsToolbar: React.FC = () => {
   const { appState } = useDrawnix();
   const { t } = useI18n();
   const containerRef = useRef<HTMLDivElement>(null);
-  
+
   // 使用 viewport scale hook 确保工具栏保持在视口内且大小不变
   useViewportScale(containerRef, {
     enablePositionTracking: true,
@@ -46,7 +47,9 @@ export const EraserSettingsToolbar: React.FC = () => {
   // 从 board 获取当前设置
   const settings = getFreehandSettings(board);
   const [eraserSize, setEraserSize] = useState(settings.eraserWidth);
-  const [currentShape, setCurrentShape] = useState<BrushShape>(settings.eraserShape);
+  const [currentShape, setCurrentShape] = useState<BrushShape>(
+    settings.eraserShape
+  );
   // 是否显示光标预览（仅鼠标悬停在工具栏上时）
   const [showCursorPreview, setShowCursorPreview] = useState(false);
 
@@ -61,20 +64,26 @@ export const EraserSettingsToolbar: React.FC = () => {
   }, [board, appState.pointer]);
 
   // 处理橡皮擦大小变化
-  const handleSizeChange = useCallback((size: number) => {
-    setEraserSize(size);
-    setEraserWidth(board, size);
-    // 更新光标
-    updateEraserCursor(board);
-  }, [board]);
+  const handleSizeChange = useCallback(
+    (size: number) => {
+      setEraserSize(size);
+      setEraserWidth(board, size);
+      // 更新光标
+      updateEraserCursor(board);
+    },
+    [board]
+  );
 
   // 处理形状切换
-  const handleShapeChange = useCallback((shape: BrushShape) => {
-    setCurrentShape(shape);
-    setEraserShape(board, shape);
-    // 更新光标
-    updateEraserCursor(board);
-  }, [board]);
+  const handleShapeChange = useCallback(
+    (shape: BrushShape) => {
+      setCurrentShape(shape);
+      setEraserShape(board, shape);
+      // 更新光标
+      updateEraserCursor(board);
+    },
+    [board]
+  );
 
   // 只在选择橡皮擦指针时显示
   if (!isEraserPointer) {
@@ -82,24 +91,26 @@ export const EraserSettingsToolbar: React.FC = () => {
   }
 
   const container = PlaitBoard.getBoardContainer(board);
-  
+
   // 获取当前缩放比例
   const zoom = board.viewport?.zoom ?? 1;
 
   return (
-    <div 
+    <div
       className="pencil-settings-toolbar eraser-settings-toolbar"
       onMouseEnter={() => setShowCursorPreview(true)}
       onMouseLeave={() => setShowCursorPreview(false)}
     >
       {/* 模拟光标预览 */}
       {showCursorPreview && (
-        <CursorPreview color={ERASER_COLOR} size={eraserSize} zoom={zoom} shape={currentShape} />
+        <CursorPreview
+          color={ERASER_COLOR}
+          size={eraserSize}
+          zoom={zoom}
+          shape={currentShape}
+        />
       )}
-      <Island
-        ref={containerRef}
-        padding={1}
-      >
+      <Island ref={containerRef} padding={1}>
         <Stack.Row gap={1} align="center">
           <SizePicker
             size={eraserSize}
@@ -113,26 +124,30 @@ export const EraserSettingsToolbar: React.FC = () => {
           <div className="toolbar-divider" />
           {/* 形状选择器 */}
           <div className="eraser-shape-picker">
-            <Tooltip content={t('toolbar.eraserShape.circle')} theme="light">
+            <HoverTip content={t('toolbar.eraserShape.circle')}>
               <Button
                 variant="text"
                 size="small"
-                className={`eraser-shape-button ${currentShape === BrushShape.circle ? 'active' : ''}`}
+                className={`eraser-shape-button ${
+                  currentShape === BrushShape.circle ? 'active' : ''
+                }`}
                 onClick={() => handleShapeChange(BrushShape.circle)}
               >
                 <Circle size={16} />
               </Button>
-            </Tooltip>
-            <Tooltip content={t('toolbar.eraserShape.square')} theme="light">
+            </HoverTip>
+            <HoverTip content={t('toolbar.eraserShape.square')}>
               <Button
                 variant="text"
                 size="small"
-                className={`eraser-shape-button ${currentShape === BrushShape.square ? 'active' : ''}`}
+                className={`eraser-shape-button ${
+                  currentShape === BrushShape.square ? 'active' : ''
+                }`}
                 onClick={() => handleShapeChange(BrushShape.square)}
               >
                 <Square size={16} />
               </Button>
-            </Tooltip>
+            </HoverTip>
           </div>
         </Stack.Row>
       </Island>

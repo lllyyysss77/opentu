@@ -3,6 +3,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Dialog, Input, Button, MessagePlugin } from 'tdesign-react';
 import { Plus, X, Trash2, Edit2, Check } from 'lucide-react';
 import type { KBTag, KBTagWithCount } from '../../types/knowledge-base.types';
+import { useConfirmDialog } from '../dialog/ConfirmDialog';
+import { HoverTip } from '../shared';
 import './kb-tag-management-dialog.scss';
 
 interface KBTagManagementDialogProps {
@@ -24,6 +26,7 @@ export const KBTagManagementDialog: React.FC<KBTagManagementDialogProps> = ({
   onDeleteTag,
   onSelectTag,
 }) => {
+  const { confirm, confirmDialog } = useConfirmDialog();
   const [isCreating, setIsCreating] = useState(false);
   const [newTagName, setNewTagName] = useState('');
   const [editingTagId, setEditingTagId] = useState<string | null>(null);
@@ -70,6 +73,17 @@ export const KBTagManagementDialog: React.FC<KBTagManagementDialogProps> = ({
   const handleDelete = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     try {
+      const tag = allTags.find((item) => item.id === id);
+      const confirmed = await confirm({
+        title: '确认删除标签',
+        description: `确定要删除标签「${tag?.name || '未命名标签'}」吗？此操作不可撤销。`,
+        confirmText: '删除',
+        cancelText: '取消',
+        danger: true,
+      });
+      if (!confirmed) {
+        return;
+      }
       await onDeleteTag(id);
       MessagePlugin.success('标签删除成功');
     } catch (error) {
@@ -166,26 +180,29 @@ export const KBTagManagementDialog: React.FC<KBTagManagementDialogProps> = ({
                 </span>
                 
                 <div className="kb-tag-item__actions">
-                  <button 
-                    className="kb-tag-item__action-btn"
-                    onClick={(e) => startEditing(e, tag)}
-                    title="重命名"
-                  >
-                    <Edit2 size={12} />
-                  </button>
-                  <button 
-                    className="kb-tag-item__action-btn kb-tag-item__action-btn--delete"
-                    onClick={(e) => handleDelete(e, tag.id)}
-                    title="删除"
-                  >
-                    <Trash2 size={12} />
-                  </button>
+                  <HoverTip content="重命名" showArrow={false}>
+                    <button
+                      className="kb-tag-item__action-btn"
+                      onClick={(e) => startEditing(e, tag)}
+                    >
+                      <Edit2 size={12} />
+                    </button>
+                  </HoverTip>
+                  <HoverTip content="删除" showArrow={false}>
+                    <button
+                      className="kb-tag-item__action-btn kb-tag-item__action-btn--delete"
+                      onClick={(e) => handleDelete(e, tag.id)}
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </HoverTip>
                 </div>
               </>
             )}
           </div>
         ))}
       </div>
+      {confirmDialog}
     </Dialog>
   );
 };

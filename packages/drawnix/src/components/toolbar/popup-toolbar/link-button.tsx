@@ -24,7 +24,7 @@ export const PopupLinkButton: React.FC<PopupLinkButtonProps> = ({
       visible={true}
       icon={<LinkIcon />}
       type="button"
-      title={title}
+      tooltip={title}
       aria-label={title}
       onPointerUp={() => {
         const pbElement = getSelectedElements(board)[0];

@@ -57,7 +57,7 @@ export const PopupFontColorButton: React.FC<PopupFontColorButtonProps> = ({
           visible={true}
           icon={fontColorIcon}
           type="button"
-          title={title}
+          tooltip={title}
           aria-label={title}
           onPointerUp={() => {
             setIsFontColorPropertyOpen(!isFontColorPropertyOpen);

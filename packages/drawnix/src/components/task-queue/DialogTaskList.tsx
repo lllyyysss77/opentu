@@ -13,7 +13,7 @@ import { Task, TaskType, TaskStatus } from '../../types/task.types';
 import { useDrawnix, DialogType } from '../../hooks/use-drawnix';
 import { insertImageFromUrl } from '../../data/image';
 import { insertVideoFromUrl } from '../../data/video';
-import { MessagePlugin, Dialog, Input, Button, Tooltip } from 'tdesign-react';
+import { MessagePlugin, Input, Button } from 'tdesign-react';
 import { SearchIcon, DeleteIcon } from 'tdesign-icons-react';
 import { normalizeImageDataUrl } from '@aitu/utils';
 import {
@@ -21,11 +21,13 @@ import {
   smartDownload,
 } from '../../utils/download-utils';
 import { CharacterCreateDialog } from '../character/CharacterCreateDialog';
+import { ConfirmDialog } from '../dialog/ConfirmDialog';
 import {
   UnifiedMediaViewer,
   type MediaItem as UnifiedMediaItem,
 } from '../shared/media-preview';
 import './dialog-task-list.scss';
+import { HoverTip } from '../shared';
 
 export interface DialogTaskListProps {
   /** Task IDs to display. If not provided, shows all tasks (subject to taskType filter) */
@@ -181,16 +183,24 @@ export const DialogTaskList: React.FC<DialogTaskListProps> = ({
     if (downloadItems.length === 0) return;
 
     try {
-      await smartDownload(downloadItems);
-      MessagePlugin.success(
-        task.type === TaskType.AUDIO
-          ? downloadItems.length > 1
-            ? '多条音频已开始下载'
-            : '音频下载成功'
-          : downloadItems.length > 1
-          ? '多图已开始下载'
-          : '下载成功'
-      );
+      const result = await smartDownload(downloadItems);
+      if (result.openedCount > 0 && result.downloadedCount === 0) {
+        MessagePlugin.success(
+          result.openedCount > 1
+            ? `已打开 ${result.openedCount} 个链接，请在新标签页下载`
+            : '资源不支持直接下载，已打开链接'
+        );
+      } else {
+        MessagePlugin.success(
+          task.type === TaskType.AUDIO
+            ? downloadItems.length > 1
+              ? '多条音频已开始下载'
+              : '音频下载成功'
+            : downloadItems.length > 1
+            ? '多图已开始下载'
+            : '下载成功'
+        );
+      }
     } catch (error) {
       console.error('Download failed:', error);
       MessagePlugin.error('下载失败，请稍后重试');
@@ -351,8 +361,8 @@ export const DialogTaskList: React.FC<DialogTaskListProps> = ({
         const fallbackUrls = task.result!.urls?.length
           ? task.result!.urls
           : task.result!.url
-            ? [task.result!.url]
-            : [];
+          ? [task.result!.url]
+          : [];
         const mediaItems =
           audioItems.length > 0
             ? audioItems
@@ -380,21 +390,28 @@ export const DialogTaskList: React.FC<DialogTaskListProps> = ({
           ? task.result!.urls
           : [task.result!.url];
         const mediaType =
-          task.type === TaskType.VIDEO ? ('video' as const) : ('image' as const);
+          task.type === TaskType.VIDEO
+            ? ('video' as const)
+            : ('image' as const);
 
         for (let i = 0; i < urls.length; i++) {
           items.push({
             id: urls.length > 1 ? `${task.id}-${i}` : task.id,
-            url: mediaType === 'image' ? normalizeImageDataUrl(urls[i]) : urls[i],
+            url:
+              mediaType === 'image' ? normalizeImageDataUrl(urls[i]) : urls[i],
             type: mediaType,
-            title: urls.length > 1 ? `${title} (${i + 1}/${urls.length})` : title,
+            title:
+              urls.length > 1 ? `${title} (${i + 1}/${urls.length})` : title,
           });
         }
       }
 
       const taskItemCount = items.length - startIndex;
       configMap.set(task.id, {
-        mode: task.type === TaskType.AUDIO && taskItemCount > 1 ? 'compare' : 'single',
+        mode:
+          task.type === TaskType.AUDIO && taskItemCount > 1
+            ? 'compare'
+            : 'single',
         index:
           task.type === TaskType.AUDIO && taskItemCount > 1
             ? Array.from(
@@ -440,7 +457,7 @@ export const DialogTaskList: React.FC<DialogTaskListProps> = ({
             <h4>生成任务 ({displayTotalCount})</h4>
             <div className="dialog-task-list__header-actions">
               {failedTaskCount > 0 && (
-                <Tooltip
+                <HoverTip
                   content={`清除全部失败任务 (${failedTaskCount})`}
                   theme="light"
                 >
@@ -450,7 +467,7 @@ export const DialogTaskList: React.FC<DialogTaskListProps> = ({
                     icon={<DeleteIcon />}
                     onClick={() => setShowClearFailedConfirm(true)}
                   />
-                </Tooltip>
+                </HoverTip>
               )}
             </div>
           </div>
@@ -495,26 +512,28 @@ export const DialogTaskList: React.FC<DialogTaskListProps> = ({
       </div>
 
       {/* Delete Confirmation Dialog */}
-      <Dialog
-        visible={showDeleteConfirm}
-        header="确认删除"
-        onClose={() => setShowDeleteConfirm(false)}
+      <ConfirmDialog
+        open={showDeleteConfirm}
+        title="确认删除"
+        description="确定要删除此任务吗？此操作无法撤销。"
+        confirmText="删除"
+        cancelText="取消"
+        danger
+        onOpenChange={setShowDeleteConfirm}
         onConfirm={confirmDelete}
-        onCancel={() => setShowDeleteConfirm(false)}
-      >
-        确定要删除此任务吗？此操作无法撤销。
-      </Dialog>
+      />
 
       {/* Clear Failed Tasks Confirmation Dialog */}
-      <Dialog
-        visible={showClearFailedConfirm}
-        header="清除失败任务"
-        onClose={() => setShowClearFailedConfirm(false)}
+      <ConfirmDialog
+        open={showClearFailedConfirm}
+        title="清除失败任务"
+        description={`确定要清除全部 ${failedTaskCount} 个失败任务吗？此操作无法撤销。`}
+        confirmText="清除"
+        cancelText="取消"
+        danger
+        onOpenChange={setShowClearFailedConfirm}
         onConfirm={handleClearFailed}
-        onCancel={() => setShowClearFailedConfirm(false)}
-      >
-        确定要清除全部 {failedTaskCount} 个失败任务吗？此操作无法撤销。
-      </Dialog>
+      />
 
       {/* Unified Preview */}
       <UnifiedMediaViewer

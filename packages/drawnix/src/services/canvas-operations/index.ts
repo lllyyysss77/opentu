@@ -30,10 +30,12 @@ export {
   executeCanvasInsertion,
   setCanvasBoard,
   getCanvasBoard,
-  parseSizeToPixels,
 } from './canvas-insertion';
+export { parseSizeToPixels } from '../../utils/size-ratio';
 export type {
   ContentType,
   InsertionItem,
   CanvasInsertionParams,
+  CanvasInsertionResultData,
+  CanvasInsertionResultItem,
 } from './canvas-insertion';

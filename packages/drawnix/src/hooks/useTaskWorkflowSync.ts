@@ -11,7 +11,7 @@
 
 import { useEffect, useRef } from 'react';
 import { taskQueueService } from '../services/task-queue-service';
-import { TaskStatus } from '../types/shared/core.types';
+import { TaskStatus, TaskType } from '../types/shared/core.types';
 import type { WorkflowMessageData } from '../types/chat.types';
 import { WorkZoneTransforms, isWorkZoneElement } from '../plugins/with-workzone';
 import { PlaitBoard } from '@plait/core';
@@ -97,6 +97,8 @@ function processViaContext(
   const taskStepMap = buildTaskStepMap(workflow?.steps);
   const stepId = taskStepMap.get(task.id);
   if (!stepId) return false;
+  const shouldSyncWorkZone =
+    task.type !== TaskType.IMAGE && workflow?.generationType !== 'image';
 
   if (mapped.status === 'running') {
     workflowControl.resumeWorkflow();
@@ -109,7 +111,7 @@ function processViaContext(
     updateWorkflowMessageRef.current(workflowData);
     const board = boardRef.current;
     const workZoneId = workZoneIdRef.current;
-    if (board && workZoneId) {
+    if (shouldSyncWorkZone && board && workZoneId) {
       WorkZoneTransforms.updateWorkflow(board, workZoneId, workflowData);
     }
   }
@@ -130,10 +132,16 @@ function processViaWorkZone(
 ): boolean {
   const board = boardRef.current;
   if (!board) return false;
+  if (task.type === TaskType.IMAGE) {
+    return false;
+  }
 
   for (const element of board.children) {
     if (!isWorkZoneElement(element)) continue;
     const wz = element as PlaitWorkZone;
+    if (wz.workflow.generationType === 'image') {
+      continue;
+    }
     const wzStepMap = buildTaskStepMap(wz.workflow?.steps);
     const wzStepId = wzStepMap.get(task.id);
     if (!wzStepId) continue;
@@ -208,12 +216,15 @@ function processTaskEvent(
   updateWorkflowMessageRef: React.MutableRefObject<(data: WorkflowMessageData) => void>,
   boardRef: React.MutableRefObject<PlaitBoard | null>,
   workZoneIdRef: React.MutableRefObject<string | null>,
+  options?: { logProcessing?: boolean; logUnmatched?: boolean },
 ): boolean {
   const task = event.task;
   const mapped = mapTaskToStepStatus(task);
   if (!mapped) return false;
 
-  console.debug(`[useTaskWorkflowSync] Processing task ${task.id} → ${mapped.status}`);
+  if (options?.logProcessing !== false) {
+    console.debug(`[useTaskWorkflowSync] Processing task ${task.id} → ${mapped.status}`);
+  }
 
   // Primary: update via WorkflowContext
   if (processViaContext(task, mapped, workflowControl, updateWorkflowMessageRef, boardRef, workZoneIdRef)) {
@@ -226,7 +237,9 @@ function processTaskEvent(
     return true;
   }
 
-  console.debug(`[useTaskWorkflowSync] Task ${task.id} not matched to any workflow step (buffering)`);
+  if (options?.logUnmatched !== false) {
+    console.debug(`[useTaskWorkflowSync] Task ${task.id} not matched to any workflow step (buffering)`);
+  }
   return false;
 }
 
@@ -243,28 +256,48 @@ export function useTaskWorkflowSync(options: UseTaskWorkflowSyncOptions): void {
     updateWorkflowMessageRef.current = options.updateWorkflowMessage;
   }, [options.updateWorkflowMessage]);
 
-  const eventBufferRef = useRef<TaskEvent[]>([]);
+  const eventBufferRef = useRef<Map<string, TaskEvent>>(new Map());
   const replayTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const replayStartRef = useRef<number>(0);
   const initialReconciliationDoneRef = useRef(false);
 
   useEffect(() => {
+    const bufferEvent = (event: TaskEvent) => {
+      const buffer = eventBufferRef.current;
+
+      if (!buffer.has(event.task.id) && buffer.size >= MAX_BUFFER_SIZE) {
+        const oldestKey = buffer.keys().next().value;
+        if (oldestKey) {
+          buffer.delete(oldestKey);
+        }
+      }
+
+      buffer.set(event.task.id, event);
+    };
+
     const tryReplayBuffer = () => {
-      const remaining: TaskEvent[] = [];
-      for (const buffered of eventBufferRef.current) {
+      const remaining = new Map<string, TaskEvent>();
+      for (const [taskId, buffered] of eventBufferRef.current.entries()) {
         const handled = processTaskEvent(
-          buffered, workflowControl, updateWorkflowMessageRef, boardRef, workZoneIdRef,
+          buffered,
+          workflowControl,
+          updateWorkflowMessageRef,
+          boardRef,
+          workZoneIdRef,
+          { logProcessing: false, logUnmatched: false }
         );
-        if (!handled) remaining.push(buffered);
+        if (!handled) {
+          remaining.set(taskId, buffered);
+        }
       }
       eventBufferRef.current = remaining;
 
-      if (remaining.length === 0 || Date.now() - replayStartRef.current > MAX_REPLAY_DURATION) {
+      if (remaining.size === 0 || Date.now() - replayStartRef.current > MAX_REPLAY_DURATION) {
         if (replayTimerRef.current) {
           clearInterval(replayTimerRef.current);
           replayTimerRef.current = null;
         }
-        eventBufferRef.current = [];
+        eventBufferRef.current = new Map();
       }
     };
 
@@ -288,14 +321,26 @@ export function useTaskWorkflowSync(options: UseTaskWorkflowSyncOptions): void {
     const subscription = taskQueueService.observeTaskUpdates().subscribe((event) => {
       if (event.type !== 'taskUpdated') return;
 
+      if (
+        event.task.status === TaskStatus.PROCESSING &&
+        eventBufferRef.current.has(event.task.id)
+      ) {
+        bufferEvent(event);
+        if (!replayTimerRef.current) {
+          replayStartRef.current = Date.now();
+          replayTimerRef.current = setInterval(tryReplayBuffer, REPLAY_INTERVAL);
+        }
+        return;
+      }
+
       const handled = processTaskEvent(
         event, workflowControl, updateWorkflowMessageRef, boardRef, workZoneIdRef,
       );
 
-      if (!handled) {
-        if (eventBufferRef.current.length < MAX_BUFFER_SIZE) {
-          eventBufferRef.current.push(event);
-        }
+      if (handled) {
+        eventBufferRef.current.delete(event.task.id);
+      } else {
+        bufferEvent(event);
         if (!replayTimerRef.current) {
           replayStartRef.current = Date.now();
           replayTimerRef.current = setInterval(tryReplayBuffer, REPLAY_INTERVAL);
@@ -309,7 +354,7 @@ export function useTaskWorkflowSync(options: UseTaskWorkflowSyncOptions): void {
         clearInterval(replayTimerRef.current);
         replayTimerRef.current = null;
       }
-      eventBufferRef.current = [];
+      eventBufferRef.current = new Map();
     };
   }, [workflowControl, boardRef, workZoneIdRef]);
 }

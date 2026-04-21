@@ -280,6 +280,7 @@ export async function cacheRemoteUrl(
   options?: {
     source?: 'AI_GENERATED' | 'PLAYBACK_CACHE';
     forceRemoteCache?: boolean;
+    extraMetadata?: Record<string, unknown>;
   }
 ): Promise<string> {
   const normalizedUrl =
@@ -307,7 +308,9 @@ export async function cacheRemoteUrl(
       const guessedLocalUrl =
         cacheSource === 'PLAYBACK_CACHE'
           ? `/__aitu_cache__/audio/${safeTaskId}${guessedSuffix}.${guessedFormat}`
-          : `${AI_GENERATED_AUDIO_URL_PREFIX}${taskId}${guessedSuffix}.${guessedFormat}`;
+          : mediaType === 'audio'
+          ? `${AI_GENERATED_AUDIO_URL_PREFIX}${taskId}${guessedSuffix}.${guessedFormat}`
+          : `/__aitu_cache__/${mediaType}/${taskId}${guessedSuffix}.${guessedFormat}`;
 
       if (await unifiedCacheService.isCached(guessedLocalUrl)) {
         return guessedLocalUrl;
@@ -337,7 +340,9 @@ export async function cacheRemoteUrl(
       const localUrl =
         cacheSource === 'PLAYBACK_CACHE'
           ? `/__aitu_cache__/audio/${safeTaskId}${guessedSuffix}.${finalFormat}`
-          : `${AI_GENERATED_AUDIO_URL_PREFIX}${taskId}${guessedSuffix}.${finalFormat}`;
+          : mediaType === 'audio'
+          ? `${AI_GENERATED_AUDIO_URL_PREFIX}${taskId}${guessedSuffix}.${finalFormat}`
+          : `/__aitu_cache__/${mediaType}/${taskId}${guessedSuffix}.${finalFormat}`;
 
       if (await unifiedCacheService.isCached(localUrl)) {
         return localUrl;
@@ -346,6 +351,7 @@ export async function cacheRemoteUrl(
       await unifiedCacheService.cacheMediaFromBlob(localUrl, blob, mediaType, {
         taskId,
         source: cacheSource,
+        ...options?.extraMetadata,
       });
       return localUrl;
     } catch (error) {
@@ -385,6 +391,7 @@ export async function cacheRemoteUrl(
       await unifiedCacheService.cacheMediaFromBlob(contentAddressedUrl, blob, mediaType, {
         taskId,
         ...(mediaType === 'audio' ? { source: 'AI_GENERATED' } : {}),
+        ...options?.extraMetadata,
       });
       return contentAddressedUrl;
     }

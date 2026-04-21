@@ -5,6 +5,7 @@
 
 import React, { useState, useCallback, useMemo } from 'react';
 import classNames from 'classnames';
+import { HoverTip } from '../../shared/hover';
 import { ToolButton } from '../../tool-button';
 import { Popover, PopoverContent, PopoverTrigger } from '../../popover/popover';
 import { Island } from '../../island';
@@ -78,7 +79,7 @@ export const PopupLayerControlButton: React.FC<PopupLayerControlButtonProps> = (
           visible={true}
           icon={<LayerIcon />}
           type="button"
-          title={title}
+          tooltip={title}
           aria-label={title}
           onPointerUp={() => setIsOpen(!isOpen)}
         />
@@ -86,45 +87,69 @@ export const PopupLayerControlButton: React.FC<PopupLayerControlButtonProps> = (
       <PopoverContent container={container}>
         <Island padding={1} className={classNames(ATTACHED_ELEMENT_CLASS_NAME, 'layer-control-panel')}>
           <div className="layer-actions">
-            <button
-              className={classNames('layer-action-btn', { disabled: !canMoveUp })}
-              onClick={handleBringToFront}
-              disabled={!canMoveUp}
-              title={language === 'zh' ? '置顶' : 'Bring to Front'}
+            <HoverTip
+              content={language === 'zh' ? '置顶' : 'Bring to Front'}
+              showArrow={false}
             >
-              <BringToFrontIcon />
-              <span>{language === 'zh' ? '置顶' : 'Front'}</span>
-            </button>
-            
-            <button
-              className={classNames('layer-action-btn', { disabled: !canMoveUp })}
-              onClick={handleBringForward}
-              disabled={!canMoveUp}
-              title={language === 'zh' ? '上移一层' : 'Bring Forward'}
+              <button
+                className={classNames('layer-action-btn', {
+                  disabled: !canMoveUp,
+                })}
+                onClick={handleBringToFront}
+                disabled={!canMoveUp}
+              >
+                <BringToFrontIcon />
+                <span>{language === 'zh' ? '置顶' : 'Front'}</span>
+              </button>
+            </HoverTip>
+
+            <HoverTip
+              content={language === 'zh' ? '上移一层' : 'Bring Forward'}
+              showArrow={false}
             >
-              <BringForwardIcon />
-              <span>{language === 'zh' ? '上移' : 'Forward'}</span>
-            </button>
-            
-            <button
-              className={classNames('layer-action-btn', { disabled: !canMoveDown })}
-              onClick={handleSendBackward}
-              disabled={!canMoveDown}
-              title={language === 'zh' ? '下移一层' : 'Send Backward'}
+              <button
+                className={classNames('layer-action-btn', {
+                  disabled: !canMoveUp,
+                })}
+                onClick={handleBringForward}
+                disabled={!canMoveUp}
+              >
+                <BringForwardIcon />
+                <span>{language === 'zh' ? '上移' : 'Forward'}</span>
+              </button>
+            </HoverTip>
+
+            <HoverTip
+              content={language === 'zh' ? '下移一层' : 'Send Backward'}
+              showArrow={false}
             >
-              <SendBackwardIcon />
-              <span>{language === 'zh' ? '下移' : 'Backward'}</span>
-            </button>
-            
-            <button
-              className={classNames('layer-action-btn', { disabled: !canMoveDown })}
-              onClick={handleSendToBack}
-              disabled={!canMoveDown}
-              title={language === 'zh' ? '置底' : 'Send to Back'}
+              <button
+                className={classNames('layer-action-btn', {
+                  disabled: !canMoveDown,
+                })}
+                onClick={handleSendBackward}
+                disabled={!canMoveDown}
+              >
+                <SendBackwardIcon />
+                <span>{language === 'zh' ? '下移' : 'Backward'}</span>
+              </button>
+            </HoverTip>
+
+            <HoverTip
+              content={language === 'zh' ? '置底' : 'Send to Back'}
+              showArrow={false}
             >
-              <SendToBackIcon />
-              <span>{language === 'zh' ? '置底' : 'Back'}</span>
-            </button>
+              <button
+                className={classNames('layer-action-btn', {
+                  disabled: !canMoveDown,
+                })}
+                onClick={handleSendToBack}
+                disabled={!canMoveDown}
+              >
+                <SendToBackIcon />
+                <span>{language === 'zh' ? '置底' : 'Back'}</span>
+              </button>
+            </HoverTip>
 
             {layerInfo && (
               <span className="layer-info">

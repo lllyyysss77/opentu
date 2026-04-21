@@ -8,7 +8,10 @@ import packageJson from './package.json';
 import fs from 'fs';
 
 // Read version from public/version.json (shared with web app)
-const versionPath = path.resolve(__dirname, '../../apps/web/public/version.json');
+const versionPath = path.resolve(
+  __dirname,
+  '../../apps/web/public/version.json'
+);
 let appVersion = packageJson.version;
 
 try {
@@ -21,7 +24,10 @@ try {
     }
   }
 } catch (e) {
-  console.warn('[Drawnix] Failed to read shared version.json, falling back to package.json version', e);
+  console.warn(
+    '[Drawnix] Failed to read shared version.json, falling back to package.json version',
+    e
+  );
 }
 
 export default defineConfig({
@@ -62,17 +68,36 @@ export default defineConfig({
       transformMixedEsModules: true,
     },
     lib: {
-      // Could also be a dictionary or array of multiple entry points.
-      entry: 'src/index.ts',
+      entry: {
+        index: 'src/index.ts',
+        runtime: 'src/runtime.ts',
+      },
       name: 'drawnix',
-      fileName: 'index',
+      fileName: (format, entryName) => entryName,
       // Change this to the formats you want to support.
       // Don't forget to update your package.json as well.
       formats: ['es', 'cjs'],
     },
     rollupOptions: {
       // External packages that should not be bundled into your library.
-      external: ['react', 'react-dom', 'react/jsx-runtime', '@plait-board/react-board', '@plait-board/mermaid-to-drawnix', 'classnames', 'open-color', 'mobile-detect', '@floating-ui/react', '@plait/core', '@plait/common', '@plait/draw', '@plait/mind', '@plait/mind', 'roughjs/bin/core', '@plait/text-plugins'],
+      external: [
+        'react',
+        'react-dom',
+        'react/jsx-runtime',
+        '@plait-board/react-board',
+        '@plait-board/mermaid-to-drawnix',
+        'classnames',
+        'open-color',
+        'mobile-detect',
+        '@floating-ui/react',
+        '@plait/core',
+        '@plait/common',
+        '@plait/draw',
+        '@plait/mind',
+        '@plait/mind',
+        'roughjs/bin/core',
+        '@plait/text-plugins',
+      ],
     },
   },
 

@@ -16,11 +16,12 @@ import {
   Download,
   Pencil,
 } from 'lucide-react';
-import { Tooltip, MessagePlugin } from 'tdesign-react';
+import { MessagePlugin } from 'tdesign-react';
 import { normalizeImageDataUrl } from '@aitu/utils';
 import { quickInsert } from '../../../services/canvas-operations';
 import { AudioCover } from '../AudioCover';
 import type { MediaViewportProps, MediaViewportRef } from './types';
+import { HoverPopover } from './HoverPopover';
 import './MediaViewport.scss';
 
 // 稳定的默认值
@@ -81,6 +82,7 @@ export const MediaViewport = forwardRef<MediaViewportRef, MediaViewportProps>(({
 }, ref) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const imageRef = useRef<HTMLImageElement>(null);
   const [imageLoadFailed, setImageLoadFailed] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
@@ -89,6 +91,11 @@ export const MediaViewport = forwardRef<MediaViewportRef, MediaViewportProps>(({
   const [rotation, setRotation] = useState(0); // 旋转角度
   const [flipH, setFlipH] = useState(false); // 水平翻转
   const [flipV, setFlipV] = useState(false); // 垂直翻转
+  const [isMediaHovered, setIsMediaHovered] = useState(false);
+  const [isPromptHovered, setIsPromptHovered] = useState(false);
+  const [isToolbarHovered, setIsToolbarHovered] = useState(false);
+  const promptHideTimerRef = useRef<number | null>(null);
+  const autoFitFrameRef = useRef<number | null>(null);
 
   // 暴露视频控制方法给父组件
   useImperativeHandle(ref, () => ({
@@ -111,6 +118,18 @@ export const MediaViewport = forwardRef<MediaViewportRef, MediaViewportProps>(({
       if (videoRef.current) {
         videoRef.current.pause();
       }
+    },
+    toggleVideoPlayback: () => {
+      if (!videoRef.current) {
+        return;
+      }
+      if (videoRef.current.paused || videoRef.current.ended) {
+        videoRef.current.play().catch(() => {
+          // 忽略自动播放限制错误
+        });
+        return;
+      }
+      videoRef.current.pause();
     },
     setVideoTime: (time: number) => {
       if (videoRef.current) {
@@ -139,14 +158,67 @@ export const MediaViewport = forwardRef<MediaViewportRef, MediaViewportProps>(({
   const toolbarDragStartRef = useRef({ x: 0, y: 0, posX: 0, posY: 0 });
   const isVideo = item?.type === 'video';
   const isAudio = item?.type === 'audio';
+  const promptText = item?.prompt?.trim() || '';
+  const showPrompt =
+    Boolean(promptText) && (isMediaHovered || isPromptHovered) && !isToolbarHovered;
   const mediaUrl = item
     ? (isVideo || isAudio ? item.url : normalizeImageDataUrl(item.url))
     : '';
   const posterUrl = item?.posterUrl ? normalizeImageDataUrl(item.posterUrl) : '';
+  const mediaIdentity = item ? `${item.type}:${item.id || item.url}` : 'empty';
+
+  const clearPromptHideTimer = useCallback(() => {
+    if (promptHideTimerRef.current !== null) {
+      window.clearTimeout(promptHideTimerRef.current);
+      promptHideTimerRef.current = null;
+    }
+  }, []);
+
+  const handleMediaHoverStart = useCallback(() => {
+    clearPromptHideTimer();
+    setIsMediaHovered(true);
+  }, [clearPromptHideTimer]);
+
+  const handleMediaHoverEnd = useCallback(() => {
+    setIsMediaHovered(false);
+    clearPromptHideTimer();
+    promptHideTimerRef.current = window.setTimeout(() => {
+      setIsPromptHovered(false);
+      promptHideTimerRef.current = null;
+    }, 120);
+  }, [clearPromptHideTimer]);
+
+  const handlePromptHoverStart = useCallback(() => {
+    clearPromptHideTimer();
+    setIsPromptHovered(true);
+  }, [clearPromptHideTimer]);
+
+  const handlePromptHoverEnd = useCallback(() => {
+    setIsPromptHovered(false);
+  }, []);
 
   useEffect(() => {
     setImageLoadFailed(false);
-  }, [item?.url]);
+    setIsDragging(false);
+    setLocalPan(panOffset ?? DEFAULT_PAN);
+    setLocalZoom(zoomLevel);
+    setRotation(0);
+    setFlipH(false);
+    setFlipV(false);
+
+    if (autoFitFrameRef.current !== null) {
+      window.cancelAnimationFrame(autoFitFrameRef.current);
+      autoFitFrameRef.current = null;
+    }
+  }, [mediaIdentity]);
+
+  useEffect(() => () => {
+    clearPromptHideTimer();
+    if (autoFitFrameRef.current !== null) {
+      window.cancelAnimationFrame(autoFitFrameRef.current);
+      autoFitFrameRef.current = null;
+    }
+  }, [clearPromptHideTimer]);
 
   // 保存工具栏状态到缓存 - 仅单图模式
   useEffect(() => {
@@ -162,11 +234,97 @@ export const MediaViewport = forwardRef<MediaViewportRef, MediaViewportProps>(({
       if (prev.x === newPan.x && prev.y === newPan.y) return prev;
       return newPan;
     });
-  }, [panOffset?.x, panOffset?.y]);
+  }, [panOffset]);
 
   useEffect(() => {
     setLocalZoom((prev) => (prev === zoomLevel ? prev : zoomLevel));
   }, [zoomLevel]);
+
+  const scheduleAutoFit = useCallback(() => {
+    if (
+      isCompareMode ||
+      isAudio ||
+      !containerRef.current ||
+      (Math.abs(zoomLevel - 1) > 0.001) ||
+      Math.abs((panOffset?.x ?? 0)) > 0.5 ||
+      Math.abs((panOffset?.y ?? 0)) > 0.5
+    ) {
+      return;
+    }
+
+    if (autoFitFrameRef.current !== null) {
+      window.cancelAnimationFrame(autoFitFrameRef.current);
+    }
+
+    autoFitFrameRef.current = window.requestAnimationFrame(() => {
+      autoFitFrameRef.current = null;
+
+      const mediaElement = isVideo ? videoRef.current : imageRef.current;
+      if (!mediaElement || !containerRef.current) {
+        return;
+      }
+
+      const containerRect = containerRef.current.getBoundingClientRect();
+      if (containerRect.width <= 0 || containerRect.height <= 0) {
+        return;
+      }
+
+      const intrinsicWidth = isVideo
+        ? (mediaElement as HTMLVideoElement).videoWidth
+        : (mediaElement as HTMLImageElement).naturalWidth;
+      const intrinsicHeight = isVideo
+        ? (mediaElement as HTMLVideoElement).videoHeight
+        : (mediaElement as HTMLImageElement).naturalHeight;
+      if (intrinsicWidth <= 0 || intrinsicHeight <= 0) {
+        return;
+      }
+
+      const horizontalPadding = 32;
+      const verticalReserve = isVideo ? 140 : 88;
+      const availableWidth = Math.max(containerRect.width - horizontalPadding, 0);
+      const availableHeight = Math.max(containerRect.height - verticalReserve, 0);
+      if (availableWidth <= 0 || availableHeight <= 0) {
+        return;
+      }
+
+      const fittedZoom = Math.min(
+        1,
+        availableWidth / intrinsicWidth,
+        availableHeight / intrinsicHeight
+      );
+
+      if (!Number.isFinite(fittedZoom) || fittedZoom <= 0 || fittedZoom >= 0.995) {
+        return;
+      }
+
+      setLocalZoom((prev) => (Math.abs(prev - fittedZoom) <= 0.01 ? prev : fittedZoom));
+      onZoomChange?.(fittedZoom);
+    });
+  }, [isCompareMode, isAudio, isVideo, zoomLevel, panOffset?.x, panOffset?.y, onZoomChange]);
+
+  useEffect(() => {
+    if (!item?.url || isAudio || isCompareMode) {
+      return;
+    }
+
+    const mediaElement = isVideo ? videoRef.current : imageRef.current;
+    if (!mediaElement) {
+      return;
+    }
+
+    if (isVideo) {
+      const video = mediaElement as HTMLVideoElement;
+      if (video.readyState >= 1) {
+        scheduleAutoFit();
+      }
+      return;
+    }
+
+    const image = mediaElement as HTMLImageElement;
+    if (image.complete && image.naturalWidth > 0) {
+      scheduleAutoFit();
+    }
+  }, [item, isAudio, isCompareMode, isVideo, scheduleAutoFit]);
 
   // 鼠标拖拽
   const handleMouseDown = useCallback(
@@ -374,44 +532,62 @@ export const MediaViewport = forwardRef<MediaViewportRef, MediaViewportProps>(({
   return (
     <div
       ref={containerRef}
-      className={`media-viewport ${isFocused ? 'media-viewport--focused' : ''} ${isAudio ? 'media-viewport--audio' : ''}`}
+      className={`media-viewport ${isFocused ? 'media-viewport--focused' : ''} ${isAudio ? 'media-viewport--audio' : ''} ${isVideo ? 'media-viewport--video' : ''} ${!isCompareMode ? 'media-viewport--single' : ''}`}
       onClick={onClick}
       onMouseDown={isAudio ? undefined : handleMouseDown}
       onMouseMove={isAudio ? undefined : handleMouseMove}
       onMouseUp={isAudio ? undefined : handleMouseUp}
-      onMouseLeave={isAudio ? undefined : handleMouseUp}
       onWheel={isAudio ? undefined : handleWheel}
+      onMouseLeave={() => {
+        if (!isAudio) {
+          handleMouseUp();
+        }
+        setIsMediaHovered(false);
+        setIsPromptHovered(false);
+        setIsToolbarHovered(false);
+        clearPromptHideTimer();
+      }}
       data-slot={slotIndex}
     >
       {/* 媒体内容 */}
-      <div className="media-viewport__content" style={isAudio ? undefined : transformStyle}>
+      <div
+        className="media-viewport__content"
+        style={isAudio ? undefined : transformStyle}
+      >
         {isVideo ? (
-          <video
-            ref={videoRef}
-            src={mediaUrl}
-            autoPlay={videoAutoPlay}
-            loop={videoLoop}
-            controls
-            className="media-viewport__video"
-            // @ts-expect-error -- React types lack referrerPolicy on <video>
-            referrerPolicy="no-referrer"
-            onClick={(e) => e.stopPropagation()}
-            onPlay={() => {
-              if (isSyncMode && onVideoPlayStateChange) {
-                onVideoPlayStateChange(true);
-              }
-            }}
-            onPause={() => {
-              if (isSyncMode && onVideoPlayStateChange) {
-                onVideoPlayStateChange(false);
-              }
-            }}
-            onSeeked={() => {
-              if (isSyncMode && onVideoTimeUpdate && videoRef.current) {
-                onVideoTimeUpdate(videoRef.current.currentTime);
-              }
-            }}
-          />
+          <div
+            className="media-viewport__media-hitbox"
+            onMouseEnter={handleMediaHoverStart}
+            onMouseLeave={handleMediaHoverEnd}
+          >
+            <video
+              ref={videoRef}
+              src={mediaUrl}
+              autoPlay={videoAutoPlay}
+              loop={videoLoop}
+              controls
+              className="media-viewport__video"
+              // @ts-expect-error -- React types lack referrerPolicy on <video>
+              referrerPolicy="no-referrer"
+              onClick={(e) => e.stopPropagation()}
+              onPlay={() => {
+                if (isSyncMode && onVideoPlayStateChange) {
+                  onVideoPlayStateChange(true);
+                }
+              }}
+              onPause={() => {
+                if (isSyncMode && onVideoPlayStateChange) {
+                  onVideoPlayStateChange(false);
+                }
+              }}
+              onSeeked={() => {
+                if (isSyncMode && onVideoTimeUpdate && videoRef.current) {
+                  onVideoTimeUpdate(videoRef.current.currentTime);
+                }
+              }}
+              onLoadedMetadata={scheduleAutoFit}
+            />
+          </div>
         ) : isAudio ? (
           <div className="media-viewport__audio-shell" onClick={(e) => e.stopPropagation()}>
             <div className="media-viewport__audio-card">
@@ -441,18 +617,32 @@ export const MediaViewport = forwardRef<MediaViewportRef, MediaViewportProps>(({
             </div>
           </div>
         ) : imageLoadFailed ? (
-          <div className="media-viewport__image-fallback">
-            <span>图片加载失败</span>
+          <div
+            className="media-viewport__media-hitbox"
+            onMouseEnter={handleMediaHoverStart}
+            onMouseLeave={handleMediaHoverEnd}
+          >
+            <div className="media-viewport__image-fallback">
+              <span>图片加载失败</span>
+            </div>
           </div>
         ) : (
-          <img
-            src={mediaUrl}
-            alt={item.alt || item.title || ''}
-            className="media-viewport__image"
-            draggable={false}
-            referrerPolicy="no-referrer"
-            onError={() => setImageLoadFailed(true)}
-          />
+          <div
+            className="media-viewport__media-hitbox"
+            onMouseEnter={handleMediaHoverStart}
+            onMouseLeave={handleMediaHoverEnd}
+          >
+            <img
+              ref={imageRef}
+              src={mediaUrl}
+              alt={item.alt || item.title || ''}
+              className="media-viewport__image"
+              draggable={false}
+              referrerPolicy="no-referrer"
+              onLoad={scheduleAutoFit}
+              onError={() => setImageLoadFailed(true)}
+            />
+          </div>
         )}
       </div>
 
@@ -468,6 +658,8 @@ export const MediaViewport = forwardRef<MediaViewportRef, MediaViewportProps>(({
               }
             : undefined
         }
+        onMouseEnter={() => setIsToolbarHovered(true)}
+        onMouseLeave={() => setIsToolbarHovered(false)}
         onMouseDown={(e) => e.stopPropagation()}
         onClick={(e) => e.stopPropagation()}
       >
@@ -476,23 +668,27 @@ export const MediaViewport = forwardRef<MediaViewportRef, MediaViewportProps>(({
         {/* 拖拽手柄 + 方向切换 - 仅单图模式 */}
         {!isCompareMode && (
           <>
-            <div
-              className="media-viewport__toolbar-handle"
-              onMouseDown={handleToolbarDragStart}
-              onTouchStart={handleToolbarTouchStart}
-              onDoubleClick={(e) => {
-                e.stopPropagation();
-                resetToolbarPosition();
-              }}
-              title="拖拽移动工具栏，双击重置位置"
-            >
-              <GripHorizontal size={14} />
-            </div>
-            <Tooltip
-              content={toolbarOrientation === 'horizontal' ? '切换为垂直布局' : '切换为水平布局'}
-              theme="light"
+            <HoverPopover
+              content="拖拽移动工具栏，双击重置位置"
               placement="top"
-              showArrow={false}
+              contentClassName="viewer-popover"
+            >
+              <div
+                className="media-viewport__toolbar-handle"
+                onMouseDown={handleToolbarDragStart}
+                onTouchStart={handleToolbarTouchStart}
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  resetToolbarPosition();
+                }}
+              >
+                <GripHorizontal size={14} />
+              </div>
+            </HoverPopover>
+            <HoverPopover
+              content={toolbarOrientation === 'horizontal' ? '切换为垂直布局' : '切换为水平布局'}
+              placement="top"
+              contentClassName="viewer-popover"
             >
               <button
                 type="button"
@@ -528,96 +724,108 @@ export const MediaViewport = forwardRef<MediaViewportRef, MediaViewportProps>(({
                   )}
                 </svg>
               </button>
-            </Tooltip>
+            </HoverPopover>
             <div className="media-viewport__toolbar-divider" />
           </>
         )}
 
         {/* 缩放控制 */}
         <div className="media-viewport__toolbar-group">
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              handleZoomOut();
-            }}
-            title="缩小"
-          >
-            <ZoomOut size={16} />
-          </button>
+          <HoverPopover content="缩小" placement="top" contentClassName="viewer-popover">
+            <button
+              type="button"
+              aria-label="缩小"
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                handleZoomOut();
+              }}
+            >
+              <ZoomOut size={16} />
+            </button>
+          </HoverPopover>
           <span className="media-viewport__zoom-level">
             {Math.round(localZoom * 100)}%
           </span>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              handleZoomIn();
-            }}
-            title="放大"
-          >
-            <ZoomIn size={16} />
-          </button>
+          <HoverPopover content="放大" placement="top" contentClassName="viewer-popover">
+            <button
+              type="button"
+              aria-label="放大"
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                handleZoomIn();
+              }}
+            >
+              <ZoomIn size={16} />
+            </button>
+          </HoverPopover>
         </div>
 
         <div className="media-viewport__toolbar-divider" />
 
         {/* 旋转控制 */}
         <div className="media-viewport__toolbar-group">
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              handleRotateLeft();
-            }}
-            title="向左旋转 90°"
-          >
-            <RotateCcw size={16} />
-          </button>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              handleRotateRight();
-            }}
-            title="向右旋转 90°"
-          >
-            <RotateCw size={16} />
-          </button>
+          <HoverPopover content="向左旋转 90°" placement="top" contentClassName="viewer-popover">
+            <button
+              type="button"
+              aria-label="向左旋转 90°"
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                handleRotateLeft();
+              }}
+            >
+              <RotateCcw size={16} />
+            </button>
+          </HoverPopover>
+          <HoverPopover content="向右旋转 90°" placement="top" contentClassName="viewer-popover">
+            <button
+              type="button"
+              aria-label="向右旋转 90°"
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                handleRotateRight();
+              }}
+            >
+              <RotateCw size={16} />
+            </button>
+          </HoverPopover>
         </div>
 
         <div className="media-viewport__toolbar-divider" />
 
         {/* 翻转控制 */}
         <div className="media-viewport__toolbar-group">
-          <button
-            type="button"
-            className={flipH ? 'active' : ''}
-            onClick={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              handleFlipHorizontal();
-            }}
-            title="水平翻转"
-          >
-            <FlipHorizontal size={16} />
-          </button>
-          <button
-            type="button"
-            className={flipV ? 'active' : ''}
-            onClick={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              handleFlipVertical();
-            }}
-            title="垂直翻转"
-          >
-            <FlipVertical size={16} />
-          </button>
+          <HoverPopover content="水平翻转" placement="top" contentClassName="viewer-popover">
+            <button
+              type="button"
+              aria-label="水平翻转"
+              className={flipH ? 'active' : ''}
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                handleFlipHorizontal();
+              }}
+            >
+              <FlipHorizontal size={16} />
+            </button>
+          </HoverPopover>
+          <HoverPopover content="垂直翻转" placement="top" contentClassName="viewer-popover">
+            <button
+              type="button"
+              aria-label="垂直翻转"
+              className={flipV ? 'active' : ''}
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                handleFlipVertical();
+              }}
+            >
+              <FlipVertical size={16} />
+            </button>
+          </HoverPopover>
         </div>
           </>
         )}
@@ -626,7 +834,11 @@ export const MediaViewport = forwardRef<MediaViewportRef, MediaViewportProps>(({
         {!isCompareMode && !isAudio && (
           <>
             <div className="media-viewport__toolbar-divider" />
-            <Tooltip content="插入到画布" theme="light" placement="top">
+            <HoverPopover
+              content="插入到画布"
+              placement="top"
+              contentClassName="viewer-popover"
+            >
               <button
                 type="button"
                 onClick={(e) => {
@@ -642,7 +854,7 @@ export const MediaViewport = forwardRef<MediaViewportRef, MediaViewportProps>(({
               >
                 <Plus size={16} />
               </button>
-            </Tooltip>
+            </HoverPopover>
           </>
         )}
 
@@ -650,7 +862,11 @@ export const MediaViewport = forwardRef<MediaViewportRef, MediaViewportProps>(({
         {!isCompareMode && onDownload && (
           <>
             {isAudio && <div className="media-viewport__toolbar-divider" />}
-            <Tooltip content="下载" theme="light" placement="top">
+            <HoverPopover
+              content="下载"
+              placement="top"
+              contentClassName="viewer-popover"
+            >
             <button
               type="button"
               onClick={(e) => {
@@ -661,13 +877,17 @@ export const MediaViewport = forwardRef<MediaViewportRef, MediaViewportProps>(({
             >
               <Download size={16} />
             </button>
-            </Tooltip>
+            </HoverPopover>
           </>
         )}
 
         {/* 编辑 - 仅单图模式且为图片 */}
         {!isCompareMode && onEdit && item?.type === 'image' && (
-          <Tooltip content="编辑图片" theme="light" placement="top">
+          <HoverPopover
+            content="编辑图片"
+            placement="top"
+            contentClassName="viewer-popover"
+          >
             <button
               type="button"
               onClick={(e) => {
@@ -678,13 +898,26 @@ export const MediaViewport = forwardRef<MediaViewportRef, MediaViewportProps>(({
             >
               <Pencil size={16} />
             </button>
-          </Tooltip>
+          </HoverPopover>
         )}
       </div>
 
-      {/* 标题 */}
-      {item.title && (
-        <div className="media-viewport__title">{item.title}</div>
+      {/* 提示词 */}
+      {promptText && !isAudio && (
+        <HoverPopover
+          content={promptText}
+          placement="bottom"
+          sideOffset={10}
+          contentClassName="viewer-popover viewer-popover--prompt"
+        >
+          <div
+            className={`media-viewport__prompt ${showPrompt ? 'media-viewport__prompt--visible' : ''} ${isPromptHovered ? 'media-viewport__prompt--expanded' : ''}`}
+            onMouseEnter={handlePromptHoverStart}
+            onMouseLeave={handlePromptHoverEnd}
+          >
+            {promptText}
+          </div>
+        </HoverPopover>
       )}
     </div>
   );

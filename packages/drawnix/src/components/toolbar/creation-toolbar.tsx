@@ -1,3 +1,11 @@
+import React, {
+  Suspense,
+  lazy,
+  useState,
+  useCallback,
+  useMemo,
+  useRef,
+} from 'react';
 import classNames from 'classnames';
 import { Z_INDEX } from '../../constants/z-index';
 import { Island } from '../island';
@@ -37,12 +45,10 @@ import {
   DrawPointerType,
   FlowchartSymbols,
 } from '@plait/draw';
-import { FreehandPanel , FREEHANDS } from './freehand-panel/freehand-panel';
+import { FreehandPanel, FREEHANDS } from './freehand-panel/freehand-panel';
 import { ShapePicker } from '../shape-picker';
 import { ArrowPicker } from '../arrow-picker';
-import { useState, useCallback, useMemo, useRef } from 'react';
 import { MessagePlugin } from 'tdesign-react';
-import { MediaLibraryModal } from '../media-library/MediaLibraryModal';
 import { SelectionMode, Asset, AssetType } from '../../types/asset.types';
 import { insertImageFromUrl } from '../../data/image';
 import { insertVideoFromUrl } from '../../data/video';
@@ -67,9 +73,25 @@ import { useDragSort } from '../../hooks/use-drag-sort';
 import { ToolbarContextMenu } from './toolbar-context-menu';
 import Menu from '../menu/menu';
 import MenuItem from '../menu/menu-item';
-import { THEME_OPTIONS, CheckIcon, isBasicPointer, EmptyIcon } from './toolbar-shared';
+import {
+  THEME_OPTIONS,
+  CheckIcon,
+  isBasicPointer,
+  EmptyIcon,
+} from './toolbar-shared';
 import { MoreToolsButton } from './more-tools-button';
-import { MinimizedToolsBar } from './minimized-tools-bar';
+import { HoverTip } from '../shared/hover';
+
+const MediaLibraryModal = lazy(() =>
+  import('../media-library/MediaLibraryModal').then((module) => ({
+    default: module.MediaLibraryModal,
+  }))
+);
+const MinimizedToolsBar = lazy(() =>
+  import('./minimized-tools-bar').then((module) => ({
+    default: module.MinimizedToolsBar,
+  }))
+);
 
 export enum PopupKey {
   'shape' = 'shape',
@@ -83,7 +105,15 @@ type AppToolButtonProps = {
   name?: string;
   icon: React.ReactNode;
   pointer?: DrawnixPointerType;
-  key?: PopupKey | 'image' | 'media-library' | 'ai-image' | 'ai-video' | 'extra-tools' | 'mermaid-to-drawnix' | 'markdown-to-drawnix';
+  key?:
+    | PopupKey
+    | 'image'
+    | 'media-library'
+    | 'ai-image'
+    | 'ai-video'
+    | 'extra-tools'
+    | 'mermaid-to-drawnix'
+    | 'markdown-to-drawnix';
   /** 用于可见性检查的 key，对应 TOOLBAR_GROUPS 中的 buttonKeys */
   visibilityKey?: string;
 };
@@ -204,14 +234,20 @@ export const isShapePointer = (board: PlaitBoard) => {
 
 export const CreationToolbar: React.FC<ToolbarSectionProps> = ({
   embedded = false,
-  iconMode = false
+  iconMode = false,
+  onOpenMediaLibrary,
+  deferredFeaturesEnabled = false,
 }) => {
   const board = useBoard();
   const { appState, openDialog } = useDrawnix();
   const { t } = useI18n();
   const setPointer = useSetPointer();
   const container = PlaitBoard.getBoardContainer(board);
-  const { visibleButtons, loading: configLoading, reorderButton } = useToolbarConfig();
+  const {
+    visibleButtons,
+    loading: configLoading,
+    reorderButton,
+  } = useToolbarConfig();
 
   // 拖拽排序
   const { getDragProps } = useDragSort({
@@ -250,8 +286,12 @@ export const CreationToolbar: React.FC<ToolbarSectionProps> = ({
 
   // 打开素材库
   const handleOpenMediaLibrary = useCallback(() => {
+    if (onOpenMediaLibrary) {
+      onOpenMediaLibrary();
+      return;
+    }
     setMediaLibraryOpen(true);
-  }, []);
+  }, [onOpenMediaLibrary]);
 
   // 关闭素材库
   const handleCloseMediaLibrary = useCallback(() => {
@@ -259,21 +299,32 @@ export const CreationToolbar: React.FC<ToolbarSectionProps> = ({
   }, []);
 
   // 插入素材到画板
-  const handleInsertAsset = useCallback(async (asset: Asset) => {
-    try {
-      if (asset.type === AssetType.IMAGE) {
-        await insertImageFromUrl(board, asset.url);
-      } else if (asset.type === AssetType.VIDEO) {
-        await insertVideoFromUrl(board, asset.url);
-      } else if (asset.type === AssetType.AUDIO) {
-        await insertAudioFromUrl(board, asset.url, { title: asset.name });
+  const handleInsertAsset = useCallback(
+    async (asset: Asset) => {
+      try {
+        if (asset.type === AssetType.IMAGE) {
+          await insertImageFromUrl(board, asset.url);
+        } else if (asset.type === AssetType.VIDEO) {
+          await insertVideoFromUrl(board, asset.url);
+        } else if (asset.type === AssetType.AUDIO) {
+          await insertAudioFromUrl(board, asset.url, {
+            title: asset.name,
+            duration: asset.duration,
+            previewImageUrl: asset.thumbnail,
+            prompt: asset.prompt,
+            mv: asset.modelName,
+            clipId: asset.clipId,
+            providerTaskId: asset.providerTaskId,
+          });
+        }
+        MessagePlugin.success('素材已插入到画板');
+      } catch (error) {
+        console.error('Failed to insert asset:', error);
+        MessagePlugin.error('插入素材失败');
       }
-      MessagePlugin.success('素材已插入到画板');
-    } catch (error) {
-      console.error('Failed to insert asset:', error);
-      MessagePlugin.error('插入素材失败');
-    }
-  }, [board]);
+    },
+    [board]
+  );
 
   // 统一重置所有 Popover
   const resetAllPopovers = () => {
@@ -285,7 +336,7 @@ export const CreationToolbar: React.FC<ToolbarSectionProps> = ({
     });
     setHoverPopover(null);
     // 清除所有定时器
-    Object.values(hoverTimeoutRef.current).forEach(timeout => {
+    Object.values(hoverTimeoutRef.current).forEach((timeout) => {
       if (timeout) clearTimeout(timeout);
     });
   };
@@ -294,10 +345,10 @@ export const CreationToolbar: React.FC<ToolbarSectionProps> = ({
   const showPopover = (key: PopupKey) => {
     // 清除 hover 状态
     setHoverPopover(null);
-    Object.values(hoverTimeoutRef.current).forEach(timeout => {
+    Object.values(hoverTimeoutRef.current).forEach((timeout) => {
       if (timeout) clearTimeout(timeout);
     });
-    
+
     setOpenPopovers({
       [PopupKey.freehand]: false,
       [PopupKey.arrow]: false,
@@ -313,7 +364,7 @@ export const CreationToolbar: React.FC<ToolbarSectionProps> = ({
     if (hoverTimeoutRef.current[key]) {
       clearTimeout(hoverTimeoutRef.current[key]!);
     }
-    
+
     // 清除其他所有 Popover 的定时器
     Object.entries(hoverTimeoutRef.current).forEach(([popupKey, timeout]) => {
       if (popupKey !== key && timeout) {
@@ -321,20 +372,20 @@ export const CreationToolbar: React.FC<ToolbarSectionProps> = ({
         hoverTimeoutRef.current[popupKey as PopupKey] = null;
       }
     });
-    
+
     // 如果当前有其他 hover 触发的 Popover 正在显示，立即切换
     if (hoverPopover && hoverPopover !== key) {
-      setOpenPopovers(prev => ({
+      setOpenPopovers((prev) => ({
         ...prev,
         [hoverPopover]: false,
         [key]: true,
       }));
       setHoverPopover(key);
-    } 
+    }
     // 如果没有被点击打开，则通过 hover 打开
     else if (!openPopovers[key]) {
       hoverTimeoutRef.current[key] = setTimeout(() => {
-        setOpenPopovers(prev => ({
+        setOpenPopovers((prev) => ({
           ...prev,
           [key]: true,
         }));
@@ -354,7 +405,7 @@ export const CreationToolbar: React.FC<ToolbarSectionProps> = ({
     // 只有当是 hover 触发的才自动关闭
     if (hoverPopover === key) {
       hoverTimeoutRef.current[key] = setTimeout(() => {
-        setOpenPopovers(prev => ({
+        setOpenPopovers((prev) => ({
           ...prev,
           [key]: false,
         }));
@@ -375,7 +426,7 @@ export const CreationToolbar: React.FC<ToolbarSectionProps> = ({
   const handlePopoverMouseLeave = (key: PopupKey) => {
     // 只有当是 hover 触发的才自动关闭
     if (hoverPopover === key) {
-      setOpenPopovers(prev => ({
+      setOpenPopovers((prev) => ({
         ...prev,
         [key]: false,
       }));
@@ -404,7 +455,7 @@ export const CreationToolbar: React.FC<ToolbarSectionProps> = ({
   };
 
   const hasOpenPopover = () => {
-    return Object.values(openPopovers).some(isOpen => isOpen);
+    return Object.values(openPopovers).some((isOpen) => isOpen);
   };
 
   const isChecked = (button: AppToolButtonProps) => {
@@ -423,7 +474,7 @@ export const CreationToolbar: React.FC<ToolbarSectionProps> = ({
   // 统一的按钮点击处理
   const handleButtonClick = (button: AppToolButtonProps) => {
     resetAllPopovers();
-    
+
     // 切换工具前，结束钢笔绘制
     finishPenOnToolSwitch(board);
 
@@ -451,7 +502,11 @@ export const CreationToolbar: React.FC<ToolbarSectionProps> = ({
   };
 
   // 渲染带 Popover 的按钮
-  const renderPopoverButton = (button: AppToolButtonProps, index: number, popupKey: PopupKey) => {
+  const renderPopoverButton = (
+    button: AppToolButtonProps,
+    index: number,
+    popupKey: PopupKey
+  ) => {
     // 根据不同的 popupKey 获取对应的内容和选中状态
     const getPopoverContent = () => {
       switch (popupKey) {
@@ -519,9 +574,16 @@ export const CreationToolbar: React.FC<ToolbarSectionProps> = ({
 
       switch (popupKey) {
         case PopupKey.freehand:
-          return isPopoverOpen || (checkCurrentPointerIsFreehand(board) && !hasOtherPopoverOpen);
+          return (
+            isPopoverOpen ||
+            (checkCurrentPointerIsFreehand(board) && !hasOtherPopoverOpen)
+          );
         case PopupKey.shape:
-          return isPopoverOpen || (isShapePointer(board) && !PlaitBoard.isPointer(board, BasicShapes.text));
+          return (
+            isPopoverOpen ||
+            (isShapePointer(board) &&
+              !PlaitBoard.isPointer(board, BasicShapes.text))
+          );
         case PopupKey.arrow:
           return isPopoverOpen || isArrowLinePointer(board);
         default:
@@ -529,10 +591,16 @@ export const CreationToolbar: React.FC<ToolbarSectionProps> = ({
       }
     };
 
-    const displayIcon = popupKey === PopupKey.freehand ? lastFreehandButton.icon : button.icon;
-    const displayTitle = popupKey === PopupKey.freehand 
-      ? (lastFreehandButton.titleKey ? t(lastFreehandButton.titleKey as keyof Translations) : 'Freehand')
-      : (button.titleKey ? t(button.titleKey as keyof Translations) : '');
+    const displayIcon =
+      popupKey === PopupKey.freehand ? lastFreehandButton.icon : button.icon;
+    const displayTitle =
+      popupKey === PopupKey.freehand
+        ? lastFreehandButton.titleKey
+          ? t(lastFreehandButton.titleKey as keyof Translations)
+          : 'Freehand'
+        : button.titleKey
+        ? t(button.titleKey as keyof Translations)
+        : '';
 
     return (
       <Popover
@@ -544,7 +612,7 @@ export const CreationToolbar: React.FC<ToolbarSectionProps> = ({
             resetAllPopovers();
           }
         }}
-        placement={embedded ? "right-start" : "bottom"}
+        placement={embedded ? 'right-start' : 'bottom'}
       >
         <PopoverTrigger asChild>
           <div
@@ -556,13 +624,15 @@ export const CreationToolbar: React.FC<ToolbarSectionProps> = ({
               visible={true}
               selected={getIsSelected()}
               icon={displayIcon}
-              title={displayTitle}
-              tooltipPlacement="bottom"
+              tooltip={displayTitle}
               aria-label={displayTitle}
               data-track={`toolbar_click_${popupKey}`}
               onPointerDown={() => {
                 showPopover(popupKey);
-                if (popupKey === PopupKey.freehand && lastFreehandButton.pointer) {
+                if (
+                  popupKey === PopupKey.freehand &&
+                  lastFreehandButton.pointer
+                ) {
                   onPointerDown(lastFreehandButton.pointer);
                 }
               }}
@@ -574,8 +644,8 @@ export const CreationToolbar: React.FC<ToolbarSectionProps> = ({
             />
           </div>
         </PopoverTrigger>
-        <PopoverContent 
-          container={container} 
+        <PopoverContent
+          container={container}
           style={{ zIndex: Z_INDEX.POPOVER }}
           onMouseEnter={() => handlePopoverMouseEnter(popupKey)}
           onMouseLeave={() => handlePopoverMouseLeave(popupKey)}
@@ -594,9 +664,13 @@ export const CreationToolbar: React.FC<ToolbarSectionProps> = ({
         type="radio"
         icon={button.icon}
         checked={isChecked(button)}
-        title={button.titleKey ? t(button.titleKey as keyof Translations) : ''}
+        tooltip={
+          button.titleKey ? t(button.titleKey as keyof Translations) : ''
+        }
         tooltipPlacement={embedded ? 'right' : 'bottom'}
-        aria-label={button.titleKey ? t(button.titleKey as keyof Translations) : ''}
+        aria-label={
+          button.titleKey ? t(button.titleKey as keyof Translations) : ''
+        }
         data-track={`toolbar_click_${button.pointer || button.key}`}
         onPointerDown={() => {
           if (button.pointer && !isBasicPointer(button.pointer)) {
@@ -625,194 +699,239 @@ export const CreationToolbar: React.FC<ToolbarSectionProps> = ({
   const [zoomMenuOpen, setZoomMenuOpen] = useState(false);
 
   // 渲染 zoom 工具栏（embedded模式纵向，普通模式横向）
-  const renderZoomToolbar = useCallback((index: number) => {
-    const StackComponent = embedded ? Stack.Col : Stack.Row;
-    
-    return (
-      <div
-        key={`zoom-${index}`}
-        className={classNames('creation-toolbar__zoom-inline', {
-          'creation-toolbar__zoom-inline--vertical': embedded,
-        })}
-      >
-        <StackComponent gap={0}>
-          <ToolButton
-            type="button"
-            icon={<ZoomOutIcon />}
-            visible={true}
-            title={t('zoom.out')}
-            tooltipPlacement={embedded ? 'right' : 'bottom'}
-            aria-label={t('zoom.out')}
-            data-track="toolbar_click_zoom_out"
-            onPointerUp={() => {
-              BoardTransforms.updateZoom(board, board.viewport.zoom - 0.1);
-            }}
-            className="zoom-out-button"
-          />
-          <Popover
-            sideOffset={12}
-            open={zoomMenuOpen}
-            onOpenChange={(open) => {
-              setZoomMenuOpen(open);
-            }}
-            placement={embedded ? 'right-start' : 'bottom'}
-          >
-            <PopoverTrigger asChild>
-              <div
-                title={t('zoom.fit')}
-                aria-label={t('zoom.fit')}
-                data-track="toolbar_click_zoom_menu"
-                className={classNames('zoom-menu-trigger', { active: zoomMenuOpen })}
-                onPointerUp={() => {
-                  setZoomMenuOpen(!zoomMenuOpen);
-                }}
+  const renderZoomToolbar = useCallback(
+    (index: number) => {
+      const StackComponent = embedded ? Stack.Col : Stack.Row;
+
+      return (
+        <div
+          key={`zoom-${index}`}
+          className={classNames('creation-toolbar__zoom-inline', {
+            'creation-toolbar__zoom-inline--vertical': embedded,
+          })}
+        >
+          <StackComponent gap={0}>
+            <ToolButton
+              type="button"
+              icon={<ZoomOutIcon />}
+              visible={true}
+              tooltip={t('zoom.out')}
+              tooltipPlacement={embedded ? 'right' : 'bottom'}
+              aria-label={t('zoom.out')}
+              data-track="toolbar_click_zoom_out"
+              onPointerUp={() => {
+                BoardTransforms.updateZoom(board, board.viewport.zoom - 0.1);
+              }}
+              className="zoom-out-button"
+            />
+            <Popover
+              sideOffset={12}
+              open={zoomMenuOpen}
+              onOpenChange={(open) => {
+                setZoomMenuOpen(open);
+              }}
+              placement={embedded ? 'right-start' : 'bottom'}
+            >
+              <HoverTip content={t('zoom.fit')} showArrow={false}>
+                <PopoverTrigger asChild>
+                  <div
+                    aria-label={t('zoom.fit')}
+                    data-track="toolbar_click_zoom_menu"
+                    className={classNames('zoom-menu-trigger', {
+                      active: zoomMenuOpen,
+                    })}
+                    onPointerUp={() => {
+                      setZoomMenuOpen(!zoomMenuOpen);
+                    }}
+                  >
+                    {Number(((board?.viewport?.zoom || 1) * 100).toFixed(0))}%
+                  </div>
+                </PopoverTrigger>
+              </HoverTip>
+              <PopoverContent
+                container={container}
+                style={{ zIndex: Z_INDEX.POPOVER }}
               >
-                {Number(((board?.viewport?.zoom || 1) * 100).toFixed(0))}%
-              </div>
-            </PopoverTrigger>
-            <PopoverContent container={container} style={{ zIndex: Z_INDEX.POPOVER }}>
-              <Menu
-                onSelect={() => {
-                  setZoomMenuOpen(false);
-                }}
-              >
-                <MenuItem
-                  data-track="toolbar_click_zoom_fit"
+                <Menu
                   onSelect={() => {
-                    BoardTransforms.fitViewport(board);
+                    setZoomMenuOpen(false);
                   }}
-                  aria-label={t('zoom.fit')}
-                  shortcut={`Cmd+Shift+=`}
-                >{t('zoom.fit')}</MenuItem>
-                <MenuItem
-                  data-track="toolbar_click_zoom_fit_frame"
-                  onSelect={() => {
-                    fitFrame(board);
-                  }}
-                  aria-label={t('zoom.fitFrame')}
-                >{t('zoom.fitFrame')}</MenuItem>
-                <MenuItem
-                  data-track="toolbar_click_zoom_100"
-                  onSelect={() => {
-                    BoardTransforms.updateZoom(board, 1);
-                  }}
-                  aria-label={t('zoom.100')}
-                  shortcut={`Cmd+0`}
-                >{t('zoom.100')}</MenuItem>
-              </Menu>
-            </PopoverContent>
-          </Popover>
-          <ToolButton
-            type="button"
-            icon={<ZoomInIcon />}
-            visible={true}
-            title={t('zoom.in')}
-            tooltipPlacement={embedded ? 'right' : 'bottom'}
-            aria-label={t('zoom.in')}
-            data-track="toolbar_click_zoom_in"
-            onPointerUp={() => {
-              BoardTransforms.updateZoom(board, board.viewport.zoom + 0.1);
-            }}
-            className="zoom-in-button"
-          />
-        </StackComponent>
-      </div>
-    );
-  }, [board, container, embedded, t, zoomMenuOpen]);
+                >
+                  <MenuItem
+                    data-track="toolbar_click_zoom_fit"
+                    onSelect={() => {
+                      BoardTransforms.fitViewport(board);
+                    }}
+                    aria-label={t('zoom.fit')}
+                    shortcut={`Cmd+Shift+=`}
+                  >
+                    {t('zoom.fit')}
+                  </MenuItem>
+                  <MenuItem
+                    data-track="toolbar_click_zoom_fit_frame"
+                    onSelect={() => {
+                      fitFrame(board);
+                    }}
+                    aria-label={t('zoom.fitFrame')}
+                  >
+                    {t('zoom.fitFrame')}
+                  </MenuItem>
+                  <MenuItem
+                    data-track="toolbar_click_zoom_100"
+                    onSelect={() => {
+                      BoardTransforms.updateZoom(board, 1);
+                    }}
+                    aria-label={t('zoom.100')}
+                    shortcut={`Cmd+0`}
+                  >
+                    {t('zoom.100')}
+                  </MenuItem>
+                </Menu>
+              </PopoverContent>
+            </Popover>
+            <ToolButton
+              type="button"
+              icon={<ZoomInIcon />}
+              visible={true}
+              tooltip={t('zoom.in')}
+              tooltipPlacement={embedded ? 'right' : 'bottom'}
+              aria-label={t('zoom.in')}
+              data-track="toolbar_click_zoom_in"
+              onPointerUp={() => {
+                BoardTransforms.updateZoom(board, board.viewport.zoom + 0.1);
+              }}
+              className="zoom-in-button"
+            />
+          </StackComponent>
+        </div>
+      );
+    },
+    [board, container, embedded, t, zoomMenuOpen]
+  );
 
   // 根据按钮 ID 渲染按钮（不带拖拽包装）
-  const renderButtonById = useCallback((buttonId: string, index: number) => {
-    // zoom 使用特殊渲染
-    if (buttonId === 'zoom') {
-      return renderZoomToolbar(index);
-    }
+  const renderButtonById = useCallback(
+    (buttonId: string, index: number) => {
+      // zoom 使用特殊渲染
+      if (buttonId === 'zoom') {
+        return renderZoomToolbar(index);
+      }
 
-    const button = buttonMap.get(buttonId);
-    if (!button) return null;
+      const button = buttonMap.get(buttonId);
+      if (!button) return null;
 
-    // 移动端隐藏手型工具
-    if (appState.isMobile && button.pointer === PlaitPointerType.hand) {
-      return null;
-    }
+      // 移动端隐藏手型工具
+      if (appState.isMobile && button.pointer === PlaitPointerType.hand) {
+        return null;
+      }
 
-    // 带 Popover 的按钮
-    if (button.key && Object.values(PopupKey).includes(button.key as PopupKey)) {
-      return renderPopoverButton(button, index, button.key as PopupKey);
-    }
+      // 带 Popover 的按钮
+      if (
+        button.key &&
+        Object.values(PopupKey).includes(button.key as PopupKey)
+      ) {
+        return renderPopoverButton(button, index, button.key as PopupKey);
+      }
 
-    // 普通按钮
-    return renderNormalButton(button, index);
-  }, [buttonMap, appState.isMobile, renderPopoverButton, renderNormalButton, renderZoomToolbar]);
+      // 普通按钮
+      return renderNormalButton(button, index);
+    },
+    [
+      buttonMap,
+      appState.isMobile,
+      renderPopoverButton,
+      renderNormalButton,
+      renderZoomToolbar,
+    ]
+  );
 
   // 渲染带拖拽和右键菜单功能的按钮
-  const renderDraggableButton = useCallback((buttonId: string, index: number, isVisible: boolean = true, visibleIndex: number = -1) => {
-    const buttonElement = renderButtonById(buttonId, index);
-    if (!buttonElement) return null;
+  const renderDraggableButton = useCallback(
+    (
+      buttonId: string,
+      index: number,
+      isVisible: boolean = true,
+      visibleIndex: number = -1
+    ) => {
+      const buttonElement = renderButtonById(buttonId, index);
+      if (!buttonElement) return null;
 
-    const dragProps = getDragProps(buttonId, index);
+      const dragProps = getDragProps(buttonId, index);
 
-    return (
-      <ToolbarContextMenu
-        key={`ctx-${buttonId}-${index}`}
-        buttonId={buttonId}
-        isVisible={isVisible}
-        visibleIndex={visibleIndex}
-      >
-        <div
-          className={classNames('toolbar-button-wrapper', {
-            'toolbar-button-wrapper--dragging': dragProps['data-dragging'],
-            'toolbar-button-wrapper--drag-over': dragProps['data-drag-over'],
-            'toolbar-button-wrapper--drag-before': dragProps['data-drag-position'] === 'before',
-            'toolbar-button-wrapper--drag-after': dragProps['data-drag-position'] === 'after',
-          })}
-          data-button-id={buttonId}
-          {...dragProps}
+      return (
+        <ToolbarContextMenu
+          key={`ctx-${buttonId}-${index}`}
+          buttonId={buttonId}
+          isVisible={isVisible}
+          visibleIndex={visibleIndex}
         >
-          {buttonElement}
-        </div>
-      </ToolbarContextMenu>
-    );
-  }, [renderButtonById, getDragProps]);
+          <div
+            className={classNames('toolbar-button-wrapper', {
+              'toolbar-button-wrapper--dragging': dragProps['data-dragging'],
+              'toolbar-button-wrapper--drag-over': dragProps['data-drag-over'],
+              'toolbar-button-wrapper--drag-before':
+                dragProps['data-drag-position'] === 'before',
+              'toolbar-button-wrapper--drag-after':
+                dragProps['data-drag-position'] === 'after',
+            })}
+            data-button-id={buttonId}
+            {...dragProps}
+          >
+            {buttonElement}
+          </div>
+        </ToolbarContextMenu>
+      );
+    },
+    [renderButtonById, getDragProps]
+  );
 
   const content = (
     <Stack.Row gap={1}>
       {/* 渲染可见按钮（按配置顺序） */}
-      {!configLoading && visibleButtons.map((buttonConfig, index) => 
-        embedded 
-          ? renderDraggableButton(buttonConfig.id, index, true, index)
-          : renderButtonById(buttonConfig.id, index)
-      )}
+      {!configLoading &&
+        visibleButtons.map((buttonConfig, index) =>
+          embedded
+            ? renderDraggableButton(buttonConfig.id, index, true, index)
+            : renderButtonById(buttonConfig.id, index)
+        )}
       <MoreToolsButton embedded={embedded} />
       {/* 最小化工具栏 - 显示最小化和常驻的工具图标 */}
-      {embedded && <MinimizedToolsBar />}
+      {embedded && deferredFeaturesEnabled && (
+        <Suspense fallback={null}>
+          <MinimizedToolsBar />
+        </Suspense>
+      )}
     </Stack.Row>
   );
 
   // 素材库弹窗
   const mediaLibraryModal = mediaLibraryOpen ? (
-    <MediaLibraryModal
-      isOpen={mediaLibraryOpen}
-      onClose={handleCloseMediaLibrary}
-      mode={SelectionMode.SELECT}
-      onSelect={handleInsertAsset}
-      selectButtonText="插入"
-    />
+    <Suspense fallback={null}>
+      <MediaLibraryModal
+        isOpen={mediaLibraryOpen}
+        onClose={handleCloseMediaLibrary}
+        mode={SelectionMode.SELECT}
+        onSelect={handleInsertAsset}
+        selectButtonText="插入"
+      />
+    </Suspense>
   ) : null;
 
   if (embedded) {
     return (
       <>
-        <div className={classNames('draw-toolbar', {
-          'draw-toolbar--embedded': embedded,
-          'draw-toolbar--icon-only': iconMode,
-        })}>
+        <div
+          className={classNames('draw-toolbar', {
+            'draw-toolbar--embedded': embedded,
+            'draw-toolbar--icon-only': iconMode,
+          })}
+        >
           {content}
         </div>
         {mediaLibraryModal}
       </>
     );
   }
-
 
   return (
     <>

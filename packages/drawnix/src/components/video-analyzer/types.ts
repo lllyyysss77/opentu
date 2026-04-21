@@ -2,10 +2,10 @@
  * 视频拆解器内部类型定义
  */
 
-import type { VideoAnalysisData, VideoShot } from '../../mcp/tools/video-analyze';
+import type { VideoAnalysisData, VideoShot, VideoCharacter } from '../../services/video-analysis-service';
 import { createModelRef, type ModelRef } from '../../utils/settings-manager';
 
-export type { VideoAnalysisData, VideoShot };
+export type { VideoAnalysisData, VideoShot, VideoCharacter };
 
 /** 页面标识 */
 export type PageId = 'analyze' | 'script' | 'generate' | 'history';
@@ -22,6 +22,12 @@ export interface ProductInfo {
   videoModelRef?: ModelRef | null;
   /** 用户选择的单段时长（秒），来自视频模型的 durationOptions */
   segmentDuration?: number;
+  /** 用户选择的视频尺寸 */
+  videoSize?: string;
+  /** 用户编辑的画面风格（覆盖 analysis.video_style） */
+  videoStyle?: string;
+  /** 用户编辑的 BGM 情绪（覆盖 analysis.bgm_mood） */
+  bgmMood?: string;
 
   /** @deprecated use prompt */
   name?: string;
@@ -30,6 +36,19 @@ export interface ProductInfo {
   /** @deprecated use prompt */
   sellingPoints?: string;
 }
+
+export type AnalysisSourceSnapshot =
+  | {
+      type: 'youtube';
+      youtubeUrl: string;
+    }
+  | {
+      type: 'upload';
+      cacheUrl: string;
+      fileName: string;
+      mimeType: string;
+      size: number;
+    };
 
 /** 将旧格式 ProductInfo 迁移为新格式（幂等） */
 export function migrateProductInfo(raw: Partial<ProductInfo>, fallbackDuration: number): ProductInfo {
@@ -40,6 +59,9 @@ export function migrateProductInfo(raw: Partial<ProductInfo>, fallbackDuration: 
       videoModel: raw.videoModel,
       videoModelRef: createModelRef(raw.videoModelRef?.profileId, raw.videoModelRef?.modelId),
       segmentDuration: raw.segmentDuration,
+      videoSize: raw.videoSize,
+      videoStyle: raw.videoStyle,
+      bgmMood: raw.bgmMood,
     };
   }
   const parts: string[] = [];
@@ -52,7 +74,22 @@ export function migrateProductInfo(raw: Partial<ProductInfo>, fallbackDuration: 
     videoModel: raw.videoModel,
     videoModelRef: createModelRef(raw.videoModelRef?.profileId, raw.videoModelRef?.modelId),
     segmentDuration: raw.segmentDuration,
+    videoSize: raw.videoSize,
+    videoStyle: raw.videoStyle,
+    bgmMood: raw.bgmMood,
   };
+}
+
+/** 脚本版本快照 */
+export interface ScriptVersion {
+  id: string;
+  createdAt: number;
+  /** 版本标签，如 "AI 改编 #1" */
+  label: string;
+  /** 该版本使用的提示词 */
+  prompt?: string;
+  /** 该版本的镜头列表（深拷贝，各版本独立） */
+  shots: VideoShot[];
 }
 
 /** 分析记录（持久化到 IndexedDB） */
@@ -61,17 +98,30 @@ export interface AnalysisRecord {
   createdAt: number;
   source: 'upload' | 'youtube';
   sourceLabel: string;
+  sourceSnapshot?: AnalysisSourceSnapshot | null;
   model: string;
   modelRef?: ModelRef | null;
   analysis: VideoAnalysisData;
   /** 用户编辑后的脚本 */
   editedShots?: VideoShot[];
+  /** 角色列表（含用户设置的 referenceImageUrl），优先级高于 analysis.characters */
+  characters?: VideoCharacter[];
   /** 商品信息 */
   productInfo?: ProductInfo;
   /** 关联的生成任务 batchId */
   batchId?: string;
+  /** 生成该分析记录的队列任务 ID */
+  analyzeTaskId?: string | null;
+  /** 当前挂起的脚本改编任务 ID */
+  pendingRewriteTaskId?: string | null;
   /** 是否收藏 */
   starred: boolean;
+  /** 脚本版本历史（最新在前，最多 10 个） */
+  scriptVersions?: ScriptVersion[];
+  /** 当前活跃的脚本版本 ID */
+  activeVersionId?: string;
+  /** 最近一次生成/改编脚本的时间戳（用于过滤旧任务结果，防止污染新脚本） */
+  storyboardGeneratedAt?: number;
 }
 
 /** 镜头类型颜色映射 */

@@ -17,7 +17,7 @@ import {
   crashRecoveryService,
   swChannelClient,
   safeReload,
-} from '@drawnix/drawnix';
+} from '@drawnix/drawnix/runtime';
 import { sanitizeObject, sanitizeUrl } from '@aitu/utils';
 import { initSWConsoleCapture } from './utils/sw-console-capture';
 
@@ -42,14 +42,308 @@ initCrashLogger();
 // 判断是否应该启用上报：
 // - 本地开发环境（localhost/127.0.0.1）默认不上报，除非 URL 带 report=1 参数
 // - 生产环境始终上报
-const isLocalDev = typeof window !== 'undefined' && 
-  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-const forceReport = typeof window !== 'undefined' && 
+const isLocalDev =
+  typeof window !== 'undefined' &&
+  (window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1');
+const forceReport =
+  typeof window !== 'undefined' &&
   new URLSearchParams(window.location.search).get('report') === '1';
-const shouldEnableReporting = forceReport || (!isLocalDev && import.meta.env.PROD);
+const shouldEnableReporting =
+  forceReport || (!isLocalDev && import.meta.env.PROD);
+const APP_VERSION =
+  import.meta.env.VITE_APP_VERSION ||
+  document.querySelector('meta[name="app-version"]')?.getAttribute('content') ||
+  '0.0.0';
+
+type CDNName = 'jsdelivr' | 'unpkg' | 'local';
+
+interface RuntimeCDNPreference {
+  cdn: CDNName;
+  latency: number;
+  timestamp: number;
+}
+
+interface RuntimeCDNApi {
+  selectBestCDN: () => Promise<RuntimeCDNPreference | null>;
+}
+
+interface BootProgressOptions {
+  title?: string;
+  tip?: string;
+  note?: string;
+  source?: 'phase' | 'sw';
+}
+
+interface BootController {
+  markReady: () => void;
+  markError: (message?: string) => void;
+  setProgress?: (
+    progress?: number,
+    options?: BootProgressOptions
+  ) => void;
+}
+
+type SWBootProgressPhase =
+  | 'idle'
+  | 'installing'
+  | 'precache'
+  | 'activating'
+  | 'activated'
+  | 'development'
+  | 'error';
+
+interface SWBootProgressMessage {
+  type: 'SW_BOOT_PROGRESS';
+  phase: SWBootProgressPhase;
+  percent: number;
+  completed: number;
+  total: number;
+  failed: number;
+  message?: string;
+  version: string;
+  updatedAt: number;
+}
+
+declare global {
+  interface Window {
+    __OPENTU_CDN__?: RuntimeCDNPreference | null;
+    __AITU_CDN__?: RuntimeCDNPreference | null;
+    __OPENTU_CDN_API__?: RuntimeCDNApi;
+    __AITU_CDN_API__?: RuntimeCDNApi;
+    __OPENTU_BOOT__?: BootController;
+  }
+}
+
+function isValidCDNName(value: unknown): value is CDNName {
+  return value === 'jsdelivr' || value === 'unpkg' || value === 'local';
+}
+
+function getBootController(): BootController | null {
+  return window.__OPENTU_BOOT__ || null;
+}
+
+function updateBootProgress(
+  progress: number,
+  options?: BootProgressOptions
+): void {
+  getBootController()?.setProgress?.(progress, options);
+}
+
+function updateBootStatus(options?: BootProgressOptions): void {
+  getBootController()?.setProgress?.(undefined, options);
+}
+
+function isSWBootProgressMessage(
+  value: unknown
+): value is SWBootProgressMessage {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const message = value as Partial<SWBootProgressMessage>;
+  return (
+    message.type === 'SW_BOOT_PROGRESS' &&
+    typeof message.phase === 'string' &&
+    typeof message.percent === 'number' &&
+    typeof message.completed === 'number' &&
+    typeof message.total === 'number' &&
+    typeof message.failed === 'number'
+  );
+}
+
+function formatSWBootTip(payload: SWBootProgressMessage): string {
+  if (payload.phase === 'precache' && payload.total > 0) {
+    const failureText =
+      payload.failed > 0 ? `，${payload.failed} 项回退` : '';
+    return `正在预热启动资源（${Math.min(
+      payload.completed,
+      payload.total
+    )}/${payload.total}${failureText}）...`;
+  }
+
+  if (payload.phase === 'activating') {
+    return '启动缓存服务已完成，正在接管页面...';
+  }
+
+  if (payload.phase === 'activated') {
+    return '启动资源已就绪，正在进入工作台...';
+  }
+
+  if (payload.phase === 'development') {
+    return '开发模式下跳过静态预缓存，正在继续启动...';
+  }
+
+  if (payload.phase === 'error') {
+    return payload.message || '启动缓存预热失败，正在直接启动工作台...';
+  }
+
+  return payload.message || '正在准备启动资源...';
+}
+
+function mapSWBootProgressToPercent(payload: SWBootProgressMessage): number {
+  switch (payload.phase) {
+    case 'installing':
+      return 52;
+    case 'precache':
+      return 55 + payload.percent * 0.35;
+    case 'activating':
+      return 93;
+    case 'activated':
+      return 96;
+    case 'development':
+      return 72;
+    case 'error':
+      return 68;
+    default:
+      return 50;
+  }
+}
+
+function getRuntimeCDNPreference(): RuntimeCDNPreference | null {
+  const preference = window.__OPENTU_CDN__ || window.__AITU_CDN__;
+  if (!preference || !isValidCDNName(preference.cdn)) {
+    return null;
+  }
+
+  return {
+    cdn: preference.cdn,
+    latency:
+      Number.isFinite(preference.latency) && preference.latency >= 0
+        ? preference.latency
+        : 0,
+    timestamp:
+      Number.isFinite(preference.timestamp) && preference.timestamp > 0
+        ? preference.timestamp
+        : Date.now(),
+  };
+}
+
+function postCDNPreferenceToServiceWorker(
+  registration: ServiceWorkerRegistration | null
+): void {
+  const preference = getRuntimeCDNPreference();
+  if (!preference) {
+    return;
+  }
+
+  const payload = {
+    type: 'SW_CDN_SET_PREFERENCE' as const,
+    ...preference,
+    version: APP_VERSION,
+  };
+
+  const targets = new Set<ServiceWorker>();
+  const maybeWorkers = [
+    navigator.serviceWorker.controller,
+    registration?.active,
+    registration?.waiting,
+    registration?.installing,
+  ];
+
+  for (const worker of maybeWorkers) {
+    if (worker) {
+      targets.add(worker);
+    }
+  }
+
+  targets.forEach((worker) => {
+    worker.postMessage(payload);
+  });
+}
+
+function requestSWBootProgress(
+  registration: ServiceWorkerRegistration | null
+): void {
+  const payload = {
+    type: 'SW_BOOT_PROGRESS_GET' as const,
+  };
+
+  const targets = new Set<ServiceWorker>();
+  const maybeWorkers = [
+    navigator.serviceWorker.controller,
+    registration?.active,
+    registration?.waiting,
+    registration?.installing,
+  ];
+
+  for (const worker of maybeWorkers) {
+    if (worker) {
+      targets.add(worker);
+    }
+  }
+
+  targets.forEach((worker) => {
+    worker.postMessage(payload);
+  });
+}
+
+function scheduleCDNPreferenceSync(
+  registration: ServiceWorkerRegistration | null
+): void {
+  postCDNPreferenceToServiceWorker(registration);
+
+  const api = window.__OPENTU_CDN_API__ || window.__AITU_CDN_API__;
+  if (api?.selectBestCDN) {
+    api
+      .selectBestCDN()
+      .then((preference) => {
+        if (preference && isValidCDNName(preference.cdn)) {
+          window.__OPENTU_CDN__ = preference;
+        }
+        postCDNPreferenceToServiceWorker(registration);
+      })
+      .catch((error) => {
+        console.warn(
+          '[Main] Failed to sync CDN preference to Service Worker:',
+          error
+        );
+      });
+  }
+}
+
+function scheduleAfterFirstFrameIdle(
+  callback: () => void,
+  options: { delay?: number; timeout?: number } = {}
+): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  const { delay = 0, timeout = 2000 } = options;
+  const run = () => {
+    const idleCallback = (
+      window as Window & {
+        requestIdleCallback?: (
+          cb: () => void,
+          opts?: { timeout: number }
+        ) => number;
+      }
+    ).requestIdleCallback;
+
+    if (typeof idleCallback === 'function') {
+      idleCallback(callback, { timeout });
+      return;
+    }
+
+    window.setTimeout(callback, Math.min(timeout, 500));
+  };
+
+  const start = () => {
+    if (delay > 0) {
+      window.setTimeout(run, delay);
+      return;
+    }
+    run();
+  };
+
+  window.requestAnimationFrame(() => {
+    window.requestAnimationFrame(start);
+  });
+}
 
 Sentry.init({
-  dsn: "https://a18e755345995baaa0e1972c4cf24497@o4510700882296832.ingest.us.sentry.io/4510700883869696",
+  dsn: 'https://a18e755345995baaa0e1972c4cf24497@o4510700882296832.ingest.us.sentry.io/4510700883869696',
   // 本地开发环境默认不启用，除非 URL 带 report=1 参数
   enabled: shouldEnableReporting,
   // 禁用自动 PII 收集，保护用户隐私
@@ -62,25 +356,32 @@ Sentry.init({
     if (event.extra) {
       event.extra = sanitizeObject(event.extra) as Record<string, unknown>;
     }
-    
+
     // 过滤 contexts 中的敏感信息
     if (event.contexts) {
       event.contexts = sanitizeObject(event.contexts) as typeof event.contexts;
     }
-    
+
     // 过滤 breadcrumbs 中的敏感信息
     if (event.breadcrumbs) {
-      event.breadcrumbs = event.breadcrumbs.map(breadcrumb => ({
+      event.breadcrumbs = event.breadcrumbs.map((breadcrumb) => ({
         ...breadcrumb,
-        data: breadcrumb.data ? sanitizeObject(breadcrumb.data) as Record<string, unknown> : undefined,
-        message: breadcrumb.message ? String(sanitizeObject(breadcrumb.message)) : undefined,
+        data: breadcrumb.data
+          ? (sanitizeObject(breadcrumb.data) as Record<string, unknown>)
+          : undefined,
+        message: breadcrumb.message
+          ? String(sanitizeObject(breadcrumb.message))
+          : undefined,
       }));
     }
-    
+
     // 过滤请求数据中的敏感信息
     if (event.request) {
       if (event.request.headers) {
-        event.request.headers = sanitizeObject(event.request.headers) as Record<string, string>;
+        event.request.headers = sanitizeObject(event.request.headers) as Record<
+          string,
+          string
+        >;
       }
       if (event.request.data) {
         event.request.data = sanitizeObject(event.request.data);
@@ -90,42 +391,55 @@ Sentry.init({
         event.request.url = sanitizeUrl(event.request.url);
       }
     }
-    
+
     return event;
   },
+});
+
+updateBootStatus({
+  tip: '正在初始化启动服务...',
+  source: 'phase',
 });
 
 // ===== 立即初始化防止双指缩放 =====
 // 必须在任何其他代码之前执行，确保事件监听器最先注册
 if (typeof window !== 'undefined') {
   initPreventPinchZoom();
-  // console.log('[Main] Pinch zoom prevention initialized immediately');
 
-  // 清理旧的冗余数据库（异步执行，不阻塞启动）
-  runDatabaseCleanup().catch(error => {
-    console.warn('[Main] Database cleanup failed:', error);
-  });
+  scheduleAfterFirstFrameIdle(
+    () => {
+      runDatabaseCleanup().catch((error) => {
+        console.warn('[Main] Database cleanup failed:', error);
+      });
 
-  // 执行 LocalStorage 到 IndexedDB 的数据迁移（异步执行，不阻塞启动）
-  storageMigrationService.runMigration().then(() => {
-    // 迁移完成后初始化各服务的缓存
-    return Promise.all([
-      initPromptStorageCache(),
-      toolbarConfigService.initializeAsync(),
-    ]);
-  }).catch(error => {
-    console.warn('[Main] Storage migration/init failed:', error);
-  });
-}
+      storageMigrationService
+        .runMigration()
+        .then(() => {
+          return Promise.all([
+            initPromptStorageCache(),
+            toolbarConfigService.initializeAsync(),
+          ]);
+        })
+        .catch((error) => {
+          console.warn('[Main] Storage migration/init failed:', error);
+        });
+    },
+    {
+      delay: 400,
+      timeout: 2500,
+    }
+  );
 
-// 初始化性能监控
-if (typeof window !== 'undefined') {
-  // 启动内存监控（延迟启动，避免影响首屏加载）
-  setTimeout(() => {
-    memoryMonitorService.start();
-    // 打印初始内存状态
-    memoryMonitorService.logMemoryStatus();
-  }, 5000);
+  scheduleAfterFirstFrameIdle(
+    () => {
+      memoryMonitorService.start();
+      memoryMonitorService.logMemoryStatus();
+    },
+    {
+      delay: 5000,
+      timeout: 2500,
+    }
+  );
 
   // 统计上报为旁路逻辑：在空闲时初始化，不占首屏主流程
   const initMonitoring = () => {
@@ -137,52 +451,80 @@ if (typeof window !== 'undefined') {
     }
   };
 
-  const scheduleMonitoring = () => {
-    if (typeof (window as Window & { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number }).requestIdleCallback === 'function') {
-      (window as Window & { requestIdleCallback: (cb: () => void, opts?: { timeout: number }) => number }).requestIdleCallback(initMonitoring, { timeout: 3000 });
-    } else {
-      setTimeout(initMonitoring, 3000);
-    }
-  };
-  scheduleMonitoring();
+  scheduleAfterFirstFrameIdle(initMonitoring, {
+    delay: 1500,
+    timeout: 3000,
+  });
 }
 
 // 注册Service Worker来处理CORS问题和PWA功能
 if ('serviceWorker' in navigator) {
-  const isDevelopment = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-  
+  const isDevelopment =
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1';
+
   // 新版本是否已准备好
   let newVersionReady = false;
   // 等待中的新 Worker
   let pendingWorker: ServiceWorker | null = null;
   // 用户是否已确认升级（只有用户确认后才触发刷新）
   let userConfirmedUpgrade = false;
-  
+
   // Global reference to service worker registration
   let swRegistration: ServiceWorkerRegistration | null = null;
 
+  updateBootStatus({
+    tip: '正在连接启动缓存服务...',
+    source: 'phase',
+  });
+
+  navigator.serviceWorker.addEventListener('message', (event) => {
+    if (!isSWBootProgressMessage(event.data)) {
+      return;
+    }
+
+    updateBootProgress(mapSWBootProgressToPercent(event.data), {
+      tip: formatSWBootTip(event.data),
+      source: 'sw',
+    });
+  });
+
   // Register immediately for faster activation
-  navigator.serviceWorker.register('/sw.js')
-    .then(registration => {
+  navigator.serviceWorker
+    .register('/sw.js')
+    .then((registration) => {
       swRegistration = registration;
+      updateBootStatus({
+        tip: '启动缓存服务已连接，正在准备资源清单...',
+        source: 'phase',
+      });
+      scheduleCDNPreferenceSync(registration);
+      requestSWBootProgress(registration);
 
       // 在开发模式下，强制检查更新并处理等待中的Worker
       if (isDevelopment) {
-        registration.update().catch(err => console.warn('Forced update check failed:', err));
-        
+        registration
+          .update()
+          .catch((err) => console.warn('Forced update check failed:', err));
+
         if (registration.waiting) {
           registration.waiting.postMessage({ type: 'SKIP_WAITING' });
         }
       }
-      
+
       // 监听Service Worker更新
       registration.addEventListener('updatefound', () => {
         const newWorker = registration.installing;
         if (newWorker) {
+          requestSWBootProgress(registration);
           newWorker.addEventListener('statechange', () => {
-            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+            requestSWBootProgress(registration);
+            if (
+              newWorker.state === 'installed' &&
+              navigator.serviceWorker.controller
+            ) {
               pendingWorker = newWorker;
-              
+
               // 在开发模式下自动激活新的Service Worker
               if (isDevelopment) {
                 newWorker.postMessage({ type: 'SKIP_WAITING' });
@@ -191,42 +533,55 @@ if ('serviceWorker' in navigator) {
                 newVersionReady = true;
                 // 尝试获取新版本号，用于更新提示
                 fetch(`/version.json?t=${Date.now()}`)
-                  .then(res => res.ok ? res.json() : null)
-                  .then(data => {
-                    window.dispatchEvent(new CustomEvent('sw-update-available', { 
-                      detail: { version: data?.version || 'new' } 
-                    }));
+                  .then((res) => (res.ok ? res.json() : null))
+                  .then((data) => {
+                    window.dispatchEvent(
+                      new CustomEvent('sw-update-available', {
+                        detail: { version: data?.version || 'new' },
+                      })
+                    );
                   })
                   .catch(() => {
-                    window.dispatchEvent(new CustomEvent('sw-update-available', { 
-                      detail: { version: 'new' } 
-                    }));
+                    window.dispatchEvent(
+                      new CustomEvent('sw-update-available', {
+                        detail: { version: 'new' },
+                      })
+                    );
                   });
               }
             }
           });
         }
       });
-      
+
+      if (registration.active && !registration.installing && !registration.waiting) {
+        updateBootStatus({
+          tip: '启动缓存服务已就绪，正在恢复工作台状态...',
+          source: 'phase',
+        });
+      }
+
       // 定期检查更新（每 5 分钟检查一次）
       setInterval(() => {
-        registration.update().catch(error => {
+        registration.update().catch((error) => {
           console.warn('Update check failed:', error);
         });
       }, 5 * 60 * 1000);
-      
     })
-    .catch(error => {
-      // console.log('Service Worker registration failed:', error);
+    .catch((error) => {
+      updateBootStatus({
+        tip: '离线加速未启用，正在直接启动工作台...',
+        source: 'phase',
+      });
     });
-  
+
   // 设置 SW 事件处理器（通过 postmessage-duplex）
   const setupSWEventHandlers = () => {
     if (!swChannelClient.isInitialized()) {
       setTimeout(setupSWEventHandlers, 500);
       return;
     }
-    
+
     swChannelClient.setEventHandlers({
       onSWUpdated: (event) => {
         // 只有用户主动确认升级后才刷新页面
@@ -235,27 +590,31 @@ if ('serviceWorker' in navigator) {
         }
         // 等待一小段时间，确保新的Service Worker已经完全接管
         setTimeout(() => {
-          safeReload();
+          void safeReload();
         }, 1000);
       },
       onSWNewVersionReady: (event) => {
         newVersionReady = true;
-        window.dispatchEvent(new CustomEvent('sw-update-available', { 
-          detail: { version: event.version } 
-        }));
+        window.dispatchEvent(
+          new CustomEvent('sw-update-available', {
+            detail: { version: event.version },
+          })
+        );
       },
       onSWActivated: (event) => {
         // 新 SW 已自动激活并接管页面
-        window.dispatchEvent(new CustomEvent('sw-update-available', { 
-          detail: { version: event.version, autoActivated: true } 
-        }));
+        window.dispatchEvent(
+          new CustomEvent('sw-update-available', {
+            detail: { version: event.version, autoActivated: true },
+          })
+        );
       },
     });
   };
-  
+
   // 延迟初始化 SW 事件处理器，等待 swChannelClient 就绪
   setTimeout(setupSWEventHandlers, 1000);
-  
+
   // 注册视频缩略图生成处理器（使用 postmessage-duplex 双工通讯）
   // SW 通过 publish('thumbnail:generate', { url }) 请求，主线程处理并直接返回结果
   const setupVideoThumbnailHandler = async () => {
@@ -264,39 +623,45 @@ if ('serviceWorker' in navigator) {
       setTimeout(setupVideoThumbnailHandler, 500);
       return;
     }
-    
-    swChannelClient.registerVideoThumbnailHandler(async (url) => {
+
+    swChannelClient.registerVideoThumbnailHandler(async (url, maxSize) => {
       try {
         const { generateVideoThumbnailFromBlob } = await import('@aitu/utils');
-        
+
         let videoBlob: Blob | null = null;
-        
+
         // 1. 尝试从缓存获取视频 blob
         const cache = await caches.open('drawnix-images');
         const cachedResponse = await cache.match(url);
         if (cachedResponse) {
           videoBlob = await cachedResponse.blob();
         }
-        
+
         // 2. 如果缓存中没有，尝试从网络获取（支持远程视频）
-        if (!videoBlob && (url.startsWith('http://') || url.startsWith('https://'))) {
+        if (
+          !videoBlob &&
+          (url.startsWith('http://') || url.startsWith('https://'))
+        ) {
           try {
             const networkResponse = await fetch(url);
             if (networkResponse.ok) {
               videoBlob = await networkResponse.blob();
             }
-          } catch (fetchError) {
-            console.warn('[Main] Failed to fetch video from network:', fetchError);
+          } catch {
+            videoBlob = null;
           }
         }
-        
+
         if (!videoBlob) {
           return { error: 'Video not found in cache or network' };
         }
-        
+
         // 生成预览图
-        const thumbnailBlob = await generateVideoThumbnailFromBlob(videoBlob, 400);
-        
+        const thumbnailBlob = await generateVideoThumbnailFromBlob(
+          videoBlob,
+          maxSize || 400
+        );
+
         // 将 Blob 转换为 Data URL
         const thumbnailUrl = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
@@ -304,20 +669,23 @@ if ('serviceWorker' in navigator) {
           reader.onerror = reject;
           reader.readAsDataURL(thumbnailBlob);
         });
-        
+
         return { thumbnailUrl };
       } catch (error) {
-        console.warn('[Main] Failed to generate video thumbnail:', error);
-        return { error: error instanceof Error ? error.message : String(error) };
+        return {
+          error: error instanceof Error ? error.message : String(error),
+        };
       }
     });
   };
-  
+
   setupVideoThumbnailHandler();
-  
+
   // 监听controller变化（新的Service Worker接管）
   // 只有用户主动确认升级后才刷新页面
   navigator.serviceWorker.addEventListener('controllerchange', () => {
+    scheduleCDNPreferenceSync(swRegistration);
+
     // 只有用户主动确认升级后才刷新页面
     if (!userConfirmedUpgrade) {
       return;
@@ -325,10 +693,10 @@ if ('serviceWorker' in navigator) {
 
     // 延迟刷新，确保新Service Worker的缓存已准备好
     setTimeout(() => {
-      safeReload();
+      void safeReload();
     }, 1000);
   });
-  
+
   // 监听用户确认升级事件
   window.addEventListener('user-confirmed-upgrade', () => {
     // 标记用户已确认升级，允许后续的 reload
@@ -351,15 +719,21 @@ if ('serviceWorker' in navigator) {
     // 清除缓存并强制刷新
 
     // 清除旧的静态资源缓存以确保获取最新资源
-    caches.keys().then(cacheNames => {
-      const staticCaches = cacheNames.filter(name => name.startsWith('drawnix-static-v'));
-      return Promise.all(staticCaches.map(name => caches.delete(name)));
-    }).finally(() => {
-      // 强制硬刷新（绕过缓存）
-      window.location.href = window.location.href.split('?')[0] + '?_t=' + Date.now();
-    });
+    caches
+      .keys()
+      .then((cacheNames) => {
+        const staticCaches = cacheNames.filter((name) =>
+          name.startsWith('drawnix-static-v')
+        );
+        return Promise.all(staticCaches.map((name) => caches.delete(name)));
+      })
+      .finally(() => {
+        // 强制硬刷新（绕过缓存）
+        window.location.href =
+          window.location.href.split('?')[0] + '?_t=' + Date.now();
+      });
   });
-  
+
   // 页面卸载前，不再自动触发升级，必须用户手动确认
   // window.addEventListener('beforeunload', () => {
   //   if (newVersionReady && pendingWorker) {
@@ -367,7 +741,7 @@ if ('serviceWorker' in navigator) {
   //     pendingWorker.postMessage({ type: 'SKIP_WAITING' });
   //   }
   // });
-  
+
   // 页面隐藏时，不再自动触发升级
   // document.addEventListener('visibilitychange', () => {
   //   if (document.visibilityState === 'hidden' && newVersionReady && pendingWorker) {
@@ -376,6 +750,11 @@ if ('serviceWorker' in navigator) {
   //   }
   // });
 }
+
+updateBootStatus({
+  tip: '正在挂载工作台界面...',
+  source: 'phase',
+});
 
 const root = ReactDOM.createRoot(
   document.getElementById('root') as HTMLElement

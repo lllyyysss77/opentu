@@ -4,7 +4,7 @@ import { Music4 } from 'lucide-react';
 import { AudioTrackList } from '../shared/AudioTrackList';
 import { AudioTrackContextMenu } from '../shared/AudioTrackContextMenu';
 import { AudioPlaylistTabs } from '../shared/AudioPlaylistTabs';
-import { useContextMenuState } from '../shared';
+import { useContextMenuState } from '../shared/ContextMenu';
 import { useAssets } from '../../contexts/AssetContext';
 import { useResolvedAudioDurations } from '../../hooks/useResolvedAudioDurations';
 import { useAllTracksPlaybackSources } from '../../hooks/useAllTracksPlaybackSources';

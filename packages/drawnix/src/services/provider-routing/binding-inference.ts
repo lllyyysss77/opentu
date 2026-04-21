@@ -3,6 +3,8 @@ import {
   ModelVendor,
   type ModelConfig,
 } from '../../constants/model-config';
+import type { PricingEndpointInfo } from '../../utils/model-pricing-types';
+import { inferAllBindingHintsFromEndpoints } from './endpoint-binding-inference';
 import type {
   ProviderModelBinding,
   ProviderProfileSnapshot,
@@ -73,6 +75,18 @@ function isGeminiFamilyModel(model: ModelConfig): boolean {
     'banana',
     'learnlm',
   ]);
+}
+
+function isOfficialGoogleBaseUrl(baseUrl: string): boolean {
+  const normalized = baseUrl.trim().toLowerCase();
+  return (
+    normalized.includes('generativelanguage.googleapis.com') ||
+    normalized.includes('vertex.googleapis.com')
+  );
+}
+
+function isTuziBaseUrl(baseUrl: string): boolean {
+  return baseUrl.trim().toLowerCase().includes('api.tu-zi.com');
 }
 
 function isMidjourneyModel(model: ModelConfig): boolean {
@@ -299,6 +313,13 @@ function inferImageBindings(
   model: ModelConfig
 ): ProviderModelBinding[] {
   const bindings: ProviderModelBinding[] = [];
+  const isGeminiImageModel =
+    isGeminiFamilyModel(model) && !isAsyncImageModel(model.id);
+  const isTuziProfile = isTuziBaseUrl(profile.baseUrl);
+  const preferImagesGenerationsForBuiltinGemini =
+    profile.providerType === 'gemini-compatible' &&
+    isGeminiImageModel &&
+    !isOfficialGoogleBaseUrl(profile.baseUrl);
 
   if (isMidjourneyModel(model)) {
     bindings.push(
@@ -344,10 +365,24 @@ function inferImageBindings(
     );
   }
 
+  if (preferImagesGenerationsForBuiltinGemini) {
+    bindings.push(
+      buildBinding(profile, model, {
+        protocol: 'openai.images.generations',
+        requestSchema: 'openai.image.basic-json',
+        responseSchema: 'openai.image.data',
+        submitPath: '/images/generations',
+        priority: 500,
+        confidence: 'high',
+        source: 'template',
+      })
+    );
+  }
+
   if (
     profile.providerType === 'gemini-compatible' &&
-    isGeminiFamilyModel(model) &&
-    !isAsyncImageModel(model.id)
+    isGeminiImageModel &&
+    !isTuziProfile
   ) {
     bindings.push(
       buildBinding(profile, model, {
@@ -356,7 +391,7 @@ function inferImageBindings(
         responseSchema: 'google.generate-content.parts',
         submitPath: '/v1beta/models/{model}:generateContent',
         baseUrlStrategy: 'trim-v1',
-        priority: 480,
+        priority: preferImagesGenerationsForBuiltinGemini ? 460 : 480,
         confidence: 'high',
         source: 'template',
       })
@@ -566,27 +601,62 @@ function dedupeBindings(bindings: ProviderModelBinding[]): ProviderModelBinding[
 
 export function inferBindingsForProviderModel(
   profile: ProviderProfileSnapshot,
-  model: ModelConfig
+  model: ModelConfig,
+  endpointHints?: Record<string, PricingEndpointInfo> | null
 ): ProviderModelBinding[] {
+  let bindings: ProviderModelBinding[];
   switch (model.type) {
     case 'text':
-      return dedupeBindings(inferTextBindings(profile, model));
+      bindings = inferTextBindings(profile, model);
+      break;
     case 'image':
-      return dedupeBindings(inferImageBindings(profile, model));
+      bindings = inferImageBindings(profile, model);
+      break;
     case 'video':
-      return dedupeBindings(inferVideoBindings(profile, model));
+      bindings = inferVideoBindings(profile, model);
+      break;
     case 'audio':
-      return dedupeBindings(inferAudioBindings(profile, model));
+      bindings = inferAudioBindings(profile, model);
+      break;
     default:
-      return [];
+      bindings = [];
   }
+
+  if (endpointHints) {
+    const hints = inferAllBindingHintsFromEndpoints(endpointHints);
+    for (const hint of hints) {
+      const alreadyHasSpecific = bindings.some(
+        (b) => b.protocol === hint.protocol && b.confidence === 'high' && b.source === 'template'
+      );
+      if (!alreadyHasSpecific) {
+        bindings.push(
+          buildBinding(profile, model, {
+            ...hint,
+            // discovered endpoint 只补充候选，不应抢过现有模板绑定
+            priority: 140,
+            confidence: 'medium',
+            source: 'discovered',
+          })
+        );
+      }
+    }
+  }
+
+  return dedupeBindings(bindings);
 }
 
 export function inferBindingsForProviderCatalog(
   profile: ProviderProfileSnapshot,
-  models: ModelConfig[]
+  models: ModelConfig[],
+  modelEndpointsMap?: Record<string, Record<string, PricingEndpointInfo>> | null
 ): ProviderModelBinding[] {
   return dedupeBindings(
-    models.flatMap((model) => inferBindingsForProviderModel(profile, model))
+    models.flatMap((model) =>
+      inferBindingsForProviderModel(
+        profile,
+        model,
+        modelEndpointsMap?.[model.id] ?? null
+      )
+    )
   );
 }

@@ -4,7 +4,7 @@
  * 只渲染可见区域的元素，大幅提升大数据量场景的性能
  */
 
-import { useRef, useMemo, useCallback, useState, useEffect } from 'react';
+import { useRef, useMemo, useCallback, useState, useEffect, type PointerEvent as ReactPointerEvent } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { AssetItem } from './AssetItem';
 import type { Asset, ViewMode } from '../../types/asset.types';
@@ -36,41 +36,16 @@ const VIEW_CONFIG: Record<ViewMode, {
   },
 };
 
-// 根据容器宽度和最大尺寸计算列数和实际尺寸
-const calculateGridLayout = (
-  viewMode: ViewMode,
-  containerWidth: number,
-  config: typeof VIEW_CONFIG[ViewMode]
-): { columns: number; itemSize: number } => {
-  if (viewMode === 'list') {
-    return { columns: 1, itemSize: config.maxItemSize };
-  }
-
-  const availableWidth = containerWidth - config.padding * 2;
-
-  // 计算最大尺寸下能放多少列
-  const columnsAtMaxSize = Math.floor((availableWidth + config.gap) / (config.maxItemSize + config.gap));
-
-  // 至少1列
-  const columns = Math.max(1, columnsAtMaxSize);
-
-  // 计算实际尺寸（均分可用空间）
-  const itemSize = Math.floor((availableWidth - config.gap * (columns - 1)) / columns);
-
-  // 确保尺寸在合理范围内
-  const clampedSize = Math.max(config.minItemSize, Math.min(config.maxItemSize, itemSize));
-
-  return { columns, itemSize: clampedSize };
-};
-
 interface VirtualAssetGridProps {
   assets: Asset[];
   viewMode: ViewMode;
   gridSize?: number;
   selectedAssetId?: string;
-  selectedAssetIds: Set<string>;
+  isAssetSelected: (asset: Asset) => boolean;
   isSelectionMode: boolean;
+  marqueeEnabled?: boolean;
   onSelectAsset: (assetId: string, event?: React.MouseEvent) => void;
+  onMarqueeSelect?: (assetIds: string[]) => void;
   onDoubleClick?: (asset: Asset) => void;
   onPreview?: (asset: Asset) => void;
   onContextMenu?: (asset: Asset, event: React.MouseEvent) => void;
@@ -79,14 +54,46 @@ interface VirtualAssetGridProps {
   syncedUrls?: Set<string>; // 已同步到 Gist 的 URL 集合
 }
 
+interface MarqueeRect {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+interface MarqueeDragState {
+  startX: number;
+  startY: number;
+  active: boolean;
+}
+
+function shouldIgnoreMarqueeTarget(target: HTMLElement): boolean {
+  return Boolean(
+    target.closest(
+      'button, input, textarea, select, option, label, video, audio, a, .t-checkbox, [data-marquee-ignore="true"]'
+    )
+  );
+}
+
+function intersectsMarquee(rect: DOMRect, marquee: DOMRect): boolean {
+  return !(
+    rect.right < marquee.left ||
+    rect.left > marquee.right ||
+    rect.bottom < marquee.top ||
+    rect.top > marquee.bottom
+  );
+}
+
 export function VirtualAssetGrid({
   assets,
   viewMode,
   gridSize = 180,
   selectedAssetId,
-  selectedAssetIds,
+  isAssetSelected,
   isSelectionMode,
+  marqueeEnabled = false,
   onSelectAsset,
+  onMarqueeSelect,
   onDoubleClick,
   onPreview,
   onContextMenu,
@@ -95,6 +102,8 @@ export function VirtualAssetGrid({
   syncedUrls,
 }: VirtualAssetGridProps) {
   const parentRef = useRef<HTMLDivElement>(null);
+  const marqueeDragRef = useRef<MarqueeDragState | null>(null);
+  const suppressClickRef = useRef(false);
   const config = useMemo(() => {
     const baseConfig = VIEW_CONFIG[viewMode];
     // 如果是网格或紧凑模式，允许通过 gridSize 覆盖尺寸
@@ -109,6 +118,7 @@ export function VirtualAssetGrid({
   }, [viewMode, gridSize]);
 
   const [containerWidth, setContainerWidth] = useState(800);
+  const [marqueeRect, setMarqueeRect] = useState<MarqueeRect | null>(null);
 
   // 监听容器尺寸变化
   useEffect(() => {
@@ -190,6 +200,8 @@ export function VirtualAssetGrid({
       return (
         <div
           key={asset.id}
+          data-asset-cell="true"
+          data-asset-id={asset.id}
           style={{
             width: '100%', // 在 Grid 下设为 100% 自动填充单元格
             height: itemSize.height,
@@ -198,7 +210,7 @@ export function VirtualAssetGrid({
           <AssetItem
             asset={asset}
             viewMode={viewMode}
-            isSelected={isSelectionMode ? selectedAssetIds.has(asset.id) : selectedAssetId === asset.id}
+            isSelected={isSelectionMode ? isAssetSelected(asset) : selectedAssetId === asset.id}
             onSelect={onSelectAsset}
             onDoubleClick={onDoubleClick}
             onPreview={onPreview}
@@ -211,18 +223,124 @@ export function VirtualAssetGrid({
         </div>
       );
     });
-  }, [assets, columns, viewMode, selectedAssetId, selectedAssetIds, isSelectionMode, onSelectAsset, onDoubleClick, onPreview, onContextMenu, isFavorite, onToggleFavorite, itemSize.height, syncedUrls]);
+  }, [assets, columns, viewMode, selectedAssetId, isAssetSelected, isSelectionMode, onSelectAsset, onDoubleClick, onPreview, onContextMenu, isFavorite, onToggleFavorite, itemSize.height, syncedUrls]);
 
   const virtualItems = rowVirtualizer.getVirtualItems();
+
+  const stopMarqueeDrag = useCallback(() => {
+    marqueeDragRef.current = null;
+    setMarqueeRect(null);
+    window.setTimeout(() => {
+      suppressClickRef.current = false;
+    }, 0);
+  }, []);
+
+  useEffect(() => {
+    if (!marqueeEnabled) {
+      marqueeDragRef.current = null;
+      setMarqueeRect(null);
+      suppressClickRef.current = false;
+    }
+  }, [marqueeEnabled]);
+
+  const handlePointerMove = useCallback((event: PointerEvent) => {
+    const dragState = marqueeDragRef.current;
+    const container = parentRef.current;
+    if (!dragState || !container || !marqueeEnabled || !onMarqueeSelect) {
+      return;
+    }
+
+    const containerRect = container.getBoundingClientRect();
+    const currentX = Math.min(Math.max(event.clientX, containerRect.left), containerRect.right);
+    const currentY = Math.min(Math.max(event.clientY, containerRect.top), containerRect.bottom);
+    const deltaX = currentX - dragState.startX;
+    const deltaY = currentY - dragState.startY;
+
+    if (!dragState.active && Math.hypot(deltaX, deltaY) < 6) {
+      return;
+    }
+
+    if (!dragState.active) {
+      dragState.active = true;
+      suppressClickRef.current = true;
+    }
+
+    const left = Math.min(dragState.startX, currentX) - containerRect.left;
+    const top = Math.min(dragState.startY, currentY) - containerRect.top;
+    const width = Math.abs(currentX - dragState.startX);
+    const height = Math.abs(currentY - dragState.startY);
+    const nextRect = { left, top, width, height };
+    setMarqueeRect(nextRect);
+
+    const marqueeViewportRect = new DOMRect(
+      containerRect.left + nextRect.left,
+      containerRect.top + nextRect.top,
+      nextRect.width,
+      nextRect.height
+    );
+
+    const hitIds = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-asset-cell="true"][data-asset-id]')
+    )
+      .filter((element) => intersectsMarquee(element.getBoundingClientRect(), marqueeViewportRect))
+      .map((element) => element.dataset.assetId)
+      .filter((assetId): assetId is string => Boolean(assetId));
+
+    onMarqueeSelect(hitIds);
+  }, [marqueeEnabled, onMarqueeSelect]);
+
+  const handlePointerUp = useCallback(() => {
+    stopMarqueeDrag();
+    document.removeEventListener('pointermove', handlePointerMove);
+    document.removeEventListener('pointerup', handlePointerUp);
+  }, [handlePointerMove, stopMarqueeDrag]);
+
+  const handlePointerDownCapture = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!marqueeEnabled || !onMarqueeSelect || event.button !== 0) {
+      return;
+    }
+
+    const target = event.target;
+    if (!(target instanceof HTMLElement) || shouldIgnoreMarqueeTarget(target)) {
+      return;
+    }
+
+    marqueeDragRef.current = {
+      startX: event.clientX,
+      startY: event.clientY,
+      active: false,
+    };
+    suppressClickRef.current = false;
+
+    document.addEventListener('pointermove', handlePointerMove);
+    document.addEventListener('pointerup', handlePointerUp);
+  }, [handlePointerMove, handlePointerUp, marqueeEnabled, onMarqueeSelect]);
+
+  const handleClickCapture = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    if (suppressClickRef.current) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      marqueeDragRef.current = null;
+      document.removeEventListener('pointermove', handlePointerMove);
+      document.removeEventListener('pointerup', handlePointerUp);
+    };
+  }, [handlePointerMove, handlePointerUp]);
 
   return (
     <div
       ref={parentRef}
-      className={`virtual-asset-grid virtual-asset-grid--${viewMode}`}
+      className={`virtual-asset-grid virtual-asset-grid--${viewMode} ${marqueeRect ? 'virtual-asset-grid--marquee-active' : ''}`}
+      onPointerDownCapture={handlePointerDownCapture}
+      onClickCapture={handleClickCapture}
       style={{
         height: '100%',
         overflow: 'auto',
-        contain: 'strict',
+        position: 'relative',
       }}
     >
       <div
@@ -253,6 +371,17 @@ export function VirtualAssetGrid({
             </div>
         ))}
       </div>
+      {marqueeRect && (
+        <div
+          className="virtual-asset-grid__marquee"
+          style={{
+            left: marqueeRect.left,
+            top: marqueeRect.top,
+            width: marqueeRect.width,
+            height: marqueeRect.height,
+          }}
+        />
+      )}
     </div>
   );
 }

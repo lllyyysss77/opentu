@@ -3,7 +3,14 @@
  */
 
 import React, { useState, useCallback, useEffect } from 'react';
-import { Dialog, MessagePlugin, Button, Switch, Loading, Avatar, Tooltip } from 'tdesign-react';
+import {
+  Dialog,
+  MessagePlugin,
+  Button,
+  Switch,
+  Loading,
+  Avatar,
+} from 'tdesign-react';
 import {
   CloudIcon,
   CheckCircleFilledIcon,
@@ -21,9 +28,11 @@ import { useGitHubSync, GistInfo } from '../../contexts/GitHubSyncContext';
 import { tokenService, syncPasswordService } from '../../services/github-sync';
 import { TokenGuide } from './TokenGuide';
 import { RecycleBin } from './RecycleBin';
+import { ConfirmDialog, useConfirmDialog } from '../dialog/ConfirmDialog';
 import { LockOnIcon, LockOffIcon } from 'tdesign-icons-react';
 import { safeReload } from '../../utils/active-tasks';
 import './sync-settings.scss';
+import { HoverTip } from '../shared';
 
 /** Props */
 interface SyncSettingsProps {
@@ -99,38 +108,43 @@ export function SyncSettings({ visible, onClose }: SyncSettingsProps) {
   const [showTokenGuide, setShowTokenGuide] = useState(false);
   const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false);
   const [isLocalSyncing, setIsLocalSyncing] = useState(false);
-  
+
   // Gist 管理状态
   const [showGistManager, setShowGistManager] = useState(false);
   const [gists, setGists] = useState<GistInfo[]>([]);
   const [isLoadingGists, setIsLoadingGists] = useState(false);
-  const [deleteConfirmGist, setDeleteConfirmGist] = useState<GistInfo | null>(null);
-  
+  const [deleteConfirmGist, setDeleteConfirmGist] = useState<GistInfo | null>(
+    null
+  );
+  const { confirm, confirmDialog } = useConfirmDialog();
+
   // 加密密码状态
   const [customPassword, setCustomPassword] = useState('');
   const [hasStoredPassword, setHasStoredPassword] = useState(false);
   const [storedPassword, setStoredPassword] = useState(''); // 完整的已存储密码
   const [showStoredPassword, setShowStoredPassword] = useState(false); // 是否显示完整密码
   const [isSavingPassword, setIsSavingPassword] = useState(false);
-  
+
   /** 创建掩码密码（显示前后各2位） */
   const maskPassword = (password: string): string => {
     if (password.length <= 4) {
       return '*'.repeat(password.length);
     }
-    const prefix = password.slice(0, Math.floor(password.length/4));
-    const suffix = password.slice(-Math.floor(password.length/4));
+    const prefix = password.slice(0, Math.floor(password.length / 4));
+    const suffix = password.slice(-Math.floor(password.length / 4));
     const masked = '*'.repeat(Math.min(password.length - 4, 6));
     return `${prefix}${masked}${suffix}`;
   };
-  
+
   /** 获取显示的密码（根据显示/隐藏状态） */
-  const displayPassword = showStoredPassword ? storedPassword : maskPassword(storedPassword);
+  const displayPassword = showStoredPassword
+    ? storedPassword
+    : maskPassword(storedPassword);
 
   // 加载 Gist 列表
   const loadGists = useCallback(async () => {
     if (!isConnected) return;
-    
+
     setIsLoadingGists(true);
     try {
       const gistList = await listGists();
@@ -219,21 +233,29 @@ export function SyncSettings({ visible, onClose }: SyncSettingsProps) {
     if (isSyncing || isLocalSyncing) {
       return;
     }
-    
+
     setIsLocalSyncing(true);
     try {
       const result = await sync();
       if (result.success) {
         // 构建详细的同步结果消息
         const parts: string[] = ['同步完成'];
-        
+
         // 统计上传、下载和删除
-        const uploaded = result.uploaded.boards + result.uploaded.prompts + result.uploaded.tasks;
-        const downloaded = result.downloaded.boards + result.downloaded.prompts + result.downloaded.tasks;
-        const deleted = result.deleted 
-          ? result.deleted.boards + result.deleted.prompts + result.deleted.tasks
+        const uploaded =
+          result.uploaded.boards +
+          result.uploaded.prompts +
+          result.uploaded.tasks;
+        const downloaded =
+          result.downloaded.boards +
+          result.downloaded.prompts +
+          result.downloaded.tasks;
+        const deleted = result.deleted
+          ? result.deleted.boards +
+            result.deleted.prompts +
+            result.deleted.tasks
           : 0;
-        
+
         if (uploaded > 0 || downloaded > 0 || deleted > 0) {
           const details: string[] = [];
           if (uploaded > 0) details.push(`上传 ${uploaded} 项`);
@@ -241,15 +263,15 @@ export function SyncSettings({ visible, onClose }: SyncSettingsProps) {
           if (deleted > 0) details.push(`删除 ${deleted} 项`);
           parts.push(`(${details.join(', ')})`);
         }
-        
+
         // 如果有合并的冲突
-        const mergedConflicts = result.conflicts.filter(c => c.merged);
+        const mergedConflicts = result.conflicts.filter((c) => c.merged);
         if (mergedConflicts.length > 0) {
           parts.push(`，已自动合并 ${mergedConflicts.length} 个画板`);
         }
-        
+
         MessagePlugin.success(parts.join(''));
-        
+
         // 刷新 Gist 列表
         if (showGistManager) {
           loadGists();
@@ -259,7 +281,9 @@ export function SyncSettings({ visible, onClose }: SyncSettingsProps) {
       }
     } catch (err) {
       console.error('[SyncSettings] Sync error:', err);
-      MessagePlugin.error('同步失败: ' + (err instanceof Error ? err.message : String(err)));
+      MessagePlugin.error(
+        '同步失败: ' + (err instanceof Error ? err.message : String(err))
+      );
     } finally {
       setIsLocalSyncing(false);
     }
@@ -272,24 +296,36 @@ export function SyncSettings({ visible, onClose }: SyncSettingsProps) {
       console.log('[SyncSettings] Already syncing, aborting');
       return;
     }
-    
-    // 确认操作
-    if (!window.confirm('以远程为准同步将下载云端数据覆盖本地。\n\n确定要继续吗？')) {
+
+    const confirmed = await confirm({
+      title: '确认下载覆盖',
+      description: '以远程为准同步将下载云端数据覆盖本地。\n\n确定要继续吗？',
+      confirmText: '继续下载',
+      cancelText: '取消',
+      danger: true,
+    });
+
+    if (!confirmed) {
       return;
     }
-    
+
     setIsLocalSyncing(true);
     try {
       console.log('[SyncSettings] Calling pullFromRemote...');
       const result = await pullFromRemote();
       console.log('[SyncSettings] pullFromRemote result:', result);
-      
+
       if (result.success) {
-        const downloaded = result.downloaded.boards + result.downloaded.prompts + result.downloaded.tasks;
-        const deleted = result.deleted 
-          ? result.deleted.boards + result.deleted.prompts + result.deleted.tasks
+        const downloaded =
+          result.downloaded.boards +
+          result.downloaded.prompts +
+          result.downloaded.tasks;
+        const deleted = result.deleted
+          ? result.deleted.boards +
+            result.deleted.prompts +
+            result.deleted.tasks
           : 0;
-        
+
         // 构建结果消息
         const parts: string[] = ['下载完成'];
         const details: string[] = [];
@@ -299,42 +335,56 @@ export function SyncSettings({ visible, onClose }: SyncSettingsProps) {
           parts.push(`(${details.join(', ')})`);
         }
         parts.push('，即将刷新页面...');
-        
+
         MessagePlugin.success(parts.join(''));
-        
+
         // 刷新页面以加载新数据
         setTimeout(() => {
           console.log('[SyncSettings] Refreshing page...');
-          safeReload();
+          void safeReload();
         }, 1000);
       } else if (result.needsPassword) {
         // 需要输入密码
-        MessagePlugin.warning('远程数据使用了加密密码，请在下方设置正确的密码后重试');
+        MessagePlugin.warning(
+          '远程数据使用了加密密码，请在下方设置正确的密码后重试'
+        );
       } else if (result.error && result.error !== '同步正在进行中') {
         MessagePlugin.error(result.error);
       }
     } catch (err) {
       console.error('[SyncSettings] Pull error:', err);
-      MessagePlugin.error('下载失败: ' + (err instanceof Error ? err.message : String(err)));
+      MessagePlugin.error(
+        '下载失败: ' + (err instanceof Error ? err.message : String(err))
+      );
     } finally {
       setIsLocalSyncing(false);
     }
-  }, [pullFromRemote, isSyncing, isLocalSyncing]);
+  }, [confirm, pullFromRemote, isSyncing, isLocalSyncing]);
 
   // 以本地为准同步（上传本地数据）
   const handlePushToRemote = useCallback(async () => {
-    console.log('[SyncSettings] handlePushToRemote called', { isSyncing, isLocalSyncing });
+    console.log('[SyncSettings] handlePushToRemote called', {
+      isSyncing,
+      isLocalSyncing,
+    });
     if (isSyncing || isLocalSyncing) {
       console.log('[SyncSettings] Already syncing, aborting push');
       return;
     }
-    
-    // 确认操作
-    if (!window.confirm('以本地为准同步将上传本地数据覆盖云端。\n\n确定要继续吗？')) {
+
+    const confirmed = await confirm({
+      title: '确认上传覆盖',
+      description: '以本地为准同步将上传本地数据覆盖云端。\n\n确定要继续吗？',
+      confirmText: '继续上传',
+      cancelText: '取消',
+      danger: true,
+    });
+
+    if (!confirmed) {
       console.log('[SyncSettings] User cancelled push');
       return;
     }
-    
+
     console.log('[SyncSettings] Starting push...');
     setIsLocalSyncing(true);
     try {
@@ -342,9 +392,12 @@ export function SyncSettings({ visible, onClose }: SyncSettingsProps) {
       const result = await pushToRemote();
       console.log('[SyncSettings] pushToRemote result:', result);
       if (result.success) {
-        const uploaded = result.uploaded.boards + result.uploaded.prompts + result.uploaded.tasks;
+        const uploaded =
+          result.uploaded.boards +
+          result.uploaded.prompts +
+          result.uploaded.tasks;
         MessagePlugin.success(`上传完成 (${uploaded} 项)`);
-        
+
         // 刷新 Gist 列表
         if (showGistManager) {
           loadGists();
@@ -354,12 +407,21 @@ export function SyncSettings({ visible, onClose }: SyncSettingsProps) {
       }
     } catch (err) {
       console.error('[SyncSettings] Push error:', err);
-      MessagePlugin.error('上传失败: ' + (err instanceof Error ? err.message : String(err)));
+      MessagePlugin.error(
+        '上传失败: ' + (err instanceof Error ? err.message : String(err))
+      );
     } finally {
       setIsLocalSyncing(false);
     }
-  }, [pushToRemote, isSyncing, isLocalSyncing, showGistManager, loadGists]);
-  
+  }, [
+    confirm,
+    pushToRemote,
+    isSyncing,
+    isLocalSyncing,
+    showGistManager,
+    loadGists,
+  ]);
+
   // 综合同步状态
   const syncingState = isSyncing || isLocalSyncing;
 
@@ -373,9 +435,12 @@ export function SyncSettings({ visible, onClose }: SyncSettingsProps) {
   }, [clearToken]);
 
   // 切换自动同步
-  const handleAutoSyncChange = useCallback(async (checked: boolean) => {
-    await updateConfig({ autoSync: checked });
-  }, [updateConfig]);
+  const handleAutoSyncChange = useCallback(
+    async (checked: boolean) => {
+      await updateConfig({ autoSync: checked });
+    },
+    [updateConfig]
+  );
 
   // 打开 Gist 页面
   const handleOpenGist = useCallback(() => {
@@ -385,16 +450,19 @@ export function SyncSettings({ visible, onClose }: SyncSettingsProps) {
   }, [gistUrl]);
 
   // 删除 Gist
-  const handleDeleteGist = useCallback(async (gist: GistInfo) => {
-    try {
-      await deleteGist(gist.id);
-      MessagePlugin.success('Gist 已删除');
-      setDeleteConfirmGist(null);
-      loadGists();
-    } catch (err) {
-      MessagePlugin.error('删除失败');
-    }
-  }, [deleteGist, loadGists]);
+  const handleDeleteGist = useCallback(
+    async (gist: GistInfo) => {
+      try {
+        await deleteGist(gist.id);
+        MessagePlugin.success('Gist 已删除');
+        setDeleteConfirmGist(null);
+        loadGists();
+      } catch (err) {
+        MessagePlugin.error('删除失败');
+      }
+    },
+    [deleteGist, loadGists]
+  );
 
   // 获取 Token 创建链接
   const tokenCreationUrl = tokenService.getTokenCreationUrl();
@@ -493,8 +561,7 @@ export function SyncSettings({ visible, onClose }: SyncSettingsProps) {
                 rel="noopener noreferrer"
                 className="sync-settings__token-link"
               >
-                <LinkIcon />
-                在 GitHub 创建 Token
+                <LinkIcon />在 GitHub 创建 Token
               </a>
             </div>
           )}
@@ -520,11 +587,11 @@ export function SyncSettings({ visible, onClose }: SyncSettingsProps) {
                       {config?.gistId && (
                         <>
                           <span className="sync-settings__stat-divider">·</span>
-                          <Tooltip content={config.gistId} theme="light">
+                          <HoverTip content={config.gistId}>
                             <span className="sync-settings__stat-gist">
                               {config.gistId.substring(0, 6)}...
                             </span>
-                          </Tooltip>
+                          </HoverTip>
                         </>
                       )}
                     </div>
@@ -533,18 +600,20 @@ export function SyncSettings({ visible, onClose }: SyncSettingsProps) {
 
                 <div className="sync-settings__sync-actions">
                   <div className="sync-settings__sync-buttons">
-                    <Tooltip content="下载云端数据到本地（覆盖本地）" theme="light">
+                    <HoverTip content="下载云端数据到本地（覆盖本地）">
                       <Button
                         theme="primary"
                         variant="outline"
-                        icon={syncingState ? <Loading /> : <CloudDownloadIcon />}
+                        icon={
+                          syncingState ? <Loading /> : <CloudDownloadIcon />
+                        }
                         onClick={handlePullFromRemote}
                         disabled={syncingState}
                       >
                         {syncingState ? '同步中...' : '下载远程'}
                       </Button>
-                    </Tooltip>
-                    <Tooltip content="上传本地数据到云端（覆盖云端）" theme="light">
+                    </HoverTip>
+                    <HoverTip content="上传本地数据到云端（覆盖云端）">
                       <Button
                         theme="primary"
                         icon={syncingState ? <Loading /> : <CloudUploadIcon />}
@@ -553,7 +622,7 @@ export function SyncSettings({ visible, onClose }: SyncSettingsProps) {
                       >
                         {syncingState ? '同步中...' : '上传本地'}
                       </Button>
-                    </Tooltip>
+                    </HoverTip>
                   </div>
                 </div>
 
@@ -574,7 +643,7 @@ export function SyncSettings({ visible, onClose }: SyncSettingsProps) {
 
               {/* Gist 管理器 */}
               <div className="sync-settings__gist-manager">
-                <div 
+                <div
                   className="sync-settings__gist-manager-header"
                   onClick={() => setShowGistManager(!showGistManager)}
                 >
@@ -586,7 +655,7 @@ export function SyncSettings({ visible, onClose }: SyncSettingsProps) {
                     </span>
                   )}
                 </div>
-                
+
                 {showGistManager && (
                   <div className="sync-settings__gist-list">
                     {isLoadingGists ? (
@@ -599,40 +668,55 @@ export function SyncSettings({ visible, onClose }: SyncSettingsProps) {
                         暂无同步 Gist
                       </div>
                     ) : (
-                      gists.map(gist => (
-                        <div 
-                          key={gist.id} 
-                          className={`sync-settings__gist-item ${gist.isCurrent ? 'sync-settings__gist-item--current' : ''}`}
+                      gists.map((gist) => (
+                        <div
+                          key={gist.id}
+                          className={`sync-settings__gist-item ${
+                            gist.isCurrent
+                              ? 'sync-settings__gist-item--current'
+                              : ''
+                          }`}
                         >
                           <div className="sync-settings__gist-item-info">
                             <div className="sync-settings__gist-item-header">
                               {gist.isMaster && (
-                                <span className="sync-settings__gist-master-badge">主数据库</span>
+                                <span className="sync-settings__gist-master-badge">
+                                  主数据库
+                                </span>
                               )}
                               {gist.isCurrent && (
-                                <span className="sync-settings__gist-current-badge">当前</span>
+                                <span className="sync-settings__gist-current-badge">
+                                  当前
+                                </span>
                               )}
                               <span className="sync-settings__gist-id">
-                                {gist.id.length > 16 
-                                  ? `${gist.id.substring(0, 6)}...${gist.id.substring(gist.id.length - 6)}`
+                                {gist.id.length > 16
+                                  ? `${gist.id.substring(
+                                      0,
+                                      6
+                                    )}...${gist.id.substring(
+                                      gist.id.length - 6
+                                    )}`
                                   : gist.id}
                               </span>
                             </div>
                             <div className="sync-settings__gist-item-meta">
                               <span>{gist.filesCount} 个文件</span>
-                              <span>更新于 {formatDateString(gist.updatedAt)}</span>
+                              <span>
+                                更新于 {formatDateString(gist.updatedAt)}
+                              </span>
                             </div>
                           </div>
                           <div className="sync-settings__gist-item-actions">
-                            <Tooltip content="在 GitHub 查看" theme="light">
+                            <HoverTip content="在 GitHub 查看">
                               <Button
                                 variant="text"
                                 size="small"
                                 icon={<LinkIcon />}
                                 onClick={() => window.open(gist.url, '_blank')}
                               />
-                            </Tooltip>
-                            <Tooltip content="删除" theme="light">
+                            </HoverTip>
+                            <HoverTip content="删除">
                               <Button
                                 variant="text"
                                 size="small"
@@ -640,12 +724,12 @@ export function SyncSettings({ visible, onClose }: SyncSettingsProps) {
                                 icon={<DeleteIcon />}
                                 onClick={() => setDeleteConfirmGist(gist)}
                               />
-                            </Tooltip>
+                            </HoverTip>
                           </div>
                         </div>
                       ))
                     )}
-                    
+
                     <div className="sync-settings__gist-actions">
                       <Button
                         variant="text"
@@ -662,11 +746,11 @@ export function SyncSettings({ visible, onClose }: SyncSettingsProps) {
               </div>
 
               {/* 回收站 */}
-              <RecycleBin 
-                isConnected={isConnected} 
+              <RecycleBin
+                isConnected={isConnected}
                 onRefresh={() => {
                   // 恢复画板后刷新页面
-                  safeReload();
+                  void safeReload();
                 }}
               />
 
@@ -674,7 +758,9 @@ export function SyncSettings({ visible, onClose }: SyncSettingsProps) {
               <div className="sync-settings__options-section">
                 <div className="sync-settings__option">
                   <div className="sync-settings__option-info">
-                    <span className="sync-settings__option-label">自动同步</span>
+                    <span className="sync-settings__option-label">
+                      自动同步
+                    </span>
                     <span className="sync-settings__option-desc">
                       画板变更后 30 秒自动同步
                     </span>
@@ -692,11 +778,14 @@ export function SyncSettings({ visible, onClose }: SyncSettingsProps) {
                   {hasStoredPassword ? <LockOnIcon /> : <LockOffIcon />}
                   <span>加密密码</span>
                   {hasStoredPassword && (
-                    <span className="sync-settings__password-badge">已设置</span>
+                    <span className="sync-settings__password-badge">
+                      已设置
+                    </span>
                   )}
                 </div>
                 <p className="sync-settings__password-desc">
-                  默认使用 Gist ID 加密数据。设置自定义密码后，需在其他设备输入相同密码才能解密。
+                  默认使用 Gist ID
+                  加密数据。设置自定义密码后，需在其他设备输入相同密码才能解密。
                 </p>
                 <div className="sync-settings__password-input-row">
                   <input
@@ -704,9 +793,11 @@ export function SyncSettings({ visible, onClose }: SyncSettingsProps) {
                     className="sync-settings__password-input"
                     value={customPassword}
                     onChange={(e) => setCustomPassword(e.target.value)}
-                    placeholder={hasStoredPassword 
-                      ? `当前: ${displayPassword}，输入新密码以更换`
-                      : '设置自定义加密密码（可选）'}
+                    placeholder={
+                      hasStoredPassword
+                        ? `当前: ${displayPassword}，输入新密码以更换`
+                        : '设置自定义加密密码（可选）'
+                    }
                     autoComplete="new-password"
                   />
                   {hasStoredPassword && (
@@ -740,7 +831,8 @@ export function SyncSettings({ visible, onClose }: SyncSettingsProps) {
                   )}
                 </div>
                 <p className="sync-settings__security-hint">
-                  ⚠️ Secret Gist 不公开但知道链接的人仍可访问，建议设置加密密码保护隐私。
+                  ⚠️ Secret Gist
+                  不公开但知道链接的人仍可访问，建议设置加密密码保护隐私。
                 </p>
               </div>
             </>
@@ -754,7 +846,8 @@ export function SyncSettings({ visible, onClose }: SyncSettingsProps) {
                 <span>同步说明</span>
               </div>
               <p>
-                数据存储在 <strong>Secret Gist</strong> 中，并使用 AES-256 加密。
+                数据存储在 <strong>Secret Gist</strong> 中，并使用 AES-256
+                加密。
                 同步包括画板、提示词和任务记录。媒体文件需在素材库中手动同步。
               </p>
             </div>
@@ -769,39 +862,33 @@ export function SyncSettings({ visible, onClose }: SyncSettingsProps) {
       />
 
       {/* 断开连接确认 */}
-      <Dialog
-        visible={showDisconnectConfirm}
-        onClose={() => setShowDisconnectConfirm(false)}
-        header="断开连接"
-        confirmBtn={
-          <Button theme="danger" onClick={handleDisconnect}>
-            确认断开
-          </Button>
-        }
-        cancelBtn={
-          <Button variant="outline" onClick={() => setShowDisconnectConfirm(false)}>
-            取消
-          </Button>
-        }
+      <ConfirmDialog
+        open={showDisconnectConfirm}
+        title="断开连接"
+        confirmText="确认断开"
+        cancelText="取消"
+        danger
+        onOpenChange={setShowDisconnectConfirm}
+        onConfirm={handleDisconnect}
       >
         <p>断开后，本地数据不会被删除，但将停止与云端同步。</p>
         <p>您可以随时重新连接恢复同步。</p>
-      </Dialog>
+      </ConfirmDialog>
 
       {/* 删除 Gist 确认 */}
-      <Dialog
-        visible={!!deleteConfirmGist}
-        onClose={() => setDeleteConfirmGist(null)}
-        header="删除 Gist"
-        confirmBtn={
-          <Button theme="danger" onClick={() => deleteConfirmGist && handleDeleteGist(deleteConfirmGist)}>
-            确认删除
-          </Button>
-        }
-        cancelBtn={
-          <Button variant="outline" onClick={() => setDeleteConfirmGist(null)}>
-            取消
-          </Button>
+      <ConfirmDialog
+        open={!!deleteConfirmGist}
+        title="删除 Gist"
+        confirmText="确认删除"
+        cancelText="取消"
+        danger
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteConfirmGist(null);
+          }
+        }}
+        onConfirm={() =>
+          deleteConfirmGist ? handleDeleteGist(deleteConfirmGist) : undefined
         }
       >
         <p>确定要删除此 Gist 吗？</p>
@@ -811,7 +898,8 @@ export function SyncSettings({ visible, onClose }: SyncSettingsProps) {
             警告：您正在删除当前使用的 Gist，删除后需要重新选择或创建新的 Gist。
           </p>
         )}
-      </Dialog>
+      </ConfirmDialog>
+      {confirmDialog}
     </>
   );
 }

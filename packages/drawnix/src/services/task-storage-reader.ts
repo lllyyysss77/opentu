@@ -65,6 +65,7 @@ interface SWTask {
     characterProfileUrl?: string;
     characterPermalink?: string;
     chatResponse?: string;
+    analysisData?: unknown;
     toolCalls?: any[];
   };
   error?: {
@@ -78,6 +79,42 @@ interface SWTask {
   savedToLibrary?: boolean;
   insertedToCanvas?: boolean;
   archived?: boolean;
+}
+
+export interface AssetTaskRecord {
+  id: string;
+  type: TaskType.IMAGE | TaskType.VIDEO | TaskType.AUDIO;
+  createdAt: number;
+  updatedAt: number;
+  completedAt?: number;
+  remoteId?: string;
+  archived?: boolean;
+  params: {
+    prompt?: string;
+    model?: string;
+    title?: string;
+  };
+  result?: {
+    url: string;
+    urls?: string[];
+    format: string;
+    size: number;
+    duration?: number;
+    previewImageUrl?: string;
+    title?: string;
+    providerTaskId?: string;
+    primaryClipId?: string;
+    clipIds?: string[];
+    clips?: Array<{
+      id?: string;
+      clipId?: string;
+      title?: string;
+      audioUrl: string;
+      imageUrl?: string;
+      imageLargeUrl?: string;
+      duration?: number | null;
+    }>;
+  };
 }
 
 /**
@@ -114,6 +151,67 @@ function convertSWTaskToTask(swTask: SWTask): Task {
     remoteId: swTask.remoteId,
     savedToLibrary: swTask.savedToLibrary,
     insertedToCanvas: swTask.insertedToCanvas,
+  };
+}
+
+function convertSWTaskToAssetTask(swTask: SWTask): AssetTaskRecord | null {
+  if (
+    (swTask.type !== TaskType.IMAGE &&
+      swTask.type !== TaskType.VIDEO &&
+      swTask.type !== TaskType.AUDIO) ||
+    !swTask.result?.url
+  ) {
+    return null;
+  }
+
+  const normalizedResult =
+    swTask.type === TaskType.IMAGE
+      ? {
+          ...swTask.result,
+          url: normalizeImageDataUrl(swTask.result.url),
+          urls: swTask.result.urls?.map((url) => normalizeImageDataUrl(url)),
+          previewImageUrl: swTask.result.previewImageUrl
+            ? normalizeImageDataUrl(swTask.result.previewImageUrl)
+            : swTask.result.previewImageUrl,
+        }
+      : swTask.result;
+
+  return {
+    id: swTask.id,
+    type: swTask.type,
+    createdAt: swTask.createdAt,
+    updatedAt: swTask.updatedAt,
+    completedAt: swTask.completedAt,
+    remoteId: swTask.remoteId,
+    archived: swTask.archived,
+    params: {
+      prompt: swTask.params?.prompt,
+      model: swTask.params?.model,
+      title: swTask.params?.title,
+    },
+    result: normalizedResult
+      ? {
+          url: normalizedResult.url,
+          urls: normalizedResult.urls,
+          format: normalizedResult.format,
+          size: normalizedResult.size,
+          duration: normalizedResult.duration,
+          previewImageUrl: normalizedResult.previewImageUrl,
+          title: normalizedResult.title,
+          providerTaskId: normalizedResult.providerTaskId,
+          primaryClipId: normalizedResult.primaryClipId,
+          clipIds: normalizedResult.clipIds,
+          clips: normalizedResult.clips?.map((clip) => ({
+            id: clip.id,
+            clipId: clip.clipId,
+            title: clip.title,
+            audioUrl: clip.audioUrl,
+            imageUrl: clip.imageUrl,
+            imageLargeUrl: clip.imageLargeUrl,
+            duration: clip.duration,
+          })),
+        }
+      : undefined,
   };
 }
 
@@ -163,9 +261,10 @@ class TaskStorageReader extends BaseStorageReader<TaskCache> {
   /**
    * 获取活跃任务（排除已归档，带 limit，使用 cursor 按 createdAt 倒序）
    */
-  async getAllTasks(options?: { status?: TaskStatus; type?: TaskType; limit?: number }): Promise<Task[]> {
+  async getAllTasks(options?: { status?: TaskStatus; type?: TaskType; limit?: number; includeArchived?: boolean }): Promise<Task[]> {
     const hasTypeFilter = options?.type !== undefined;
     const hasStatusFilter = options?.status !== undefined;
+    const includeArchived = options?.includeArchived ?? false;
     const limit = options?.limit ?? MAX_ACTIVE_LOAD;
 
     // 检查缓存（仅类型过滤）
@@ -189,18 +288,17 @@ class TaskStorageReader extends BaseStorageReader<TaskCache> {
         const transaction = db.transaction(TASKS_STORE, 'readonly');
         const store = transaction.objectStore(TASKS_STORE);
         const index = store.index('createdAt');
-        const results: SWTask[] = [];
+        const results: Task[] = [];
         const cursorReq = index.openCursor(null, 'prev'); // 按 createdAt 倒序
 
         cursorReq.onsuccess = () => {
           const cursor = cursorReq.result;
           if (!cursor || results.length >= limit) {
-            resolve(results.map(convertSWTaskToTask));
+            resolve(results);
             return;
           }
           const task = cursor.value as SWTask;
-          // 过滤已归档任务
-          if (task.archived) {
+          if (!includeArchived && task.archived) {
             cursor.continue();
             return;
           }
@@ -213,7 +311,7 @@ class TaskStorageReader extends BaseStorageReader<TaskCache> {
             cursor.continue();
             return;
           }
-          results.push(task);
+          results.push(convertSWTaskToTask(task));
           cursor.continue();
         };
 
@@ -235,6 +333,64 @@ class TaskStorageReader extends BaseStorageReader<TaskCache> {
       return tasks;
     } catch (error) {
       console.error('[TaskStorageReader] Error getting all tasks:', error);
+      return [];
+    }
+  }
+
+  /**
+   * 为素材库读取轻量任务记录，避免把聊天/分析等大字段整体拉入内存。
+   */
+  async getAssetTasks(options?: { limit?: number; includeArchived?: boolean }): Promise<AssetTaskRecord[]> {
+    const includeArchived = options?.includeArchived ?? false;
+    const limit = options?.limit ?? MAX_ACTIVE_LOAD;
+
+    try {
+      const db = await this.getDB();
+
+      if (!db.objectStoreNames.contains(TASKS_STORE)) {
+        return [];
+      }
+
+      return await new Promise<AssetTaskRecord[]>((resolve, reject) => {
+        const transaction = db.transaction(TASKS_STORE, 'readonly');
+        const store = transaction.objectStore(TASKS_STORE);
+        const index = store.index('createdAt');
+        const results: AssetTaskRecord[] = [];
+        const cursorReq = index.openCursor(null, 'prev');
+
+        cursorReq.onsuccess = () => {
+          const cursor = cursorReq.result;
+          if (!cursor || results.length >= limit) {
+            resolve(results);
+            return;
+          }
+
+          const task = cursor.value as SWTask;
+          if (!includeArchived && task.archived) {
+            cursor.continue();
+            return;
+          }
+          if (task.status !== TaskStatus.COMPLETED) {
+            cursor.continue();
+            return;
+          }
+
+          const assetTask = convertSWTaskToAssetTask(task);
+          if (!assetTask) {
+            cursor.continue();
+            return;
+          }
+
+          results.push(assetTask);
+          cursor.continue();
+        };
+
+        cursorReq.onerror = () => {
+          reject(new Error(`Failed to get asset tasks: ${cursorReq.error?.message}`));
+        };
+      });
+    } catch (error) {
+      console.error('[TaskStorageReader] Error getting asset tasks:', error);
       return [];
     }
   }

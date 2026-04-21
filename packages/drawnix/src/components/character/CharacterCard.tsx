@@ -6,12 +6,13 @@
  */
 
 import React, { useCallback, useState } from 'react';
-import { Button, Tooltip, MessagePlugin, Loading } from 'tdesign-react';
+import { Button, MessagePlugin, Loading } from 'tdesign-react';
 import { DeleteIcon, CopyIcon, UserIcon } from 'tdesign-icons-react';
 import type { SoraCharacter } from '../../types/character.types';
 import { CharacterAvatar } from './CharacterAvatar';
 import { MediaViewer } from '../shared/MediaViewer';
 import './character.scss';
+import { HoverTip } from '../shared';
 
 export interface CharacterCardProps {
   /** The character to display */
@@ -34,24 +35,28 @@ export const CharacterCard: React.FC<CharacterCardProps> = ({
   compact = false,
 }) => {
   const [imageViewerVisible, setImageViewerVisible] = useState(false);
-  const isProcessing = character.status === 'processing' || character.status === 'pending';
+  const isProcessing =
+    character.status === 'processing' || character.status === 'pending';
   const isFailed = character.status === 'failed';
   const isCompleted = character.status === 'completed';
 
   // Copy username to clipboard
-  const handleCopyUsername = useCallback(async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!character.username) return;
+  const handleCopyUsername = useCallback(
+    async (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (!character.username) return;
 
-    const mention = `@${character.username}`;
-    try {
-      await navigator.clipboard.writeText(mention);
-      MessagePlugin.success(`已复制: ${mention}`);
-    } catch (err) {
-      console.error('Failed to copy:', err);
-      MessagePlugin.error('复制失败');
-    }
-  }, [character.username]);
+      const mention = `@${character.username}`;
+      try {
+        await navigator.clipboard.writeText(mention);
+        MessagePlugin.success(`已复制: ${mention}`);
+      } catch (err) {
+        console.error('Failed to copy:', err);
+        MessagePlugin.error('复制失败');
+      }
+    },
+    [character.username]
+  );
 
   // Handle card click
   const handleClick = useCallback(() => {
@@ -61,24 +66,30 @@ export const CharacterCard: React.FC<CharacterCardProps> = ({
   }, [isCompleted, onSelect, character]);
 
   // Handle delete click
-  const handleDelete = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    onDelete?.(character.id);
-  }, [onDelete, character.id]);
+  const handleDelete = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      onDelete?.(character.id);
+    },
+    [onDelete, character.id]
+  );
 
   // Handle avatar click to open image viewer
-  const handleAvatarClick = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (isCompleted && character.profilePictureUrl) {
-      setImageViewerVisible(true);
-    }
-  }, [isCompleted, character.profilePictureUrl]);
+  const handleAvatarClick = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (isCompleted && character.profilePictureUrl) {
+        setImageViewerVisible(true);
+      }
+    },
+    [isCompleted, character.profilePictureUrl]
+  );
 
   // Render avatar with cache support
   const renderAvatar = () => {
     if (character.profilePictureUrl || isCompleted) {
       return (
-        <Tooltip content="点击查看大图" theme="light">
+        <HoverTip content="点击查看大图">
           <CharacterAvatar
             characterId={character.id}
             profilePictureUrl={character.profilePictureUrl}
@@ -86,7 +97,7 @@ export const CharacterCard: React.FC<CharacterCardProps> = ({
             className="character-card__avatar-img"
             onClick={handleAvatarClick}
           />
-        </Tooltip>
+        </HoverTip>
       );
     }
     return (
@@ -120,7 +131,9 @@ export const CharacterCard: React.FC<CharacterCardProps> = ({
     // Compact mode for inline display
     return (
       <div
-        className={`character-card character-card--compact ${isProcessing ? 'character-card--loading' : ''} ${isFailed ? 'character-card--failed' : ''}`}
+        className={`character-card character-card--compact ${
+          isProcessing ? 'character-card--loading' : ''
+        } ${isFailed ? 'character-card--failed' : ''}`}
         onClick={handleClick}
       >
         <div className="character-card__avatar">{renderAvatar()}</div>
@@ -133,7 +146,9 @@ export const CharacterCard: React.FC<CharacterCardProps> = ({
 
   return (
     <div
-      className={`character-card ${isProcessing ? 'character-card--loading' : ''} ${isFailed ? 'character-card--failed' : ''}`}
+      className={`character-card ${
+        isProcessing ? 'character-card--loading' : ''
+      } ${isFailed ? 'character-card--failed' : ''}`}
       onClick={handleClick}
     >
       {/* Avatar */}
@@ -143,7 +158,7 @@ export const CharacterCard: React.FC<CharacterCardProps> = ({
       <div className="character-card__info">
         {/* Username with copy button */}
         {isCompleted && character.username ? (
-          <Tooltip content="点击复制" theme="light">
+          <HoverTip content="点击复制">
             <div
               className="character-card__username"
               onClick={handleCopyUsername}
@@ -151,18 +166,21 @@ export const CharacterCard: React.FC<CharacterCardProps> = ({
               @{character.username}
               <CopyIcon className="character-card__username-copy" />
             </div>
-          </Tooltip>
+          </HoverTip>
         ) : (
-          <div className="character-card__username" style={{ cursor: 'default' }}>
+          <div
+            className="character-card__username"
+            style={{ cursor: 'default' }}
+          >
             {isProcessing ? '创建中...' : '角色'}
           </div>
         )}
 
         {/* Character ID */}
         {character.id && (
-          <Tooltip content={character.id} theme="light" placement="bottom">
+          <HoverTip content={character.id} placement="bottom">
             <div className="character-card__source">{character.id}</div>
-          </Tooltip>
+          </HoverTip>
         )}
 
         {/* Status */}
@@ -171,7 +189,7 @@ export const CharacterCard: React.FC<CharacterCardProps> = ({
 
       {/* Actions */}
       <div className="character-card__actions">
-        <Tooltip content="删除角色" theme="light">
+        <HoverTip content="删除角色">
           <Button
             size="small"
             variant="text"
@@ -180,7 +198,7 @@ export const CharacterCard: React.FC<CharacterCardProps> = ({
             data-track="character_click_delete"
             onClick={handleDelete}
           />
-        </Tooltip>
+        </HoverTip>
       </div>
 
       {/* Image Viewer for avatar */}
@@ -188,11 +206,13 @@ export const CharacterCard: React.FC<CharacterCardProps> = ({
         <MediaViewer
           visible={imageViewerVisible}
           onClose={() => setImageViewerVisible(false)}
-          items={[{
-            url: character.profilePictureUrl,
-            type: 'image',
-            title: `@${character.username || 'Character'}`,
-          }]}
+          items={[
+            {
+              url: character.profilePictureUrl,
+              type: 'image',
+              title: `@${character.username || 'Character'}`,
+            },
+          ]}
         />
       )}
     </div>

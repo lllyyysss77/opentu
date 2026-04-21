@@ -55,6 +55,7 @@ import {
   useContextMenuState,
   type ContextMenuEntry,
 } from '../shared';
+import { ConfirmDialog } from '../dialog/ConfirmDialog';
 import { FramePanel } from './FramePanel';
 import { LayerPanel } from './LayerPanel';
 import './project-drawer.scss';
@@ -190,7 +191,10 @@ const ProjectDrawerContent: React.FC<{
   }, []);
 
   // 获取扁平化的画板列表
-  const flatBoardList = useMemo(() => flattenBoards(tree), [flattenBoards, tree]);
+  const flatBoardList = useMemo(
+    () => flattenBoards(tree),
+    [flattenBoards, tree]
+  );
 
   // 处理画板点击（支持 Shift 和 Ctrl/Cmd 多选）
   const handleBoardClickWithSelection = useCallback(
@@ -200,15 +204,18 @@ const ProjectDrawerContent: React.FC<{
 
       if (isShift && lastClickedBoardId) {
         // Shift+点击：范围选择
-        const startIndex = flatBoardList.findIndex(b => b.id === lastClickedBoardId);
-        const endIndex = flatBoardList.findIndex(b => b.id === board.id);
+        const startIndex = flatBoardList.findIndex(
+          (b) => b.id === lastClickedBoardId
+        );
+        const endIndex = flatBoardList.findIndex((b) => b.id === board.id);
         if (startIndex !== -1 && endIndex !== -1) {
-          const [from, to] = startIndex < endIndex 
-            ? [startIndex, endIndex] 
-            : [endIndex, startIndex];
-          const rangeIds = flatBoardList.slice(from, to + 1).map(b => b.id);
+          const [from, to] =
+            startIndex < endIndex
+              ? [startIndex, endIndex]
+              : [endIndex, startIndex];
+          const rangeIds = flatBoardList.slice(from, to + 1).map((b) => b.id);
           const newSelection = new Set(selectedBoardIds ?? []);
-          rangeIds.forEach(id => newSelection.add(id));
+          rangeIds.forEach((id) => newSelection.add(id));
           onSelectionChange?.(newSelection);
         }
       } else if (isCtrlOrCmd) {
@@ -228,7 +235,14 @@ const ProjectDrawerContent: React.FC<{
         onBoardClick(board);
       }
     },
-    [flatBoardList, lastClickedBoardId, selectedBoardIds, onSelectionChange, onLastClickedChange, onBoardClick]
+    [
+      flatBoardList,
+      lastClickedBoardId,
+      selectedBoardIds,
+      onSelectionChange,
+      onLastClickedChange,
+      onBoardClick,
+    ]
   );
 
   // 当有新建画板时自动进入编辑状态
@@ -260,24 +274,27 @@ const ProjectDrawerContent: React.FC<{
   }, []);
 
   // 处理右键菜单
-  const handleContextMenu = useCallback((
-    e: React.MouseEvent,
-    type: 'folder' | 'board',
-    id: string,
-    name: string,
-    folderId?: string | null,
-    parentId?: string | null
-  ) => {
-    e.preventDefault();
-    e.stopPropagation();
-    openContextMenu(e, {
-      type,
-      id,
-      name,
-      folderId,
-      parentId,
-    });
-  }, [openContextMenu]);
+  const handleContextMenu = useCallback(
+    (
+      e: React.MouseEvent,
+      type: 'folder' | 'board',
+      id: string,
+      name: string,
+      folderId?: string | null,
+      parentId?: string | null
+    ) => {
+      e.preventDefault();
+      e.stopPropagation();
+      openContextMenu(e, {
+        type,
+        id,
+        name,
+        folderId,
+        parentId,
+      });
+    },
+    [openContextMenu]
+  );
 
   // Auto-select text when input is focused
   const handleInputFocus = useCallback(
@@ -500,7 +517,16 @@ const ProjectDrawerContent: React.FC<{
           onDragOver={(e) => handleDragOver(e, folder.id, 'folder')}
           onDragLeave={handleDragLeave}
           onDrop={(e) => handleDrop(e, folder.id, 'folder', folder.parentId)}
-          onContextMenu={(e) => handleContextMenu(e, 'folder', folder.id, folder.name, undefined, folder.parentId)}
+          onContextMenu={(e) =>
+            handleContextMenu(
+              e,
+              'folder',
+              folder.id,
+              folder.name,
+              undefined,
+              folder.parentId
+            )
+          }
         >
           <span
             className="project-drawer-node__expand"
@@ -648,10 +674,10 @@ const ProjectDrawerContent: React.FC<{
               const isCtrlOrCmd = e.ctrlKey || e.metaKey;
               // Delay board click to allow double-click to work
               clickTimerRef.current = setTimeout(() => {
-                handleBoardClickWithSelection(board, { 
-                  shiftKey: isShift, 
-                  ctrlKey: isCtrlOrCmd, 
-                  metaKey: isCtrlOrCmd 
+                handleBoardClickWithSelection(board, {
+                  shiftKey: isShift,
+                  ctrlKey: isCtrlOrCmd,
+                  metaKey: isCtrlOrCmd,
                 } as React.MouseEvent);
               }, 200);
             }
@@ -661,7 +687,9 @@ const ProjectDrawerContent: React.FC<{
           onDragOver={(e) => handleDragOver(e, board.id, 'board')}
           onDragLeave={handleDragLeave}
           onDrop={(e) => handleDrop(e, board.id, 'board', board.folderId)}
-          onContextMenu={(e) => handleContextMenu(e, 'board', board.id, board.name, board.folderId)}
+          onContextMenu={(e) =>
+            handleContextMenu(e, 'board', board.id, board.name, board.folderId)
+          }
         >
           <span className="project-drawer-node__expand"></span>
 
@@ -734,11 +762,17 @@ const ProjectDrawerContent: React.FC<{
                   prefixIcon: <DeleteIcon />,
                 },
                 // 如果有多选，显示批量删除选项
-                ...((selectedBoardIds?.size ?? 0) > 1 && isSelected ? [{
-                  content: `删除选中的 ${selectedBoardIds?.size ?? 0} 个画板`,
-                  value: 'delete-selected',
-                  prefixIcon: <DeleteIcon />,
-                }] : []),
+                ...((selectedBoardIds?.size ?? 0) > 1 && isSelected
+                  ? [
+                      {
+                        content: `删除选中的 ${
+                          selectedBoardIds?.size ?? 0
+                        } 个画板`,
+                        value: 'delete-selected',
+                        prefixIcon: <DeleteIcon />,
+                      },
+                    ]
+                  : []),
               ]}
               onClick={(data) => {
                 if (data.value === 'copy') {
@@ -769,46 +803,59 @@ const ProjectDrawerContent: React.FC<{
   };
 
   // 处理右键菜单点击
-  const handleContextMenuAction = useCallback((action: string, payload: ProjectDrawerContextMenuPayload) => {
-    const { type, id, name } = payload;
+  const handleContextMenuAction = useCallback(
+    (action: string, payload: ProjectDrawerContextMenuPayload) => {
+      const { type, id, name } = payload;
 
-    switch (action) {
-      case 'new-board':
-        onCreateBoard(id);
-        break;
-      case 'new-folder':
-        onCreateFolder(id);
-        break;
-      case 'copy':
-        onCopyBoard(id);
-        break;
-      case 'rename':
-        startEditing(id, name);
-        break;
-      case 'delete':
-        onDelete(type, id, name);
-        break;
-      case 'delete-selected':
-        onDeleteMultiple?.(Array.from(selectedBoardIds ?? []));
-        break;
-      case 'move-root':
-        if (type === 'board') {
-          onMoveBoard(id, null);
-        }
-        break;
-      default:
-        // 移动到指定文件夹
-        if (action.startsWith('move-')) {
-          const targetFolderId = action.replace('move-', '');
+      switch (action) {
+        case 'new-board':
+          onCreateBoard(id);
+          break;
+        case 'new-folder':
+          onCreateFolder(id);
+          break;
+        case 'copy':
+          onCopyBoard(id);
+          break;
+        case 'rename':
+          startEditing(id, name);
+          break;
+        case 'delete':
+          onDelete(type, id, name);
+          break;
+        case 'delete-selected':
+          onDeleteMultiple?.(Array.from(selectedBoardIds ?? []));
+          break;
+        case 'move-root':
           if (type === 'board') {
-            onMoveBoard(id, targetFolderId);
+            onMoveBoard(id, null);
           }
-        }
-        break;
-    }
+          break;
+        default:
+          // 移动到指定文件夹
+          if (action.startsWith('move-')) {
+            const targetFolderId = action.replace('move-', '');
+            if (type === 'board') {
+              onMoveBoard(id, targetFolderId);
+            }
+          }
+          break;
+      }
 
-    closeContextMenu();
-  }, [onCreateBoard, onCreateFolder, onCopyBoard, startEditing, onDelete, onDeleteMultiple, selectedBoardIds, onMoveBoard, closeContextMenu]);
+      closeContextMenu();
+    },
+    [
+      onCreateBoard,
+      onCreateFolder,
+      onCopyBoard,
+      startEditing,
+      onDelete,
+      onDeleteMultiple,
+      selectedBoardIds,
+      onMoveBoard,
+      closeContextMenu,
+    ]
+  );
 
   // 获取移动菜单选项
   const moveOptions = useMemo(() => {
@@ -816,7 +863,9 @@ const ProjectDrawerContent: React.FC<{
     return getFolderOptions();
   }, [contextMenu, getFolderOptions]);
 
-  const contextMenuItems = useMemo<ContextMenuEntry<ProjectDrawerContextMenuPayload>[]>(() => {
+  const contextMenuItems = useMemo<
+    ContextMenuEntry<ProjectDrawerContextMenuPayload>[]
+  >(() => {
     if (!contextMenu) {
       return [];
     }
@@ -895,8 +944,10 @@ const ProjectDrawerContent: React.FC<{
         icon: <DeleteIcon />,
         danger: true,
         disabled: (current) =>
-          (selectedBoardIds?.size ?? 0) <= 1 || !selectedBoardIds?.has(current.id),
-        onSelect: (current) => handleContextMenuAction('delete-selected', current),
+          (selectedBoardIds?.size ?? 0) <= 1 ||
+          !selectedBoardIds?.has(current.id),
+        onSelect: (current) =>
+          handleContextMenuAction('delete-selected', current),
       },
     ];
   }, [contextMenu, handleContextMenuAction, moveOptions, selectedBoardIds]);
@@ -943,7 +994,9 @@ export const ProjectDrawer: React.FC<ProjectDrawerProps> = ({
     switchBoard,
   } = useWorkspace();
 
-  const [activeTab, setActiveTab] = useState<'boards' | 'frames' | 'layers'>('boards');
+  const [activeTab, setActiveTab] = useState<'boards' | 'frames' | 'layers'>(
+    'boards'
+  );
   const [searchQuery, setSearchQuery] = useState('');
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{
@@ -952,10 +1005,16 @@ export const ProjectDrawer: React.FC<ProjectDrawerProps> = ({
     name: string;
   } | null>(null);
   // 多选状态
-  const [selectedBoardIds, setSelectedBoardIds] = useState<Set<string>>(new Set());
-  const [lastClickedBoardId, setLastClickedBoardId] = useState<string | null>(null);
+  const [selectedBoardIds, setSelectedBoardIds] = useState<Set<string>>(
+    new Set()
+  );
+  const [lastClickedBoardId, setLastClickedBoardId] = useState<string | null>(
+    null
+  );
   // 批量删除目标
-  const [deleteMultipleTargets, setDeleteMultipleTargets] = useState<string[]>([]);
+  const [deleteMultipleTargets, setDeleteMultipleTargets] = useState<string[]>(
+    []
+  );
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [showImportDialog, setShowImportDialog] = useState(false);
@@ -1148,7 +1207,8 @@ export const ProjectDrawer: React.FC<ProjectDrawerProps> = ({
   const handleDeleteMultipleBoards = useCallback(async () => {
     if (deleteMultipleTargets.length === 0) return;
 
-    const deletingCurrentBoard = currentBoard && deleteMultipleTargets.includes(currentBoard.id);
+    const deletingCurrentBoard =
+      currentBoard && deleteMultipleTargets.includes(currentBoard.id);
     let deletedCount = 0;
 
     for (const boardId of deleteMultipleTargets) {
@@ -1164,7 +1224,10 @@ export const ProjectDrawer: React.FC<ProjectDrawerProps> = ({
 
       // If we deleted the current board, switch to the first available board
       if (deletingCurrentBoard) {
-        const firstBoard = getFirstBoardFromTree(tree, ...deleteMultipleTargets);
+        const firstBoard = getFirstBoardFromTree(
+          tree,
+          ...deleteMultipleTargets
+        );
         if (firstBoard) {
           if (onBeforeSwitch) {
             await onBeforeSwitch();
@@ -1320,7 +1383,7 @@ export const ProjectDrawer: React.FC<ProjectDrawerProps> = ({
             `导入成功：${result.folders} 个文件夹，${result.boards} 个画板，${result.assets} 个素材`
           );
           // Reload the page to refresh workspace
-          safeReload();
+          void safeReload();
         } else {
           if (result.errors.length > 0) {
             MessagePlugin.warning(
@@ -1329,7 +1392,7 @@ export const ProjectDrawer: React.FC<ProjectDrawerProps> = ({
             console.warn('[ProjectDrawer] Import errors:', result.errors);
           }
           // Reload anyway to show imported data
-          safeReload();
+          void safeReload();
         }
       } catch (error: any) {
         console.error('[ProjectDrawer] Import failed:', error);
@@ -1409,7 +1472,9 @@ export const ProjectDrawer: React.FC<ProjectDrawerProps> = ({
     <div className="project-drawer-tabs">
       <button
         type="button"
-        className={`project-drawer-tabs__tab${activeTab === 'boards' ? ' project-drawer-tabs__tab--active' : ''}`}
+        className={`project-drawer-tabs__tab${
+          activeTab === 'boards' ? ' project-drawer-tabs__tab--active' : ''
+        }`}
         onClick={() => setActiveTab('boards')}
       >
         <ArtboardIcon />
@@ -1417,7 +1482,9 @@ export const ProjectDrawer: React.FC<ProjectDrawerProps> = ({
       </button>
       <button
         type="button"
-        className={`project-drawer-tabs__tab${activeTab === 'frames' ? ' project-drawer-tabs__tab--active' : ''}`}
+        className={`project-drawer-tabs__tab${
+          activeTab === 'frames' ? ' project-drawer-tabs__tab--active' : ''
+        }`}
         onClick={() => setActiveTab('frames')}
       >
         <ViewListIcon />
@@ -1425,7 +1492,9 @@ export const ProjectDrawer: React.FC<ProjectDrawerProps> = ({
       </button>
       <button
         type="button"
-        className={`project-drawer-tabs__tab${activeTab === 'layers' ? ' project-drawer-tabs__tab--active' : ''}`}
+        className={`project-drawer-tabs__tab${
+          activeTab === 'layers' ? ' project-drawer-tabs__tab--active' : ''
+        }`}
         onClick={() => setActiveTab('layers')}
       >
         <LayersIcon />
@@ -1474,7 +1543,9 @@ export const ProjectDrawer: React.FC<ProjectDrawerProps> = ({
                 size="small"
                 theme="danger"
                 icon={<DeleteIcon />}
-                onClick={() => handleDeleteMultipleConfirm(Array.from(selectedBoardIds))}
+                onClick={() =>
+                  handleDeleteMultipleConfirm(Array.from(selectedBoardIds))
+                }
               >
                 删除
               </Button>
@@ -1493,37 +1564,38 @@ export const ProjectDrawer: React.FC<ProjectDrawerProps> = ({
   );
 
   // Footer with import/export buttons (only for boards tab)
-  const footerSection = activeTab === 'boards' ? (
-    <div className="project-drawer__footer-actions">
-      <Button
-        variant="outline"
-        size="small"
-        icon={<UploadIcon />}
-        onClick={handleImportClick}
-        disabled={isImporting}
-        title="从 ZIP 文件导入"
-      >
-        导入
-      </Button>
-      <Button
-        variant="outline"
-        size="small"
-        icon={<DownloadIcon />}
-        onClick={handleExport}
-        loading={isExporting}
-        title="导出为 ZIP 文件"
-      >
-        导出
-      </Button>
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".zip"
-        style={{ display: 'none' }}
-        onChange={handleFileSelect}
-      />
-    </div>
-  ) : null;
+  const footerSection =
+    activeTab === 'boards' ? (
+      <div className="project-drawer__footer-actions">
+        <Button
+          variant="outline"
+          size="small"
+          icon={<UploadIcon />}
+          onClick={handleImportClick}
+          disabled={isImporting}
+          title="从 ZIP 文件导入"
+        >
+          导入
+        </Button>
+        <Button
+          variant="outline"
+          size="small"
+          icon={<DownloadIcon />}
+          onClick={handleExport}
+          loading={isExporting}
+          title="导出为 ZIP 文件"
+        >
+          导出
+        </Button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".zip"
+          style={{ display: 'none' }}
+          onChange={handleFileSelect}
+        />
+      </div>
+    ) : null;
 
   return (
     <>
@@ -1579,10 +1651,13 @@ export const ProjectDrawer: React.FC<ProjectDrawerProps> = ({
       </BaseDrawer>
 
       {/* Delete confirmation dialog */}
-      <Dialog
-        visible={showDeleteDialog}
-        header="确认删除"
-        onClose={() => {
+      <ConfirmDialog
+        open={showDeleteDialog}
+        title="确认删除"
+        onOpenChange={(open) => {
+          if (open) {
+            return;
+          }
           setShowDeleteDialog(false);
           setDeleteTarget(null);
           setDeleteMultipleTargets([]);
@@ -1606,25 +1681,29 @@ export const ProjectDrawer: React.FC<ProjectDrawerProps> = ({
           ) : undefined
         }
         onConfirm={
-          deleteMultipleTargets.length > 0 
-            ? handleDeleteMultipleBoards 
-            : deleteTarget?.type === 'board' 
-              ? handleDeleteBoard 
-              : undefined
-        }
-        confirmBtn={
-          deleteMultipleTargets.length > 0 || deleteTarget?.type === 'board' 
-            ? '删除' 
+          deleteMultipleTargets.length > 0
+            ? handleDeleteMultipleBoards
+            : deleteTarget?.type === 'board'
+            ? handleDeleteBoard
             : undefined
         }
-        cancelBtn={
-          deleteMultipleTargets.length > 0 || deleteTarget?.type === 'board' 
-            ? '取消' 
+        confirmText={
+          deleteMultipleTargets.length > 0 || deleteTarget?.type === 'board'
+            ? '删除'
             : undefined
         }
+        cancelText={
+          deleteMultipleTargets.length > 0 || deleteTarget?.type === 'board'
+            ? '取消'
+            : undefined
+        }
+        danger
       >
         {deleteMultipleTargets.length > 0 ? (
-          <p>确定要删除选中的 {deleteMultipleTargets.length} 个画板吗？此操作不可撤销。</p>
+          <p>
+            确定要删除选中的 {deleteMultipleTargets.length}{' '}
+            个画板吗？此操作不可撤销。
+          </p>
         ) : (
           <p>
             确定要删除 {deleteTarget?.type === 'folder' ? '文件夹' : '画板'} "
@@ -1642,7 +1721,7 @@ export const ProjectDrawer: React.FC<ProjectDrawerProps> = ({
             )}
           </p>
         )}
-      </Dialog>
+      </ConfirmDialog>
 
       {/* Import progress dialog */}
       <Dialog

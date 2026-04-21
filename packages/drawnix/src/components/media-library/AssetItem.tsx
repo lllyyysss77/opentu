@@ -4,15 +4,24 @@
  * 切换视图模式时组件不销毁，只更新样式，避免图片重新加载
  */
 
-import { memo, useCallback, useState } from 'react';
-import { Image as ImageIcon, Video as VideoIcon, Music, Plus, Cloud, Heart } from 'lucide-react';
-import { Checkbox, Tooltip } from 'tdesign-react';
+import { memo, useCallback } from 'react';
+import {
+  Image as ImageIcon,
+  Video as VideoIcon,
+  Music,
+  Plus,
+  Cloud,
+  Heart,
+} from 'lucide-react';
+import { Checkbox } from 'tdesign-react';
 import { formatDate, formatFileSize } from '../../utils/asset-utils';
 import { useAssetSize } from '../../hooks/useAssetSize';
 import { LazyImage } from '../lazy-image';
 import { useThumbnailUrl } from '../../hooks/useThumbnailUrl';
+import { VideoPosterPreview } from '../shared/VideoPosterPreview';
 import type { Asset, ViewMode } from '../../types/asset.types';
 import './AssetItem.scss';
+import { HoverTip } from '../shared';
 
 export interface AssetItemProps {
   asset: Asset;
@@ -29,23 +38,37 @@ export interface AssetItemProps {
 }
 
 export const AssetItem = memo<AssetItemProps>(
-  ({ asset, viewMode, isSelected, onSelect, onDoubleClick, onPreview, onContextMenu, isInSelectionMode, isSynced, isFavorite, onToggleFavorite }) => {
+  ({
+    asset,
+    viewMode,
+    isSelected,
+    onSelect,
+    onDoubleClick,
+    onPreview,
+    onContextMenu,
+    isInSelectionMode,
+    isSynced,
+    isFavorite,
+    onToggleFavorite,
+  }) => {
     // 获取实际文件大小（支持从缓存获取）
     const displaySize = useAssetSize(asset.id, asset.url, asset.size);
-    const [isHovered, setIsHovered] = useState(false);
-    
+
     // 根据视图模式选择预览图尺寸
     // 网格视图（120-180px）使用大尺寸预览图，紧凑/列表视图（60-80px）使用小尺寸预览图
     const thumbnailSize = viewMode === 'grid' ? 'large' : 'small';
     const thumbnailUrl = useThumbnailUrl(
       asset.url,
-      asset.type === 'IMAGE' ? 'image' : 'video',
+      asset.type === 'IMAGE' ? 'image' : undefined,
       thumbnailSize
     );
 
-    const handleClick = useCallback((e: React.MouseEvent) => {
-      onSelect(asset.id, e);
-    }, [asset.id, onSelect]);
+    const handleClick = useCallback(
+      (e: React.MouseEvent) => {
+        onSelect(asset.id, e);
+      },
+      [asset.id, onSelect]
+    );
 
     const handleDoubleClick = useCallback(() => {
       // 双击预览
@@ -54,45 +77,51 @@ export const AssetItem = memo<AssetItemProps>(
       }
     }, [asset, onPreview, isInSelectionMode]);
 
-    const handleCheckboxChange = useCallback(() => {
-      onSelect(asset.id);
-    }, [asset.id, onSelect]);
+    const handleCheckboxClick = useCallback(
+      (e: React.MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onSelect(asset.id, e);
+      },
+      [asset.id, onSelect]
+    );
 
-    const handleCheckboxClick = useCallback((e: React.MouseEvent) => {
-      e.stopPropagation();
-    }, []);
+    const ignoreCheckboxChange = useCallback(() => undefined, []);
 
     // 插入功能（原来的双击功能）
-    const handleInsertClick = useCallback((e: React.MouseEvent) => {
-      e.stopPropagation();
-      e.preventDefault();
-      onDoubleClick?.(asset);
-    }, [asset, onDoubleClick]);
+    const handleInsertClick = useCallback(
+      (e: React.MouseEvent) => {
+        e.stopPropagation();
+        e.preventDefault();
+        onDoubleClick?.(asset);
+      },
+      [asset, onDoubleClick]
+    );
 
-    const handleMouseEnter = useCallback(() => {
-      setIsHovered(true);
-    }, []);
+    const handleContextMenu = useCallback(
+      (event: React.MouseEvent) => {
+        onContextMenu?.(asset, event);
+      },
+      [asset, onContextMenu]
+    );
 
-    const handleMouseLeave = useCallback(() => {
-      setIsHovered(false);
-    }, []);
-
-    const handleContextMenu = useCallback((event: React.MouseEvent) => {
-      onContextMenu?.(asset, event);
-    }, [asset, onContextMenu]);
-
-    const handleFavoriteClick = useCallback((event: React.MouseEvent) => {
-      event.stopPropagation();
-      event.preventDefault();
-      onToggleFavorite?.(asset, event);
-    }, [asset, onToggleFavorite]);
+    const handleFavoriteClick = useCallback(
+      (event: React.MouseEvent) => {
+        event.stopPropagation();
+        event.preventDefault();
+        onToggleFavorite?.(asset, event);
+      },
+      [asset, onToggleFavorite]
+    );
 
     const itemClassName = [
       'asset-item',
       `asset-item--${viewMode}`,
       isSelected ? 'asset-item--selected' : '',
       isInSelectionMode ? 'asset-item--selection-mode' : '',
-    ].filter(Boolean).join(' ');
+    ]
+      .filter(Boolean)
+      .join(' ');
 
     const isListMode = viewMode === 'list';
     const isCompactMode = viewMode === 'compact';
@@ -102,8 +131,6 @@ export const AssetItem = memo<AssetItemProps>(
         className={itemClassName}
         onClick={handleClick}
         onDoubleClick={handleDoubleClick}
-        onMouseEnter={handleMouseEnter}
-        onMouseLeave={handleMouseLeave}
         onContextMenu={handleContextMenu}
         role="button"
         tabIndex={0}
@@ -111,10 +138,13 @@ export const AssetItem = memo<AssetItemProps>(
       >
         {/* 列表模式：左侧复选框 */}
         {isListMode && isInSelectionMode && (
-          <div className="asset-item__checkbox asset-item__checkbox--left" onClick={handleCheckboxClick}>
+          <div
+            className="asset-item__checkbox asset-item__checkbox--left"
+            onClick={handleCheckboxClick}
+          >
             <Checkbox
               checked={isSelected}
-              onChange={handleCheckboxChange}
+              onChange={ignoreCheckboxChange}
               data-track="asset_item_checkbox"
             />
           </div>
@@ -143,11 +173,16 @@ export const AssetItem = memo<AssetItemProps>(
               rootMargin="100px"
             />
           ) : (
-            <video
+            <VideoPosterPreview
               src={asset.url}
               className="asset-item__video"
-              muted
-              preload="metadata"
+              alt={asset.name}
+              poster={asset.thumbnail}
+              thumbnailSize={thumbnailSize}
+              videoProps={{
+                muted: true,
+                preload: 'metadata',
+              }}
             />
           )}
 
@@ -155,17 +190,23 @@ export const AssetItem = memo<AssetItemProps>(
           {!isListMode && !isCompactMode && (
             <div className="asset-item__badges">
               <div className="asset-item__type-badge">
-                {asset.type === 'AUDIO' ? <Music /> : asset.type === 'IMAGE' ? <ImageIcon /> : <VideoIcon />}
+                {asset.type === 'AUDIO' ? (
+                  <Music />
+                ) : asset.type === 'IMAGE' ? (
+                  <ImageIcon />
+                ) : (
+                  <VideoIcon />
+                )}
               </div>
               {asset.source === 'AI_GENERATED' && (
                 <div className="asset-item__ai-badge">AI</div>
               )}
               {isSynced && (
-                <Tooltip content="已同步到云端" theme="light" showArrow={false}>
+                <HoverTip content="已同步到云端" showArrow={false}>
                   <div className="asset-item__synced-badge">
                     <Cloud size={10} />
                   </div>
-                </Tooltip>
+                </HoverTip>
               )}
             </div>
           )}
@@ -173,7 +214,9 @@ export const AssetItem = memo<AssetItemProps>(
           {asset.type === 'AUDIO' && !isInSelectionMode && (
             <button
               type="button"
-              className={`asset-item__favorite-btn ${isFavorite ? 'asset-item__favorite-btn--active' : ''}`}
+              className={`asset-item__favorite-btn ${
+                isFavorite ? 'asset-item__favorite-btn--active' : ''
+              }`}
               onClick={handleFavoriteClick}
               aria-label={isFavorite ? '取消收藏' : '加入收藏'}
             >
@@ -183,35 +226,39 @@ export const AssetItem = memo<AssetItemProps>(
 
           {/* 网格模式：选择复选框 */}
           {!isListMode && isInSelectionMode && (
-            <div className="asset-item__checkbox asset-item__checkbox--overlay" onClick={handleCheckboxClick}>
+            <div
+              className="asset-item__checkbox asset-item__checkbox--overlay"
+              onClick={handleCheckboxClick}
+            >
               <Checkbox
                 checked={isSelected}
-                onChange={handleCheckboxChange}
+                onChange={ignoreCheckboxChange}
                 data-track="asset_item_checkbox"
               />
             </div>
           )}
 
-          {/* 插入按钮 - hover 时显示（非列表模式） */}
-          {!isListMode && isHovered && !isInSelectionMode && onDoubleClick && (
-            <Tooltip content="插入到画布" theme="light" showArrow={false}>
+          {/* 插入按钮 - 统一渲染，显示由 CSS 控制 */}
+          {!isListMode && !isInSelectionMode && onDoubleClick && (
+            <HoverTip content="插入到画布" showArrow={false}>
               <button
+                type="button"
                 className="asset-item__preview-btn"
                 onClick={handleInsertClick}
                 data-track="asset_item_insert"
               >
                 <Plus size={16} />
               </button>
-            </Tooltip>
+            </HoverTip>
           )}
 
           {/* 网格模式：渐变遮罩和名称 */}
           {!isListMode && !isCompactMode && (
             <>
               <div className="asset-item__overlay" />
-              <div className="asset-item__name-overlay" title={asset.name}>
-                {asset.name}
-              </div>
+              <HoverTip content={asset.name} showArrow={false}>
+                <div className="asset-item__name-overlay">{asset.name}</div>
+              </HoverTip>
             </>
           )}
         </div>
@@ -219,18 +266,26 @@ export const AssetItem = memo<AssetItemProps>(
         {/* 列表模式：信息区域 */}
         {isListMode && (
           <div className="asset-item__info">
-            <div className="asset-item__name" title={asset.name}>
-              {asset.name}
-            </div>
+            <HoverTip content={asset.name} showArrow={false}>
+              <div className="asset-item__name">{asset.name}</div>
+            </HoverTip>
             <div className="asset-item__meta">
               <span className="asset-item__type">
-                {asset.type === 'IMAGE' ? <ImageIcon size={12} /> : <VideoIcon size={12} />}
+                {asset.type === 'IMAGE' ? (
+                  <ImageIcon size={12} />
+                ) : (
+                  <VideoIcon size={12} />
+                )}
                 {asset.type === 'IMAGE' ? '图片' : '视频'}
               </span>
               {displaySize && (
-                <span className="asset-item__size">{formatFileSize(displaySize)}</span>
+                <span className="asset-item__size">
+                  {formatFileSize(displaySize)}
+                </span>
               )}
-              <span className="asset-item__date">{formatDate(asset.createdAt)}</span>
+              <span className="asset-item__date">
+                {formatDate(asset.createdAt)}
+              </span>
             </div>
           </div>
         )}
@@ -238,7 +293,9 @@ export const AssetItem = memo<AssetItemProps>(
         {isListMode && asset.type === 'AUDIO' && !isInSelectionMode && (
           <button
             type="button"
-            className={`asset-item__favorite-btn asset-item__favorite-btn--list ${isFavorite ? 'asset-item__favorite-btn--active' : ''}`}
+            className={`asset-item__favorite-btn asset-item__favorite-btn--list ${
+              isFavorite ? 'asset-item__favorite-btn--active' : ''
+            }`}
             onClick={handleFavoriteClick}
             aria-label={isFavorite ? '取消收藏' : '加入收藏'}
           >
@@ -248,29 +305,32 @@ export const AssetItem = memo<AssetItemProps>(
 
         {/* 列表模式：AI 标识 */}
         {isListMode && asset.source === 'AI_GENERATED' && (
-          <div className="asset-item__ai-badge asset-item__ai-badge--list">AI</div>
+          <div className="asset-item__ai-badge asset-item__ai-badge--list">
+            AI
+          </div>
         )}
 
         {/* 列表模式：已同步标识 */}
         {isListMode && isSynced && (
-          <Tooltip content="已同步到云端" theme="light" showArrow={false}>
+          <HoverTip content="已同步到云端" showArrow={false}>
             <div className="asset-item__synced-badge asset-item__synced-badge--list">
               <Cloud size={12} />
             </div>
-          </Tooltip>
+          </HoverTip>
         )}
 
         {/* 列表模式：插入按钮 */}
-        {isListMode && isHovered && !isInSelectionMode && onDoubleClick && (
-          <Tooltip content="插入到画布" theme="light" showArrow={false}>
+        {isListMode && !isInSelectionMode && onDoubleClick && (
+          <HoverTip content="插入到画布" showArrow={false}>
             <button
+              type="button"
               className="asset-item__preview-btn"
               onClick={handleInsertClick}
               data-track="asset_item_insert"
             >
               <Plus size={16} />
             </button>
-          </Tooltip>
+          </HoverTip>
         )}
       </div>
     );
@@ -287,7 +347,7 @@ export const AssetItem = memo<AssetItemProps>(
       prevProps.isSynced === nextProps.isSynced &&
       prevProps.isFavorite === nextProps.isFavorite
     );
-  },
+  }
 );
 
 AssetItem.displayName = 'AssetItem';

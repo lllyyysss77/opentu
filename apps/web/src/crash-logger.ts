@@ -12,7 +12,7 @@
  */
 
 import { sanitizeUrl } from '@aitu/utils';
-import { swChannelClient } from '@drawnix/drawnix';
+import { swChannelClient } from '@drawnix/drawnix/runtime';
 
 // ==================== 类型定义 ====================
 

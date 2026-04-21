@@ -12,12 +12,16 @@ import {
   AUDIO_CARD_DEFAULT_HEIGHT,
   AUDIO_CARD_DEFAULT_WIDTH,
   insertAudioFromUrl,
+  resolveAudioCardDimensions,
   type AudioCardMetadata,
 } from '../../data/audio';
 import { scrollToPointIfNeeded } from '../../utils/selection-utils';
 import { parseMarkdownToCards } from '../../utils/markdown-to-cards';
 import { insertCardsToCanvas } from '../../utils/insert-cards';
 import type { MCPResult } from '../../mcp/types';
+import { parseSizeToPixels } from '../../utils/size-ratio';
+
+export { parseSizeToPixels };
 
 /**
  * 内容类型
@@ -56,6 +60,27 @@ export interface CanvasInsertionParams {
   horizontalGap?: number;
 }
 
+export interface CanvasInsertionResultItem {
+  type: ContentType;
+  point: Point;
+  elementId?: string;
+  size: {
+    width: number;
+    height: number;
+  };
+}
+
+export interface CanvasInsertionResultData {
+  insertedCount: number;
+  items: CanvasInsertionResultItem[];
+  firstElementId?: string;
+  firstElementPosition?: Point;
+  firstElementSize?: {
+    width: number;
+    height: number;
+  };
+}
+
 /**
  * 布局常量
  */
@@ -67,35 +92,6 @@ const LAYOUT_CONSTANTS = {
   MEDIA_DEFAULT_SIZE: 400,
   MEDIA_MAX_SIZE: 600,
 };
-
-/**
- * 从 size 参数（如 '16x9', '1x1'）解析为像素尺寸
- * 基于默认宽度 400px 计算
- */
-export function parseSizeToPixels(size?: string, defaultWidth: number = 400): { width: number; height: number } {
-  if (!size) {
-    return { width: defaultWidth, height: defaultWidth };
-  }
-
-  // 解析 size 格式，如 '16x9', '1x1', '3x2'
-  const match = size.match(/^(\d+)x(\d+)$/);
-  if (!match) {
-    return { width: defaultWidth, height: defaultWidth };
-  }
-
-  const ratioWidth = parseInt(match[1], 10);
-  const ratioHeight = parseInt(match[2], 10);
-
-  if (ratioWidth <= 0 || ratioHeight <= 0) {
-    return { width: defaultWidth, height: defaultWidth };
-  }
-
-  // 基于默认宽度计算高度
-  const aspectRatio = ratioHeight / ratioWidth;
-  const height = Math.round(defaultWidth * aspectRatio);
-
-  return { width: defaultWidth, height };
-}
 
 /**
  * Board 引用持有器
@@ -303,10 +299,11 @@ async function insertAudioToCanvas(
   dimensions?: { width: number; height: number },
   metadata?: Record<string, unknown>
 ): Promise<{ width: number; height: number }> {
-  const size = dimensions || {
-    width: AUDIO_CARD_DEFAULT_WIDTH,
-    height: AUDIO_CARD_DEFAULT_HEIGHT,
-  };
+  const size = resolveAudioCardDimensions({
+    ...(metadata as AudioCardMetadata | undefined),
+    width: dimensions?.width,
+    height: dimensions?.height,
+  });
   await insertAudioFromUrl(
     board,
     audioUrl,
@@ -425,39 +422,59 @@ export async function executeCanvasInsertion(params: CanvasInsertionParams): Pro
 
     let currentY = startPoint[1];
     const leftX = startPoint[0];
-    const insertedItems: { type: ContentType; point: Point }[] = [];
+    const insertedItems: CanvasInsertionResultItem[] = [];
 
     for (const group of groupedItems) {
       if (group.length === 1) {
         const item = group[0];
-        let itemSize = { width: LAYOUT_CONSTANTS.MEDIA_DEFAULT_SIZE, height: 225 };
-
-        if (item.type === 'text') {
-          itemSize = estimateTextSize(item.content);
-        } else if (item.type === 'image') {
-          // 优先使用传入的尺寸，避免等待图片下载
-          itemSize = item.dimensions || { width: LAYOUT_CONSTANTS.MEDIA_DEFAULT_SIZE, height: LAYOUT_CONSTANTS.MEDIA_DEFAULT_SIZE };
-        } else if (item.type === 'video') {
-          itemSize = item.dimensions || { width: LAYOUT_CONSTANTS.MEDIA_DEFAULT_SIZE, height: Math.round(LAYOUT_CONSTANTS.MEDIA_DEFAULT_SIZE * (9 / 16)) };
-        } else if (item.type === 'audio') {
-          itemSize = item.dimensions || {
-            width: AUDIO_CARD_DEFAULT_WIDTH,
-            height: AUDIO_CARD_DEFAULT_HEIGHT,
-          };
-        }
-
         const point: Point = [leftX, currentY];
 
         if (item.type === 'text') {
-          await insertTextToCanvas(board, item.content, point, item.label);
-          currentY += itemSize.height + verticalGap;
+          const childrenCountBefore = board.children.length;
+          const textSize = await insertTextToCanvas(
+            board,
+            item.content,
+            point,
+            item.label
+          );
+          const insertedElement = board.children[childrenCountBefore] as
+            | { id?: string }
+            | undefined;
+          currentY += textSize.height + verticalGap;
+          insertedItems.push({
+            type: item.type,
+            point,
+            elementId: insertedElement?.id,
+            size: textSize,
+          });
         } else if (item.type === 'image') {
+          const childrenCountBefore = board.children.length;
           const imgSize = await insertImageToCanvas(board, item.content, point, item.dimensions);
+          const insertedElement = board.children[childrenCountBefore] as
+            | { id?: string }
+            | undefined;
           currentY += imgSize.height + verticalGap;
+          insertedItems.push({
+            type: item.type,
+            point,
+            elementId: insertedElement?.id,
+            size: imgSize,
+          });
         } else if (item.type === 'video') {
+          const childrenCountBefore = board.children.length;
           const vidSize = await insertVideoToCanvas(board, item.content, point, item.dimensions);
+          const insertedElement = board.children[childrenCountBefore] as
+            | { id?: string }
+            | undefined;
           currentY += vidSize.height + verticalGap;
+          insertedItems.push({
+            type: item.type,
+            point,
+            elementId: insertedElement?.id,
+            size: vidSize,
+          });
         } else if (item.type === 'audio') {
+          const childrenCountBefore = board.children.length;
           const audioSize = await insertAudioToCanvas(
             board,
             item.content,
@@ -465,13 +482,30 @@ export async function executeCanvasInsertion(params: CanvasInsertionParams): Pro
             item.dimensions,
             item.metadata
           );
+          const insertedElement = board.children[childrenCountBefore] as
+            | { id?: string }
+            | undefined;
           currentY += audioSize.height + verticalGap;
+          insertedItems.push({
+            type: item.type,
+            point,
+            elementId: insertedElement?.id,
+            size: audioSize,
+          });
         } else if (item.type === 'svg') {
+          const childrenCountBefore = board.children.length;
           const svgSize = await insertSvgToCanvas(board, item.content, point);
+          const insertedElement = board.children[childrenCountBefore] as
+            | { id?: string }
+            | undefined;
           currentY += svgSize.height + verticalGap;
+          insertedItems.push({
+            type: item.type,
+            point,
+            elementId: insertedElement?.id,
+            size: svgSize,
+          });
         }
-
-        insertedItems.push({ type: item.type, point });
       } else {
         let currentX = leftX;
         let maxHeight = 0;
@@ -480,18 +514,49 @@ export async function executeCanvasInsertion(params: CanvasInsertionParams): Pro
           const point: Point = [currentX, currentY];
 
           if (item.type === 'text') {
+            const childrenCountBefore = board.children.length;
             const size = await insertTextToCanvas(board, item.content, point, item.label);
+            const insertedElement = board.children[childrenCountBefore] as
+              | { id?: string }
+              | undefined;
             maxHeight = Math.max(maxHeight, size.height);
             currentX += size.width + horizontalGap;
+            insertedItems.push({
+              type: item.type,
+              point,
+              elementId: insertedElement?.id,
+              size,
+            });
           } else if (item.type === 'image') {
+            const childrenCountBefore = board.children.length;
             const imgSize = await insertImageToCanvas(board, item.content, point, item.dimensions);
+            const insertedElement = board.children[childrenCountBefore] as
+              | { id?: string }
+              | undefined;
             maxHeight = Math.max(maxHeight, imgSize.height);
             currentX += imgSize.width + horizontalGap;
+            insertedItems.push({
+              type: item.type,
+              point,
+              elementId: insertedElement?.id,
+              size: imgSize,
+            });
           } else if (item.type === 'video') {
+            const childrenCountBefore = board.children.length;
             const vidSize = await insertVideoToCanvas(board, item.content, point, item.dimensions);
+            const insertedElement = board.children[childrenCountBefore] as
+              | { id?: string }
+              | undefined;
             maxHeight = Math.max(maxHeight, vidSize.height);
             currentX += vidSize.width + horizontalGap;
+            insertedItems.push({
+              type: item.type,
+              point,
+              elementId: insertedElement?.id,
+              size: vidSize,
+            });
           } else if (item.type === 'audio') {
+            const childrenCountBefore = board.children.length;
             const audioSize = await insertAudioToCanvas(
               board,
               item.content,
@@ -499,15 +564,32 @@ export async function executeCanvasInsertion(params: CanvasInsertionParams): Pro
               item.dimensions,
               item.metadata
             );
+            const insertedElement = board.children[childrenCountBefore] as
+              | { id?: string }
+              | undefined;
             maxHeight = Math.max(maxHeight, audioSize.height);
             currentX += audioSize.width + horizontalGap;
+            insertedItems.push({
+              type: item.type,
+              point,
+              elementId: insertedElement?.id,
+              size: audioSize,
+            });
           } else if (item.type === 'svg') {
+            const childrenCountBefore = board.children.length;
             const svgSize = await insertSvgToCanvas(board, item.content, point);
+            const insertedElement = board.children[childrenCountBefore] as
+              | { id?: string }
+              | undefined;
             maxHeight = Math.max(maxHeight, svgSize.height);
             currentX += svgSize.width + horizontalGap;
+            insertedItems.push({
+              type: item.type,
+              point,
+              elementId: insertedElement?.id,
+              size: svgSize,
+            });
           }
-
-          insertedItems.push({ type: item.type, point });
         }
 
         currentY += maxHeight + verticalGap;
@@ -530,7 +612,10 @@ export async function executeCanvasInsertion(params: CanvasInsertionParams): Pro
       data: {
         insertedCount: insertedItems.length,
         items: insertedItems,
+        firstElementId:
+          insertedItems.length > 0 ? insertedItems[0].elementId : undefined,
         firstElementPosition: insertedItems.length > 0 ? insertedItems[0].point : undefined,
+        firstElementSize: insertedItems.length > 0 ? insertedItems[0].size : undefined,
       },
       type: 'text',
     };

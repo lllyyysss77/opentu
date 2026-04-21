@@ -11,6 +11,7 @@ import {
   getModelVendorPalette,
   ModelVendorMark,
 } from '../shared/ModelVendorBrand';
+import { HoverTip } from '../shared';
 import {
   type ModelTypeFilter,
   MODEL_TYPE_LABELS,
@@ -398,18 +399,19 @@ export const ModelDiscoveryDialog: React.FC<ModelDiscoveryDialogProps> = ({
                                       </div>
                                     </div>
                                     {onTestModel ? (
-                                      <button
-                                        type="button"
-                                        className="model-discovery-dialog__item-test"
-                                        onClick={(e) => {
-                                          e.preventDefault();
-                                          e.stopPropagation();
-                                          onTestModel(model.id);
-                                        }}
-                                        title="测试此模型"
-                                      >
-                                        <FlaskConical size={13} />
-                                      </button>
+                                      <HoverTip content="测试此模型" showArrow={false}>
+                                        <button
+                                          type="button"
+                                          className="model-discovery-dialog__item-test"
+                                          onClick={(e) => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            onTestModel(model.id);
+                                          }}
+                                        >
+                                          <FlaskConical size={13} />
+                                        </button>
+                                      </HoverTip>
                                     ) : null}
                                   </label>
                                 );

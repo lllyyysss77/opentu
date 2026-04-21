@@ -133,7 +133,7 @@ export const AutoCompleteShapePicker: React.FC<AutoCompleteShapePickerProps> = (
                 size="small"
                 visible={true}
                 icon={shape.icon}
-                title={shape.title}
+                tooltip={shape.title}
                 aria-label={shape.title}
                 onPointerDown={({ event }) => {
                   event.stopPropagation();

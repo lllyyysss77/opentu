@@ -17,6 +17,8 @@ import { PlaitBoard, getSelectedElements, Transforms, ATTACHED_ELEMENT_CLASS_NAM
 import { MindElement } from '@plait/mind';
 import { PlaitDrawElement, isDrawElementsIncludeText } from '@plait/draw';
 import { Popover, PopoverTrigger, PopoverContent } from '../../popover/popover';
+import { useConfirmDialog } from '../../dialog/ConfirmDialog';
+import { HoverTip } from '../../shared/hover';
 import { ToolButton } from '../../tool-button';
 import { AI_IMAGE_PROMPTS } from '../../../constants/prompts';
 import { usePromptHistory } from '../../../hooks/usePromptHistory';
@@ -184,6 +186,9 @@ export const PopupPromptButton: React.FC<PopupPromptButtonProps> = ({
   // 禁用预设去重，因为文本组件内部有自己的去重逻辑
   const { history: aiInputHistory, addHistory, removeHistory } = usePromptHistory({
     deduplicateWithPresets: false,
+  });
+  const { confirm, confirmDialog } = useConfirmDialog({
+    container: board ? PlaitBoard.getBoardContainer(board) : null,
   });
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -402,10 +407,23 @@ export const PopupPromptButton: React.FC<PopupPromptButtonProps> = ({
   }, [board, addHistory]);
 
   // 处理删除历史
-  const handleDeleteHistory = useCallback((e: React.MouseEvent, id: string) => {
+  const handleDeleteHistory = useCallback(async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
+    const confirmed = await confirm({
+      title: language === 'zh' ? '确认删除提示词' : 'Delete Prompt',
+      description:
+        language === 'zh'
+          ? '确定要删除这条历史提示词吗？此操作不可撤销。'
+          : 'Are you sure you want to delete this prompt history item? This action cannot be undone.',
+      confirmText: language === 'zh' ? '删除' : 'Delete',
+      cancelText: language === 'zh' ? '取消' : 'Cancel',
+      danger: true,
+    });
+    if (!confirmed) {
+      return;
+    }
     removeHistory(id);
-  }, [removeHistory]);
+  }, [confirm, language, removeHistory]);
 
   // 键盘事件处理
   useEffect(() => {
@@ -470,7 +488,7 @@ export const PopupPromptButton: React.FC<PopupPromptButtonProps> = ({
           type="icon"
           icon={<Lightbulb size={16} />}
           visible={true}
-          title={title || (language === 'zh' ? '提示词' : 'Prompts')}
+          tooltip={title || (language === 'zh' ? '提示词' : 'Prompts')}
           aria-label={title || (language === 'zh' ? '提示词' : 'Prompts')}
           onPointerUp={() => setIsOpen(!isOpen)}
         />
@@ -511,13 +529,17 @@ export const PopupPromptButton: React.FC<PopupPromptButtonProps> = ({
                     </div>
                     {/* 只有AI输入框的历史可以删除 */}
                     {item.source === 'ai-input' && (
-                      <button
-                        className="popup-prompt-panel__item-delete"
-                        onClick={(e) => handleDeleteHistory(e, item.id)}
-                        title={language === 'zh' ? '删除' : 'Delete'}
+                      <HoverTip
+                        content={language === 'zh' ? '删除' : 'Delete'}
+                        showArrow={false}
                       >
-                        <X size={12} />
-                      </button>
+                        <button
+                          className="popup-prompt-panel__item-delete"
+                          onClick={(e) => handleDeleteHistory(e, item.id)}
+                        >
+                          <X size={12} />
+                        </button>
+                      </HoverTip>
                     )}
                   </div>
                 ))}
@@ -554,6 +576,7 @@ export const PopupPromptButton: React.FC<PopupPromptButtonProps> = ({
           )}
         </div>
       </PopoverContent>
+      {confirmDialog}
     </Popover>
   );
 };

@@ -78,7 +78,7 @@ export const FreehandPanel: React.FC<FreehandPickerProps> = ({
                   size={'small'}
                   visible={true}
                   icon={freehand.icon}
-                  title={t(freehand.titleKey as keyof Translations)}
+                  tooltip={t(freehand.titleKey as keyof Translations)}
                   aria-label={t(freehand.titleKey as keyof Translations)}
                   onPointerDown={() => {
                     // 切换工具前，结束钢笔绘制（如果切换到非钢笔工具）

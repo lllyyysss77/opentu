@@ -10,6 +10,7 @@
 
 import React from 'react';
 import { Pin, PinOff, X, Lightbulb } from 'lucide-react';
+import { HoverTip } from './hover';
 import './prompt-list-item.scss';
 
 export interface PromptListItemProps {
@@ -37,11 +38,11 @@ export interface PromptListItemProps {
 
 // 生成类型对应的标签样式
 const MODEL_TYPE_STYLES: Record<string, string> = {
-  'image': 'prompt-list-item__tag--image',
-  'video': 'prompt-list-item__tag--video',
-  'audio': 'prompt-list-item__tag--audio',
-  'text': 'prompt-list-item__tag--text',
-  'agent': 'prompt-list-item__tag--agent',
+  image: 'prompt-list-item__tag--image',
+  video: 'prompt-list-item__tag--video',
+  audio: 'prompt-list-item__tag--audio',
+  text: 'prompt-list-item__tag--text',
+  agent: 'prompt-list-item__tag--agent',
 };
 
 export const PromptListItem: React.FC<PromptListItemProps> = ({
@@ -66,11 +67,14 @@ export const PromptListItem: React.FC<PromptListItemProps> = ({
     onDelete?.();
   };
 
-  return (
+  const container = (
     <div
-      className={`prompt-list-item ${pinned ? 'prompt-list-item--pinned' : ''} ${isPreset ? 'prompt-list-item--preset' : ''} ${disabled ? 'prompt-list-item--disabled' : ''}`}
+      className={`prompt-list-item ${
+        pinned ? 'prompt-list-item--pinned' : ''
+      } ${isPreset ? 'prompt-list-item--preset' : ''} ${
+        disabled ? 'prompt-list-item--disabled' : ''
+      }`}
       onClick={disabled ? undefined : onClick}
-      title={content}
     >
       {/* 置顶标识 */}
       {pinned && (
@@ -85,50 +89,63 @@ export const PromptListItem: React.FC<PromptListItemProps> = ({
           <Lightbulb size={10} />
         </div>
       )}
-      
+
       {/* 场景标签（使用 scene 显示，modelType 决定样式） */}
       {scene && (
-        <span className={`prompt-list-item__tag ${modelType ? MODEL_TYPE_STYLES[modelType] || '' : ''}`}>
+        <span
+          className={`prompt-list-item__tag ${
+            modelType ? MODEL_TYPE_STYLES[modelType] || '' : ''
+          }`}
+        >
           {scene}
         </span>
       )}
-      
+
       {/* 提示词内容 */}
-      <span className="prompt-list-item__text">
-        {content}
-      </span>
-      
+      <span className="prompt-list-item__text">{content}</span>
+
       {/* 操作按钮 */}
       <div className="prompt-list-item__actions">
         {/* 置顶/取消置顶按钮 */}
         {onTogglePin && (
-          <button
-            type="button"
-            className="prompt-list-item__action"
-            onClick={handleTogglePin}
-            title={pinned
-              ? (language === 'zh' ? '取消置顶' : 'Unpin')
-              : (language === 'zh' ? '置顶' : 'Pin')
+          <HoverTip
+            content={
+              pinned
+                ? language === 'zh'
+                  ? '取消置顶'
+                  : 'Unpin'
+                : language === 'zh'
+                ? '置顶'
+                : 'Pin'
             }
           >
-            {pinned ? <PinOff size={14} /> : <Pin size={14} />}
-          </button>
+            <button
+              type="button"
+              className="prompt-list-item__action"
+              onClick={handleTogglePin}
+            >
+              {pinned ? <PinOff size={14} /> : <Pin size={14} />}
+            </button>
+          </HoverTip>
         )}
-        
+
         {/* 删除按钮 */}
         {onDelete && (
-          <button
-            type="button"
-            className="prompt-list-item__action prompt-list-item__action--delete"
-            onClick={handleDelete}
-            title={language === 'zh' ? '删除' : 'Delete'}
-          >
-            <X size={14} />
-          </button>
+          <HoverTip content={language === 'zh' ? '删除' : 'Delete'}>
+            <button
+              type="button"
+              className="prompt-list-item__action prompt-list-item__action--delete"
+              onClick={handleDelete}
+            >
+              <X size={14} />
+            </button>
+          </HoverTip>
         )}
       </div>
     </div>
   );
+
+  return <HoverTip content={content}>{container}</HoverTip>;
 };
 
 export default PromptListItem;

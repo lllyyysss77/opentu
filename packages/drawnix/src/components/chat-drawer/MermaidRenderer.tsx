@@ -7,6 +7,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Dialog } from 'tdesign-react';
 import { FullscreenIcon, CloseIcon } from 'tdesign-icons-react';
+import { HoverTip } from '../shared';
 
 interface MermaidRendererProps {
   code: string;
@@ -171,13 +172,14 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = ({
         {isLoading && (
           <div className="mermaid-renderer__loading">渲染中...</div>
         )}
-        <div
-          ref={containerRef}
-          className="mermaid-renderer__container"
-          style={{ display: isLoading ? 'none' : 'block' }}
-          onClick={handleClick}
-          title="点击查看大图"
-        />
+        <HoverTip content="点击查看大图" showArrow={false}>
+          <div
+            ref={containerRef}
+            className="mermaid-renderer__container"
+            style={{ display: isLoading ? 'none' : 'block' }}
+            onClick={handleClick}
+          />
+        </HoverTip>
         {!isLoading && svgContent && (
           <div className="mermaid-renderer__hint">
             <FullscreenIcon size={16} />

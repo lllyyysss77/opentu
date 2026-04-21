@@ -5,6 +5,7 @@
 
 import React, { useState, useCallback } from 'react';
 import classNames from 'classnames';
+import { HoverTip } from '../../shared/hover';
 import { ToolButton } from '../../tool-button';
 import { Popover, PopoverContent, PopoverTrigger } from '../../popover/popover';
 import { Island } from '../../island';
@@ -120,7 +121,7 @@ export const PopupAlignmentButton: React.FC<PopupAlignmentButtonProps> = ({
           visible={true}
           icon={<AlignmentIcon size={16} />}
           type="button"
-          title={title}
+          tooltip={title}
           aria-label={title}
           onPointerUp={() => setIsOpen(!isOpen)}
         />
@@ -135,16 +136,20 @@ export const PopupAlignmentButton: React.FC<PopupAlignmentButtonProps> = ({
         >
           <div className="alignment-actions">
             {alignActions.map((action) => (
-              <button
+              <HoverTip
                 key={action.key}
-                className="alignment-action-btn"
-                onClick={action.handler}
-                title={action.label}
+                content={action.label}
+                showArrow={false}
               >
-                {action.icon}
-                <span className="alignment-label">{action.label}</span>
-                <span className="alignment-shortcut">{action.shortcut}</span>
-              </button>
+                <button
+                  className="alignment-action-btn"
+                  onClick={action.handler}
+                >
+                  {action.icon}
+                  <span className="alignment-label">{action.label}</span>
+                  <span className="alignment-shortcut">{action.shortcut}</span>
+                </button>
+              </HoverTip>
             ))}
           </div>
         </Island>

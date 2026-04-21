@@ -2,7 +2,6 @@ import React from 'react';
 import { I18nProvider } from '../../i18n';
 import { AssetProvider } from '../../contexts/AssetContext';
 import { AudioPlaylistProvider } from '../../contexts/AudioPlaylistContext';
-import { WorkflowProvider } from '../../contexts/WorkflowContext';
 import { RecentColorsProvider } from '../unified-color-picker';
 import { ToolbarConfigProvider } from '../../hooks/use-toolbar-config';
 import { DrawnixContext } from '../../hooks/use-drawnix';
@@ -42,11 +41,9 @@ export const ToolProviderWrapper: React.FC<ToolProviderWrapperProps> = ({
         <AssetProvider>
           <AudioPlaylistProvider>
             <ToolbarConfigProvider>
-              <WorkflowProvider>
-                <DrawnixContext.Provider value={contextValue}>
-                  {children}
-                </DrawnixContext.Provider>
-              </WorkflowProvider>
+              <DrawnixContext.Provider value={contextValue}>
+                {children}
+              </DrawnixContext.Provider>
             </ToolbarConfigProvider>
           </AudioPlaylistProvider>
         </AssetProvider>

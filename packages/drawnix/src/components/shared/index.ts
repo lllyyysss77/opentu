@@ -1,7 +1,21 @@
 export { PromptListItem, type PromptListItemProps } from './PromptListItem';
-export { PromptListPanel, type PromptListPanelProps, type PromptItem } from './PromptListPanel';
-export { MediaViewer, type MediaViewerProps, type MediaItem } from './MediaViewer';
+export {
+  PromptListPanel,
+  type PromptListPanelProps,
+  type PromptItem,
+} from './PromptListPanel';
+export {
+  MediaViewer,
+  type MediaViewerProps,
+  type MediaItem,
+} from './MediaViewer';
 export { AudioPlaylistChip } from './AudioPlaylistChip';
+export {
+  HoverTip,
+  HoverCard,
+  type HoverTipProps,
+  type HoverCardProps,
+} from './hover';
 export {
   ContextMenu,
   useContextMenuState,
@@ -29,3 +43,38 @@ export {
   type ViewerActions,
   type MediaItem as UnifiedMediaItem,
 } from './media-preview';
+export {
+  ComboInput,
+  ShotCard,
+  readStoredModelSelection,
+  writeStoredModelSelection,
+  updateActiveVersionShotsInRecord,
+  loadRecordsByKey,
+  saveRecordsByKey,
+  addRecordWithCap,
+  updateRecordById,
+  deleteRecordById,
+  extractGeneratedClipsFromAudioTask,
+  mergeGeneratedClips,
+  syncGeneratedClipsForRecord,
+  findRecordIdFromBatch,
+  appendTaskToRelatedGroup,
+  sortRelatedTaskGroups,
+  readTaskAction,
+  readTaskStringParam,
+  readTaskChatResponse,
+  extractBatchRecordId,
+  parseStructuredOrChatJson,
+  updateWorkflowRecord,
+  DEFAULT_ORIGINAL_VERSION_ID,
+  appendVersionToRecord,
+  switchVersionInRecord,
+  VISUAL_STYLE_OPTIONS,
+  VISUAL_STYLE_PLACEHOLDER,
+  type ComboInputProps,
+  type ComboOption,
+  type ComboOptionGroup,
+  type ShotCardProps,
+  type StoredModelSelection,
+  type WorkflowRecordStorageOptions,
+} from './workflow';

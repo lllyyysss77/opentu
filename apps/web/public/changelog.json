@@ -1,6 +1,271 @@
 {
   "versions": [
     {
+      "version": "0.6.37",
+      "date": "2026-04-21",
+      "changes": {
+        "features": [
+          "优化启动加载与延迟功能挂载"
+        ],
+        "fixes": [],
+        "improvements": []
+      },
+      "type": "patch",
+      "highlights": "优化启动加载与延迟功能挂载"
+    },
+    {
+      "version": "0.6.36",
+      "date": "2026-04-20",
+      "changes": {
+        "features": [],
+        "fixes": [],
+        "improvements": [
+          "Add HTML boot loading overlay"
+        ]
+      },
+      "type": "patch",
+      "highlights": "构建修复与稳定性改进"
+    },
+    {
+      "version": "0.6.35",
+      "date": "2026-04-20",
+      "changes": {
+        "features": [
+          "智能 CDN 优先加载与经验沉淀"
+        ],
+        "fixes": [
+          "修复版本记录类型定义和函数调用错误"
+        ],
+        "improvements": []
+      },
+      "type": "patch",
+      "highlights": "智能 CDN 优先加载与经验沉淀"
+    },
+    {
+      "version": "0.6.34",
+      "date": "2026-04-20",
+      "changes": {
+        "features": [],
+        "fixes": [
+          "跨域下载失败时回退打开链接"
+        ],
+        "improvements": []
+      },
+      "type": "patch",
+      "highlights": "跨域下载失败时回退打开链接"
+    },
+    {
+      "version": "0.6.33",
+      "date": "2026-04-20",
+      "changes": {
+        "features": [
+          "阿米 增加提示词优化弹窗并沉淀经验文档"
+        ],
+        "fixes": [
+          "阿米 恢复生成页视频重生默认参考图",
+          "阿米 补齐视频路由热修缺失导入",
+          "阿米 修正视频弹窗模型路由串供应商",
+          "阿米 修正 MV 生成链路与风格选择",
+          "修复任务结果为空时素材转换崩溃的问题"
+        ],
+        "improvements": []
+      },
+      "type": "patch",
+      "highlights": "阿米 增加提示词优化弹窗并沉淀经验文档"
+    },
+    {
+      "version": "0.6.32",
+      "date": "2026-04-18",
+      "changes": {
+        "features": [
+          "支持资产嵌入的尺寸调整和工具图标优化",
+          "统一视频展示为海报优先并支持降级播放",
+          "对齐爆款视频与爆款MV生成页交互",
+          "支持镜头草稿保存和素材库视频插入",
+          "串行化爆款视频批量生成",
+          "优化多图批量生成锚点的位置规划与任务匹配",
+          "拆分多图生成反馈为独立锚点",
+          "引入生图锚点反馈初版框架"
+        ],
+        "fixes": [
+          "完善素材选择与素材插入体验",
+          "优化知识库素材加载与媒体预览释放",
+          "修复归档任务导致音频素材元数据丢失",
+          "修复生成页多项 Bug 并优化单镜头生成参数透传",
+          "修正 tuzi 图片路由与 AI 生图弹窗标题",
+          "优化图片生成锚点的占位与加载反馈"
+        ],
+        "improvements": []
+      },
+      "type": "patch",
+      "highlights": "支持资产嵌入的尺寸调整和工具图标优化"
+    },
+    {
+      "version": "0.6.31",
+      "date": "2026-04-17",
+      "changes": {
+        "features": [
+          "统一视频展示为海报优先并支持降级播放",
+          "对齐爆款视频与爆款MV生成页交互",
+          "支持镜头草稿保存和素材库视频插入",
+          "串行化爆款视频批量生成",
+          "优化ppt导出"
+        ],
+        "fixes": [
+          "修复归档任务导致音频素材元数据丢失",
+          "修复生成页多项 Bug 并优化单镜头生成参数透传",
+          "修正 tuzi 图片路由与 AI 生图弹窗标题"
+        ],
+        "improvements": []
+      },
+      "type": "patch",
+      "highlights": "统一视频展示为海报优先并支持降级播放"
+    },
+    {
+      "version": "0.6.29",
+      "date": "2026-04-15",
+      "changes": {
+        "features": [
+          "支持镜头草稿保存和素材库视频插入",
+          "串行化爆款视频批量生成"
+        ],
+        "fixes": [],
+        "improvements": [
+          "更新版本号至0.6.28并扩展素材类型定义"
+        ]
+      },
+      "type": "patch",
+      "highlights": "支持镜头草稿保存和素材库视频插入"
+    },
+    {
+      "version": "0.6.28",
+      "date": "2026-04-15",
+      "changes": {
+        "features": [
+          "引入音频卡片自适应尺寸及多工具窗口支持",
+          "完善音频结果缓存并接入 MV 分镜任务",
+          "爆款MV生成器增强 — 历史跳转、帧传递、音频驱动分镜"
+        ],
+        "fixes": [
+          "修复任务工作流同步幽灵日志刷屏",
+          "区分 sw-debug llmapi 的音频与歌词生成",
+          "补齐 sw-debug 的 llmapi JSON 结果展示",
+          "修复 suno 多音频重复与时长错误"
+        ],
+        "improvements": []
+      },
+      "type": "patch",
+      "highlights": "引入音频卡片自适应尺寸及多工具窗口支持"
+    },
+    {
+      "version": "0.6.27",
+      "date": "2026-04-15",
+      "changes": {
+        "features": [
+          "基于 pricing endpoints 推断 provider bindings",
+          "统一爆款音乐续写与 infill 能力",
+          "优化爆款音乐生成工具流程与体验",
+          "支持工具默认窗口行为并修复音乐任务卡片异常"
+        ],
+        "fixes": [
+          "首屏异步预热价格并补全 LLM 原始响应日志",
+          "清理任务列表批量索引误渲染 0",
+          "补齐 suno 续写所需 task_id",
+          "保留爆款音乐创作描述并上移错误提示",
+          "优化音乐分析历史标题并隐藏续写入口"
+        ],
+        "improvements": []
+      },
+      "type": "patch",
+      "highlights": "基于 pricing endpoints 推断 provider bindings"
+    },
+    {
+      "version": "0.6.26",
+      "date": "2026-04-14",
+      "changes": {
+        "features": [
+          "新增爆款音乐生成工具",
+          "历史关联任务展开、生成回填、风格传递与脚本版本优化",
+          "支持工具弹窗多窗口实例",
+          "脚本版本管理，支持多版本切换",
+          "优化视频分析与脚本改编交互",
+          "视频分析任务接入队列并优化结果插入",
+          "上传视频分析后自动提取首帧图片"
+        ],
+        "fixes": [
+          "修复音乐分析器兼容性并完善工作流展示",
+          "统一持久化删除的二次确认",
+          "统一确认弹窗与媒体预览提示词交互",
+          "批量生成使用每个镜头独立的 batchId",
+          "修复 Markdown 卡片初始化阶段的 Milkdown editorView 异常",
+          "在爆款视频分析页提示 gemini-mix 分组"
+        ],
+        "improvements": []
+      },
+      "type": "patch",
+      "highlights": "新增爆款音乐生成工具"
+    },
+    {
+      "version": "0.6.25",
+      "date": "2026-04-14",
+      "changes": {
+        "features": [],
+        "fixes": [
+          "修正视频分析中内联数据的MIME类型",
+          "防止生成任务重复调用大模型 API",
+          "统一主应用和 sw-debug 的备份恢复核心逻辑"
+        ],
+        "improvements": [
+          "更新应用版本并移除AI视频调试代码"
+        ]
+      },
+      "type": "patch",
+      "highlights": "修正视频分析中内联数据的MIME类型"
+    },
+    {
+      "version": "0.6.24",
+      "date": "2026-04-13",
+      "changes": {
+        "features": [],
+        "fixes": [
+          "收口 AI 视频弹窗受控模型同步环",
+          "移除视频尺寸 Select 以绕开 TDesign Option 更新环",
+          "补充 AI 视频弹窗调试标记并稳定图片标签依赖"
+        ],
+        "improvements": [
+          "补充 AI 视频弹窗关键状态链路调试日志"
+        ]
+      },
+      "type": "patch",
+      "highlights": "收口 AI 视频弹窗受控模型同步环"
+    },
+    {
+      "version": "0.6.23",
+      "date": "2026-04-13",
+      "changes": {
+        "features": [],
+        "fixes": [
+          "收口 iframe 下 AI 视频弹窗的剩余更新环"
+        ],
+        "improvements": []
+      },
+      "type": "patch",
+      "highlights": "收口 iframe 下 AI 视频弹窗的剩余更新环"
+    },
+    {
+      "version": "0.6.22",
+      "date": "2026-04-13",
+      "changes": {
+        "features": [],
+        "fixes": [
+          "收口 AI 视频弹窗参数回写循环"
+        ],
+        "improvements": []
+      },
+      "type": "patch",
+      "highlights": "收口 AI 视频弹窗参数回写循环"
+    },
+    {
       "version": "0.6.21",
       "date": "2026-04-13",
       "changes": {

@@ -6,6 +6,7 @@
 import React, { useCallback, useState } from 'react';
 import classNames from 'classnames';
 import type { EyeDropperProps } from './types';
+import { HoverTip } from '../shared/hover';
 
 // EyeDropper API 类型声明
 declare global {
@@ -51,19 +52,26 @@ export const EyeDropper: React.FC<EyeDropperProps> = ({
   }
 
   return (
-    <button
-      type="button"
-      className={classNames('ucp-eyedropper', {
-        'ucp-eyedropper--picking': isPicking,
-      })}
-      onClick={handlePick}
-      disabled={disabled || isPicking}
-      title="拾取屏幕颜色"
-    >
-      <svg className="ucp-eyedropper__icon" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M20.71 5.63l-2.34-2.34a1 1 0 0 0-1.41 0l-3.12 3.12-1.42-1.42-1.41 1.42 1.41 1.41-8.42 8.42V20h3.75l8.42-8.42 1.41 1.41 1.42-1.41-1.42-1.42 3.12-3.12a1 1 0 0 0 .01-1.41zM6.92 18H5v-1.92l8.42-8.42 1.92 1.92L6.92 18z" />
-      </svg>
-    </button>
+    <HoverTip content="拾取屏幕颜色" showArrow={false}>
+      <span>
+        <button
+          type="button"
+          className={classNames('ucp-eyedropper', {
+            'ucp-eyedropper--picking': isPicking,
+          })}
+          onClick={handlePick}
+          disabled={disabled || isPicking}
+        >
+          <svg
+            className="ucp-eyedropper__icon"
+            viewBox="0 0 24 24"
+            fill="currentColor"
+          >
+            <path d="M20.71 5.63l-2.34-2.34a1 1 0 0 0-1.41 0l-3.12 3.12-1.42-1.42-1.41 1.42 1.41 1.41-8.42 8.42V20h3.75l8.42-8.42 1.41 1.41 1.42-1.41-1.42-1.42 3.12-3.12a1 1 0 0 0 .01-1.41zM6.92 18H5v-1.92l8.42-8.42 1.92 1.92L6.92 18z" />
+          </svg>
+        </button>
+      </span>
+    </HoverTip>
   );
 };
 

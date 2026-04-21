@@ -28,7 +28,7 @@ export const ToolboxButton: React.FC<ToolboxButtonProps> = ({
       visible={true}
       selected={isOpen}
       icon={<ToolboxIcon size={20} />}
-      title="工具箱"
+      tooltip="工具箱"
       aria-label="打开工具箱"
       data-track="toolbar_click_toolbox"
       onPointerDown={onClick}

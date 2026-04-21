@@ -5,6 +5,7 @@
 
 import React, { useState, useCallback } from 'react';
 import classNames from 'classnames';
+import { HoverTip } from '../../shared/hover';
 import { ToolButton } from '../../tool-button';
 import { Popover, PopoverContent, PopoverTrigger } from '../../popover/popover';
 import { Island } from '../../island';
@@ -174,19 +175,19 @@ export const PopupShadowEffectButton: React.FC<PopupShadowEffectButtonProps> = (
         <div className="section-title">{language === 'zh' ? '预设' : 'Presets'}</div>
         <div className="presets-grid">
           {Object.entries(SHADOW_PRESETS.textShadow).map(([key, preset]) => (
-            <button
-              key={key}
-              className="preset-item"
-              onClick={() => applyTextShadowPreset(preset)}
-              title={key}
-            >
-              <span
-                className="preset-preview"
-                style={{ textShadow: generateTextShadowCSS(preset) }}
+            <HoverTip key={key} content={key} showArrow={false}>
+              <button
+                className="preset-item"
+                onClick={() => applyTextShadowPreset(preset)}
               >
-                Aa
-              </span>
-            </button>
+                <span
+                  className="preset-preview"
+                  style={{ textShadow: generateTextShadowCSS(preset) }}
+                >
+                  Aa
+                </span>
+              </button>
+            </HoverTip>
           ))}
         </div>
       </div>
@@ -260,20 +261,20 @@ export const PopupShadowEffectButton: React.FC<PopupShadowEffectButtonProps> = (
         <div className="section-title">{language === 'zh' ? '预设' : 'Presets'}</div>
         <div className="presets-grid">
           {Object.entries(SHADOW_PRESETS.glow).map(([key, preset]) => (
-            <button
-              key={key}
-              className="preset-item glow-preset"
-              onClick={() => applyGlowPreset(preset)}
-              title={key}
-              style={{ '--glow-color': preset.color } as React.CSSProperties}
-            >
-              <span
-                className="preset-preview"
-                style={{ textShadow: generateGlowCSS(preset) }}
+            <HoverTip key={key} content={key} showArrow={false}>
+              <button
+                className="preset-item glow-preset"
+                onClick={() => applyGlowPreset(preset)}
+                style={{ '--glow-color': preset.color } as React.CSSProperties}
               >
-                ✨
-              </span>
-            </button>
+                <span
+                  className="preset-preview"
+                  style={{ textShadow: generateGlowCSS(preset) }}
+                >
+                  ✨
+                </span>
+              </button>
+            </HoverTip>
           ))}
         </div>
       </div>
@@ -318,7 +319,7 @@ export const PopupShadowEffectButton: React.FC<PopupShadowEffectButtonProps> = (
           visible={true}
           icon={<ShadowEffectIcon />}
           type="button"
-          title={title}
+          tooltip={title}
           aria-label={title}
           onPointerUp={() => setIsOpen(!isOpen)}
         />

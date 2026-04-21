@@ -5,7 +5,9 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import classNames from 'classnames';
+import { HoverTip } from '../../shared/hover';
 import { ToolButton } from '../../tool-button';
+import { useConfirmDialog } from '../../dialog/ConfirmDialog';
 import { Popover, PopoverContent, PopoverTrigger } from '../../popover/popover';
 import { Island } from '../../island';
 import { ATTACHED_ELEMENT_CLASS_NAME, PlaitBoard } from '@plait/core';
@@ -40,6 +42,7 @@ export const PopupFontFamilyButton: React.FC<PopupFontFamilyButtonProps> = ({
   const [customFonts, setCustomFonts] = useState<CustomFontAsset[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const container = PlaitBoard.getBoardContainer(board);
+  const { confirm, confirmDialog } = useConfirmDialog({ container });
 
   // 加载自定义字体列表
   useEffect(() => {
@@ -140,7 +143,24 @@ export const PopupFontFamilyButton: React.FC<PopupFontFamilyButtonProps> = ({
   }, [customFonts, handleFontSelect]);
 
   // 删除自定义字体
-  const handleDeleteCustomFont = useCallback((fontId: string) => {
+  const handleDeleteCustomFont = useCallback(async (fontId: string) => {
+    const font = customFonts.find((item) => item.id === fontId);
+    const fontLabel = font?.name.replace(/\.[^/.]+$/, '') || '未命名字体';
+    const confirmed = await confirm({
+      title: language === 'zh' ? '确认删除字体' : 'Delete Font',
+      description:
+        language === 'zh'
+          ? `确定要删除自定义字体「${fontLabel}」吗？`
+          : `Are you sure you want to delete the custom font "${fontLabel}"?`,
+      confirmText: language === 'zh' ? '删除' : 'Delete',
+      cancelText: language === 'zh' ? '取消' : 'Cancel',
+      danger: true,
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
     // 找到要删除的字体并 revoke 其 Blob URL
     const fontToDelete = customFonts.find((f) => f.id === fontId);
     if (fontToDelete?.url?.startsWith('blob:')) {
@@ -150,7 +170,7 @@ export const PopupFontFamilyButton: React.FC<PopupFontFamilyButtonProps> = ({
     const updatedFonts = customFonts.filter((f) => f.id !== fontId);
     setCustomFonts(updatedFonts);
     localStorage.setItem('custom-fonts', JSON.stringify(updatedFonts));
-  }, [customFonts]);
+  }, [confirm, customFonts, language]);
 
   const renderFontList = (fonts: FontConfig[]) => (
     <div className="font-list">
@@ -197,16 +217,20 @@ export const PopupFontFamilyButton: React.FC<PopupFontFamilyButtonProps> = ({
               <span className="font-preview">{language === 'zh' ? '元旦快乐' : 'Happy New Year'}</span>
               <span className="font-name">{font.name.replace(/\.[^/.]+$/, '')}</span>
             </button>
-            <button
-              className="font-delete-btn"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleDeleteCustomFont(font.id);
-              }}
-              title={language === 'zh' ? '删除' : 'Delete'}
+            <HoverTip
+              content={language === 'zh' ? '删除' : 'Delete'}
+              showArrow={false}
             >
-              ×
-            </button>
+              <button
+                className="font-delete-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDeleteCustomFont(font.id);
+                }}
+              >
+                ×
+              </button>
+            </HoverTip>
           </div>
         ))
       )}
@@ -241,7 +265,7 @@ export const PopupFontFamilyButton: React.FC<PopupFontFamilyButtonProps> = ({
           visible={true}
           icon={<FontFamilyIcon />}
           type="button"
-          title={title}
+          tooltip={title}
           aria-label={title}
           onPointerUp={() => setIsOpen(!isOpen)}
         />
@@ -275,6 +299,7 @@ export const PopupFontFamilyButton: React.FC<PopupFontFamilyButtonProps> = ({
           </div>
         </Island>
       </PopoverContent>
+      {confirmDialog}
     </Popover>
   );
 };

@@ -117,8 +117,16 @@ import type {
 } from '../../types/chat.types';
 import { workflowCompletionService } from '../../services/workflow-completion-service';
 import { BoardTransforms } from '@plait/core';
+import { ImageGenerationAnchorTransforms } from '../../plugins/with-image-generation-anchor';
+import { buildImageGenerationAnchorCreateOptions } from '../../utils/image-generation-anchor-submission';
+import {
+  resolveImageGenerationBatchAnchorPositions,
+} from '../../utils/image-generation-anchor-placement';
+import {
+  buildImageGenerationAnchorPresentationPatch,
+  type ImageGenerationAnchorPresentationState,
+} from '../../utils/image-generation-anchor-state';
 import { WorkZoneTransforms } from '../../plugins/with-workzone';
-import type { PlaitWorkZone } from '../../types/workzone.types';
 import { toolWindowService } from '../../services/tool-window-service';
 import { useWorkflowSubmission } from '../../hooks/useWorkflowSubmission';
 import { isFrameElement } from '../../types/frame.types';
@@ -519,9 +527,108 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
     // 当前工作流的重试上下文（用于在更新时保持 retryContext）
     const currentRetryContextRef = useRef<WorkflowRetryContext | null>(null);
 
+    // 当前图片生成锚点集合（单图时只有一个，多图时对应多个独立对象）
+    const currentImageAnchorIdsRef = useRef<string[]>([]);
+
     // 当前 WorkZone 元素 ID（用于在画布上显示工作流进度）
     const currentWorkZoneIdRef = useRef<string | null>(null);
     const initialPreferences = loadAIInputPreferences();
+
+    const bindCurrentImageAnchorTask = useCallback(
+      (
+        boardInstance: PlaitBoard | null,
+        taskId: string,
+        options?: {
+          workflowId?: string;
+          batchId?: string;
+          batchIndex?: number;
+        }
+      ) => {
+        if (!boardInstance) {
+          return;
+        }
+
+        const currentAnchorIds = currentImageAnchorIdsRef.current;
+        const currentAnchor =
+          (options?.workflowId &&
+          options?.batchId &&
+          typeof options.batchIndex === 'number'
+            ? ImageGenerationAnchorTransforms.getAnchorByBatchSlot(
+                boardInstance,
+                {
+                  workflowId: options.workflowId,
+                  batchId: options.batchId,
+                  batchIndex: options.batchIndex,
+                }
+              )
+            : null) ||
+          (options?.workflowId
+            ? ImageGenerationAnchorTransforms.getAnchorByWorkflowId(
+                boardInstance,
+                options.workflowId
+              )
+            : null) ||
+          (currentAnchorIds[0]
+            ? ImageGenerationAnchorTransforms.getAnchorById(
+                boardInstance,
+                currentAnchorIds[0]
+              )
+            : null);
+        if (!currentAnchor) {
+          return;
+        }
+
+        const nextTaskIds = currentAnchor.taskIds.includes(taskId)
+          ? currentAnchor.taskIds
+          : [...currentAnchor.taskIds, taskId];
+
+        ImageGenerationAnchorTransforms.updateAnchor(boardInstance, currentAnchor.id, {
+          taskIds: nextTaskIds,
+          primaryTaskId: currentAnchor.primaryTaskId || taskId,
+        });
+      },
+      []
+    );
+
+    const applyCurrentImageAnchorPresentationState = useCallback(
+      (
+        boardInstance: PlaitBoard | null,
+        state: ImageGenerationAnchorPresentationState,
+        options?: {
+          error?: string;
+          subtitle?: string;
+        }
+      ) => {
+        const anchorIds = currentImageAnchorIdsRef.current;
+        if (anchorIds.length === 0 || !boardInstance) {
+          return;
+        }
+
+        anchorIds.forEach((anchorId) => {
+          ImageGenerationAnchorTransforms.updateAnchor(
+            boardInstance,
+            anchorId,
+            buildImageGenerationAnchorPresentationPatch(state, options)
+          );
+        });
+      },
+      []
+    );
+
+    const removeCurrentImageAnchor = useCallback(
+      (boardInstance: PlaitBoard | null) => {
+        const anchorIds = currentImageAnchorIdsRef.current;
+        if (anchorIds.length === 0 || !boardInstance) {
+          return;
+        }
+
+        anchorIds.forEach((anchorId) => {
+          ImageGenerationAnchorTransforms.removeAnchor(boardInstance, anchorId);
+        });
+        currentImageAnchorIdsRef.current = [];
+      },
+      []
+    );
 
     const resolvePersistedModelSelection = useCallback(
       (
@@ -977,6 +1084,10 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
     // 监听 AI 生成完成事件（思维导图、流程图等同步操作）
     useEffect(() => {
       const handleGenerationComplete = (event: CustomEvent) => {
+        if (event.detail?.type === 'image') {
+          return;
+        }
+
         // console.log('[AIInputBar] ai-generation-complete event received:', event.detail);
         // 立即重置提交状态，允许用户继续输入
         if (submitCooldownRef.current) {
@@ -2178,6 +2289,9 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
           let targetFrameDimensions:
             | { width: number; height: number }
             | undefined;
+          let targetFrameRect:
+            | { x: number; y: number; width: number; height: number }
+            | undefined;
 
           if (frameInfo) {
             // 验证 Frame 仍然存在
@@ -2194,36 +2308,157 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
               const frameRect = RectangleClient.getRectangleByPoints(
                 frameElement.points
               );
+              targetFrameRect = frameRect;
               expectedInsertLeftX = frameRect.x;
               expectedInsertY = frameRect.y;
             }
           }
 
-          const workzoneElement = WorkZoneTransforms.insertWorkZone(board, {
-            workflow: workflowMessageData,
-            position: [workzoneX, workzoneY],
-            size: { width: WORKZONE_WIDTH, height: WORKZONE_HEIGHT },
-            expectedInsertPosition: [expectedInsertLeftX, expectedInsertY],
-            targetFrameId,
-            targetFrameDimensions,
-            zoom,
-          });
+          const isImageGeneration = parsedParams.generationType === 'image';
 
-          currentWorkZoneIdRef.current = workzoneElement.id;
-          console.log(
-            '[AIInputBar][handleGenerate] WorkZone 已创建:',
-            workzoneElement.id
-          );
+          if (isImageGeneration) {
+            const requestedCount = Math.max(parsedParams.count ?? 1, 1);
+            const shouldCreateIndependentBatchAnchors = requestedCount > 1;
+            const anchorTargetFrameId = shouldCreateIndependentBatchAnchors
+              ? undefined
+              : targetFrameId;
+            const anchorTargetFrameDimensions =
+              shouldCreateIndependentBatchAnchors
+                ? undefined
+                : targetFrameDimensions;
+            const imageAnchorElements: Array<
+              ReturnType<typeof ImageGenerationAnchorTransforms.insertAnchor>
+            > = [];
+            const workflowBatchId = `wf_batch_${workflow.id}`;
+            const plannedAnchorPositions = !anchorTargetFrameId
+              ? resolveImageGenerationBatchAnchorPositions(
+                  board,
+                  [expectedInsertLeftX, expectedInsertY],
+                  buildImageGenerationAnchorCreateOptions({
+                    workflowId: workflow.id,
+                    expectedInsertPosition: [
+                      expectedInsertLeftX,
+                      expectedInsertY,
+                    ],
+                    requestedSize: parsedParams.size,
+                    requestedCount: 1,
+                    zoom,
+                    title: workflowMessageData.name || '图片生成',
+                    ...buildImageGenerationAnchorPresentationPatch('submitted'),
+                  }).size ?? {
+                    width: 320,
+                    height: 180,
+                  },
+                  requestedCount,
+                  {
+                    frameRect: shouldCreateIndependentBatchAnchors
+                      ? targetFrameRect
+                      : undefined,
+                  }
+                )
+              : null;
 
-          setTimeout(() => {
-            const workzoneCenterX = workzoneX + WORKZONE_WIDTH / 2;
-            const workzoneCenterY = workzoneY + WORKZONE_HEIGHT / 2;
-            scrollToPointIfNeeded(
-              board,
-              [workzoneCenterX, workzoneCenterY],
-              100
+            for (let index = 0; index < requestedCount; index += 1) {
+              let anchorCreateOptions = buildImageGenerationAnchorCreateOptions({
+                workflowId: workflow.id,
+                expectedInsertPosition: [expectedInsertLeftX, expectedInsertY],
+                targetFrameId: anchorTargetFrameId,
+                targetFrameDimensions: anchorTargetFrameDimensions,
+                frameAffinityId: shouldCreateIndependentBatchAnchors
+                  ? targetFrameId
+                  : undefined,
+                frameAffinityDimensions: shouldCreateIndependentBatchAnchors
+                  ? targetFrameDimensions
+                  : undefined,
+                requestedSize: parsedParams.size,
+                requestedCount: shouldCreateIndependentBatchAnchors ? 1 : requestedCount,
+                batchId: shouldCreateIndependentBatchAnchors
+                  ? workflowBatchId
+                  : undefined,
+                batchIndex: shouldCreateIndependentBatchAnchors
+                  ? index + 1
+                  : undefined,
+                batchTotal: shouldCreateIndependentBatchAnchors
+                  ? requestedCount
+                  : undefined,
+                zoom,
+                title: workflowMessageData.name || '图片生成',
+                ...buildImageGenerationAnchorPresentationPatch('submitted'),
+              });
+
+              if (!anchorTargetFrameId) {
+                const resolvedAnchorPosition =
+                  plannedAnchorPositions
+                    ? plannedAnchorPositions[index] ?? anchorCreateOptions.position
+                    : anchorCreateOptions.position;
+
+                anchorCreateOptions = {
+                  ...anchorCreateOptions,
+                  position: resolvedAnchorPosition,
+                  expectedInsertPosition: resolvedAnchorPosition,
+                };
+              }
+
+              const anchorElement = ImageGenerationAnchorTransforms.insertAnchor(
+                board,
+                anchorCreateOptions
+              );
+              imageAnchorElements.push(anchorElement);
+            }
+
+            currentImageAnchorIdsRef.current = imageAnchorElements.map(
+              (anchor) => anchor.id
             );
-          }, 100);
+            currentWorkZoneIdRef.current = null;
+            console.log(
+              '[AIInputBar][handleGenerate] Image Generation Anchor 已创建:',
+              imageAnchorElements.map((anchor) => anchor.id)
+            );
+
+            const [firstAnchor] = imageAnchorElements;
+            if (firstAnchor) {
+              setTimeout(() => {
+                const anchorRect = RectangleClient.getRectangleByPoints(
+                  firstAnchor.points
+                );
+                scrollToPointIfNeeded(
+                  board,
+                  [
+                    anchorRect.x + anchorRect.width / 2,
+                    anchorRect.y + anchorRect.height / 2,
+                  ],
+                  100
+                );
+              }, 100);
+            }
+          } else {
+            const workzoneElement = WorkZoneTransforms.insertWorkZone(board, {
+              workflow: workflowMessageData,
+              position: [workzoneX, workzoneY],
+              size: { width: WORKZONE_WIDTH, height: WORKZONE_HEIGHT },
+              expectedInsertPosition: [expectedInsertLeftX, expectedInsertY],
+              targetFrameId,
+              targetFrameDimensions,
+              zoom,
+            });
+
+            currentWorkZoneIdRef.current = workzoneElement.id;
+            currentImageAnchorIdsRef.current = [];
+            console.log(
+              '[AIInputBar][handleGenerate] WorkZone 已创建:',
+              workzoneElement.id
+            );
+
+            setTimeout(() => {
+              const workzoneCenterX = workzoneX + WORKZONE_WIDTH / 2;
+              const workzoneCenterY = workzoneY + WORKZONE_HEIGHT / 2;
+              scrollToPointIfNeeded(
+                board,
+                [workzoneCenterX, workzoneCenterY],
+                100
+              );
+            }, 100);
+          }
         }
 
         const aiContext = {
@@ -2276,6 +2511,10 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
             耗时ms: Date.now() - t0,
           });
           if (usedSW) {
+            if (generationType === 'image') {
+              applyCurrentImageAnchorPresentationState(board, 'accepted');
+            }
+
             if (prompt.trim()) {
               const hasSelection = allContent.length > 0;
               addPromptHistory(prompt.trim(), hasSelection, generationType);
@@ -2307,6 +2546,10 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
           workflow.steps.length,
           'steps'
         );
+
+        if (generationType === 'image') {
+          applyCurrentImageAnchorPresentationState(board, 'handoff');
+        }
 
         // 工作流已提交，立即保存历史、清空输入并解锁，步骤执行在后台继续
         if (prompt.trim()) {
@@ -2530,6 +2773,12 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
               workflowControl.updateStep(step.id, 'running', {
                 taskId: result.taskId,
               });
+
+              bindCurrentImageAnchorTask(board, result.taskId, {
+                workflowId: workflow.id,
+                batchId: step.options?.batchId,
+                batchIndex: step.options?.batchIndex,
+              });
             } else if (currentStepStatus === 'running') {
               const normalizedResultData =
                 result.type === 'text' &&
@@ -2672,8 +2921,9 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
         if (allStepsFinished && !hasCreatedTasks) {
           // 所有步骤都已完成且没有创建任务，立即删除 WorkZone
           const workZoneId = currentWorkZoneIdRef.current;
+          const imageAnchorIds = currentImageAnchorIdsRef.current;
           const board = SelectionWatcherBoardRef.current;
-          if (workZoneId && board) {
+          if ((workZoneId || imageAnchorIds.length > 0) && board) {
             // 检查是否所有后处理都已完成
             const allPostProcessingFinished = finalWorkflow?.steps.every(
               (step) => {
@@ -2695,17 +2945,33 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
             // console.log(`[AIInputBar] WorkZone ${workZoneId} allStepsFinished: ${allStepsFinished}, hasCreatedTasks: ${hasCreatedTasks}, allPostProcessingFinished: ${allPostProcessingFinished}`);
 
             if (allPostProcessingFinished) {
-              // 延迟删除，让用户看到完成状态
+              // 无队列任务的 image 仍走这里做一次兜底收口；
+              // 常规 image anchor 的删除由 useImageGenerationAnchorSync 统一处理。
               setTimeout(() => {
-                WorkZoneTransforms.removeWorkZone(board, workZoneId);
-                currentWorkZoneIdRef.current = null;
-                // console.log('[AIInputBar] Removed WorkZone after all steps completed (no tasks):', workZoneId);
+                if (workZoneId) {
+                  WorkZoneTransforms.removeWorkZone(board, workZoneId);
+                  currentWorkZoneIdRef.current = null;
+                }
+                if (imageAnchorIds.length > 0) {
+                  applyCurrentImageAnchorPresentationState(board, 'completed');
+                  removeCurrentImageAnchor(board);
+                }
               }, 1500);
             }
           }
         }
       } catch (error) {
         console.error('Failed to create generation task:', error);
+        if (generationType === 'image') {
+          applyCurrentImageAnchorPresentationState(
+            SelectionWatcherBoardRef.current,
+            'failed',
+            {
+              error:
+                error instanceof Error ? error.message : '创建图片任务失败',
+            }
+          );
+        }
         workflowControl.abortWorkflow();
         setIsSubmitting(false);
       }
@@ -2721,6 +2987,9 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
       selectedParams,
       generationType,
       selectedCount,
+      bindCurrentImageAnchorTask,
+      applyCurrentImageAnchorPresentationState,
+      removeCurrentImageAnchor,
     ]);
 
     // 处理工作流重试（从指定步骤开始）
@@ -2966,6 +3235,12 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
               workflowControl.updateStep(step.id, 'running', {
                 taskId: result.taskId,
               });
+
+              bindCurrentImageAnchorTask(board, result.taskId, {
+                workflowId: workflowMessageData.id,
+                batchId: step.options?.batchId,
+                batchIndex: step.options?.batchIndex,
+              });
             } else if (currentStepStatus === 'running') {
               const normalizedResultData =
                 result.type === 'text' &&
@@ -3121,7 +3396,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
 
         // console.log('[AIInputBar] Retry workflow completed, failed:', workflowFailed);
       },
-      [workflowControl]
+      [workflowControl, bindCurrentImageAnchorTask]
     );
 
     useEffect(() => {

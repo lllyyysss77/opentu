@@ -2,6 +2,7 @@ import React from 'react';
 import classNames from 'classnames';
 import { BookOpen, Heart, Pause, Play } from 'lucide-react';
 import { AudioCover } from './AudioCover';
+import { HoverTip } from './hover';
 import type { AudioPlaylistItemRef } from '../../types/audio-playlist.types';
 import './audio-track-list.scss';
 
@@ -83,15 +84,16 @@ export const AudioTrackList: React.FC<AudioTrackListProps> = ({
               onPointerDown={(event) => event.stopPropagation()}
             >
               {item.noteId && onOpenKnowledgeBase ? (
-                <button
-                  type="button"
-                  className="audio-track-list__action-btn"
-                  onClick={() => onOpenKnowledgeBase(item.noteId!)}
-                  aria-label="打开知识库笔记"
-                  title="打开知识库笔记"
-                >
-                  <BookOpen size={14} />
-                </button>
+                <HoverTip content="打开知识库笔记" showArrow={false}>
+                  <button
+                    type="button"
+                    className="audio-track-list__action-btn"
+                    onClick={() => onOpenKnowledgeBase(item.noteId!)}
+                    aria-label="打开知识库笔记"
+                  >
+                    <BookOpen size={14} />
+                  </button>
+                </HoverTip>
               ) : null}
               {showFavoriteButton && item.canFavorite !== false ? (
                 <button

@@ -71,6 +71,96 @@ import {
   getSelectionKey,
 } from '../../utils/model-selection';
 
+function areStringMapsEqual(
+  a: Record<string, string>,
+  b: Record<string, string>
+): boolean {
+  const aKeys = Object.keys(a);
+  const bKeys = Object.keys(b);
+  if (aKeys.length !== bKeys.length) return false;
+  return aKeys.every((key) => a[key] === b[key]);
+}
+
+function buildFilteredUploadedImages(
+  images: UploadedVideoImage[],
+  maxCount: number,
+  labels: string[]
+): UploadedVideoImage[] {
+  return images.slice(0, maxCount).map((img, index) => ({
+    ...img,
+    slot: index,
+    slotLabel: labels[index] || `参考图${index + 1}`,
+  }));
+}
+
+function areUploadedImagesEqual(
+  a: UploadedVideoImage[],
+  b: UploadedVideoImage[]
+): boolean {
+  return (
+    a.length === b.length &&
+    a.every((item, index) => {
+      const next = b[index];
+      return (
+        item.slot === next.slot &&
+        item.slotLabel === next.slotLabel &&
+        item.url === next.url &&
+        item.name === next.name &&
+        item.file === next.file
+      );
+    })
+  );
+}
+
+function isVideoOptionValueValid(
+  value: string,
+  options: Array<{ value: string }>
+): boolean {
+  return options.some((option) => option.value === value);
+}
+
+function normalizeVideoAspectRatioValue(value?: string | null): string | null {
+  const normalized = value?.trim().replace(/[xX]/g, ':');
+  return normalized && /^\d+:\d+$/.test(normalized) ? normalized : null;
+}
+
+function extractSeedanceResolution(size?: string | null): string | null {
+  const resolution = size?.split('@')[0]?.trim();
+  return resolution && /^\d+p$/.test(resolution) ? resolution : null;
+}
+
+function areModelRefsEqual(
+  left?: ModelRef | null,
+  right?: ModelRef | null
+): boolean {
+  return (
+    (left?.profileId || null) === (right?.profileId || null) &&
+    (left?.modelId || null) === (right?.modelId || null)
+  );
+}
+
+function getAlignedModelRef(
+  modelId?: string | null,
+  modelRef?: ModelRef | null
+): ModelRef | null {
+  const normalized = createModelRef(modelRef?.profileId, modelRef?.modelId);
+  return normalized?.modelId === (modelId || null) ? normalized : null;
+}
+
+function resolveVideoModelRef(
+  models: ModelConfig[],
+  modelId?: string | null,
+  modelRef?: ModelRef | null
+): ModelRef | null {
+  if (!modelId) {
+    return null;
+  }
+
+  const alignedRef = getAlignedModelRef(modelId, modelRef);
+  const matchedModel = findMatchingSelectableModel(models, modelId, alignedRef);
+  return getModelRefFromConfig(matchedModel) || alignedRef;
+}
+
 interface AIVideoGenerationProps {
   initialPrompt?: string;
   initialImage?: ImageFile; // 保留单图片支持（向后兼容）
@@ -83,6 +173,14 @@ interface AIVideoGenerationProps {
   selectedModelRef?: ModelRef | null;
   onModelChange?: (value: string) => void;
   onModelRefChange?: (value: ModelRef | null) => void;
+  externalBatchId?: string;
+  initialAutoInsertToCanvas?: boolean;
+  onDraftChange?: (draft: {
+    prompt: string;
+    images: Array<{ url: string; name: string }>;
+    duration?: number;
+    size?: string;
+  }) => void | Promise<void>;
 }
 
 const AIVideoGeneration = ({
@@ -97,6 +195,9 @@ const AIVideoGeneration = ({
   selectedModelRef,
   onModelChange,
   onModelRefChange,
+  externalBatchId,
+  initialAutoInsertToCanvas,
+  onDraftChange,
 }: AIVideoGenerationProps = {}) => {
   const videoModels = useSelectableModels('video');
   const [prompt, setPrompt] = useState(initialPrompt);
@@ -115,32 +216,43 @@ const AIVideoGeneration = ({
   // Video model parameters - use state to support dynamic updates
   const initialRoute = resolveInvocationRoute('video');
   const initialPreferredModelId = initialModel || initialRoute.modelId;
+  const initialPreferredModelRef = getAlignedModelRef(
+    initialPreferredModelId,
+    initialModel && initialModel === selectedModel
+      ? selectedModelRef
+      : initialRoute.modelId === initialPreferredModelId
+      ? createModelRef(initialRoute.profileId, initialRoute.modelId)
+      : null
+  );
   const initialMatchedModel =
     findMatchingSelectableModel(
       videoModels,
       initialPreferredModelId,
-      createModelRef(initialRoute.profileId, initialPreferredModelId)
+      initialPreferredModelRef
     ) ||
     getPinnedSelectableModel(
       'video',
       initialPreferredModelId,
-      createModelRef(initialRoute.profileId, initialPreferredModelId)
+      initialPreferredModelRef
     );
+  const initialResolvedModelRef = resolveVideoModelRef(
+    videoModels,
+    (initialMatchedModel?.id as VideoModel) || initialPreferredModelId,
+    getModelRefFromConfig(initialMatchedModel) || initialPreferredModelRef
+  );
   const [currentModel, setCurrentModel] = useState<VideoModel>(
     (initialMatchedModel?.id as VideoModel) ||
       videoModels[0]?.id ||
       normalizeVideoModel('veo3')
   );
   const [currentModelRef, setCurrentModelRef] = useState<ModelRef | null>(
-    getModelRefFromConfig(initialMatchedModel) ||
-      createModelRef(initialRoute.profileId, initialPreferredModelId)
+    initialResolvedModelRef
   );
   const initialVideoSelectionKey = getSelectionKey(
     ((initialMatchedModel?.id as VideoModel) ||
       videoModels[0]?.id ||
       normalizeVideoModel('veo3')) as VideoModel,
-    getModelRefFromConfig(initialMatchedModel) ||
-      createModelRef(initialRoute.profileId, initialPreferredModelId)
+    initialResolvedModelRef
   );
   const initialScopedVideoPreferences = loadScopedAIVideoToolPreferences(
     ((initialMatchedModel?.id as VideoModel) ||
@@ -189,6 +301,41 @@ const AIVideoGeneration = ({
       ),
     [currentModel, currentModelRef, videoSelectedParams]
   );
+  const videoOptionsConfig = React.useMemo(() => {
+    if (modelConfig.provider !== 'seedance') {
+      return modelConfig;
+    }
+
+    const selectedAspectRatio =
+      normalizeVideoAspectRatioValue(videoSelectedParams.aspect_ratio) ||
+      normalizeVideoAspectRatioValue(videoSelectedParams.aspectRatio) ||
+      '16:9';
+    const seenResolutions = new Set<string>();
+    const resolutionOptions = modelConfig.sizeOptions
+      .map((option) => extractSeedanceResolution(option.value))
+      .filter((value): value is string => {
+        if (!value || seenResolutions.has(value)) {
+          return false;
+        }
+        seenResolutions.add(value);
+        return true;
+      });
+    const sizeOptions = resolutionOptions.map((resolution) => ({
+      label: resolution,
+      value: `${resolution}@${selectedAspectRatio}`,
+      aspectRatio: selectedAspectRatio,
+    }));
+    const defaultResolution =
+      extractSeedanceResolution(modelConfig.defaultSize) ||
+      resolutionOptions[0] ||
+      '720p';
+
+    return {
+      ...modelConfig,
+      sizeOptions,
+      defaultSize: `${defaultResolution}@${selectedAspectRatio}`,
+    };
+  }, [modelConfig, videoSelectedParams.aspectRatio, videoSelectedParams.aspect_ratio]);
   const defaultParams = React.useMemo(
     () =>
       getEffectiveVideoDefaultParams(
@@ -198,12 +345,63 @@ const AIVideoGeneration = ({
       ),
     [currentModel, currentModelRef, videoSelectedParams]
   );
+  const imageUploadLabelsSignature = React.useMemo(
+    () => (modelConfig.imageUpload.labels || []).join('|'),
+    [modelConfig.imageUpload.labels]
+  );
+  const stableImageUploadLabels = React.useMemo(
+    () =>
+      imageUploadLabelsSignature
+        ? imageUploadLabelsSignature.split('|')
+        : [],
+    [imageUploadLabelsSignature]
+  );
+  const imageUploadConfig = React.useMemo(() => {
+    return {
+      maxCount: modelConfig.imageUpload.maxCount,
+      mode: modelConfig.imageUpload.mode,
+      labels: stableImageUploadLabels,
+      labelsSignature: imageUploadLabelsSignature,
+    };
+  }, [
+    modelConfig.imageUpload.maxCount,
+    modelConfig.imageUpload.mode,
+    stableImageUploadLabels,
+    imageUploadLabelsSignature,
+  ]);
 
   // Duration and size state
   const [duration, setDuration] = useState(
     initialDuration?.toString() || initialScopedVideoPreferences.duration
   );
   const [size, setSize] = useState(initialSize || initialScopedVideoPreferences.size);
+  const effectiveDuration = React.useMemo(
+    () =>
+      isVideoOptionValueValid(duration, videoOptionsConfig.durationOptions)
+        ? duration
+        : videoOptionsConfig.defaultDuration,
+    [duration, videoOptionsConfig.defaultDuration, videoOptionsConfig.durationOptions]
+  );
+  const effectiveSize = React.useMemo(
+    () => {
+      if (isVideoOptionValueValid(size, videoOptionsConfig.sizeOptions)) {
+        return size;
+      }
+
+      if (videoOptionsConfig.provider === 'seedance') {
+        const resolution = extractSeedanceResolution(size);
+        const matchedOption = videoOptionsConfig.sizeOptions.find(
+          (option) => extractSeedanceResolution(option.value) === resolution
+        );
+        if (matchedOption) {
+          return matchedOption.value;
+        }
+      }
+
+      return videoOptionsConfig.defaultSize;
+    },
+    [size, videoOptionsConfig]
+  );
   const hasCompatibleParams = React.useMemo(() => {
     // 排除 size 和 duration（已有专用 UI），只看是否有额外参数
     return compatibleVideoParams.some(
@@ -229,16 +427,6 @@ const AIVideoGeneration = ({
   );
 
   useEffect(() => {
-    const isSameParams = (
-      a: Record<string, string>,
-      b: Record<string, string>
-    ) => {
-      const aKeys = Object.keys(a);
-      const bKeys = Object.keys(b);
-      if (aKeys.length !== bKeys.length) return false;
-      return aKeys.every((key) => a[key] === b[key]);
-    };
-
     const nextParams = compatibleVideoParams.reduce<Record<string, string>>(
       (acc, param) => {
         const prevValue = videoSelectedParams[param.id];
@@ -259,7 +447,7 @@ const AIVideoGeneration = ({
       {}
     );
 
-    if (!isSameParams(videoSelectedParams, nextParams)) {
+    if (!areStringMapsEqual(videoSelectedParams, nextParams)) {
       setVideoSelectedParams(nextParams);
     }
   }, [compatibleVideoParams, videoSelectedParams]);
@@ -347,24 +535,40 @@ const AIVideoGeneration = ({
 
   const { language } = useI18n();
   const { createTask } = useTaskQueue();
+  const generatingLockRef = useRef(false);
+  const isModelControlled = selectedModel !== undefined;
+  const lastSyncedSelectedSelectionKeyRef = React.useRef<string | null>(null);
+  // 当 initialModel 传入时，保护 currentModel 不被外部 selectedModel 覆盖，直到用户手动切换
+  const initialModelAppliedRef = React.useRef<string | null>(null);
 
   // Sync model from global settings changes (from header dropdown)
   useEffect(() => {
+    if (isModelControlled) {
+      return;
+    }
+
     const handleSettingsChange = (newSettings: any) => {
       const newModel = newSettings.videoModelName || 'veo3';
       if (newModel !== currentModel) {
         setCurrentModel(newModel);
-        const matchedModel = findMatchingSelectableModel(
+        const nextModelRef = resolveVideoModelRef(
           visibleVideoModels,
           newModel,
           currentModelRef
         );
-        setCurrentModelRef(getModelRefFromConfig(matchedModel) || null);
+        setCurrentModelRef(nextModelRef);
       }
     };
     geminiSettings.addListener(handleSettingsChange);
     return () => geminiSettings.removeListener(handleSettingsChange);
-  }, [currentModel, currentModelRef, visibleVideoModels]);
+  }, [
+    currentModel,
+    currentModelRef,
+    isModelControlled,
+    selectedModel,
+    selectedModelRef,
+    visibleVideoModels,
+  ]);
 
   useEffect(() => {
     if (visibleVideoModels.length === 0) return;
@@ -373,10 +577,30 @@ const AIVideoGeneration = ({
       currentModel,
       currentModelRef
     );
+    const nextModelRef = resolveVideoModelRef(
+      visibleVideoModels,
+      currentModel,
+      currentModelRef
+    );
     if (!matchedModel) {
-      setCurrentModel(visibleVideoModels[0].id);
-      setCurrentModelRef(getModelRefFromConfig(visibleVideoModels[0]));
+      const fallback = visibleVideoModels[0];
+      const nextRef = getModelRefFromConfig(fallback);
+      setCurrentModel(fallback.id);
+      setCurrentModelRef((prev) => {
+        if (areModelRefsEqual(prev, nextRef)) {
+          return prev;
+        }
+        return nextRef;
+      });
+      return;
     }
+
+    setCurrentModelRef((prev) => {
+      if (areModelRefsEqual(prev, nextModelRef)) {
+        return prev;
+      }
+      return nextModelRef;
+    });
   }, [currentModel, currentModelRef, visibleVideoModels]);
 
   // Sync model from selectedModel prop (from parent component)
@@ -385,26 +609,34 @@ const AIVideoGeneration = ({
       return;
     }
 
-    const currentSelectionKey = getSelectionKey(currentModel, currentModelRef);
     const nextSelectionKey = getSelectionKey(selectedModel, selectedModelRef);
-
-    if (currentSelectionKey !== nextSelectionKey) {
-      setCurrentModel(selectedModel);
-      const matchedModel = findMatchingSelectableModel(
-        visibleVideoModels,
-        selectedModel,
-        selectedModelRef
-      );
-      setCurrentModelRef(
-        getModelRefFromConfig(matchedModel) || selectedModelRef || null
-      );
+    if (lastSyncedSelectedSelectionKeyRef.current === nextSelectionKey) {
+      return;
     }
+
+    // 如果 initialModel 已被应用且外部传来的是不同模型（全局偏好回写），忽略这次覆盖
+    if (initialModelAppliedRef.current && initialModelAppliedRef.current !== selectedModel) {
+      return;
+    }
+
+    lastSyncedSelectedSelectionKeyRef.current = nextSelectionKey;
+    setCurrentModel((prev) => (prev === selectedModel ? prev : selectedModel));
+    const nextModelRef = resolveVideoModelRef(
+      visibleVideoModels,
+      selectedModel,
+      selectedModelRef
+    );
+    setCurrentModelRef((prev) => {
+      if (areModelRefsEqual(prev, nextModelRef)) {
+        return prev;
+      }
+      return nextModelRef;
+    });
   }, [
-    currentModel,
-    currentModelRef,
     selectedModel,
     selectedModelRef,
     visibleVideoModels,
+    initialModel,
   ]);
 
   // Track if we're in manual edit mode (from handleEditTask) to prevent props from overwriting
@@ -419,60 +651,86 @@ const AIVideoGeneration = ({
       return;
     }
 
-    const maxCount = modelConfig.imageUpload.maxCount;
-    const labels = modelConfig.imageUpload.labels || [];
-
     const scopedPreferences = loadScopedAIVideoToolPreferences(
       currentModel,
       getSelectionKey(currentModel, currentModelRef)
     );
-    setVideoSelectedParams(scopedPreferences.extraParams);
-    setDuration(scopedPreferences.duration);
-    setSize(scopedPreferences.size);
-
-    // 智能过滤图片：从原始选中的图片中截取前 N 张
-    if (allSelectedImages.length > 0) {
-      const filteredImages = allSelectedImages
-        .slice(0, maxCount)
-        .map((img, index) => ({
-          ...img,
-          slot: index,
-          slotLabel: labels[index] || `参考图${index + 1}`,
-        }));
-      setUploadedImages(filteredImages);
-
-      // 如果有图片被截断，输出提示日志
-      // if (allSelectedImages.length > maxCount) {
-      //   console.log(`AIVideoGeneration - 当前模型最多支持 ${maxCount} 张图片，已保留前 ${maxCount} 张`);
-      // }
-    } else {
-      setUploadedImages([]);
-    }
+    const scopedModelConfig = getEffectiveVideoModelConfigForSelection(
+      currentModel,
+      currentModelRef || currentModel,
+      scopedPreferences.extraParams
+    );
+    const nextDuration = scopedModelConfig.durationOptions.some(
+      (option) => option.value === scopedPreferences.duration
+    )
+      ? scopedPreferences.duration
+      : scopedModelConfig.defaultDuration;
+    const nextSize = scopedModelConfig.sizeOptions.some(
+      (option) => option.value === scopedPreferences.size
+    )
+      ? scopedPreferences.size
+      : scopedModelConfig.defaultSize;
+    setVideoSelectedParams((prev) =>
+      areStringMapsEqual(prev, scopedPreferences.extraParams)
+        ? prev
+        : scopedPreferences.extraParams
+    );
+    // initialDuration/initialSize 优先级高于模型偏好，避免被覆盖
+    const effectiveDurationStr = initialDuration !== undefined
+      ? initialDuration.toString()
+      : nextDuration;
+    const effectiveSizeStr = initialSize || nextSize;
+    setDuration((prev) => (prev === effectiveDurationStr ? prev : effectiveDurationStr));
+    setSize((prev) => (prev === effectiveSizeStr ? prev : effectiveSizeStr));
 
     // Disable storyboard mode if new model doesn't support it
     if (!supportsStoryboardMode(currentModel)) {
-      setStoryboardEnabled(false);
-      setStoryboardScenes([]);
+      setStoryboardEnabled((prev) => (prev ? false : prev));
+      setStoryboardScenes((prev) => (prev.length > 0 ? [] : prev));
     }
-    // 仅在模型或默认参数变化时重置，避免上传图片触发重置
-  }, [allSelectedImages, currentModel, currentModelRef, isEditMode, modelConfig.imageUpload]);
+  }, [currentModel, currentModelRef, isEditMode, initialDuration, initialSize]);
+
+  useEffect(() => {
+    const nextUploadedImages =
+      allSelectedImages.length > 0
+        ? buildFilteredUploadedImages(
+            allSelectedImages,
+            imageUploadConfig.maxCount,
+            imageUploadConfig.labels
+          )
+        : [];
+
+    setUploadedImages((prev) =>
+      areUploadedImagesEqual(prev, nextUploadedImages) ? prev : nextUploadedImages
+    );
+  }, [
+    allSelectedImages,
+    imageUploadConfig.labels,
+    imageUploadConfig.labelsSignature,
+    imageUploadConfig.maxCount,
+  ]);
 
   useEffect(() => {
     saveAIVideoToolPreferences({
       currentModel,
       currentSelectionKey: getSelectionKey(currentModel, currentModelRef),
       extraParams: videoSelectedParams,
-      duration,
-      size,
+      duration: effectiveDuration,
+      size: effectiveSize,
     });
-  }, [currentModel, currentModelRef, duration, size, videoSelectedParams]);
+  }, [
+    currentModel,
+    currentModelRef,
+    effectiveDuration,
+    effectiveSize,
+    videoSelectedParams,
+  ]);
 
   // Handle initial props - use ref to track if we've processed these props before
   const processedPropsRef = React.useRef<string>('');
   useEffect(() => {
     // Skip if we're in manual edit mode (user clicked edit in task list)
     if (isManualEdit) {
-      // console.log('AIVideoGeneration - skipping props update in manual edit mode');
       return;
     }
 
@@ -489,19 +747,24 @@ const AIVideoGeneration = ({
 
     // Skip if we've already processed these exact props
     if (processedPropsRef.current === propsKey) {
-      // console.log('AIVideoGeneration - skipping duplicate props processing');
       return;
     }
 
     // console.log('AIVideoGeneration - processing new props:', { propsKey });
     processedPropsRef.current = propsKey;
 
+    // 记录 initialModel，防止全局偏好回写覆盖
+    if (initialModel) {
+      initialModelAppliedRef.current = initialModel;
+      setCurrentModel(initialModel as VideoModel);
+      setCurrentModelRef(
+        resolveVideoModelRef(videoModels, initialModel, selectedModelRef)
+      );
+    }
+
     setPrompt(initialPrompt);
 
     // 处理图片：保存所有原始图片，并按当前模型过滤显示
-    const maxCount = modelConfig.imageUpload.maxCount;
-    const labels = modelConfig.imageUpload.labels || [];
-
     let newAllImages: UploadedVideoImage[] = [];
     if (initialImages && initialImages.length > 0) {
       newAllImages = initialImages;
@@ -521,13 +784,11 @@ const AIVideoGeneration = ({
     setAllSelectedImages(newAllImages);
 
     // 按当前模型 maxCount 过滤显示
-    const filteredImages = newAllImages
-      .slice(0, maxCount)
-      .map((img, index) => ({
-        ...img,
-        slot: index,
-        slotLabel: labels[index] || `参考图${index + 1}`,
-      }));
+    const filteredImages = buildFilteredUploadedImages(
+      newAllImages,
+      imageUploadConfig.maxCount,
+      imageUploadConfig.labels
+    );
     setUploadedImages(filteredImages);
 
     // 更新 duration 和 size（如果有初始值）
@@ -546,7 +807,9 @@ const AIVideoGeneration = ({
     initialDuration,
     initialSize,
     initialResultUrl,
-    modelConfig.imageUpload,
+    imageUploadConfig.labels,
+    imageUploadConfig.labelsSignature,
+    imageUploadConfig.maxCount,
     isManualEdit,
   ]);
 
@@ -608,16 +871,15 @@ const AIVideoGeneration = ({
   // 处理图片变化（用户手动上传/删除时同步更新原始图片列表）
   const handleImagesChange = React.useCallback(
     (newImages: ReferenceImage[]) => {
-      const labels = modelConfig.imageUpload.labels || [];
       const convertedImages = referenceImagesToUploadedImages(
         newImages,
-        labels
+        imageUploadConfig.labels
       );
       setUploadedImages(convertedImages);
       // 同步更新原始图片列表（用户手动操作后，原始列表以当前显示的为准）
       setAllSelectedImages(convertedImages);
     },
-    [modelConfig.imageUpload.labels, referenceImagesToUploadedImages]
+    [imageUploadConfig.labels, referenceImagesToUploadedImages]
   );
 
   // 使用useMemo优化性能，当videoHistory、language或promptHistoryVersion变化时重新计算
@@ -632,6 +894,40 @@ const AIVideoGeneration = ({
     // 触发 presetPrompts 重新计算
     setPromptHistoryVersion((v) => v + 1);
   };
+
+  const lastDraftRef = useRef('');
+  useEffect(() => {
+    if (!onDraftChange) {
+      return;
+    }
+
+    const parsedDuration = Number.parseFloat(effectiveDuration);
+    const draft = {
+      prompt,
+      images: uploadedImages.map((image) => ({
+        url: image.url,
+        name: image.name,
+      })),
+      duration: Number.isFinite(parsedDuration) ? parsedDuration : undefined,
+      size: effectiveSize || undefined,
+    };
+    const draftKey = JSON.stringify(draft);
+    if (lastDraftRef.current === draftKey) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      if (lastDraftRef.current === draftKey) {
+        return;
+      }
+      lastDraftRef.current = draftKey;
+      void onDraftChange(draft);
+    }, 200);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [effectiveDuration, effectiveSize, onDraftChange, prompt, uploadedImages]);
 
   // 处理任务编辑（从弹窗内的任务列表点击编辑）
   const handleEditTask = (task: any) => {
@@ -739,12 +1035,16 @@ const AIVideoGeneration = ({
   };
 
   const handleGenerate = async (count = 1) => {
+    // 防止快速双击/重复触发导致多次创建任务
+    if (generatingLockRef.current) return;
+    generatingLockRef.current = true;
+    try {
     // 验证输入
     if (storyboardEnabled) {
       // 故事场景模式验证
       const validation = validateSceneDurations(
         storyboardScenes,
-        parseFloat(duration),
+        parseFloat(effectiveDuration),
         storyboardConfig.minSceneDuration
       );
       if (!validation.valid) {
@@ -796,7 +1096,7 @@ const AIVideoGeneration = ({
       // 批量生成逻辑
       const batchTaskIds: string[] = [];
       // 始终生成 batchId，即使 count=1，这样可以跳过 SW 的重复检测
-      const batchId = `video_batch_${Date.now()}`;
+      const batchId = externalBatchId || `video_batch_${Date.now()}`;
 
       for (let i = 0; i < count; i++) {
         // 额外参数（如 aspect_ratio）透传给 adapter
@@ -810,8 +1110,8 @@ const AIVideoGeneration = ({
           prompt: finalPrompt,
           model: currentModel,
           modelRef: currentModelRef || null,
-          seconds: duration,
-          size: size,
+          seconds: effectiveDuration,
+          size: effectiveSize,
           // 保存上传的图片（已转换为可序列化的格式）
           uploadedImages: convertedImages,
           // 故事场景配置（用于编辑恢复）
@@ -819,14 +1119,16 @@ const AIVideoGeneration = ({
             storyboard: {
               enabled: true,
               scenes: storyboardScenes,
-              totalDuration: parseFloat(duration),
+              totalDuration: parseFloat(effectiveDuration),
             },
           }),
           // 批量生成信息（始终包含 batchId 以跳过重复检测）
           batchId,
           batchIndex: i + 1,
           batchTotal: count,
-          autoInsertToCanvas: getAutoInsertValue(LS_KEYS.AI_VIDEO_AUTO_INSERT),
+          autoInsertToCanvas:
+            initialAutoInsertToCanvas ??
+            getAutoInsertValue(LS_KEYS.AI_VIDEO_AUTO_INSERT),
           ...(extraParams ? { params: extraParams } : {}),
         };
 
@@ -901,6 +1203,9 @@ const AIVideoGeneration = ({
 
       setError(errorMessage);
     }
+    } finally {
+      generatingLockRef.current = false;
+    }
   };
 
   useKeyboardShortcuts(isGenerating, prompt, handleGenerate);
@@ -959,20 +1264,34 @@ const AIVideoGeneration = ({
                       currentModel,
                       currentModelRef
                     )}
-                    onSelect={(value) => {
+                    onSelect={(value, modelRef) => {
                       const nextModel = value as VideoModel;
+                      const nextModelRef = resolveVideoModelRef(
+                        visibleVideoModels,
+                        nextModel,
+                        modelRef || null
+                      );
+                      initialModelAppliedRef.current = null; // 用户手动切换，解除保护
                       setCurrentModel(nextModel);
-                      setCurrentModelRef(null);
+                      setCurrentModelRef(nextModelRef);
                       setVideoSelectedParams(
-                        getDefaultVideoExtraParams(nextModel, nextModel)
+                        getDefaultVideoExtraParams(
+                          nextModel,
+                          nextModelRef || nextModel
+                        )
                       );
                       onModelChange(value);
-                      onModelRefChange?.(null);
+                      onModelRefChange?.(nextModelRef);
                     }}
                     onSelectModel={(model: ModelConfig) => {
                       const nextModel = model.id as VideoModel;
+                      initialModelAppliedRef.current = null; // 用户手动切换，解除保护
                       setCurrentModel(nextModel);
-                      const nextModelRef = getModelRefFromConfig(model);
+                      const nextModelRef = resolveVideoModelRef(
+                        visibleVideoModels,
+                        nextModel,
+                        getModelRefFromConfig(model)
+                      );
                       setCurrentModelRef(nextModelRef);
                       setVideoSelectedParams(
                         getDefaultVideoExtraParams(
@@ -999,7 +1318,7 @@ const AIVideoGeneration = ({
             {/* 模型额外参数（排除 size 和 duration，已有 VideoModelOptions） */}
             {hasCompatibleParams && (
               <div className="model-params-row">
-                <ParametersDropdown
+              <ParametersDropdown
                   selectedParams={videoSelectedParams}
                   onParamChange={handleVideoParamChange}
                   compatibleParams={compatibleVideoParams}
@@ -1014,9 +1333,9 @@ const AIVideoGeneration = ({
             {/* Video model options: duration & size */}
             <VideoModelOptions
               model={currentModel}
-              configOverride={modelConfig}
-              duration={duration}
-              size={size}
+              configOverride={videoOptionsConfig}
+              duration={effectiveDuration}
+              size={effectiveSize}
               onDurationChange={setDuration}
               onSizeChange={setSize}
               disabled={isGenerating}
@@ -1028,15 +1347,15 @@ const AIVideoGeneration = ({
               onImagesChange={handleImagesChange}
               language={language}
               disabled={isGenerating}
-              multiple={modelConfig.imageUpload.maxCount > 1}
-              maxCount={modelConfig.imageUpload.maxCount}
+              multiple={imageUploadConfig.maxCount > 1}
+              maxCount={imageUploadConfig.maxCount}
               slotLabels={
-                modelConfig.imageUpload.mode === 'frames'
-                  ? modelConfig.imageUpload.labels
+                imageUploadConfig.mode === 'frames'
+                  ? imageUploadConfig.labels
                   : undefined
               }
               label={
-                modelConfig.imageUpload.mode === 'frames'
+                imageUploadConfig.mode === 'frames'
                   ? language === 'zh'
                     ? '首尾帧图片 (可选)'
                     : 'Start/End Frames (Optional)'
@@ -1051,7 +1370,7 @@ const AIVideoGeneration = ({
               <StoryboardEditor
                 enabled={storyboardEnabled}
                 onEnabledChange={setStoryboardEnabled}
-                totalDuration={parseFloat(duration)}
+                totalDuration={parseFloat(effectiveDuration)}
                 maxScenes={storyboardConfig.maxScenes}
                 minSceneDuration={storyboardConfig.minSceneDuration}
                 scenes={storyboardScenes}

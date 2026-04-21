@@ -3,14 +3,12 @@ import './tool-icon.scss';
 
 import type { CSSProperties } from 'react';
 import React, { useEffect, useRef, useState } from 'react';
-import { Tooltip, PopupPlacement } from 'tdesign-react';
+import { PopupPlacement } from 'tdesign-react';
 import { AbortError } from '../errors';
 import { isPromiseLike } from '@aitu/utils';
 import classNames from 'classnames';
 import { EventPointerType } from '../types';
-
-// Tooltip 延迟配置（毫秒）
-const TOOLTIP_DELAY = 300;
+import { HoverTip } from './shared/hover';
 
 export type ToolButtonSize = 'small' | 'medium';
 
@@ -21,7 +19,9 @@ type ToolButtonBaseProps = {
   'data-testid'?: string;
   'data-track'?: string;
   label?: string;
+  /** @deprecated 优先使用 tooltip，避免与原生 title 语义混淆 */
   title?: string;
+  tooltip?: React.ReactNode;
   /** Tooltip 显示位置，默认为 'bottom' */
   tooltipPlacement?: PopupPlacement;
   name?: string;
@@ -103,6 +103,7 @@ export const ToolButton = React.forwardRef((props: ToolButtonProps, ref) => {
   }, []);
 
   const lastPointerTypeRef = useRef<EventPointerType | null>(null);
+  const tooltipContent = props.tooltip ?? props.title;
 
   if (
     props.type === 'button' ||
@@ -169,18 +170,15 @@ export const ToolButton = React.forwardRef((props: ToolButtonProps, ref) => {
       </button>
     );
 
-    // 如果有 title，使用 Tooltip 包裹
-    if (props.title) {
+    if (tooltipContent) {
       return (
-        <Tooltip
-          content={props.title}
-          theme="light"
+        <HoverTip
+          content={tooltipContent}
           placement={props.tooltipPlacement || 'bottom'}
           showArrow={false}
-          delay={TOOLTIP_DELAY}
         >
           {buttonElement}
-        </Tooltip>
+        </HoverTip>
       );
     }
 
@@ -228,18 +226,15 @@ export const ToolButton = React.forwardRef((props: ToolButtonProps, ref) => {
     </label>
   );
 
-  // 如果有 title，使用 Tooltip 包裹
-  if (props.title) {
+  if (tooltipContent) {
     return (
-      <Tooltip
-        content={props.title}
-        theme="light"
+      <HoverTip
+        content={tooltipContent}
         placement={props.tooltipPlacement || 'bottom'}
         showArrow={false}
-        delay={TOOLTIP_DELAY}
       >
         {labelElement}
-      </Tooltip>
+      </HoverTip>
     );
   }
 

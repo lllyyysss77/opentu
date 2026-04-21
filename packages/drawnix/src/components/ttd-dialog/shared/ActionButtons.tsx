@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Button, Tooltip } from 'tdesign-react';
+import { Button } from 'tdesign-react';
 import { RefreshIcon, ChevronDownIcon } from 'tdesign-icons-react';
+import { HoverTip } from '../../shared';
 
 interface ActionButtonsProps {
   language: 'zh' | 'en';
@@ -26,7 +27,7 @@ export const ActionButtons: React.FC<ActionButtonsProps> = ({
   canGenerate,
   onGenerate,
   onReset,
-  leftContent
+  leftContent,
 }) => {
   // Get type-specific storage key
   const storageKey = type === 'video' ? VIDEO_STORAGE_KEY : IMAGE_STORAGE_KEY;
@@ -64,7 +65,10 @@ export const ActionButtons: React.FC<ActionButtonsProps> = ({
   // Handle outside click to close dropdown
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(event.target as Node)
+      ) {
         setIsOpen(false);
         handleBlur();
       }
@@ -111,11 +115,22 @@ export const ActionButtons: React.FC<ActionButtonsProps> = ({
       {leftContent && <div className="action-bar-left">{leftContent}</div>}
 
       {/* Unified Action Box Container - For both image and video types */}
-      <div className={`unified-action-box ${isGenerating ? 'is-generating' : ''} ${canGenerate ? 'can-generate' : ''}`}>
+      <div
+        className={`unified-action-box ${isGenerating ? 'is-generating' : ''} ${
+          canGenerate ? 'can-generate' : ''
+        }`}
+      >
         {/* Left Side: Quantity Control */}
         <div className="quantity-section" ref={containerRef}>
-          <Tooltip content={language === 'zh' ? '生成数量' : 'Quantity'} theme="light">
-            <div className={`quantity-control ${isOpen ? 'is-open' : ''} ${isGenerating ? 'is-disabled' : ''}`}>
+          <HoverTip
+            content={language === 'zh' ? '生成数量' : 'Quantity'}
+            theme="light"
+          >
+            <div
+              className={`quantity-control ${isOpen ? 'is-open' : ''} ${
+                isGenerating ? 'is-disabled' : ''
+              }`}
+            >
               <input
                 type="text"
                 inputMode="numeric"
@@ -142,7 +157,7 @@ export const ActionButtons: React.FC<ActionButtonsProps> = ({
                 />
               </button>
             </div>
-          </Tooltip>
+          </HoverTip>
 
           {/* Dropdown Menu */}
           {isOpen && (
@@ -156,16 +171,33 @@ export const ActionButtons: React.FC<ActionButtonsProps> = ({
                   type="button"
                   data-track="ai_click_quantity_select"
                   onClick={() => handleSelect(preset)}
-                  className={`quantity-option ${quantity === preset ? 'is-selected' : ''}`}
+                  className={`quantity-option ${
+                    quantity === preset ? 'is-selected' : ''
+                  }`}
                 >
                   <span>
-                    {preset} {type === 'video'
-                      ? (language === 'zh' ? '个' : (preset > 1 ? 'videos' : 'video'))
-                      : (language === 'zh' ? '张' : (preset > 1 ? 'images' : 'image'))
-                    }
+                    {preset}{' '}
+                    {type === 'video'
+                      ? language === 'zh'
+                        ? '个'
+                        : preset > 1
+                        ? 'videos'
+                        : 'video'
+                      : language === 'zh'
+                      ? '张'
+                      : preset > 1
+                      ? 'images'
+                      : 'image'}
                   </span>
                   {quantity === preset && (
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                    >
                       <polyline points="20 6 9 17 4 12"></polyline>
                     </svg>
                   )}
@@ -186,17 +218,28 @@ export const ActionButtons: React.FC<ActionButtonsProps> = ({
           className={`generate-button ${isGenerating ? 'loading' : ''}`}
         >
           {isGenerating
-            ? (language === 'zh' ? '生成中...' : 'Generating...')
+            ? language === 'zh'
+              ? '生成中...'
+              : 'Generating...'
             : hasGenerated
-            ? (language === 'zh' ? '重新生成' : 'Regenerate')
+            ? language === 'zh'
+              ? '重新生成'
+              : 'Regenerate'
             : type === 'video'
-            ? (language === 'zh' ? '生成视频' : 'Generate Video')
-            : (language === 'zh' ? '生成' : 'Generate')}
+            ? language === 'zh'
+              ? '生成视频'
+              : 'Generate Video'
+            : language === 'zh'
+            ? '生成'
+            : 'Generate'}
         </button>
       </div>
 
       {/* Reset Button - Subtle icon-only version */}
-      <Tooltip content={language === 'zh' ? '重置表单' : 'Reset form'} theme="light">
+      <HoverTip
+        content={language === 'zh' ? '重置表单' : 'Reset form'}
+        theme="light"
+      >
         <Button
           data-track="ai_click_reset"
           onClick={onReset}
@@ -206,7 +249,7 @@ export const ActionButtons: React.FC<ActionButtonsProps> = ({
           icon={<RefreshIcon />}
           className="action-button--reset-subtle"
         />
-      </Tooltip>
+      </HoverTip>
     </div>
   );
 };

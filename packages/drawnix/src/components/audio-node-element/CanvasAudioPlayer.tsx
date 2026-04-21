@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import classNames from 'classnames';
 import { Dropdown } from 'tdesign-react';
 import {
@@ -30,6 +36,7 @@ import {
 } from '../../services/canvas-audio-playback-service';
 import { MUSIC_PLAYER_TOOL_ID } from '../../tools/tool-ids';
 import { AudioCover } from '../shared/AudioCover';
+import { HoverTip } from '../shared/hover';
 import { CanvasAudioPlayerVolume } from './CanvasAudioPlayerVolume';
 import { CanvasAudioPlayerPlaylist } from './CanvasAudioPlayerPlaylist';
 import './canvas-audio-player.scss';
@@ -41,13 +48,18 @@ const PLAYBACK_MODE_ICONS: Record<PlaybackMode, React.ReactElement> = {
   shuffle: <Shuffle size={14} />,
 };
 
-const PLAYBACK_MODE_OPTIONS = (Object.keys(PLAYBACK_MODE_LABELS) as PlaybackMode[]).map((mode) => ({
+const PLAYBACK_MODE_OPTIONS = (
+  Object.keys(PLAYBACK_MODE_LABELS) as PlaybackMode[]
+).map((mode) => ({
   value: mode,
   content: PLAYBACK_MODE_LABELS[mode],
   prefixIcon: PLAYBACK_MODE_ICONS[mode],
 }));
 
-function buildPlaybackRateOptions(currentRate: number, mediaType: 'audio' | 'reading') {
+function buildPlaybackRateOptions(
+  currentRate: number,
+  mediaType: 'audio' | 'reading'
+) {
   return getPlaybackSpeedPresets(mediaType).map((rate) => {
     const label = formatPlaybackRateLabel(rate);
     const isActive = Math.abs(rate - currentRate) < 0.001;
@@ -59,7 +71,11 @@ function buildPlaybackRateOptions(currentRate: number, mediaType: 'audio' | 'rea
 }
 
 function formatDuration(duration?: number): string {
-  if (typeof duration !== 'number' || !Number.isFinite(duration) || duration <= 0) {
+  if (
+    typeof duration !== 'number' ||
+    !Number.isFinite(duration) ||
+    duration <= 0
+  ) {
     return '--:--';
   }
 
@@ -85,7 +101,7 @@ export const CanvasAudioPlayer: React.FC = () => {
       return 'horizontal';
     }
   });
-  const [windowWidth, setWindowWidth] = useState(() => 
+  const [windowWidth, setWindowWidth] = useState(() =>
     typeof window !== 'undefined' ? window.innerWidth : 1024
   );
 
@@ -124,18 +140,26 @@ export const CanvasAudioPlayer: React.FC = () => {
     );
   }, [playback.currentTime, playback.duration]);
 
-  const currentTime = Number.isFinite(playback.currentTime) ? playback.currentTime : 0;
+  const currentTime = Number.isFinite(playback.currentTime)
+    ? playback.currentTime
+    : 0;
   const duration = Number.isFinite(playback.duration) ? playback.duration : 0;
   const currentTimeLabel = formatDuration(currentTime);
   const durationLabel = formatDuration(duration);
   const activeQueueItem =
-    playback.activeQueueIndex >= 0 ? playback.queue[playback.activeQueueIndex] : null;
+    playback.activeQueueIndex >= 0
+      ? playback.queue[playback.activeQueueIndex]
+      : null;
   const resolvedActiveTitle =
-    playback.activeTitle
-    || (isReadingPlaybackSource(activeQueueItem) ? activeQueueItem.title : undefined);
+    playback.activeTitle ||
+    (isReadingPlaybackSource(activeQueueItem)
+      ? activeQueueItem.title
+      : undefined);
   const resolvedActivePreviewImageUrl =
-    playback.activePreviewImageUrl
-    || (isReadingPlaybackSource(activeQueueItem) ? activeQueueItem.previewImageUrl : undefined);
+    playback.activePreviewImageUrl ||
+    (isReadingPlaybackSource(activeQueueItem)
+      ? activeQueueItem.previewImageUrl
+      : undefined);
   const canPlayPrevious = playback.activeQueueIndex > 0;
   const canPlayNext =
     playback.activeQueueIndex >= 0 &&
@@ -145,31 +169,40 @@ export const CanvasAudioPlayer: React.FC = () => {
   const queueInfoLabel = hasQueueInfo
     ? `${playback.activeQueueIndex + 1}/${playback.queue.length}`
     : null;
-  const queueLabel = playback.queueSource === 'playlist'
-    ? (playback.activePlaylistName || '播放列表')
-    : (playback.activePlaylistName || (playback.queueSource === 'reading'
-      ? '朗读轨道'
-      : '画布音频'));
+  const queueLabel =
+    playback.queueSource === 'playlist'
+      ? playback.activePlaylistName || '播放列表'
+      : playback.activePlaylistName ||
+        (playback.queueSource === 'reading' ? '朗读轨道' : '画布音频');
   const subtitle = hasQueueInfo
-    ? `${queueLabel} ${playback.activeQueueIndex + 1} / ${playback.queue.length}`
+    ? `${queueLabel} ${playback.activeQueueIndex + 1} / ${
+        playback.queue.length
+      }`
     : queueLabel;
   const mobileSubtitle = queueInfoLabel
     ? `${queueInfoLabel} · ${currentTimeLabel} / ${durationLabel}`
     : `${currentTimeLabel} / ${durationLabel}`;
-  const hasReadingPlayback = playback.queueSource === 'reading' && (
-    !!playback.activeReadingSourceId
-    || (activeQueueItem !== null && isReadingPlaybackSource(activeQueueItem))
-  );
+  const hasReadingPlayback =
+    playback.queueSource === 'reading' &&
+    (!!playback.activeReadingSourceId ||
+      (activeQueueItem !== null && isReadingPlaybackSource(activeQueueItem)));
   const hasActivePlayback = hasReadingPlayback || !!playback.activeAudioUrl;
   const canSeek = playback.mediaType === 'audio';
-  const playbackRateMediaType = playback.mediaType === 'reading' ? 'reading' : 'audio';
+  const playbackRateMediaType =
+    playback.mediaType === 'reading' ? 'reading' : 'audio';
   const playbackModeLabel = PLAYBACK_MODE_LABELS[playback.playbackMode];
   const playbackModeIcon = PLAYBACK_MODE_ICONS[playback.playbackMode];
   const playbackRateOptions = useMemo(
-    () => buildPlaybackRateOptions(playback.effectivePlaybackRate, playbackRateMediaType),
+    () =>
+      buildPlaybackRateOptions(
+        playback.effectivePlaybackRate,
+        playbackRateMediaType
+      ),
     [playback.effectivePlaybackRate, playbackRateMediaType]
   );
-  const playbackRateLabel = formatPlaybackRateLabel(playback.effectivePlaybackRate);
+  const playbackRateLabel = formatPlaybackRateLabel(
+    playback.effectivePlaybackRate
+  );
   const playbackRateTooltip = `${
     playback.mediaType === 'reading' ? '语音速度' : '播放速度'
   } ${playbackRateLabel}`;
@@ -252,7 +285,11 @@ export const CanvasAudioPlayer: React.FC = () => {
     if (resizeObserver && inputContainer instanceof HTMLElement) {
       resizeObserver.observe(inputContainer);
     }
-    if (resizeObserver && inputBar instanceof HTMLElement && inputBar !== inputContainer) {
+    if (
+      resizeObserver &&
+      inputBar instanceof HTMLElement &&
+      inputBar !== inputContainer
+    ) {
       resizeObserver.observe(inputBar);
     }
 
@@ -275,7 +312,8 @@ export const CanvasAudioPlayer: React.FC = () => {
       setPlaylistOpen(false);
     };
     document.addEventListener('pointerdown', handleClickOutside, true);
-    return () => document.removeEventListener('pointerdown', handleClickOutside, true);
+    return () =>
+      document.removeEventListener('pointerdown', handleClickOutside, true);
   }, [playlistOpen]);
 
   // Sync elementRef for drag
@@ -296,9 +334,8 @@ export const CanvasAudioPlayer: React.FC = () => {
     return null;
   }
 
-  const positionStyle: React.CSSProperties = position && !isMobile
-    ? { left: position.x, top: position.y }
-    : {};
+  const positionStyle: React.CSSProperties =
+    position && !isMobile ? { left: position.x, top: position.y } : {};
   const mobileStyle = mobileAnchorRect
     ? ({
         '--canvas-audio-mobile-left': `${mobileAnchorRect.left}px`,
@@ -352,38 +389,44 @@ export const CanvasAudioPlayer: React.FC = () => {
           </div>
         </div>
 
-        <span className="canvas-audio-player__queue-indicator" aria-hidden="true">
+        <span
+          className="canvas-audio-player__queue-indicator"
+          aria-hidden="true"
+        >
           <ChevronDown size={14} />
         </span>
       </button>
 
       <div className="canvas-audio-player__controls">
-        <button
-          type="button"
-          className="canvas-audio-player__action canvas-audio-player__action--previous"
-          onClick={() => void playback.playPrevious()}
-          disabled={!canPlayPrevious}
-          data-tooltip="上一首"
-        >
-          <SkipBack size={14} />
-        </button>
-        <button
-          type="button"
-          className="canvas-audio-player__action canvas-audio-player__action--primary"
-          onClick={() => void handleToggle()}
-          data-tooltip={playback.playing ? '暂停' : '播放'}
-        >
-          {playback.playing ? <Pause size={14} /> : <Play size={14} />}
-        </button>
-        <button
-          type="button"
-          className="canvas-audio-player__action canvas-audio-player__action--next"
-          onClick={() => void playback.playNext()}
-          disabled={!canPlayNext}
-          data-tooltip="下一首"
-        >
-          <SkipForward size={14} />
-        </button>
+        <HoverTip content="上一首">
+          <button
+            type="button"
+            className="canvas-audio-player__action canvas-audio-player__action--previous"
+            onClick={() => void playback.playPrevious()}
+            disabled={!canPlayPrevious}
+          >
+            <SkipBack size={14} />
+          </button>
+        </HoverTip>
+        <HoverTip content={playback.playing ? '暂停' : '播放'}>
+          <button
+            type="button"
+            className="canvas-audio-player__action canvas-audio-player__action--primary"
+            onClick={() => void handleToggle()}
+          >
+            {playback.playing ? <Pause size={14} /> : <Play size={14} />}
+          </button>
+        </HoverTip>
+        <HoverTip content="下一首">
+          <button
+            type="button"
+            className="canvas-audio-player__action canvas-audio-player__action--next"
+            onClick={() => void playback.playNext()}
+            disabled={!canPlayNext}
+          >
+            <SkipForward size={14} />
+          </button>
+        </HoverTip>
       </div>
 
       <div className="canvas-audio-player__progress">
@@ -419,14 +462,15 @@ export const CanvasAudioPlayer: React.FC = () => {
         minColumnWidth={112}
         onClick={(data) => playback.setPlaybackRate(Number(data.value))}
       >
-        <button
-          type="button"
-          className="canvas-audio-player__toggle canvas-audio-player__speed-toggle"
-          aria-label={`切换播放速度，当前${playbackRateLabel}`}
-          data-tooltip={playbackRateTooltip}
-        >
-          <Gauge size={14} />
-        </button>
+        <HoverTip content={playbackRateTooltip}>
+          <button
+            type="button"
+            className="canvas-audio-player__toggle canvas-audio-player__speed-toggle"
+            aria-label={`切换播放速度，当前${playbackRateLabel}`}
+          >
+            <Gauge size={14} />
+          </button>
+        </HoverTip>
       </Dropdown>
 
       <Dropdown
@@ -436,50 +480,62 @@ export const CanvasAudioPlayer: React.FC = () => {
         minColumnWidth={132}
         onClick={(data) => playback.setPlaybackMode(data.value as PlaybackMode)}
       >
-        <button
-          type="button"
-          className="canvas-audio-player__toggle canvas-audio-player__mode-toggle"
-          aria-label={`切换播放模式，当前${playbackModeLabel}`}
-          data-tooltip={playbackModeLabel}
-        >
-          {playbackModeIcon}
-        </button>
+        <HoverTip content={playbackModeLabel}>
+          <button
+            type="button"
+            className="canvas-audio-player__toggle canvas-audio-player__mode-toggle"
+            aria-label={`切换播放模式，当前${playbackModeLabel}`}
+          >
+            {playbackModeIcon}
+          </button>
+        </HoverTip>
       </Dropdown>
 
-      <button
-        type="button"
-        className="canvas-audio-player__toggle canvas-audio-player__player-switch canvas-audio-player__switch-toggle"
-        onClick={() => {
-          void import('../../services/tool-launch-service').then(
-            ({ openMusicPlayerTool }) => {
-              openMusicPlayerTool();
-            }
-          );
-        }}
-        aria-label="打开播放器工具"
-        data-tooltip="打开播放器工具"
-      >
-        <PanelsTopLeft size={14} />
-      </button>
+      <HoverTip content="打开播放器工具">
+        <button
+          type="button"
+          className="canvas-audio-player__toggle canvas-audio-player__player-switch canvas-audio-player__switch-toggle"
+          onClick={() => {
+            void import('../../services/tool-launch-service').then(
+              ({ openMusicPlayerTool }) => {
+                openMusicPlayerTool();
+              }
+            );
+          }}
+          aria-label="打开播放器工具"
+        >
+          <PanelsTopLeft size={14} />
+        </button>
+      </HoverTip>
 
-      <button
-        type="button"
-        className="canvas-audio-player__toggle canvas-audio-player__layout-toggle"
-        onClick={toggleLayout}
-        data-tooltip={effectiveLayout === 'horizontal' ? '切换为垂直布局' : '切换为水平布局'}
-        style={{ display: windowWidth <= 768 ? 'none' : '' }}
+      <HoverTip
+        content={
+          effectiveLayout === 'horizontal' ? '切换为垂直布局' : '切换为水平布局'
+        }
       >
-        {effectiveLayout === 'horizontal' ? <Rows3 size={14} /> : <Columns3 size={14} />}
-      </button>
+        <button
+          type="button"
+          className="canvas-audio-player__toggle canvas-audio-player__layout-toggle"
+          onClick={toggleLayout}
+          style={{ display: windowWidth <= 768 ? 'none' : '' }}
+        >
+          {effectiveLayout === 'horizontal' ? (
+            <Rows3 size={14} />
+          ) : (
+            <Columns3 size={14} />
+          )}
+        </button>
+      </HoverTip>
 
-      <button
-        type="button"
-        className="canvas-audio-player__close"
-        onClick={playback.stopPlayback}
-        data-tooltip="关闭播放器"
-      >
-        <X size={14} />
-      </button>
+      <HoverTip content="关闭播放器">
+        <button
+          type="button"
+          className="canvas-audio-player__close"
+          onClick={playback.stopPlayback}
+        >
+          <X size={14} />
+        </button>
+      </HoverTip>
 
       {playlistOpen ? (
         <CanvasAudioPlayerPlaylist

@@ -24,6 +24,15 @@ try {
   console.error('[Vite] Failed to read version.json', e);
 }
 
+const IDLE_PREFETCH_GROUPS = [
+  'ai-chat',
+  'tool-windows',
+  'office-data',
+  'external-skills',
+] as const;
+
+type IdlePrefetchGroup = (typeof IDLE_PREFETCH_GROUPS)[number];
+
 /**
  * Vite 插件：生成 precache-manifest.json
  * 在构建完成后扫描输出目录，生成需要预缓存的静态资源清单
@@ -37,18 +46,26 @@ function precacheManifestPlugin(): Plugin {
       order: 'post',
       async handler() {
         const outDir = path.resolve(__dirname, '../../dist/apps/web');
-        
+
         // 需要预缓存的文件扩展名
-        const PRECACHE_EXTENSIONS = ['.js', '.css', '.html', '.json', '.svg', '.ico'];
+        const PRECACHE_EXTENSIONS = [
+          '.js',
+          '.css',
+          '.html',
+          '.json',
+          '.svg',
+          '.ico',
+        ];
         // 排除的文件模式
         const EXCLUDE_PATTERNS = [
-          /stats\.html$/,           // Vite visualizer
-          /\.map$/,                 // Source maps
+          /stats\.html$/, // Vite visualizer
+          /\.map$/, // Source maps
           /precache-manifest\.json$/, // 自身
-          /sw\.js$/,                // Service Worker 本身不需要预缓存
-          /sw-debug\.html$/,        // 调试面板，仅在访问时加载
-          /changelog\.json$/,       // 版本日志，需要始终获取最新
-          /version\.json$/,         // 版本信息，需要始终获取最新
+          /idle-prefetch-manifest\.json$/, // idle 预取清单
+          /sw\.js$/, // Service Worker 本身不需要预缓存
+          /sw-debug\.html$/, // 调试面板，仅在访问时加载
+          /changelog\.json$/, // 版本日志，需要始终获取最新
+          /version\.json$/, // 版本信息，需要始终获取最新
         ];
         // 总是包含的关键文件
         const ALWAYS_INCLUDE = [
@@ -62,36 +79,49 @@ function precacheManifestPlugin(): Plugin {
         // 递归扫描目录
         function scanDir(dir: string, base = '') {
           if (!fs.existsSync(dir)) return;
-          
+
           const entries = fs.readdirSync(dir, { withFileTypes: true });
           for (const entry of entries) {
             const fullPath = path.join(dir, entry.name);
-            const relativePath = path.join(base, entry.name).replace(/\\/g, '/');
-            
+            const relativePath = path
+              .join(base, entry.name)
+              .replace(/\\/g, '/');
+
             if (entry.isDirectory()) {
               // 跳过不需要预缓存的目录
               // - product_showcase, help_tooltips: 大型资源目录
               // - sw-debug: 调试面板，仅在访问 /sw-debug.html 时加载
-              if (!['product_showcase', 'help_tooltips', 'sw-debug'].includes(entry.name)) {
+              if (
+                !['product_showcase', 'help_tooltips', 'sw-debug'].includes(
+                  entry.name
+                )
+              ) {
                 scanDir(fullPath, relativePath);
               }
             } else if (entry.isFile()) {
               const ext = path.extname(entry.name).toLowerCase();
               const url = '/' + relativePath;
-              
+
               // 检查是否应该排除
-              const shouldExclude = EXCLUDE_PATTERNS.some(pattern => pattern.test(url));
+              const shouldExclude = EXCLUDE_PATTERNS.some((pattern) =>
+                pattern.test(url)
+              );
               if (shouldExclude) continue;
-              
+
               // 检查是否是需要预缓存的文件类型
-              const shouldInclude = PRECACHE_EXTENSIONS.includes(ext) || 
-                                   ALWAYS_INCLUDE.includes(url);
-              
+              const shouldInclude =
+                PRECACHE_EXTENSIONS.includes(ext) ||
+                ALWAYS_INCLUDE.includes(url);
+
               if (shouldInclude) {
                 // 计算文件哈希作为 revision
                 const content = fs.readFileSync(fullPath);
-                const hash = crypto.createHash('md5').update(new Uint8Array(content)).digest('hex').substring(0, 8);
-                
+                const hash = crypto
+                  .createHash('md5')
+                  .update(new Uint8Array(content))
+                  .digest('hex')
+                  .substring(0, 8);
+
                 manifest.push({ url, revision: hash });
               }
             }
@@ -99,7 +129,7 @@ function precacheManifestPlugin(): Plugin {
         }
 
         scanDir(outDir);
-        
+
         // 按 URL 排序，便于调试
         manifest.sort((a, b) => a.url.localeCompare(b.url));
 
@@ -110,11 +140,83 @@ function precacheManifestPlugin(): Plugin {
           timestamp: new Date().toISOString(),
           files: manifest,
         };
-        
-        fs.writeFileSync(manifestPath, JSON.stringify(manifestContent, null, 2));
-        console.log(`[Precache] Generated manifest with ${manifest.length} files`);
-      }
-    }
+
+        fs.writeFileSync(
+          manifestPath,
+          JSON.stringify(manifestContent, null, 2)
+        );
+        console.log(
+          `[Precache] Generated manifest with ${manifest.length} files`
+        );
+      },
+    },
+  };
+}
+
+function idlePrefetchManifestPlugin(): Plugin {
+  return {
+    name: 'idle-prefetch-manifest',
+    apply: 'build',
+    closeBundle: {
+      sequential: true,
+      order: 'post',
+      async handler() {
+        const outDir = path.resolve(__dirname, '../../dist/apps/web');
+        const assetsDir = path.join(outDir, 'assets');
+        const groups = Object.fromEntries(
+          IDLE_PREFETCH_GROUPS.map((group) => [
+            group,
+            [] as Array<{ url: string; revision: string }>,
+          ])
+        ) as Record<
+          IdlePrefetchGroup,
+          Array<{ url: string; revision: string }>
+        >;
+
+        if (fs.existsSync(assetsDir)) {
+          const files = fs.readdirSync(assetsDir);
+          for (const group of IDLE_PREFETCH_GROUPS) {
+            const groupFiles = files.filter((file) => {
+              const lower = file.toLowerCase();
+              return (
+                lower.startsWith(`${group}-`) &&
+                (lower.endsWith('.js') || lower.endsWith('.css'))
+              );
+            });
+
+            for (const file of groupFiles) {
+              const fullPath = path.join(assetsDir, file);
+              const content = fs.readFileSync(fullPath);
+              const revision = crypto
+                .createHash('md5')
+                .update(new Uint8Array(content))
+                .digest('hex')
+                .substring(0, 8);
+              groups[group].push({
+                url: `/assets/${file}`,
+                revision,
+              });
+            }
+          }
+        }
+
+        const manifestPath = path.join(outDir, 'idle-prefetch-manifest.json');
+        fs.writeFileSync(
+          manifestPath,
+          JSON.stringify(
+            {
+              version: appVersion,
+              timestamp: new Date().toISOString(),
+              defaults: [],
+              groups,
+            },
+            null,
+            2
+          )
+        );
+        console.log('[IdlePrefetch] Generated idle-prefetch-manifest.json');
+      },
+    },
   };
 }
 
@@ -142,16 +244,18 @@ export default defineConfig({
     port: 7200,
     host: 'localhost',
     headers: {
-      'Content-Security-Policy': "upgrade-insecure-requests; default-src 'self' https: data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.googletagmanager.com https://www.google-analytics.com https://us.i.posthog.com https://us-assets.i.posthog.com https://wiki.tu-zi.com; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https: wss: data:; frame-ancestors 'self' localhost:* 127.0.0.1:* https://api.tu-zi.com;"
-    }
+      'Content-Security-Policy':
+        "upgrade-insecure-requests; default-src 'self' https: data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.googletagmanager.com https://www.google-analytics.com https://us.i.posthog.com https://us-assets.i.posthog.com https://wiki.tu-zi.com; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https: wss: data:; frame-ancestors 'self' localhost:* 127.0.0.1:* https://api.tu-zi.com;",
+    },
   },
 
   preview: {
     port: 4300,
     host: 'localhost',
     headers: {
-      'Content-Security-Policy': "upgrade-insecure-requests; default-src 'self' https: data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.googletagmanager.com https://www.google-analytics.com https://us.i.posthog.com https://us-assets.i.posthog.com https://wiki.tu-zi.com; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https: wss: data:; frame-ancestors 'self' localhost:* 127.0.0.1:* https://api.tu-zi.com;"
-    }
+      'Content-Security-Policy':
+        "upgrade-insecure-requests; default-src 'self' https: data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.googletagmanager.com https://www.google-analytics.com https://us.i.posthog.com https://us-assets.i.posthog.com https://wiki.tu-zi.com; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https: wss: data:; frame-ancestors 'self' localhost:* 127.0.0.1:* https://api.tu-zi.com;",
+    },
   },
 
   plugins: [
@@ -164,6 +268,7 @@ export default defineConfig({
       brotliSize: true,
     }),
     precacheManifestPlugin(),
+    idlePrefetchManifestPlugin(),
   ],
 
   // Uncomment this if you are using workers.
@@ -176,6 +281,8 @@ export default defineConfig({
     // watch 模式下不清空输出目录，避免 index.html 丢失导致 serve 失败
     emptyOutDir: !isWatchMode,
     reportCompressedSize: true,
+    // 首屏只注入壳层资源，懒加载分组改由运行时按需拉取/空闲预取。
+    modulePreload: false,
     commonjsOptions: {
       transformMixedEsModules: true,
     },

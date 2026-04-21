@@ -97,7 +97,7 @@ export const SizePicker: React.FC<SizePickerProps> = ({
             className="size-picker-button"
             type="button"
             visible={true}
-            title={title}
+            tooltip={title}
             aria-label={title}
             onPointerUp={() => setIsOpen(!isOpen)}
           >

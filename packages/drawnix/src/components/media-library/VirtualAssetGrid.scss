@@ -9,6 +9,7 @@
   flex: 1;
   min-height: 0;
   height: 100%;
+  position: relative;
 
   &__row {
     display: grid;
@@ -60,13 +61,25 @@
   }
 
   &__row {
-    will-change: transform;
-    contain: layout style;
-
     &--grid,
     &--compact {
       justify-content: flex-start;
     }
+  }
+
+  &--marquee-active {
+    cursor: crosshair;
+    user-select: none;
+  }
+
+  &__marquee {
+    position: absolute;
+    pointer-events: none;
+    border: 1px solid rgba(243, 156, 18, 0.75);
+    background: rgba(243, 156, 18, 0.16);
+    box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.2);
+    border-radius: 10px;
+    z-index: 5;
   }
 
   // 滚动容器样式

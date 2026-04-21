@@ -5,11 +5,12 @@
  */
 
 import React, { useCallback } from 'react';
-import { Button, Tooltip } from 'tdesign-react';
+import { Button } from 'tdesign-react';
 import { JumpIcon, DeleteIcon } from 'tdesign-icons-react';
 import { InsertToCanvasIcon } from '../icons';
 import { ToolDefinition } from '../../types/toolbox.types';
 import { toolRegistry } from '../../tools/registry';
+import { HoverTip } from '../shared';
 
 export interface ToolItemProps {
   /** 工具定义 */
@@ -41,7 +42,7 @@ export const ToolItem: React.FC<ToolItemProps> = ({
   tool,
   onInsert,
   onOpenWindow,
-  onDelete
+  onDelete,
 }) => {
   // 判断是否为内置工具（内置工具不能编辑/删除）
   const isBuiltInTool = toolRegistry.isBuiltInTool(tool.id);
@@ -71,11 +72,14 @@ export const ToolItem: React.FC<ToolItemProps> = ({
   /**
    * 点击卡片整体，默认以弹窗方式打开
    */
-  const handleCardClick = useCallback((e: React.MouseEvent) => {
-    // 如果点击的是操作按钮区域，不触发卡片点击
-    if ((e.target as HTMLElement).closest('.tool-item__actions')) return;
-    onOpenWindow?.(tool);
-  }, [tool, onOpenWindow]);
+  const handleCardClick = useCallback(
+    (e: React.MouseEvent) => {
+      // 如果点击的是操作按钮区域，不触发卡片点击
+      if ((e.target as HTMLElement).closest('.tool-item__actions')) return;
+      onOpenWindow?.(tool);
+    },
+    [tool, onOpenWindow]
+  );
 
   return (
     <div
@@ -95,7 +99,7 @@ export const ToolItem: React.FC<ToolItemProps> = ({
       {/* 操作按钮 - 始终显示 */}
       <div className="tool-item__actions">
         {isCustomTool && onDelete && (
-          <Tooltip content="删除工具" theme="light" placement="left">
+          <HoverTip content="删除工具" placement="left">
             <Button
               variant="text"
               size="small"
@@ -105,9 +109,9 @@ export const ToolItem: React.FC<ToolItemProps> = ({
               className="tool-item__action-btn tool-item__action-btn--delete"
               data-track="toolbox_click_delete_tool"
             />
-          </Tooltip>
+          </HoverTip>
         )}
-        <Tooltip content="插入到画布" theme="light" placement="left">
+        <HoverTip content="插入到画布" placement="left">
           <Button
             variant="text"
             size="small"
@@ -117,8 +121,8 @@ export const ToolItem: React.FC<ToolItemProps> = ({
             className="tool-item__action-btn tool-item__action-btn--insert"
             data-track="toolbox_click_insert_tool"
           />
-        </Tooltip>
-        <Tooltip content="在窗口中打开" theme="light" placement="left">
+        </HoverTip>
+        <HoverTip content="在窗口中打开" placement="left">
           <Button
             variant="outline"
             size="small"
@@ -128,7 +132,7 @@ export const ToolItem: React.FC<ToolItemProps> = ({
             className="tool-item__action-btn tool-item__action-btn--open-window"
             data-track="toolbox_click_open_window_tool"
           />
-        </Tooltip>
+        </HoverTip>
       </div>
     </div>
   );

@@ -4,7 +4,7 @@
  */
 
 import { useState, useCallback, useMemo } from 'react';
-import { Button, Input, Dialog, MessagePlugin } from 'tdesign-react';
+import { Button, Input, MessagePlugin } from 'tdesign-react';
 import {
   Download,
   Trash2,
@@ -17,6 +17,9 @@ import { formatDate, formatFileSize } from '../../utils/asset-utils';
 import { useAssetSize } from '../../hooks/useAssetSize';
 import { isCacheUrl, countElementsByAssetUrls } from '../../utils/asset-cleanup';
 import { useDrawnix } from '../../hooks/use-drawnix';
+import { ConfirmDialog } from '../dialog/ConfirmDialog';
+import { VideoPosterPreview } from '../shared/VideoPosterPreview';
+import { HoverTip } from '../shared';
 import type { MediaLibraryInspectorProps } from '../../types/asset.types';
 import './MediaLibraryInspector.scss';
 
@@ -200,11 +203,18 @@ export function MediaLibraryInspector({
             }}
           />
         ) : (
-          <video
+          <VideoPosterPreview
             src={normalizedAssetUrl}
-            controls
+            alt={asset.name}
             className="media-library-inspector__video"
-            poster={getThumbnailUrl(normalizedAssetUrl, 'large')}
+            poster={asset.thumbnail}
+            thumbnailSize="large"
+            activateVideoOnClick
+            playOnActivate
+            videoProps={{
+              controls: true,
+              preload: 'metadata',
+            }}
           />
         )}
       </div>
@@ -225,9 +235,9 @@ export function MediaLibraryInspector({
           </div>
         ) : (
           <div className="media-library-inspector__name-display">
-            <h3 className="media-library-inspector__name" title={asset.name}>
-              {asset.name}
-            </h3>
+            <HoverTip content={asset.name} showArrow={false}>
+              <h3 className="media-library-inspector__name">{asset.name}</h3>
+            </HoverTip>
             <Button
               size="small"
               variant="text"
@@ -328,14 +338,14 @@ export function MediaLibraryInspector({
       </div>
 
       {/* 删除确认对话框 */}
-      <Dialog
-        visible={deleteDialogVisible}
-        onClose={() => setDeleteDialogVisible(false)}
-        header="确认删除"
+      <ConfirmDialog
+        open={deleteDialogVisible}
+        title="确认删除"
+        confirmText="删除"
+        cancelText="取消"
+        danger
+        onOpenChange={setDeleteDialogVisible}
         onConfirm={handleConfirmDelete}
-        onCancel={() => setDeleteDialogVisible(false)}
-        confirmBtn="删除"
-        cancelBtn="取消"
       >
         <p>删除后无法恢复，确认删除该素材？</p>
         <p style={{ marginTop: '8px', color: 'var(--td-text-color-secondary)' }}>
@@ -346,7 +356,7 @@ export function MediaLibraryInspector({
             ⚠️ 画布中有 <strong>{canvasElementCount}</strong> 个元素正在使用此素材，删除后这些元素也将被移除！
           </p>
         )}
-      </Dialog>
+      </ConfirmDialog>
     </div>
   );
 }
