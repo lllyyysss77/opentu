@@ -1,6 +1,9 @@
 {
-  "version": "0.6.39",
-  "buildTime": "2026-04-21T03:10:27.168Z",
+  "version": "0.6.40",
+  "buildTime": "2026-04-21T10:01:08.067Z",
   "gitCommit": "unknown",
-  "changelog": []
+  "changelog": [
+    "Refine boot error handling and idle prefetch defaults",
+    "增强AI生成任务追踪与模型排序"
+  ]
 }

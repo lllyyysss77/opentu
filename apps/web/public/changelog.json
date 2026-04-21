@@ -1,6 +1,21 @@
 {
   "versions": [
     {
+      "version": "0.6.40",
+      "date": "2026-04-21",
+      "changes": {
+        "features": [
+          "增强AI生成任务追踪与模型排序"
+        ],
+        "fixes": [],
+        "improvements": [
+          "Refine boot error handling and idle prefetch defaults"
+        ]
+      },
+      "type": "patch",
+      "highlights": "增强AI生成任务追踪与模型排序"
+    },
+    {
       "version": "0.6.37",
       "date": "2026-04-21",
       "changes": {

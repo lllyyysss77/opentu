@@ -1,3 +1,17 @@
+## 0.6.40 (2026-04-21)
+
+### 🚀 Features
+
+- 增强AI生成任务追踪与模型排序 ([dd462bae](https://github.com/ljquan/aitu/commit/dd462bae))
+
+### 🔧 Chores
+
+- Refine boot error handling and idle prefetch defaults ([7049af8b](https://github.com/ljquan/aitu/commit/7049af8b))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+
 ## 0.6.37 (2026-04-21)
 
 ### 🚀 Features
