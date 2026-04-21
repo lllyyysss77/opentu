@@ -1,3 +1,13 @@
+## 0.6.37 (2026-04-21)
+
+### 🚀 Features
+
+- 优化启动加载与延迟功能挂载 ([85ce2b7b](https://github.com/ljquan/aitu/commit/85ce2b7b))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+
 ## 0.6.36 (2026-04-20)
 
 ### 🔧 Chores

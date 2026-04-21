@@ -1,6 +1,8 @@
 {
-  "version": "0.6.36",
-  "buildTime": "2026-04-20T14:24:13.707Z",
+  "version": "0.6.37",
+  "buildTime": "2026-04-21T01:36:21.752Z",
   "gitCommit": "unknown",
-  "changelog": []
+  "changelog": [
+    "优化启动加载与延迟功能挂载"
+  ]
 }

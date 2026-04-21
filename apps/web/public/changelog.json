@@ -1,6 +1,19 @@
 {
   "versions": [
     {
+      "version": "0.6.37",
+      "date": "2026-04-21",
+      "changes": {
+        "features": [
+          "优化启动加载与延迟功能挂载"
+        ],
+        "fixes": [],
+        "improvements": []
+      },
+      "type": "patch",
+      "highlights": "优化启动加载与延迟功能挂载"
+    },
+    {
       "version": "0.6.36",
       "date": "2026-04-20",
       "changes": {
