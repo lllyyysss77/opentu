@@ -11,6 +11,7 @@
 
 ### 📋 项目开发文档
 - **[VERSION_CONTROL.md](./VERSION_CONTROL.md)** - 版本控制和缓存管理文档
+- **[POSTHOG_MONITORING.md](./POSTHOG_MONITORING.md)** - PostHog 监控说明与 AI 生成埋点改造复盘
 
 ### 🚀 部署相关文档  
 - **[CFPAGE-DEPLOY.md](./CFPAGE-DEPLOY.md)** - Cloudflare Pages 部署指南
@@ -110,7 +111,12 @@ opentu/ (项目根目录)
 - 🧭 一级定位升级为 AI应用平台
 - 🧩 画布角色重定义为平台工作区底座
 
+### 2026-04-21
+- 📊 补充 PostHog AI 生成埋点改造复盘
+- 🧪 记录业务转化看板与当前数据结论
+- 🗂️ 更新文档索引，纳入 PostHog 监控文档
+
 ---
 
 *📖 文档持续更新中... 如有问题请提交 Issue*  
-*最后更新: 2026-04-12*
+*最后更新: 2026-04-21*

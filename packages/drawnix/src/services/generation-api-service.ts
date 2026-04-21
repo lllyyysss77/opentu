@@ -41,7 +41,12 @@ function resolveAnalyticsModelName(
   if (typeof routeModel === 'string' && routeModel) {
     return routeModel;
   }
-  if (routeModel?.modelId) {
+  if (
+    routeModel &&
+    typeof routeModel === 'object' &&
+    typeof routeModel.modelId === 'string' &&
+    routeModel.modelId
+  ) {
     return routeModel.modelId;
   }
   return fallback;
