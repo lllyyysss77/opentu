@@ -3,6 +3,8 @@
  * @file toolbar.types.ts
  */
 
+import type { MediaLibraryConfig } from '../../types/asset.types';
+
 /**
  * 统一工具栏容器组件属性
  */
@@ -50,7 +52,9 @@ export interface UnifiedToolbarProps {
   /**
    * (可选) 素材库打开回调
    */
-  onOpenMediaLibrary?: () => void;
+  onOpenMediaLibrary?: (config?: Partial<MediaLibraryConfig> & {
+    selectButtonText?: string;
+  }) => void;
   /**
    * 延后功能层是否已启用
    */
@@ -91,7 +95,9 @@ export interface ToolbarSectionProps {
   /**
    * 素材库打开回调
    */
-  onOpenMediaLibrary?: () => void;
+  onOpenMediaLibrary?: (config?: Partial<MediaLibraryConfig> & {
+    selectButtonText?: string;
+  }) => void;
 
   /**
    * 延后功能层是否已启用

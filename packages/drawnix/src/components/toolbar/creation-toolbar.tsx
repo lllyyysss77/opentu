@@ -285,20 +285,6 @@ export const CreationToolbar: React.FC<ToolbarSectionProps> = ({
   // 素材库状态
   const [mediaLibraryOpen, setMediaLibraryOpen] = useState(false);
 
-  // 打开素材库
-  const handleOpenMediaLibrary = useCallback(() => {
-    if (onOpenMediaLibrary) {
-      onOpenMediaLibrary();
-      return;
-    }
-    setMediaLibraryOpen(true);
-  }, [onOpenMediaLibrary]);
-
-  // 关闭素材库
-  const handleCloseMediaLibrary = useCallback(() => {
-    setMediaLibraryOpen(false);
-  }, []);
-
   // 插入素材到画板
   const handleInsertAsset = useCallback(
     async (asset: Asset) => {
@@ -326,6 +312,24 @@ export const CreationToolbar: React.FC<ToolbarSectionProps> = ({
     },
     [board]
   );
+
+  // 打开素材库
+  const handleOpenMediaLibrary = useCallback(() => {
+    if (onOpenMediaLibrary) {
+      onOpenMediaLibrary({
+        mode: SelectionMode.SELECT,
+        onSelect: handleInsertAsset,
+        selectButtonText: '插入',
+      });
+      return;
+    }
+    setMediaLibraryOpen(true);
+  }, [handleInsertAsset, onOpenMediaLibrary]);
+
+  // 关闭素材库
+  const handleCloseMediaLibrary = useCallback(() => {
+    setMediaLibraryOpen(false);
+  }, []);
 
   // 统一重置所有 Popover
   const resetAllPopovers = () => {

@@ -1,6 +1,6 @@
 {
   "version": "0.6.45",
-  "buildTime": "2026-04-22T09:08:33.267Z",
+  "buildTime": "2026-04-22T09:08:33.795Z",
   "gitCommit": "unknown",
   "changelog": [
     "处理打开文件取消后的空返回",

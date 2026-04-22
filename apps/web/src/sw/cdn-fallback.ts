@@ -23,6 +23,12 @@ export interface CDNPreference {
   version: string;
 }
 
+export interface FetchFallbackOptions {
+  preferLocal?: boolean;
+  cdnTimeout?: number;
+  localTimeout?: number;
+}
+
 // CDN 源配置
 export interface CDNSource {
   name: Exclude<CDNName, 'local'>;
@@ -59,6 +65,7 @@ const CDN_CONFIG = {
   degradeTimeout: 60 * 1000,
   failThreshold: 3,
   fetchTimeout: 1500,
+  localFetchTimeout: 5000,
   preferenceCacheExpiry: 60 * 60 * 1000,
   preferenceCacheName: 'drawnix-cdn-v1',
   preferenceCacheKey:
@@ -86,13 +93,6 @@ const CDN_SOURCES: CDNSource[] = [
     healthCheckPath: 'version.json',
     enabled: true,
     priority: 1,
-  },
-  {
-    name: 'unpkg',
-    urlTemplate: 'https://unpkg.com/aitu-app@{version}/{path}',
-    healthCheckPath: 'version.json',
-    enabled: true,
-    priority: 2,
   },
 ];
 
@@ -375,6 +375,29 @@ function getLocalUrl(localOrigin: string, resourcePath: string): string {
   return `${localOrigin}/${cleanPath.startsWith('/') ? cleanPath.slice(1) : cleanPath}`;
 }
 
+async function tryFetchFromLocalOrigin(
+  resourcePath: string,
+  localOrigin: string,
+  timeout: number
+): Promise<{ response: Response; source: 'local' } | null> {
+  try {
+    const localUrl = getLocalUrl(localOrigin, resourcePath);
+    console.log(`[CDN Fallback] Trying local server: ${localUrl}`);
+
+    const response = await fetchWithTimeout(localUrl, timeout);
+    if (!response.ok) {
+      console.warn(`[CDN Fallback] Local server returned ${response.status}`);
+      return null;
+    }
+
+    console.log('[CDN Fallback] Success from local server');
+    return { response, source: 'local' };
+  } catch (error) {
+    console.warn('[CDN Fallback] Local server failed:', error);
+    return null;
+  }
+}
+
 async function isValidCDNResponse(response: Response, cdnName: string): Promise<boolean> {
   const contentType = response.headers.get('Content-Type') || '';
   const isValidContentType =
@@ -443,7 +466,8 @@ async function isValidCDNResponse(response: Response, cdnName: string): Promise<
 export async function fetchFromCDNWithFallback(
   resourcePath: string,
   version: string,
-  localOrigin: string
+  localOrigin: string,
+  options: FetchFallbackOptions = {}
 ): Promise<{ response: Response; source: string } | null> {
   if (isDevelopment) {
     console.log('[CDN Fallback] 开发模式，跳过 CDN 回退');
@@ -452,6 +476,23 @@ export async function fetchFromCDNWithFallback(
 
   await ensureCDNPreferenceLoaded();
 
+  const {
+    preferLocal = false,
+    cdnTimeout = CDN_CONFIG.fetchTimeout,
+    localTimeout = CDN_CONFIG.localFetchTimeout,
+  } = options;
+
+  if (preferLocal) {
+    const localResult = await tryFetchFromLocalOrigin(
+      resourcePath,
+      localOrigin,
+      localTimeout
+    );
+    if (localResult) {
+      return localResult;
+    }
+  }
+
   const availableCDNs = getAvailableCDNs(version);
 
   for (const cdn of availableCDNs) {
@@ -459,7 +500,7 @@ export async function fetchFromCDNWithFallback(
 
     try {
       console.log(`[CDN Fallback] Trying ${cdn.name}: ${url}`);
-      const response = await fetchWithTimeout(url);
+      const response = await fetchWithTimeout(url, cdnTimeout);
 
       if (!response.ok) {
         markCDNFailure(cdn.name, `status:${response.status}`);
@@ -484,17 +525,15 @@ export async function fetchFromCDNWithFallback(
     }
   }
 
-  try {
-    const localUrl = getLocalUrl(localOrigin, resourcePath);
-    console.log(`[CDN Fallback] Trying local server: ${localUrl}`);
-
-    const response = await fetchWithTimeout(localUrl);
-    if (response.ok) {
-      console.log('[CDN Fallback] Success from local server');
-      return { response, source: 'local' };
+  if (!preferLocal) {
+    const localResult = await tryFetchFromLocalOrigin(
+      resourcePath,
+      localOrigin,
+      localTimeout
+    );
+    if (localResult) {
+      return localResult;
     }
-  } catch (error) {
-    console.warn('[CDN Fallback] Local server failed:', error);
   }
 
   console.error(`[CDN Fallback] All sources failed for: ${resourcePath}`);

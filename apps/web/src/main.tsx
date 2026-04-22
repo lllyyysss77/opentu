@@ -86,27 +86,6 @@ interface BootController {
   ) => void;
 }
 
-type SWBootProgressPhase =
-  | 'idle'
-  | 'installing'
-  | 'precache'
-  | 'activating'
-  | 'activated'
-  | 'development'
-  | 'error';
-
-interface SWBootProgressMessage {
-  type: 'SW_BOOT_PROGRESS';
-  phase: SWBootProgressPhase;
-  percent: number;
-  completed: number;
-  total: number;
-  failed: number;
-  message?: string;
-  version: string;
-  updatedAt: number;
-}
-
 declare global {
   interface Window {
     __OPENTU_CDN__?: RuntimeCDNPreference | null;
@@ -114,6 +93,8 @@ declare global {
     __OPENTU_CDN_API__?: RuntimeCDNApi;
     __AITU_CDN_API__?: RuntimeCDNApi;
     __OPENTU_BOOT__?: BootController;
+    __OPENTU_SW_REGISTRATION_PROMISE__?: Promise<ServiceWorkerRegistration | null>;
+    __OPENTU_SW_BOOT_MESSAGES_BOUND__?: boolean;
   }
 }
 
@@ -147,81 +128,8 @@ function getBootController(): BootController | null {
   return window.__OPENTU_BOOT__ || null;
 }
 
-function updateBootProgress(
-  progress: number,
-  options?: BootProgressOptions
-): void {
-  getBootController()?.setProgress?.(progress, options);
-}
-
 function updateBootStatus(options?: BootProgressOptions): void {
   getBootController()?.setProgress?.(undefined, options);
-}
-
-function isSWBootProgressMessage(
-  value: unknown
-): value is SWBootProgressMessage {
-  if (!value || typeof value !== 'object') {
-    return false;
-  }
-
-  const message = value as Partial<SWBootProgressMessage>;
-  return (
-    message.type === 'SW_BOOT_PROGRESS' &&
-    typeof message.phase === 'string' &&
-    typeof message.percent === 'number' &&
-    typeof message.completed === 'number' &&
-    typeof message.total === 'number' &&
-    typeof message.failed === 'number'
-  );
-}
-
-function formatSWBootTip(payload: SWBootProgressMessage): string {
-  if (payload.phase === 'precache' && payload.total > 0) {
-    const failureText =
-      payload.failed > 0 ? `，${payload.failed} 项回退` : '';
-    return `正在预热启动资源（${Math.min(
-      payload.completed,
-      payload.total
-    )}/${payload.total}${failureText}）...`;
-  }
-
-  if (payload.phase === 'activating') {
-    return '启动缓存服务已完成，正在接管页面...';
-  }
-
-  if (payload.phase === 'activated') {
-    return '启动资源已就绪，正在进入工作台...';
-  }
-
-  if (payload.phase === 'development') {
-    return '开发模式下跳过静态预缓存，正在继续启动...';
-  }
-
-  if (payload.phase === 'error') {
-    return payload.message || '启动缓存预热失败，正在直接启动工作台...';
-  }
-
-  return payload.message || '正在准备启动资源...';
-}
-
-function mapSWBootProgressToPercent(payload: SWBootProgressMessage): number {
-  switch (payload.phase) {
-    case 'installing':
-      return 52;
-    case 'precache':
-      return 55 + payload.percent * 0.35;
-    case 'activating':
-      return 93;
-    case 'activated':
-      return 96;
-    case 'development':
-      return 72;
-    case 'error':
-      return 68;
-    default:
-      return 50;
-  }
 }
 
 function getRuntimeCDNPreference(): RuntimeCDNPreference | null {
@@ -497,26 +405,27 @@ if ('serviceWorker' in navigator) {
   // Global reference to service worker registration
   let swRegistration: ServiceWorkerRegistration | null = null;
 
-  updateBootStatus({
-    tip: '正在连接启动缓存服务...',
-    source: 'phase',
-  });
+  const swRegistrationPromise =
+    window.__OPENTU_SW_REGISTRATION_PROMISE__ ||
+    navigator.serviceWorker
+      .register('/sw.js')
+      .catch((error) => {
+        console.warn('[Main] Service worker registration failed:', error);
+        return null;
+      });
 
-  navigator.serviceWorker.addEventListener('message', (event) => {
-    if (!isSWBootProgressMessage(event.data)) {
-      return;
-    }
+  window.__OPENTU_SW_REGISTRATION_PROMISE__ = swRegistrationPromise;
 
-    updateBootProgress(mapSWBootProgressToPercent(event.data), {
-      tip: formatSWBootTip(event.data),
-      source: 'sw',
-    });
-  });
-
-  // Register immediately for faster activation
-  navigator.serviceWorker
-    .register('/sw.js')
+  swRegistrationPromise
     .then((registration) => {
+      if (!registration) {
+        updateBootStatus({
+          tip: '离线加速未启用，正在直接启动工作台...',
+          source: 'phase',
+        });
+        return;
+      }
+
       swRegistration = registration;
       updateBootStatus({
         tip: '启动缓存服务已连接，正在准备资源清单...',

@@ -113,7 +113,7 @@
       name="viewport"
       content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"
     />
-    <meta name="app-version" content="0.6.43" />
+    <meta name="app-version" content="0.6.45" />
     <style>
       :root {
         --app-boot-bg: radial-gradient(
@@ -465,8 +465,165 @@
           setProgress: setProgress,
         };
 
+        function isSWBootProgressMessage(value) {
+          return (
+            value &&
+            typeof value === 'object' &&
+            value.type === 'SW_BOOT_PROGRESS' &&
+            typeof value.phase === 'string' &&
+            typeof value.percent === 'number'
+          );
+        }
+
+        function formatSWBootTip(payload) {
+          if (payload.phase === 'precache' && payload.total > 0) {
+            var completed = Math.min(payload.completed || 0, payload.total);
+            var failureText = payload.failed > 0 ? '，' + payload.failed + ' 项回退' : '';
+            return (
+              '正在预热启动资源（' +
+              completed +
+              '/' +
+              payload.total +
+              failureText +
+              '）...'
+            );
+          }
+
+          if (payload.phase === 'activating') {
+            return '启动缓存服务已完成，正在接管页面...';
+          }
+
+          if (payload.phase === 'activated') {
+            return '启动资源已就绪，正在进入工作台...';
+          }
+
+          if (payload.phase === 'development') {
+            return '开发模式下跳过静态预缓存，正在继续启动...';
+          }
+
+          if (payload.phase === 'error') {
+            return payload.message || '启动缓存预热失败，正在直接启动工作台...';
+          }
+
+          return payload.message || '正在准备启动资源...';
+        }
+
+        function mapSWBootProgressToPercent(payload) {
+          switch (payload.phase) {
+            case 'installing':
+              return 52;
+            case 'precache':
+              return 55 + payload.percent * 0.35;
+            case 'activating':
+              return 93;
+            case 'activated':
+              return 96;
+            case 'development':
+              return 72;
+            case 'error':
+              return 68;
+            default:
+              return 50;
+          }
+        }
+
+        function requestSWBootProgress(registration) {
+          if (!registration) {
+            return;
+          }
+
+          var payload = { type: 'SW_BOOT_PROGRESS_GET' };
+          var targets = [];
+          var maybeWorkers = [
+            navigator.serviceWorker.controller,
+            registration.active,
+            registration.waiting,
+            registration.installing,
+          ];
+
+          for (var i = 0; i < maybeWorkers.length; i++) {
+            var worker = maybeWorkers[i];
+            if (worker && targets.indexOf(worker) === -1) {
+              targets.push(worker);
+            }
+          }
+
+          for (var j = 0; j < targets.length; j++) {
+            targets[j].postMessage(payload);
+          }
+        }
+
+        function setupEarlyServiceWorkerBootstrap() {
+          if (!('serviceWorker' in navigator)) {
+            return;
+          }
+
+          if (!window.__OPENTU_SW_BOOT_MESSAGES_BOUND__) {
+            window.__OPENTU_SW_BOOT_MESSAGES_BOUND__ = true;
+            navigator.serviceWorker.addEventListener('message', function (event) {
+              if (!isSWBootProgressMessage(event.data)) {
+                return;
+              }
+
+              setProgress(mapSWBootProgressToPercent(event.data), {
+                tip: formatSWBootTip(event.data),
+                source: 'sw',
+              });
+            });
+          }
+
+          if (!window.__OPENTU_SW_REGISTRATION_PROMISE__) {
+            setProgress(undefined, {
+              tip: '正在连接启动缓存服务...',
+              source: 'phase',
+            });
+
+            window.__OPENTU_SW_REGISTRATION_PROMISE__ = navigator.serviceWorker
+              .register('/sw.js')
+              .then(function (registration) {
+                setProgress(54, {
+                  tip: '启动缓存服务已连接，正在准备资源清单...',
+                  source: 'phase',
+                });
+
+                requestSWBootProgress(registration);
+
+                if (
+                  registration.active &&
+                  !registration.installing &&
+                  !registration.waiting
+                ) {
+                  setProgress(58, {
+                    tip: '启动缓存服务已就绪，正在恢复工作台状态...',
+                    source: 'phase',
+                  });
+                }
+
+                return registration;
+              })
+              .catch(function (error) {
+                console.warn(
+                  '[Boot] Early service worker registration failed:',
+                  error
+                );
+                setProgress(52, {
+                  tip: '离线加速未启用，正在直接启动工作台...',
+                  source: 'phase',
+                });
+                return null;
+              });
+          } else {
+            window.__OPENTU_SW_REGISTRATION_PROMISE__.then(function (
+              registration
+            ) {
+              requestSWBootProgress(registration);
+            });
+          }
+        }
+
         renderProgress();
         startSimulatedProgress();
+        setupEarlyServiceWorkerBootstrap();
 
         window.addEventListener(
           'error',

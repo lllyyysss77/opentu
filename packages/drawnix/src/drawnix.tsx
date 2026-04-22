@@ -129,6 +129,13 @@ import {
 } from './utils/startup-prefetch';
 import { DeferredAIInputBar } from './components/startup/DeferredAIInputBar';
 import { ChatDrawer } from './components/chat-drawer';
+import type { MediaLibraryModalProps } from './types/asset.types';
+import { SelectionMode } from './types/asset.types';
+
+type MediaLibraryOpenConfig = Pick<
+  MediaLibraryModalProps,
+  'mode' | 'filterType' | 'onSelect' | 'selectButtonText'
+>;
 
 interface SWIdlePrefetchStatusMessage {
   type: 'SW_IDLE_PREFETCH_STATUS';
@@ -234,6 +241,10 @@ export const Drawnix: React.FC<DrawnixProps> = ({
   const [toolboxDrawerOpen, setToolboxDrawerOpen] = useState(false);
   const [taskPanelExpanded, setTaskPanelExpanded] = useState(false);
   const [mediaLibraryOpen, setMediaLibraryOpen] = useState(false);
+  const [mediaLibraryConfig, setMediaLibraryConfig] =
+    useState<MediaLibraryOpenConfig>({
+      mode: SelectionMode.BROWSE,
+    });
   const [backupRestoreOpen, setBackupRestoreOpen] = useState(false);
   const [cloudSyncOpen, setCloudSyncOpen] = useState(false);
   const [deferredRuntimeEnabled, setDeferredRuntimeEnabled] = useState(false);
@@ -372,9 +383,13 @@ export const Drawnix: React.FC<DrawnixProps> = ({
   }, [enableDeferredRuntime, taskPanelExpanded]);
 
   // 打开素材库（用于缓存满提示）
-  const handleOpenMediaLibrary = useCallback(() => {
+  const handleOpenMediaLibrary = useCallback((config?: MediaLibraryOpenConfig) => {
     enableToolWindows(['tool-windows']);
     closeAllDrawers();
+    setMediaLibraryConfig({
+      mode: SelectionMode.BROWSE,
+      ...config,
+    });
     setMediaLibraryOpen(true);
   }, [closeAllDrawers, enableToolWindows]);
 
@@ -742,6 +757,7 @@ export const Drawnix: React.FC<DrawnixProps> = ({
                       toolboxDrawerOpen={toolboxDrawerOpen}
                       taskPanelExpanded={taskPanelExpanded}
                       mediaLibraryOpen={mediaLibraryOpen}
+                      mediaLibraryConfig={mediaLibraryConfig}
                       backupRestoreOpen={backupRestoreOpen}
                       onChange={onChange}
                       onSelectionChange={handleSelectionChange}
@@ -802,6 +818,7 @@ interface DrawnixContentProps {
   toolboxDrawerOpen: boolean;
   taskPanelExpanded: boolean;
   mediaLibraryOpen: boolean;
+  mediaLibraryConfig: MediaLibraryOpenConfig;
   backupRestoreOpen: boolean;
   deferredRuntimeEnabled: boolean;
   shouldRenderDeferredFeatures: boolean;
@@ -822,7 +839,7 @@ interface DrawnixContentProps {
   handleToolboxDrawerToggle: () => void;
   handleKnowledgeBaseToggle: () => void;
   handleTaskPanelToggle: () => void;
-  handleOpenMediaLibrary: () => void;
+  handleOpenMediaLibrary: (config?: MediaLibraryOpenConfig) => void;
   handleOpenBackupRestore: () => void;
   handleOpenCloudSync: () => void;
   setProjectDrawerOpen: React.Dispatch<React.SetStateAction<boolean>>;
@@ -851,6 +868,7 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
   toolboxDrawerOpen,
   taskPanelExpanded,
   mediaLibraryOpen,
+  mediaLibraryConfig,
   backupRestoreOpen,
   deferredRuntimeEnabled,
   shouldRenderDeferredFeatures,
@@ -1558,6 +1576,7 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
               projectDrawerOpen={projectDrawerOpen}
               toolboxDrawerOpen={toolboxDrawerOpen}
               mediaLibraryOpen={mediaLibraryOpen}
+              mediaLibraryConfig={mediaLibraryConfig}
               backupRestoreOpen={backupRestoreOpen}
               cloudSyncOpen={cloudSyncOpen}
               onBoardSwitch={onBoardSwitch}

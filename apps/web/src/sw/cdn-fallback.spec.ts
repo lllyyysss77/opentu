@@ -31,35 +31,26 @@ describe('cdn-fallback', () => {
 
   it('uses persisted preference to reorder available CDNs for the current version', async () => {
     await setCDNPreference({
-      cdn: 'unpkg',
+      cdn: 'jsdelivr',
       latency: 18,
       timestamp: Date.now(),
       version: '1.2.3',
     });
 
     expect(getAvailableCDNs('1.2.3').map((item) => item.name)).toEqual([
-      'unpkg',
       'jsdelivr',
     ]);
     expect(getAvailableCDNs('9.9.9').map((item) => item.name)).toEqual([
       'jsdelivr',
-      'unpkg',
     ]);
   });
 
-  it('prefers the selected CDN when fetching static resources', async () => {
-    await setCDNPreference({
-      cdn: 'unpkg',
-      latency: 12,
-      timestamp: Date.now(),
-      version: '2.0.0',
-    });
-
+  it('prefers local origin first when requested for runtime assets', async () => {
     const fetchMock = vi
       .spyOn(globalThis, 'fetch')
       .mockImplementation(async (input: RequestInfo | URL) => {
         const url = String(input);
-        if (url.includes('unpkg.com')) {
+        if (url.startsWith('https://origin.example.com/')) {
           return new Response('console.log("ok");', {
             status: 200,
             headers: {
@@ -75,14 +66,56 @@ describe('cdn-fallback', () => {
     const result = await fetchFromCDNWithFallback(
       'assets/index.js',
       '2.0.0',
-      'https://origin.example.com'
+      'https://origin.example.com',
+      { preferLocal: true }
     );
 
-    expect(result?.source).toBe('unpkg');
-    expect(fetchMock.mock.calls[0]?.[0]).toContain('unpkg.com');
+    expect(result?.source).toBe('local');
+    expect(fetchMock.mock.calls[0]?.[0]).toContain(
+      'https://origin.example.com/assets/index.js'
+    );
   });
 
-  it('falls back to origin when all CDNs fail', async () => {
+  it('falls back to jsdelivr after local miss when runtime assets enable local-first', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async (input: RequestInfo | URL) => {
+        const url = String(input);
+
+        if (url.startsWith('https://origin.example.com/')) {
+          return new Response('missing', { status: 404 });
+        }
+
+        if (url.includes('cdn.jsdelivr.net')) {
+          return new Response('body { color: black; }', {
+            status: 200,
+            headers: {
+              'Content-Type': 'text/css',
+              'Content-Length': '120',
+            },
+          });
+        }
+
+        return new Response('missing', { status: 404 });
+      });
+
+    const result = await fetchFromCDNWithFallback(
+      'assets/index.css',
+      '3.0.0',
+      'https://origin.example.com',
+      { preferLocal: true }
+    );
+
+    expect(result?.source).toBe('jsdelivr');
+    expect(fetchMock.mock.calls[0]?.[0]).toContain(
+      'https://origin.example.com/assets/index.css'
+    );
+    expect(fetchMock.mock.calls[1]?.[0]).toContain(
+      'https://cdn.jsdelivr.net/npm/aitu-app@3.0.0/assets/index.css'
+    );
+  });
+
+  it('falls back to origin when jsdelivr fails', async () => {
     const fetchMock = vi
       .spyOn(globalThis, 'fetch')
       .mockImplementation(async (input: RequestInfo | URL) => {
@@ -118,60 +151,39 @@ describe('cdn-fallback', () => {
     markCDNFailure('jsdelivr', 'timeout');
     markCDNFailure('jsdelivr', 'timeout');
 
-    expect(getAvailableCDNs('1.0.0').map((item) => item.name)).toEqual([
-      'unpkg',
-    ]);
+    expect(getAvailableCDNs('1.0.0').map((item) => item.name)).toEqual([]);
   });
 
-  it('extends cooldown after consecutive failures for backup CDN', () => {
-    markCDNFailure('unpkg', 'timeout');
-    markCDNFailure('unpkg', 'timeout');
-    markCDNFailure('unpkg', 'timeout');
+  it('re-enables jsdelivr after cooldown expires', () => {
+    markCDNFailure('jsdelivr', 'timeout');
+    markCDNFailure('jsdelivr', 'timeout');
+    markCDNFailure('jsdelivr', 'timeout');
 
+    expect(getAvailableCDNs('1.0.0').map((item) => item.name)).toEqual([]);
+
+    vi.advanceTimersByTime(60 * 1000);
+    expect(getAvailableCDNs('1.0.0').map((item) => item.name)).toEqual([]);
+
+    vi.advanceTimersByTime(1);
     expect(getAvailableCDNs('1.0.0').map((item) => item.name)).toEqual([
       'jsdelivr',
-    ]);
-
-    vi.advanceTimersByTime(5 * 60 * 1000);
-    expect(getAvailableCDNs('1.0.0').map((item) => item.name)).toEqual([
-      'jsdelivr',
-    ]);
-
-    vi.advanceTimersByTime(5 * 60 * 1000 + 1);
-    expect(getAvailableCDNs('1.0.0').map((item) => item.name)).toEqual([
-      'jsdelivr',
-      'unpkg',
-    ]);
-
-    markCDNFailure('unpkg', 'timeout');
-    expect(getAvailableCDNs('1.0.0').map((item) => item.name)).toEqual([
-      'jsdelivr',
-    ]);
-
-    vi.advanceTimersByTime(10 * 60 * 1000);
-    expect(getAvailableCDNs('1.0.0').map((item) => item.name)).toEqual([
-      'jsdelivr',
-    ]);
-
-    vi.advanceTimersByTime(10 * 60 * 1000 + 1);
-    expect(getAvailableCDNs('1.0.0').map((item) => item.name)).toEqual([
-      'jsdelivr',
-      'unpkg',
     ]);
   });
 
   it('includes fail count and cooldown info in status report', () => {
-    markCDNFailure('unpkg', 'timeout');
-    markCDNFailure('unpkg', 'timeout');
-    markCDNFailure('unpkg', 'timeout');
+    markCDNFailure('jsdelivr', 'timeout');
+    markCDNFailure('jsdelivr', 'timeout');
+    markCDNFailure('jsdelivr', 'timeout');
 
-    const unpkgStatus = getCDNStatusReport().find((item) => item.name === 'unpkg');
+    const jsdelivrStatus = getCDNStatusReport().find(
+      (item) => item.name === 'jsdelivr'
+    );
 
-    expect(unpkgStatus).toMatchObject({
+    expect(jsdelivrStatus).toMatchObject({
       preferred: false,
-      cooldownMs: 10 * 60 * 1000,
-      cooldownUntil: Date.now() + 10 * 60 * 1000,
-      remainingCooldownMs: 10 * 60 * 1000,
+      cooldownMs: 60 * 1000,
+      cooldownUntil: Date.now() + 60 * 1000,
+      remainingCooldownMs: 60 * 1000,
       status: {
         failCount: 3,
         isHealthy: false,

@@ -58,6 +58,7 @@ export function MediaLibraryInspector({
   onDownload,
   onSelect,
   showSelectButton,
+  selecting = false,
   selectButtonText = '使用',
 }: MediaLibraryInspectorProps) {
   const [isRenaming, setIsRenaming] = useState(false);
@@ -157,10 +158,10 @@ export function MediaLibraryInspector({
 
   // 使用到画板
   const handleSelect = useCallback(() => {
-    if (asset && onSelect) {
+    if (asset && onSelect && !selecting) {
       onSelect(asset);
     }
-  }, [asset, onSelect]);
+  }, [asset, onSelect, selecting]);
 
   // 复制提示词
   const handleCopyPrompt = useCallback(async () => {
@@ -320,6 +321,8 @@ export function MediaLibraryInspector({
             block
             icon={<CheckCircle size={16} />}
             onClick={handleSelect}
+            loading={selecting}
+            disabled={selecting}
             data-track="inspector_use_asset"
             data-track-params={inspectorTrackParams}
             className="inspector-btn-select"

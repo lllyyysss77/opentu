@@ -1848,7 +1848,11 @@ async function tryFetchStaticResourceFromCDN(
     const cdnResult = await fetchFromCDNWithFallback(
       resourcePath,
       APP_VERSION,
-      location.origin
+      location.origin,
+      {
+        // 运行时 hash 资源优先同源，避免旧 SW 在发版窗口猜错 CDN 版本。
+        preferLocal: true,
+      }
     );
 
     if (!cdnResult?.response.ok) {
