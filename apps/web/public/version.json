@@ -1,9 +1,9 @@
 {
-  "version": "0.6.44",
-  "buildTime": "2026-04-22T04:55:25.689Z",
+  "version": "0.6.45",
+  "buildTime": "2026-04-22T09:08:33.267Z",
   "gitCommit": "unknown",
   "changelog": [
-    "收敛 PostHog error tracking 噪音并补齐运行时容错",
-    "增强提示词优化器并修复画布输入框交互"
+    "处理打开文件取消后的空返回",
+    "提前显示常驻工具图标"
   ]
 }

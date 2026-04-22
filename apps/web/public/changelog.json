@@ -1,6 +1,20 @@
 {
   "versions": [
     {
+      "version": "0.6.45",
+      "date": "2026-04-22",
+      "changes": {
+        "features": [],
+        "fixes": [
+          "提前显示常驻工具图标",
+          "处理打开文件取消后的空返回"
+        ],
+        "improvements": []
+      },
+      "type": "patch",
+      "highlights": "提前显示常驻工具图标"
+    },
+    {
       "version": "0.6.44",
       "date": "2026-04-22",
       "changes": {

@@ -1,3 +1,14 @@
+## 0.6.45 (2026-04-22)
+
+### 🩹 Fixes
+
+- 提前显示常驻工具图标 ([0fb45300](https://github.com/ljquan/aitu/commit/0fb45300))
+- 处理打开文件取消后的空返回 ([c069814e](https://github.com/ljquan/aitu/commit/c069814e))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+
 ## 0.6.44 (2026-04-22)
 
 ### 🚀 Features
