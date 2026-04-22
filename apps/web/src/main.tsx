@@ -94,7 +94,6 @@ declare global {
     __AITU_CDN_API__?: RuntimeCDNApi;
     __OPENTU_BOOT__?: BootController;
     __OPENTU_SW_REGISTRATION_PROMISE__?: Promise<ServiceWorkerRegistration | null>;
-    __OPENTU_SW_BOOT_MESSAGES_BOUND__?: boolean;
   }
 }
 
@@ -163,32 +162,6 @@ function postCDNPreferenceToServiceWorker(
     type: 'SW_CDN_SET_PREFERENCE' as const,
     ...preference,
     version: APP_VERSION,
-  };
-
-  const targets = new Set<ServiceWorker>();
-  const maybeWorkers = [
-    navigator.serviceWorker.controller,
-    registration?.active,
-    registration?.waiting,
-    registration?.installing,
-  ];
-
-  for (const worker of maybeWorkers) {
-    if (worker) {
-      targets.add(worker);
-    }
-  }
-
-  targets.forEach((worker) => {
-    worker.postMessage(payload);
-  });
-}
-
-function requestSWBootProgress(
-  registration: ServiceWorkerRegistration | null
-): void {
-  const payload = {
-    type: 'SW_BOOT_PROGRESS_GET' as const,
   };
 
   const targets = new Set<ServiceWorker>();
@@ -432,7 +405,6 @@ if ('serviceWorker' in navigator) {
         source: 'phase',
       });
       scheduleCDNPreferenceSync(registration);
-      requestSWBootProgress(registration);
 
       // 在开发模式下，强制检查更新并处理等待中的Worker
       if (isDevelopment) {
@@ -449,9 +421,7 @@ if ('serviceWorker' in navigator) {
       registration.addEventListener('updatefound', () => {
         const newWorker = registration.installing;
         if (newWorker) {
-          requestSWBootProgress(registration);
           newWorker.addEventListener('statechange', () => {
-            requestSWBootProgress(registration);
             if (
               newWorker.state === 'installed' &&
               navigator.serviceWorker.controller
