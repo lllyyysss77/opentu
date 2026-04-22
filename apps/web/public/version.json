@@ -1,9 +1,6 @@
 {
-  "version": "0.6.46",
-  "buildTime": "2026-04-22T10:26:51.174Z",
+  "version": "0.6.47",
+  "buildTime": "2026-04-22T11:59:03.073Z",
   "gitCommit": "unknown",
-  "changelog": [
-    "前置首屏加载并修复素材库插入画布链路",
-    "关闭页面时兜底恢复画布快照"
-  ]
+  "changelog": []
 }
