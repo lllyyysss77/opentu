@@ -1,6 +1,20 @@
 {
   "versions": [
     {
+      "version": "0.6.46",
+      "date": "2026-04-22",
+      "changes": {
+        "features": [],
+        "fixes": [
+          "关闭页面时兜底恢复画布快照",
+          "前置首屏加载并修复素材库插入画布链路"
+        ],
+        "improvements": []
+      },
+      "type": "patch",
+      "highlights": "关闭页面时兜底恢复画布快照"
+    },
+    {
       "version": "0.6.45",
       "date": "2026-04-22",
       "changes": {

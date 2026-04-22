@@ -1,3 +1,14 @@
+## 0.6.46 (2026-04-22)
+
+### 🩹 Fixes
+
+- 关闭页面时兜底恢复画布快照 ([99c67048](https://github.com/ljquan/aitu/commit/99c67048))
+- 前置首屏加载并修复素材库插入画布链路 ([862b95ef](https://github.com/ljquan/aitu/commit/862b95ef))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+
 ## 0.6.45 (2026-04-22)
 
 ### 🩹 Fixes
