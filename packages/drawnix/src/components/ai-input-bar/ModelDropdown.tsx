@@ -15,6 +15,7 @@ import React, {
   useEffect,
   useMemo,
 } from 'react';
+import { copyToClipboard } from '../../utils/runtime-helpers';
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown, Copy, ExternalLink, Plus, Search, X } from 'lucide-react';
 import { MessagePlugin } from 'tdesign-react';
@@ -607,15 +608,8 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
 
   const handleCopyModelId = useCallback(
     async (modelId: string) => {
-      if (!navigator.clipboard?.writeText) {
-        MessagePlugin.warning(
-          language === 'zh' ? '当前环境不支持复制' : 'Clipboard is not supported'
-        );
-        return;
-      }
-
       try {
-        await navigator.clipboard.writeText(modelId);
+        await copyToClipboard(modelId);
         MessagePlugin.success(
           language === 'zh' ? '模型名已复制' : 'Model name copied'
         );

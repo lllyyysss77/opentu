@@ -13,6 +13,7 @@ import {
   Copy,
 } from 'lucide-react';
 import { isDataURL, normalizeImageDataUrl } from '@aitu/utils';
+import { copyToClipboard } from '../../utils/runtime-helpers';
 import { formatDate, formatFileSize } from '../../utils/asset-utils';
 import { useAssetSize } from '../../hooks/useAssetSize';
 import { isCacheUrl, countElementsByAssetUrls } from '../../utils/asset-cleanup';
@@ -165,7 +166,7 @@ export function MediaLibraryInspector({
   const handleCopyPrompt = useCallback(async () => {
     if (asset?.prompt) {
       try {
-        await navigator.clipboard.writeText(asset.prompt);
+        await copyToClipboard(asset.prompt);
         MessagePlugin.success('提示词已复制');
       } catch {
         MessagePlugin.error('复制失败');

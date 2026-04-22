@@ -4,6 +4,7 @@
  * 管理工具箱工具以弹窗形式打开的状态。
  * 支持多实例窗口、最小化、常驻工具栏、位置记忆等能力。
  */
+import { generateUUID } from '../utils/runtime-helpers';
 
 import { BehaviorSubject, Observable } from 'rxjs';
 import {
@@ -655,12 +656,7 @@ class ToolWindowService {
   }
 
   private generateInstanceId(toolId: string): string {
-    const suffix =
-      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-        ? crypto.randomUUID()
-        : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-
-    return `${toolId}:${suffix}`;
+    return `${toolId}:${generateUUID()}`;
   }
 
   private notify(): void {

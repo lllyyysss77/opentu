@@ -272,6 +272,10 @@ export default defineConfig({
     idlePrefetchManifestPlugin(),
   ],
 
+  resolve: {
+    dedupe: ['react', 'react-dom'],
+  },
+
   // Uncomment this if you are using workers.
   // worker: {
   //  plugins: [ nxViteTsPaths() ],

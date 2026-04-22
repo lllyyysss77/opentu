@@ -6,6 +6,7 @@
  */
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import { copyToClipboard } from '../../utils/runtime-helpers';
 import { Button, Tabs, MessagePlugin, Input, Checkbox } from 'tdesign-react';
 import {
   DeleteIcon,
@@ -546,13 +547,8 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
       return;
     }
 
-    if (!navigator.clipboard?.writeText) {
-      MessagePlugin.warning('当前环境不支持复制');
-      return;
-    }
-
     try {
-      await navigator.clipboard.writeText(text);
+      await copyToClipboard(text);
       MessagePlugin.success('歌词已复制');
       onTaskAction?.('copy', taskId);
     } catch (error) {

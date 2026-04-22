@@ -13,6 +13,7 @@
 - **[VERSION_CONTROL.md](./VERSION_CONTROL.md)** - 版本控制和缓存管理文档
 - **[POSTHOG_MONITORING.md](./POSTHOG_MONITORING.md)** - PostHog 监控说明与 AI 生成埋点改造复盘
 - **[POSTHOG_SEO_LESSONS.md](./POSTHOG_SEO_LESSONS.md)** - 埋点观测与 SEO 优化方法论总结
+- **[POSTHOG_ERROR_TRACKING_LESSONS.md](./POSTHOG_ERROR_TRACKING_LESSONS.md)** - Error tracking 修复、降噪与关单标准复盘
 
 ### 🚀 部署相关文档  
 - **[CFPAGE-DEPLOY.md](./CFPAGE-DEPLOY.md)** - Cloudflare Pages 部署指南
@@ -120,6 +121,7 @@ opentu/ (项目根目录)
 
 ### 2026-04-22
 - 📝 新增埋点观测与 SEO 优化经验总结
+- 🚨 新增 PostHog error tracking 修复与降噪复盘
 - 🔗 补充 docs 索引，便于后续复用
 - 🌐 补充 CDN 加载与发布稳定性经验总结，沉淀多 CDN 熔断和保守切分原则
 

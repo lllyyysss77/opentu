@@ -488,6 +488,13 @@ export function stopPeriodicSnapshots(): void {
 export function setupErrorCapture(): void {
   // JavaScript 未捕获错误
   window.addEventListener('error', (event) => {
+    if (
+      event.error instanceof DOMException &&
+      (event.error.name === 'AbortError' || event.error.name === 'NotAllowedError')
+    ) {
+      return;
+    }
+
     const snapshot: CrashSnapshot = {
       id: `error-${Date.now()}`,
       timestamp: Date.now(),
@@ -517,6 +524,16 @@ export function setupErrorCapture(): void {
     const reason = event.reason;
     const errorMessage = reason?.message || String(reason) || '';
     const errorStack = reason?.stack || '';
+
+    if (
+      reason instanceof DOMException &&
+      (reason.name === 'AbortError' ||
+        reason.name === 'NotAllowedError' ||
+        (reason.name === 'DataError' &&
+          errorMessage.includes('No key or key range specified')))
+    ) {
+      return;
+    }
     
     // 过滤监控服务相关的错误（PostHog, Sentry）
     if (errorMessage.includes('posthog.com') ||

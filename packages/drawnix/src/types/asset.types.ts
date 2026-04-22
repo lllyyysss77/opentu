@@ -5,6 +5,7 @@
  * This file contains all type definitions for the media library feature.
  * Based on data-model.md specifications.
  */
+import { generateUUID } from '../utils/runtime-helpers';
 
 /**
  * Asset Type Enum
@@ -364,7 +365,7 @@ export function createAsset(params: {
   modelName?: string;
 }): Asset {
   return {
-    id: crypto.randomUUID(),
+    id: generateUUID(),
     type: params.type,
     source: params.source,
     url: params.url,
