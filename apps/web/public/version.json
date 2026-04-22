@@ -1,10 +1,9 @@
 {
-  "version": "0.6.43",
-  "buildTime": "2026-04-21T17:50:52.038Z",
+  "version": "0.6.44",
+  "buildTime": "2026-04-22T04:55:25.689Z",
   "gitCommit": "unknown",
   "changelog": [
-    "add keyboard shortcuts during pen creation",
-    "扩展 gpt-image-2 图片比例支持",
-    "修复版本更新后懒加载 chunk 失效白屏"
+    "收敛 PostHog error tracking 噪音并补齐运行时容错",
+    "增强提示词优化器并修复画布输入框交互"
   ]
 }

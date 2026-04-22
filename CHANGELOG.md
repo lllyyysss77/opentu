@@ -1,3 +1,21 @@
+## 0.6.44 (2026-04-22)
+
+### 🚀 Features
+
+- 增强提示词优化器并修复画布输入框交互 ([6cbbe5dc](https://github.com/ljquan/aitu/commit/6cbbe5dc))
+
+### 🩹 Fixes
+
+- 收敛 PostHog error tracking 噪音并补齐运行时容错 ([a0392a2f](https://github.com/ljquan/aitu/commit/a0392a2f))
+
+### 🔧 Chores
+
+- docs: 补充多 CDN 加载与发布稳定性经验总结 ([8d92b401](https://github.com/ljquan/aitu/commit/8d92b401))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+
 ## 0.6.43 (2026-04-21)
 
 ### 🚀 Features
