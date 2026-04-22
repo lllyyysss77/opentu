@@ -298,7 +298,7 @@ describe('provider routing', () => {
     ).toBe('trim-v1');
   });
 
-  it('routes tuzi gemini image models to images generations only', () => {
+  it('routes tuzi gemini image models through generateContent', () => {
     const profile = {
       id: 'provider-b',
       name: 'Provider B',
@@ -330,10 +330,48 @@ describe('provider routing', () => {
     });
 
     expect(bindings.map((binding) => binding.protocol)).toEqual([
-      'openai.images.generations',
+      'google.generateContent',
     ]);
-    expect(plan.binding.protocol).toBe('openai.images.generations');
-    expect(plan.binding.submitPath).toBe('/images/generations');
+    expect(plan.binding.protocol).toBe('google.generateContent');
+    expect(plan.binding.submitPath).toBe('/v1beta/models/{model}:generateContent');
+  });
+
+  it('keeps third-party tuzi gemini image models on generateContent', () => {
+    const profile = {
+      id: 'provider-c',
+      name: 'Provider C',
+      providerType: 'gemini-compatible' as const,
+      baseUrl: 'https://business.tu-zi.com/v1',
+      apiKey: 'key-c',
+      authType: 'bearer' as const,
+    };
+    const model: ModelConfig = {
+      id: 'gemini-3-pro-image-preview',
+      label: 'Gemini Image',
+      type: 'image',
+      vendor: ModelVendor.GEMINI,
+    };
+    const bindings = inferBindingsForProviderModel(profile, model);
+    const planner = new InvocationPlanner(
+      createRepositories({
+        profiles: [profile],
+        bindings,
+      })
+    );
+
+    const plan = planner.plan({
+      operation: 'image',
+      modelRef: {
+        profileId: profile.id,
+        modelId: model.id,
+      },
+    });
+
+    expect(bindings.map((binding) => binding.protocol)).toEqual([
+      'google.generateContent',
+    ]);
+    expect(plan.binding.protocol).toBe('google.generateContent');
+    expect(plan.binding.submitPath).toBe('/v1beta/models/{model}:generateContent');
   });
 
   it('keeps discovered generateContent bindings below template image bindings for tuzi-compatible endpoints', () => {
