@@ -167,6 +167,8 @@ export function App() {
   const isSyncingRef = useRef<boolean>(false);
   // 标记本标签页是否有用户主动修改（只有用户修改过才在 visibilitychange 时保存）
   const localDirtyRef = useRef<boolean>(false);
+  // 标记当前标签页是否还有未落盘的本地变更（含元素与 viewport）
+  const hasPendingPersistenceRef = useRef<boolean>(false);
 
   // 使用 useDocumentTitle hook 管理页面标题
   useDocumentTitle(currentBoardId);
@@ -197,7 +199,12 @@ export function App() {
     (reason: 'visibilitychange' | 'pagehide' | 'beforeunload') => {
       const snapshot = latestBoardDataRef.current;
       const boardId = currentBoardIdRef.current;
-      if (!snapshot || !boardId || snapshot.boardId !== boardId) {
+      if (
+        !snapshot ||
+        !boardId ||
+        snapshot.boardId !== boardId ||
+        !hasPendingPersistenceRef.current
+      ) {
         return;
       }
       saveBoardCloseSnapshot({
@@ -247,6 +254,8 @@ export function App() {
       if (appInitialized) {
         // 等待 workspaceService 完全初始化
         const workspaceService = WorkspaceService.getInstance();
+        // 首屏壳子已可挂载，不再等待工作区数据恢复完成才结束启动遮罩。
+        setIsLoading(false);
         await workspaceService.waitForInitialization();
         // 使用 switchBoard 确保加载完整数据
         const currentBoardId = workspaceService.getState().currentBoardId;
@@ -269,6 +278,7 @@ export function App() {
             nextData,
             currentBoard.updatedAt
           );
+          hasPendingPersistenceRef.current = false;
           setValue(nextData);
         }
         setIsLoading(false);
@@ -280,6 +290,8 @@ export function App() {
 
       try {
         const workspaceService = WorkspaceService.getInstance();
+        // boot loading 只覆盖首屏壳子资源，不阻塞后续工作区初始化与缓存预热。
+        setIsLoading(false);
         await workspaceService.initialize();
 
         // Check and perform migration if needed
@@ -398,6 +410,7 @@ export function App() {
           setCurrentBoardId(currentBoard.id);
           // 持久化到 sessionStorage，确保标签页隔离
           workspaceService.persistCurrentBoardId(currentBoard.id);
+          hasPendingPersistenceRef.current = false;
         }
 
         if (currentBoard) {
@@ -427,6 +440,7 @@ export function App() {
             void workspaceService
               .saveBoard(restoredBoardId, initialData)
               .then(() => {
+                hasPendingPersistenceRef.current = false;
                 clearBoardCloseSnapshot(restoredBoardId);
               })
               .catch((error: Error) => {
@@ -453,6 +467,7 @@ export function App() {
             initialData,
             currentBoard.updatedAt
           );
+          hasPendingPersistenceRef.current = false;
 
           // 先设置原始元素，让页面先渲染
           setValue(initialData);
@@ -508,6 +523,7 @@ export function App() {
 
         // 切换画布时重置脏标志，新画布的初始数据不需要保存
         localDirtyRef.current = false;
+        hasPendingPersistenceRef.current = false;
 
         // 在设置 state 之前，预先恢复失效的视频 URL
         const elements = await recoverVideoUrlsInElements(board.elements || []);
@@ -634,6 +650,7 @@ export function App() {
           theme: updatedBoard.theme,
         };
         updateLatestBoardData(updatedBoard.id, nextData, updatedBoard.updatedAt);
+        hasPendingPersistenceRef.current = false;
 
         // 更新 React 状态，触发重新渲染
         setValue(nextData);
@@ -670,6 +687,7 @@ export function App() {
 
     // 标记本标签页有用户主动修改
     localDirtyRef.current = true;
+    hasPendingPersistenceRef.current = true;
 
     // Save to current board
     const workspaceService = WorkspaceService.getInstance();
@@ -688,6 +706,8 @@ export function App() {
     workspaceService
       .saveCurrentBoard(data)
       .then(() => {
+        hasPendingPersistenceRef.current = false;
+        clearBoardCloseSnapshot(currentBoard.id);
         // 通知其他标签页数据已更新
         markTabSyncVersion(currentBoard.id);
       })
@@ -714,6 +734,8 @@ export function App() {
       return;
     }
 
+    hasPendingPersistenceRef.current = true;
+
     // 防抖保存
     if (viewportSaveTimerRef.current) {
       clearTimeout(viewportSaveTimerRef.current);
@@ -733,6 +755,10 @@ export function App() {
             children: currentBoard.elements,
             viewport: viewport,
             theme: currentBoard.theme,
+          })
+          .then(() => {
+            hasPendingPersistenceRef.current = false;
+            clearBoardCloseSnapshot(currentBoard.id);
           })
           .catch((err: Error) => {
             console.error('[App] Failed to save viewport:', err);

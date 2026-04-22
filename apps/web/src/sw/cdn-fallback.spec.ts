@@ -115,6 +115,40 @@ describe('cdn-fallback', () => {
     );
   });
 
+  it('prefers jsdelivr before origin by default', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async (input: RequestInfo | URL) => {
+        const url = String(input);
+
+        if (url.includes('cdn.jsdelivr.net')) {
+          return new Response('body { color: black; }', {
+            status: 200,
+            headers: {
+              'Content-Type': 'text/css',
+              'Content-Length': '120',
+            },
+          });
+        }
+
+        return new Response('missing', { status: 404 });
+      });
+
+    const result = await fetchFromCDNWithFallback(
+      'assets/index.css',
+      '3.0.0',
+      'https://origin.example.com'
+    );
+
+    expect(result?.source).toBe('jsdelivr');
+    expect(fetchMock.mock.calls[0]?.[0]).toContain(
+      'https://cdn.jsdelivr.net/npm/aitu-app@3.0.0/assets/index.css'
+    );
+    expect(fetchMock.mock.calls.some(([input]) =>
+      String(input).startsWith('https://origin.example.com/')
+    )).toBe(false);
+  });
+
   it('falls back to origin when jsdelivr fails', async () => {
     const fetchMock = vi
       .spyOn(globalThis, 'fetch')

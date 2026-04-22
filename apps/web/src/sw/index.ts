@@ -1850,8 +1850,8 @@ async function tryFetchStaticResourceFromCDN(
       APP_VERSION,
       location.origin,
       {
-        // 运行时 hash 资源优先同源，避免旧 SW 在发版窗口猜错 CDN 版本。
-        preferLocal: true,
+        // 运行时 hash 资源优先走 CDN，失败后再回源站兜底。
+        preferLocal: false,
       }
     );
 

@@ -113,7 +113,9 @@
       name="viewport"
       content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"
     />
-    <meta name="app-version" content="0.6.45" />
+    <meta name="app-version" content="0.6.52" />
+    <!-- 提前拉起 SW 脚本，尽量让后续静态资源命中 SW/CDN 链路 -->
+    <link rel="preload" href="/sw.js" as="script" />
     <style>
       :root {
         --app-boot-bg: radial-gradient(
@@ -139,9 +141,9 @@
         padding: 24px;
         background: var(--app-boot-bg);
         transition: opacity 0.28s ease, visibility 0.28s ease;
-        opacity: 0;
-        visibility: hidden;
-        pointer-events: none;
+        opacity: 1;
+        visibility: visible;
+        pointer-events: auto;
       }
 
       #app-boot-loading.is-visible {
@@ -278,6 +280,88 @@
         }
       }
     </style>
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      sizes="16x16"
+      href="./icons/favicon-16x16.svg"
+    />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      sizes="32x32"
+      href="./icons/favicon-32x32.svg"
+    />
+    <link rel="icon" type="image/svg+xml" href="./icons/favicon-new.svg" />
+    <link rel="icon" type="image/ico" href="./favicon.ico" />
+
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="./manifest.json?v=0.1.0" />
+
+    <!-- PWA Meta Tags -->
+    <meta name="theme-color" content="#ffffff" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Opentu" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="msapplication-TileColor" content="#ffffff" />
+    <meta name="msapplication-tap-highlight" content="no" />
+
+    <!-- Apple Touch Icons -->
+    <link
+      rel="apple-touch-icon"
+      sizes="192x192"
+      href="./icons/icon-192x192.svg"
+    />
+
+    <!-- Windows Tiles -->
+    <meta name="msapplication-TileImage" content="./icons/icon-192x192.svg" />
+    <meta
+      name="msapplication-square310x310logo"
+      content="./icons/icon-512x512.svg"
+    />
+
+    <link rel="stylesheet" href="./src/styles.scss" />
+  </head>
+  <body>
+    <div
+      id="app-boot-loading"
+      role="status"
+      aria-live="polite"
+      aria-label="应用正在加载"
+    >
+      <div class="app-boot-card">
+        <div class="app-boot-mark" aria-hidden="true">OpenTu.ai</div>
+        <p class="app-boot-title" data-app-boot-title>正在唤起工作台</p>
+        <p class="app-boot-tip" data-app-boot-tip>
+          脚本与资源加载中，马上就好...
+        </p>
+        <div
+          class="app-boot-progress"
+          role="progressbar"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          aria-valuenow="0"
+          data-app-boot-progress
+        >
+          <span class="app-boot-progress-track" aria-hidden="true">
+            <span
+              class="app-boot-progress-fill"
+              data-app-boot-progress-fill
+            ></span>
+          </span>
+          <span
+            class="app-boot-progress-value"
+            data-app-boot-progress-value
+          >
+            0%
+          </span>
+        </div>
+        <div class="app-boot-note" data-app-boot-note>
+          这一步主要是在准备编辑器运行环境，页面无需重复刷新。
+        </div>
+      </div>
+    </div>
     <script>
       (function () {
         var bootReady = false;
@@ -285,12 +369,6 @@
         var hasSWProgress = false;
         var simulationStartAt = Date.now();
         var simulationTimer = 0;
-        var showDelayTimer = window.setTimeout(function () {
-          var bootRoot = getBootRoot();
-          if (bootRoot && !bootReady) {
-            bootRoot.classList.add('is-visible');
-          }
-        }, 360);
         var slowTipTimer = window.setTimeout(function () {
           var tip = document.querySelector('[data-app-boot-tip]');
           if (tip) {
@@ -299,12 +377,15 @@
           }
         }, 4000);
         var removeTimer = 0;
+        var cdnConfigLoadStarted = false;
+        var resolveMainEntryReady = null;
+        var BOOT_CDN_PACKAGE_NAME = 'aitu-app';
+        var BOOT_CDN_BASE_URL = 'https://cdn.jsdelivr.net/npm/';
+        window.__OPENTU_START_MAIN_ENTRY__ = new Promise(function (resolve) {
+          resolveMainEntryReady = resolve;
+        });
 
         function clearBootTimers() {
-          if (showDelayTimer) {
-            window.clearTimeout(showDelayTimer);
-            showDelayTimer = 0;
-          }
           if (slowTipTimer) {
             window.clearTimeout(slowTipTimer);
             slowTipTimer = 0;
@@ -321,6 +402,146 @@
 
         function getBootRoot() {
           return document.getElementById('app-boot-loading');
+        }
+
+        function getBootAppVersion() {
+          var versionMeta = document.querySelector('meta[name="app-version"]');
+          return versionMeta
+            ? versionMeta.getAttribute('content') || '0.0.0'
+            : '0.0.0';
+        }
+
+        function isBootLocalDevelopment() {
+          return (
+            window.location.hostname === 'localhost' ||
+            window.location.hostname === '127.0.0.1' ||
+            window.location.hostname.endsWith('.localhost')
+          );
+        }
+
+        function toPreferredBootAssetUrl(localPath) {
+          if (!localPath || isBootLocalDevelopment()) {
+            return localPath;
+          }
+
+          var normalizedPath = String(localPath)
+            .replace(/^\.\//, '')
+            .replace(/^\//, '');
+
+          return (
+            BOOT_CDN_BASE_URL +
+            BOOT_CDN_PACKAGE_NAME +
+            '@' +
+            getBootAppVersion() +
+            '/' +
+            normalizedPath
+          );
+        }
+
+        function isManagedBootFallbackTarget(target) {
+          return !!(
+            target &&
+            typeof target.getAttribute === 'function' &&
+            target.getAttribute('data-cdn-fallback-managed') === '1'
+          );
+        }
+
+        function createLocalBootAssetNode(target, localUrl) {
+          var replacement = target.cloneNode(false);
+          replacement.setAttribute('data-fallback-attempted', '1');
+          replacement.removeAttribute('onerror');
+
+          var failureMessage =
+            target.tagName === 'SCRIPT'
+              ? '首屏脚本加载失败，请刷新页面后重试。'
+              : target.getAttribute('rel') === 'stylesheet'
+                ? '首屏样式加载失败，请刷新页面后重试。'
+                : '首屏资源加载失败，请刷新页面后重试。';
+
+          if (target.tagName === 'SCRIPT') {
+            replacement.setAttribute('src', localUrl);
+            replacement.onerror = function () {
+              markError(failureMessage);
+            };
+            return replacement;
+          }
+
+          replacement.setAttribute('href', localUrl);
+          replacement.onerror = function () {
+            markError(failureMessage);
+          };
+          return replacement;
+        }
+
+        window.__OPENTU_BOOT_ASSET_FALLBACK__ = function (target) {
+          if (!target) {
+            return false;
+          }
+
+          var localUrl =
+            target.getAttribute('data-local-src') ||
+            target.getAttribute('data-local-href');
+
+          if (!localUrl) {
+            return false;
+          }
+
+          if (target.getAttribute('data-fallback-attempted') === '1') {
+            markError(
+              target.tagName === 'SCRIPT'
+                ? '首屏脚本加载失败，请刷新页面后重试。'
+                : target.getAttribute('rel') === 'stylesheet'
+                  ? '首屏样式加载失败，请刷新页面后重试。'
+                  : '首屏资源加载失败，请刷新页面后重试。'
+            );
+            return true;
+          }
+
+          var replacement = createLocalBootAssetNode(target, localUrl);
+          if (target.parentNode) {
+            target.parentNode.replaceChild(replacement, target);
+          }
+          return true;
+        };
+
+        function appendManagedBootScript(localPath, onload, onfinalerror) {
+          var preferredUrl = toPreferredBootAssetUrl(localPath);
+          var script = document.createElement('script');
+          script.async = true;
+          script.setAttribute('data-cdn-fallback-managed', '1');
+          script.setAttribute('data-local-src', localPath);
+
+          var handleFinalFailure = function () {
+            if (typeof onfinalerror === 'function') {
+              onfinalerror();
+            }
+          };
+
+          if (!preferredUrl || preferredUrl === localPath) {
+            script.src = localPath;
+            script.onload = onload;
+            script.onerror = handleFinalFailure;
+            document.head.appendChild(script);
+            return;
+          }
+
+          script.src = preferredUrl;
+          script.onload = onload;
+          script.onerror = function () {
+            var localScript = document.createElement('script');
+            localScript.async = true;
+            localScript.src = localPath;
+            localScript.setAttribute('data-cdn-fallback-managed', '1');
+            localScript.setAttribute('data-fallback-attempted', '1');
+            localScript.onload = onload;
+            localScript.onerror = handleFinalFailure;
+            if (script.parentNode) {
+              script.parentNode.removeChild(script);
+            }
+            document.head.appendChild(localScript);
+          };
+
+          document.head.appendChild(script);
         }
 
         function clampProgress(value) {
@@ -444,10 +665,6 @@
           }
           setProgress(100);
           clearBootTimers();
-          var bootRoot = getBootRoot();
-          if (bootRoot) {
-            bootRoot.classList.add('is-visible');
-          }
           document.documentElement.classList.add('app-boot-error');
           var title = document.querySelector('[data-app-boot-title]');
           var tip = document.querySelector('[data-app-boot-tip]');
@@ -553,6 +770,112 @@
           }
         }
 
+        function getRuntimeCDNPreference() {
+          var preference = window.__OPENTU_CDN__ || window.__AITU_CDN__;
+          if (!preference || typeof preference !== 'object') {
+            return null;
+          }
+
+          var cdn = preference.cdn;
+          if (cdn !== 'jsdelivr' && cdn !== 'unpkg' && cdn !== 'local') {
+            return null;
+          }
+
+          return {
+            cdn: cdn,
+            latency:
+              typeof preference.latency === 'number' && isFinite(preference.latency)
+                ? Math.max(0, preference.latency)
+                : 0,
+            timestamp:
+              typeof preference.timestamp === 'number' &&
+              isFinite(preference.timestamp) &&
+              preference.timestamp > 0
+                ? preference.timestamp
+                : Date.now(),
+          };
+        }
+
+        function postCDNPreferenceToRegistration(registration, preference) {
+          if (!registration || !preference) {
+            return;
+          }
+
+          var payload = {
+            type: 'SW_CDN_SET_PREFERENCE',
+            cdn: preference.cdn,
+            latency: preference.latency,
+            timestamp: preference.timestamp,
+            version: (function () {
+              var versionMeta = document.querySelector(
+                'meta[name="app-version"]'
+              );
+              return versionMeta
+                ? versionMeta.getAttribute('content') || '0.0.0'
+                : '0.0.0';
+            })(),
+          };
+
+          var targets = [];
+          var maybeWorkers = [
+            navigator.serviceWorker.controller,
+            registration.active,
+            registration.waiting,
+            registration.installing,
+          ];
+
+          for (var i = 0; i < maybeWorkers.length; i++) {
+            var worker = maybeWorkers[i];
+            if (worker && targets.indexOf(worker) === -1) {
+              targets.push(worker);
+            }
+          }
+
+          for (var j = 0; j < targets.length; j++) {
+            targets[j].postMessage(payload);
+          }
+        }
+
+        function syncEarlyCDNPreference(registration) {
+          var cachedPreference = getRuntimeCDNPreference();
+          if (cachedPreference) {
+            postCDNPreferenceToRegistration(registration, cachedPreference);
+          }
+
+          var api = window.__OPENTU_CDN_API__ || window.__AITU_CDN_API__;
+          if (!api || typeof api.selectBestCDN !== 'function') {
+            return;
+          }
+
+          api
+            .selectBestCDN()
+            .then(function (preference) {
+              if (!preference || typeof preference !== 'object') {
+                return;
+              }
+
+              window.__OPENTU_CDN__ = preference;
+              window.__AITU_CDN__ = preference;
+              postCDNPreferenceToRegistration(registration, {
+                cdn: preference.cdn,
+                latency:
+                  typeof preference.latency === 'number' &&
+                  isFinite(preference.latency)
+                    ? Math.max(0, preference.latency)
+                    : 0,
+                timestamp:
+                  typeof preference.timestamp === 'number' &&
+                  isFinite(preference.timestamp) &&
+                  preference.timestamp > 0
+                    ? preference.timestamp
+                    : Date.now(),
+              });
+            })
+            .catch(function (error) {
+              console.warn('[Boot] Early CDN preference sync failed:', error);
+            });
+        }
+
         function setupEarlyServiceWorkerBootstrap() {
           if (!('serviceWorker' in navigator)) {
             return;
@@ -581,6 +904,7 @@
             window.__OPENTU_SW_REGISTRATION_PROMISE__ = navigator.serviceWorker
               .register('/sw.js')
               .then(function (registration) {
+                syncEarlyCDNPreference(registration);
                 setProgress(54, {
                   tip: '启动缓存服务已连接，正在准备资源清单...',
                   source: 'phase',
@@ -616,14 +940,43 @@
             window.__OPENTU_SW_REGISTRATION_PROMISE__.then(function (
               registration
             ) {
+              syncEarlyCDNPreference(registration);
               requestSWBootProgress(registration);
             });
           }
         }
 
+        function loadCDNConfigAndBootstrap() {
+          if (cdnConfigLoadStarted) {
+            return;
+          }
+          cdnConfigLoadStarted = true;
+
+          appendManagedBootScript(
+            './cdn-config.js',
+            function () {
+              setupEarlyServiceWorkerBootstrap();
+              if (resolveMainEntryReady) {
+                resolveMainEntryReady();
+                resolveMainEntryReady = null;
+              }
+            },
+            function () {
+              console.warn(
+                '[Boot] CDN config load failed, fallback to local bootstrap'
+              );
+              setupEarlyServiceWorkerBootstrap();
+              if (resolveMainEntryReady) {
+                resolveMainEntryReady();
+                resolveMainEntryReady = null;
+              }
+            }
+          );
+        }
+
         renderProgress();
         startSimulatedProgress();
-        setupEarlyServiceWorkerBootstrap();
+        loadCDNConfigAndBootstrap();
 
         window.addEventListener(
           'error',
@@ -634,6 +987,9 @@
               target !== window &&
               (target.src || target.href)
             ) {
+              if (isManagedBootFallbackTarget(target)) {
+                return;
+              }
               var resourceUrl = target.src || target.href || '';
               var resourceName = resourceUrl.split('/').pop() || '资源文件';
               markError(resourceName + ' 加载失败，请刷新页面后重试。');
@@ -665,94 +1021,13 @@
         );
       })();
     </script>
-
-    <link
-      rel="icon"
-      type="image/svg+xml"
-      sizes="16x16"
-      href="./icons/favicon-16x16.svg"
-    />
-    <link
-      rel="icon"
-      type="image/svg+xml"
-      sizes="32x32"
-      href="./icons/favicon-32x32.svg"
-    />
-    <link rel="icon" type="image/svg+xml" href="./icons/favicon-new.svg" />
-    <link rel="icon" type="image/ico" href="./favicon.ico" />
-
-    <!-- PWA Manifest -->
-    <link rel="manifest" href="./manifest.json?v=0.1.0" />
-
-    <!-- PWA Meta Tags -->
-    <meta name="theme-color" content="#ffffff" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <meta name="apple-mobile-web-app-title" content="Opentu" />
-    <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="msapplication-TileColor" content="#ffffff" />
-    <meta name="msapplication-tap-highlight" content="no" />
-
-    <!-- Apple Touch Icons -->
-    <link
-      rel="apple-touch-icon"
-      sizes="192x192"
-      href="./icons/icon-192x192.svg"
-    />
-
-    <!-- Windows Tiles -->
-    <meta name="msapplication-TileImage" content="./icons/icon-192x192.svg" />
-    <meta
-      name="msapplication-square310x310logo"
-      content="./icons/icon-512x512.svg"
-    />
-
-    <link rel="stylesheet" href="./src/styles.scss" />
-
-    <!-- CDN 智能选择器（可选，用于提前检测最佳 CDN） -->
-    <script src="./cdn-config.js" defer></script>
-  </head>
-  <body>
-    <div
-      id="app-boot-loading"
-      role="status"
-      aria-live="polite"
-      aria-label="应用正在加载"
-    >
-      <div class="app-boot-card">
-        <div class="app-boot-mark" aria-hidden="true">OpenTu.ai</div>
-        <p class="app-boot-title" data-app-boot-title>正在唤起工作台</p>
-        <p class="app-boot-tip" data-app-boot-tip>
-          脚本与资源加载中，马上就好...
-        </p>
-        <div
-          class="app-boot-progress"
-          role="progressbar"
-          aria-valuemin="0"
-          aria-valuemax="100"
-          aria-valuenow="0"
-          data-app-boot-progress
-        >
-          <span class="app-boot-progress-track" aria-hidden="true">
-            <span
-              class="app-boot-progress-fill"
-              data-app-boot-progress-fill
-            ></span>
-          </span>
-          <span
-            class="app-boot-progress-value"
-            data-app-boot-progress-value
-          >
-            0%
-          </span>
-        </div>
-        <div class="app-boot-note" data-app-boot-note>
-          这一步主要是在准备编辑器运行环境，页面无需重复刷新。
-        </div>
-      </div>
-    </div>
     <div id="root"></div>
-    <script type="module" src="./src/main.tsx"></script>
+    <script type="module">
+      (async function () {
+        await (window.__OPENTU_START_MAIN_ENTRY__ || Promise.resolve());
+        await import('./src/main.tsx');
+      })();
+    </script>
   </body>
   <!-- PostHog Analytics -->
   <!-- 本地开发环境（localhost/127.0.0.1）默认不加载，除非 URL 带 report=1 参数 -->
