@@ -1,3 +1,13 @@
+## 0.6.53 (2026-04-22)
+
+### 🩹 Fixes
+
+- 修正首屏 loading 与 CDN 优先加载链路 ([1b898a46](https://github.com/ljquan/aitu/commit/1b898a46))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+
 ## 0.6.46 (2026-04-22)
 
 ### 🩹 Fixes
