@@ -146,3 +146,45 @@
 - 失效 chunk 只自恢复一次
 
 后面继续做启动性能和工具系统时，只要这 6 条不破，很多体验问题都会提前消失。
+
+---
+
+## 2026-04-22：SW 空闲预取与常驻工具条恢复经验
+
+### 现象
+
+- 左侧常驻工具 icon 只有在点开工具抽屉后才出现
+- `SW` 日志显示已经激活，但页面侧 `SWChannelClient` 多次初始化超时
+- 开发态 `idle-prefetch-manifest.json` 缺失，`prefetchIdleGroups` 直接中止
+
+### 根因
+
+- 页面把“有 `controller`”误当成“有可用 `Service Worker`”，但实际存在 `ready.active` 已激活、页面仍未被 controller 接管的窗口期
+- 常驻工具条显示链路和完整 `tool-window runtime` 启用链路绑死，导致“显示 icon”也被重运行时阻塞
+- UI 又额外依赖 `tool-windows` 分组预取完成信号，开发态 manifest 缺失时就会一直卡住
+- `idle prefetch` 单次跑批如果人为截断，完成状态就会长期失真，最后只能靠超时兜底
+
+### 最终方案
+
+- `SWChannelClient` 初始化放宽为：`controller` 或 `navigator.serviceWorker.ready.active` 任一可用即可建通道
+- 常驻工具条拆成两段：
+  icon 显示单独启用；点击 icon 时再按需启完整 `tool-window runtime`
+- `toolWindowService` 恢复 launcher 状态时优先读取完整工具定义，保证首屏图标和标题完整
+- `SW` 在 `activate` 后自动消费 idle prefetch 默认分组，并把完成状态广播给页面
+- 页面监听 `SW_IDLE_PREFETCH_STATUS`，但只把它当优化信号；超时后直接放行常驻工具条，避免功能被优化链路反向阻塞
+- `idle prefetch` 仍用小并发，但不能再裁剪总任务数，否则完成分组永远不闭环
+
+### 这次最值得固化的规则
+
+- `Service Worker` 可用性判断要区分：
+  `controller` 是“当前页已受控”，`ready.active` 是“后台已有可用 worker”，两者不是一回事
+- 首屏可见能力和重运行时能力要解耦：
+  先让用户看到、点得到，再做按需增强
+- 预取状态只能作为加速信号，不能作为功能显示前置条件
+- 开发态缺 manifest、生产态资源回源失败，都要保证 UI 有可退化路径
+
+### 排障顺序建议
+
+1. 先看 `navigator.serviceWorker.controller` 和 `navigator.serviceWorker.ready.active` 是否分叉
+2. 再看显示链路是否被 runtime 初始化、manifest、预取完成状态串联阻塞
+3. 最后才看图标数据源、launcher 恢复、工具定义是否缺字段

@@ -236,7 +236,8 @@ export const CreationToolbar: React.FC<ToolbarSectionProps> = ({
   embedded = false,
   iconMode = false,
   onOpenMediaLibrary,
-  deferredFeaturesEnabled = false,
+  minimizedToolsBarEnabled = false,
+  onEnableToolWindows,
 }) => {
   const board = useBoard();
   const { appState, openDialog } = useDrawnix();
@@ -896,9 +897,9 @@ export const CreationToolbar: React.FC<ToolbarSectionProps> = ({
         )}
       <MoreToolsButton embedded={embedded} />
       {/* 最小化工具栏 - 显示最小化和常驻的工具图标 */}
-      {embedded && deferredFeaturesEnabled && (
+      {embedded && minimizedToolsBarEnabled && (
         <Suspense fallback={null}>
-          <MinimizedToolsBar />
+          <MinimizedToolsBar ensureToolWindowsEnabled={onEnableToolWindows} />
         </Suspense>
       )}
     </Stack.Row>

@@ -55,6 +55,16 @@ export interface UnifiedToolbarProps {
    * 延后功能层是否已启用
    */
   deferredFeaturesEnabled?: boolean;
+
+  /**
+   * 常驻工具条是否已启用
+   */
+  minimizedToolsBarEnabled?: boolean;
+
+  /**
+   * 确保工具窗口运行时已启用
+   */
+  onEnableToolWindows?: () => void;
 }
 
 /**
@@ -87,4 +97,14 @@ export interface ToolbarSectionProps {
    * 延后功能层是否已启用
    */
   deferredFeaturesEnabled?: boolean;
+
+  /**
+   * 常驻工具条是否已启用
+   */
+  minimizedToolsBarEnabled?: boolean;
+
+  /**
+   * 确保工具窗口运行时已启用
+   */
+  onEnableToolWindows?: () => void;
 }

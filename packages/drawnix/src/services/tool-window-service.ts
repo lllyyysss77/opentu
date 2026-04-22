@@ -12,6 +12,7 @@ import {
   ToolWindowLaunchMode,
   ToolWindowState,
 } from '../types/toolbox.types';
+import { toolboxService } from './toolbox-service';
 
 /** localStorage key for pinned tools */
 const PINNED_TOOLS_STORAGE_KEY = 'aitu-pinned-tools';
@@ -583,6 +584,20 @@ class ToolWindowService {
   private createLauncherState(toolId: string): ToolWindowState | undefined {
     if (!this.pinnedToolIds.has(toolId)) {
       return undefined;
+    }
+
+    const fullTool = toolboxService.getToolById(toolId);
+    if (fullTool) {
+      return {
+        instanceId: `${LAUNCHER_INSTANCE_PREFIX}${toolId}`,
+        toolId,
+        instanceIndex: 0,
+        tool: fullTool,
+        status: 'closed',
+        activationOrder: 0,
+        isPinned: true,
+        isLauncher: true,
+      };
     }
 
     const info = this.pinnedToolInfos.get(toolId);

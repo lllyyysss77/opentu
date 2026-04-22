@@ -130,6 +130,11 @@ import {
 import { DeferredAIInputBar } from './components/startup/DeferredAIInputBar';
 import { ChatDrawer } from './components/chat-drawer';
 
+interface SWIdlePrefetchStatusMessage {
+  type: 'SW_IDLE_PREFETCH_STATUS';
+  completedGroups?: string[];
+}
+
 const DrawnixDeferredFeatures = lazy(() =>
   import('./components/startup/DrawnixDeferredFeatures').then((module) => ({
     default: module.DrawnixDeferredFeatures,
@@ -185,7 +190,7 @@ export type DrawnixProps = {
   currentBoardId?: string | null;
 } & Omit<React.HTMLAttributes<HTMLDivElement>, 'onChange'>;
 
-const DEFAULT_IDLE_PREFETCH_GROUPS: IdlePrefetchGroup[] = [];
+const DEFAULT_IDLE_PREFETCH_GROUPS: IdlePrefetchGroup[] = ['tool-windows'];
 
 export const Drawnix: React.FC<DrawnixProps> = ({
   value,
@@ -236,6 +241,8 @@ export const Drawnix: React.FC<DrawnixProps> = ({
   const [performancePanelEnabled, setPerformancePanelEnabled] = useState(false);
   const [toolWindowManagerEnabled, setToolWindowManagerEnabled] =
     useState(false);
+  const [minimizedToolsBarEnabled, setMinimizedToolsBarEnabled] =
+    useState(false);
 
   // 使用 ref 来保存 board 的最新引用,避免 useCallback 依赖问题
   const boardRef = useRef<DrawnixBoard | null>(null);
@@ -259,6 +266,7 @@ export const Drawnix: React.FC<DrawnixProps> = ({
   const enableToolWindows = useCallback(
     (groups: IdlePrefetchGroup[] = ['tool-windows']) => {
       enableDeferredRuntime(groups);
+      setMinimizedToolsBarEnabled(true);
       setToolWindowManagerEnabled(true);
     },
     [enableDeferredRuntime]
@@ -457,6 +465,78 @@ export const Drawnix: React.FC<DrawnixProps> = ({
       window.clearTimeout(timer);
     };
   }, [enableDeferredRuntime, enableToolWindows]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
+      return;
+    }
+
+    let resolvedBySW = false;
+    const isLocalDevHost =
+      window.location.hostname === 'localhost' ||
+      window.location.hostname === '127.0.0.1';
+
+    const handleIdlePrefetchStatus = (
+      event: MessageEvent<SWIdlePrefetchStatusMessage>
+    ) => {
+      if (event.data?.type !== 'SW_IDLE_PREFETCH_STATUS') {
+        return;
+      }
+
+      if (!event.data.completedGroups?.includes('tool-windows')) {
+        return;
+      }
+
+      resolvedBySW = true;
+      setMinimizedToolsBarEnabled(true);
+    };
+
+    navigator.serviceWorker.addEventListener(
+      'message',
+      handleIdlePrefetchStatus
+    );
+
+    const message = { type: 'SW_IDLE_PREFETCH_STATUS_GET' as const };
+    const controller = navigator.serviceWorker.controller;
+    if (controller) {
+      controller.postMessage(message);
+    } else {
+      navigator.serviceWorker.ready
+        .then((registration) => {
+          registration.active?.postMessage(message);
+        })
+        .catch(() => {
+          // Ignore status sync failures; runtime still loads on direct interaction.
+        });
+    }
+
+    const fallbackTimer = window.setTimeout(() => {
+      if (resolvedBySW || minimizedToolsBarEnabled) {
+        return;
+      }
+
+      // idle prefetch 只是优化项，不应阻塞常驻工具条显示。
+      // 开发态或 manifest 缺失时，超时后直接放行显示，点击工具时再按需启完整运行时。
+      if (isLocalDevHost) {
+        console.info(
+          '[Drawnix] SW idle prefetch status unresolved in dev, enabling minimized tools bar fallback'
+        );
+      } else {
+        console.warn(
+          '[Drawnix] SW idle prefetch status unresolved, enabling minimized tools bar fallback'
+        );
+      }
+      setMinimizedToolsBarEnabled(true);
+    }, 2200);
+
+    return () => {
+      window.clearTimeout(fallbackTimer);
+      navigator.serviceWorker.removeEventListener(
+        'message',
+        handleIdlePrefetchStatus
+      );
+    };
+  }, [minimizedToolsBarEnabled]);
 
   useEffect(() => {
     const idleCallback = (
@@ -693,6 +773,8 @@ export const Drawnix: React.FC<DrawnixProps> = ({
                       versionUpdateEnabled={versionUpdateEnabled}
                       performancePanelEnabled={performancePanelEnabled}
                       toolWindowManagerEnabled={toolWindowManagerEnabled}
+                      minimizedToolsBarEnabled={minimizedToolsBarEnabled}
+                      enableToolWindows={enableToolWindows}
                     />
                   </DrawnixContext.Provider>
                 </ChatDrawerProvider>
@@ -726,6 +808,8 @@ interface DrawnixContentProps {
   versionUpdateEnabled: boolean;
   performancePanelEnabled: boolean;
   toolWindowManagerEnabled: boolean;
+  minimizedToolsBarEnabled: boolean;
+  enableToolWindows: () => void;
   onChange?: (value: BoardChangeData) => void;
   onSelectionChange: (selection: Selection | null) => void;
   onViewportChange?: (value: Viewport) => void;
@@ -773,6 +857,8 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
   versionUpdateEnabled,
   performancePanelEnabled,
   toolWindowManagerEnabled,
+  minimizedToolsBarEnabled,
+  enableToolWindows,
   cloudSyncOpen,
   onChange,
   onSelectionChange,
@@ -1360,6 +1446,8 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
             onKnowledgeBaseToggle={handleKnowledgeBaseToggle}
             onOpenMediaLibrary={handleOpenMediaLibrary}
             deferredFeaturesEnabled={toolWindowManagerEnabled}
+            minimizedToolsBarEnabled={minimizedToolsBarEnabled}
+            onEnableToolWindows={enableToolWindows}
           />
           {canvasAudioPlayerEnabled && (
             <Suspense fallback={null}>

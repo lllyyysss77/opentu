@@ -32,7 +32,44 @@ const IDLE_PREFETCH_GROUPS = [
   'external-skills',
 ] as const;
 
+const IDLE_PREFETCH_DEFAULTS = ['tool-windows'] as const;
+
 type IdlePrefetchGroup = (typeof IDLE_PREFETCH_GROUPS)[number];
+
+function normalizePathForChunking(id: string): string {
+  return id.replace(/\\/g, '/');
+}
+
+function resolveIdlePrefetchGroup(id: string): IdlePrefetchGroup | undefined {
+  const normalizedId = normalizePathForChunking(id);
+
+  if (
+    normalizedId.includes('/packages/drawnix/src/components/startup/DrawnixDeferredRuntime.tsx') ||
+    normalizedId.includes('/packages/drawnix/src/components/startup/DrawnixDeferredFeatures.tsx') ||
+    normalizedId.includes('/packages/drawnix/src/components/startup/DeferredMediaLibraryModal.tsx') ||
+    normalizedId.includes('/packages/drawnix/src/components/startup/DeferredSyncSettings.tsx') ||
+    normalizedId.includes('/packages/drawnix/src/components/toolbox-drawer/') ||
+    normalizedId.includes('/packages/drawnix/src/components/project-drawer/') ||
+    normalizedId.includes('/packages/drawnix/src/components/backup-restore/') ||
+    normalizedId.includes('/packages/drawnix/src/components/performance-panel/') ||
+    normalizedId.includes('/packages/drawnix/src/components/command-palette/') ||
+    normalizedId.includes('/packages/drawnix/src/components/canvas-search/') ||
+    normalizedId.includes('/packages/drawnix/src/components/toolbar/minimized-tools-bar/') ||
+    normalizedId.includes('/packages/drawnix/src/components/settings-dialog/') ||
+    normalizedId.includes('/packages/drawnix/src/services/tool-window-service') ||
+    normalizedId.includes('/packages/drawnix/src/tools/')
+  ) {
+    return 'tool-windows';
+  }
+
+  if (
+    normalizedId.includes('/packages/drawnix/src/generated/external-skills-bundle.json')
+  ) {
+    return 'external-skills';
+  }
+
+  return undefined;
+}
 
 /**
  * Vite 插件：生成 precache-manifest.json
@@ -208,7 +245,7 @@ function idlePrefetchManifestPlugin(): Plugin {
             {
               version: appVersion,
               timestamp: new Date().toISOString(),
-              defaults: [],
+              defaults: [...IDLE_PREFETCH_DEFAULTS],
               groups,
             },
             null,
@@ -290,6 +327,13 @@ export default defineConfig({
     modulePreload: false,
     commonjsOptions: {
       transformMixedEsModules: true,
+    },
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          return resolveIdlePrefetchGroup(id);
+        },
+      },
     },
   },
 });

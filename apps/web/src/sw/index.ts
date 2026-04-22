@@ -1067,6 +1067,22 @@ interface IdlePrefetchManifest {
   groups: Record<string, Array<{ url: string; revision: string }>>;
 }
 
+const IDLE_PREFETCH_CONCURRENCY = 2;
+const IDLE_PREFETCH_RECENT_FETCH_WINDOW_MS = 1500;
+let lastObservedClientFetchAt = 0;
+const completedIdlePrefetchEntries = new Set<string>();
+const activeIdlePrefetchEntries = new Set<string>();
+const completedIdlePrefetchGroups = new Set<string>();
+
+function logSWDebug(message: string, detail?: unknown): void {
+  if (detail === undefined) {
+    console.info(`[SWDebug] ${message}`);
+    return;
+  }
+
+  console.info(`[SWDebug] ${message}`, detail);
+}
+
 type SWBootProgressPhase =
   | 'idle'
   | 'installing'
@@ -1178,6 +1194,66 @@ async function getIdlePrefetchManifest(): Promise<IdlePrefetchManifest | null> {
     idlePrefetchManifestPromise = loadIdlePrefetchManifest();
   }
   return idlePrefetchManifestPromise;
+}
+
+async function broadcastIdlePrefetchStatus(
+  target?: Client | null
+): Promise<void> {
+  const payload = {
+    type: 'SW_IDLE_PREFETCH_STATUS' as const,
+    completedGroups: Array.from(completedIdlePrefetchGroups),
+    version: APP_VERSION,
+    updatedAt: Date.now(),
+  };
+
+  if (target) {
+    logSWDebug('broadcast idle prefetch status to target client', {
+      clientId: target.id,
+      completedGroups: payload.completedGroups,
+    });
+    target.postMessage(payload);
+    return;
+  }
+
+  const clients = await sw.clients.matchAll({
+    type: 'window',
+    includeUncontrolled: true,
+  });
+
+  for (const client of clients) {
+    client.postMessage(payload);
+  }
+
+  logSWDebug('broadcast idle prefetch status to all clients', {
+    clientCount: clients.length,
+    completedGroups: payload.completedGroups,
+  });
+}
+
+function createIdlePrefetchEntryKey(url: string, revision: string): string {
+  return `${url}@${revision}`;
+}
+
+function shouldDeferIdlePrefetch(): boolean {
+  if (lastObservedClientFetchAt === 0) {
+    return false;
+  }
+
+  return (
+    Date.now() - lastObservedClientFetchAt < IDLE_PREFETCH_RECENT_FETCH_WINDOW_MS
+  );
+}
+
+function waitForIdlePrefetchWindow(): Promise<void> {
+  if (lastObservedClientFetchAt === 0) {
+    return Promise.resolve();
+  }
+
+  const elapsed = Date.now() - lastObservedClientFetchAt;
+  const waitMs = Math.max(0, IDLE_PREFETCH_RECENT_FETCH_WINDOW_MS - elapsed) + 100;
+  return new Promise((resolve) => {
+    setTimeout(resolve, waitMs);
+  });
 }
 
 function isOriginFirstStaticPath(pathname: string): boolean {
@@ -1436,41 +1512,132 @@ async function precacheStaticFiles(
   ).length;
 }
 
-async function prefetchIdleGroups(groupNames: string[]): Promise<void> {
+async function prefetchIdleGroups(groupNames: string[]): Promise<string[]> {
+  logSWDebug('prefetchIdleGroups start', { groupNames });
+
   if (groupNames.length === 0) {
-    return;
+    return [];
   }
 
   const manifest = await getIdlePrefetchManifest();
   if (!manifest) {
-    return;
+    logSWDebug('prefetchIdleGroups aborted: manifest missing');
+    return [];
   }
 
   const files = new Map<string, { url: string; revision: string }>();
   for (const groupName of groupNames) {
     const entries = manifest.groups[groupName] || [];
     for (const entry of entries) {
-      files.set(entry.url, entry);
+      const entryKey = createIdlePrefetchEntryKey(entry.url, entry.revision);
+      if (
+        completedIdlePrefetchEntries.has(entryKey) ||
+        activeIdlePrefetchEntries.has(entryKey)
+      ) {
+        continue;
+      }
+
+      files.set(entryKey, entry);
     }
   }
 
   if (files.size === 0) {
-    return;
+    const alreadyCompletedGroups = groupNames.filter((groupName) => {
+      const entries = manifest.groups[groupName] || [];
+      return (
+        entries.length > 0 &&
+        entries.every((entry) =>
+          completedIdlePrefetchEntries.has(
+            createIdlePrefetchEntryKey(entry.url, entry.revision)
+          )
+        )
+      );
+    });
+    alreadyCompletedGroups.forEach((groupName) =>
+      completedIdlePrefetchGroups.add(groupName)
+    );
+    logSWDebug('prefetchIdleGroups no pending files', {
+      groupNames,
+      alreadyCompletedGroups,
+    });
+    return alreadyCompletedGroups;
   }
 
   const cache = await caches.open(STATIC_CACHE_NAME);
-  const queue = Array.from(files.values());
-  const CONCURRENCY = 2;
+  const queue = Array.from(files.entries());
 
-  for (let index = 0; index < queue.length; index += CONCURRENCY) {
-    const batch = queue.slice(index, index + CONCURRENCY);
-    await Promise.allSettled(
-      batch.map(({ url, revision }) => cacheFile(cache, url, revision))
+  logSWDebug('prefetchIdleGroups queue prepared', {
+    groupNames,
+    totalCandidates: files.size,
+    queuedEntries: queue.length,
+  });
+
+  for (let index = 0; index < queue.length; index += IDLE_PREFETCH_CONCURRENCY) {
+    while (shouldDeferIdlePrefetch()) {
+      await waitForIdlePrefetchWindow();
+    }
+
+    const batch = queue.slice(index, index + IDLE_PREFETCH_CONCURRENCY);
+    batch.forEach(([entryKey]) => activeIdlePrefetchEntries.add(entryKey));
+    const results = await Promise.allSettled(
+      batch.map(([, { url, revision }]) => cacheFile(cache, url, revision))
     );
+    results.forEach((result, batchIndex) => {
+      const [entryKey] = batch[batchIndex];
+      activeIdlePrefetchEntries.delete(entryKey);
+
+      if (result.status === 'fulfilled' && result.value.success) {
+        completedIdlePrefetchEntries.add(entryKey);
+      }
+    });
   }
+
+  const newlyCompletedGroups = groupNames.filter((groupName) => {
+    const entries = manifest.groups[groupName] || [];
+    return (
+      entries.length > 0 &&
+      entries.every((entry) =>
+        completedIdlePrefetchEntries.has(
+          createIdlePrefetchEntryKey(entry.url, entry.revision)
+        )
+      )
+    );
+  });
+
+  newlyCompletedGroups.forEach((groupName) =>
+    completedIdlePrefetchGroups.add(groupName)
+  );
+
+  logSWDebug('prefetchIdleGroups finished', {
+    groupNames,
+    newlyCompletedGroups,
+    completedEntries: completedIdlePrefetchEntries.size,
+  });
+
+  return newlyCompletedGroups;
+}
+
+async function prefetchDefaultIdleGroups(): Promise<void> {
+  const manifest = await getIdlePrefetchManifest();
+  const defaultGroups = manifest?.defaults?.filter(
+    (group): group is string => typeof group === 'string' && group.length > 0
+  );
+
+  if (!defaultGroups || defaultGroups.length === 0) {
+    logSWDebug('prefetchDefaultIdleGroups skipped: no default groups');
+    return;
+  }
+
+  logSWDebug('prefetchDefaultIdleGroups start', { defaultGroups });
+  const completedGroups = await prefetchIdleGroups(defaultGroups);
+  if (completedGroups.length > 0) {
+    await broadcastIdlePrefetchStatus();
+  }
+  logSWDebug('prefetchDefaultIdleGroups done', { completedGroups });
 }
 
 sw.addEventListener('install', (event: ExtendableEvent) => {
+  logSWDebug('install event received', { version: APP_VERSION });
   // 立即 skipWaiting，不等待 precache 完成
   // 这样 SW 可以尽快进入 activate → claim，拦截后续的 JS/CSS 请求
   // precache 在后台继续执行，cache miss 时走 CDN 回退
@@ -1516,7 +1683,7 @@ sw.addEventListener('install', (event: ExtendableEvent) => {
 });
 
 sw.addEventListener('activate', (event: ExtendableEvent) => {
-  // console.log('Service Worker activated');
+  logSWDebug('activate event received', { version: APP_VERSION });
 
   setSWBootProgress({
     phase: 'activating',
@@ -1536,11 +1703,22 @@ sw.addEventListener('activate', (event: ExtendableEvent) => {
       } catch (error) {
         console.warn('Failed to load persisted CDN preference:', error);
       }
+      logSWDebug('activate: before clients.claim');
       await sw.clients.claim();
+      logSWDebug('activate: after clients.claim');
+
+      // 激活后自动消费 idle-prefetch manifest 的默认分组。
+      // prefetchIdleGroups 会在最近有客户端请求时自动延后，避免抢占首屏。
+      setTimeout(() => {
+        logSWDebug('activate: scheduling default idle prefetch');
+        void prefetchDefaultIdleGroups();
+      }, 800);
+
       // 使用 channelManager 通知所有客户端 SW 已更新
       const cm = getChannelManager();
       if (cm) {
         cm.sendSWActivated(APP_VERSION);
+        logSWDebug('activate: sent sw:activated broadcast');
       }
       setSWBootProgress({
         phase: 'activated',
@@ -1822,7 +2000,17 @@ sw.addEventListener('message', (event: ExtendableMessageEvent) => {
 
   if (event.data && event.data.type === 'SW_BOOT_PROGRESS_GET') {
     const client = event.source as Client | null;
+    logSWDebug('message: SW_BOOT_PROGRESS_GET', { clientId: client?.id ?? null });
     void broadcastSWBootProgress(client);
+    return;
+  }
+
+  if (event.data && event.data.type === 'SW_IDLE_PREFETCH_STATUS_GET') {
+    const client = event.source as Client | null;
+    logSWDebug('message: SW_IDLE_PREFETCH_STATUS_GET', {
+      clientId: client?.id ?? null,
+    });
+    void broadcastIdlePrefetchStatus(client);
     return;
   }
 
@@ -1832,7 +2020,15 @@ sw.addEventListener('message', (event: ExtendableMessageEvent) => {
           (group: unknown): group is string => typeof group === 'string'
         )
       : [];
-    event.waitUntil(prefetchIdleGroups(groups));
+    logSWDebug('message: SW_PREFETCH_GROUPS', { groups });
+    event.waitUntil(
+      prefetchIdleGroups(groups).then((completedGroups) => {
+        if (completedGroups.length > 0) {
+          return broadcastIdlePrefetchStatus();
+        }
+        return Promise.resolve();
+      })
+    );
     return;
   }
 
@@ -2656,6 +2852,8 @@ sw.addEventListener('fetch', (event: FetchEvent) => {
     });
     return;
   }
+
+  lastObservedClientFetchAt = startTime;
 
   // 拦截缓存 URL 请求 (/__aitu_cache__/{type}/{taskId}.{ext})
   if (
