@@ -1,3 +1,13 @@
+## 0.6.54 (2026-04-22)
+
+### 🩹 Fixes
+
+- 修正首屏资源 CDN 回退路径归一化 ([2d3da03e](https://github.com/ljquan/aitu/commit/2d3da03e))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+
 ## 0.6.53 (2026-04-22)
 
 ### 🩹 Fixes

@@ -1,6 +1,19 @@
 {
   "versions": [
     {
+      "version": "0.6.54",
+      "date": "2026-04-22",
+      "changes": {
+        "features": [],
+        "fixes": [
+          "修正首屏资源 CDN 回退路径归一化"
+        ],
+        "improvements": []
+      },
+      "type": "patch",
+      "highlights": "修正首屏资源 CDN 回退路径归一化"
+    },
+    {
       "version": "0.6.53",
       "date": "2026-04-22",
       "changes": {
