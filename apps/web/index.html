@@ -113,7 +113,7 @@
       name="viewport"
       content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"
     />
-    <meta name="app-version" content="0.6.52" />
+    <meta name="app-version" content="0.6.53" />
     <!-- 提前拉起 SW 脚本，尽量让后续静态资源命中 SW/CDN 链路 -->
     <link rel="preload" href="/sw.js" as="script" />
     <style>
@@ -366,7 +366,6 @@
       (function () {
         var bootReady = false;
         var bootProgress = 0;
-        var hasSWProgress = false;
         var simulationStartAt = Date.now();
         var simulationTimer = 0;
         var slowTipTimer = window.setTimeout(function () {
@@ -381,9 +380,64 @@
         var resolveMainEntryReady = null;
         var BOOT_CDN_PACKAGE_NAME = 'aitu-app';
         var BOOT_CDN_BASE_URL = 'https://cdn.jsdelivr.net/npm/';
+        var BOOT_LOCAL_RETRY_STORAGE_KEY = '__OPENTU_BOOT_LOCAL_RETRY_AT__';
+        var BOOT_LOCAL_RETRY_TTL_MS = 2 * 60 * 1000;
+        var forceLocalBootAssets = false;
         window.__OPENTU_START_MAIN_ENTRY__ = new Promise(function (resolve) {
           resolveMainEntryReady = resolve;
         });
+
+        (function initializeBootLocalRetryFlag() {
+          try {
+            var retryAtRaw = window.sessionStorage.getItem(
+              BOOT_LOCAL_RETRY_STORAGE_KEY
+            );
+            if (!retryAtRaw) {
+              return;
+            }
+
+            var retryAt = Number(retryAtRaw);
+            if (!isFinite(retryAt) || Date.now() - retryAt > BOOT_LOCAL_RETRY_TTL_MS) {
+              window.sessionStorage.removeItem(BOOT_LOCAL_RETRY_STORAGE_KEY);
+              return;
+            }
+
+            forceLocalBootAssets = true;
+          } catch (_error) {
+            forceLocalBootAssets = false;
+          }
+        })();
+
+        function clearBootLocalRetryFlag() {
+          forceLocalBootAssets = false;
+          try {
+            window.sessionStorage.removeItem(BOOT_LOCAL_RETRY_STORAGE_KEY);
+          } catch (_error) {
+            // ignore sessionStorage cleanup failures
+          }
+        }
+
+        function scheduleBootSelfHealReload() {
+          if (isBootLocalDevelopment() || forceLocalBootAssets) {
+            return false;
+          }
+
+          try {
+            window.sessionStorage.setItem(
+              BOOT_LOCAL_RETRY_STORAGE_KEY,
+              String(Date.now())
+            );
+          } catch (_error) {
+            return false;
+          }
+
+          var tip = document.querySelector('[data-app-boot-tip]');
+          if (tip) {
+            tip.textContent = '首屏资源回退中，正在自动重试...';
+          }
+          window.location.reload();
+          return true;
+        }
 
         function clearBootTimers() {
           if (slowTipTimer) {
@@ -420,13 +474,20 @@
         }
 
         function toPreferredBootAssetUrl(localPath) {
-          if (!localPath || isBootLocalDevelopment()) {
+          if (!localPath || isBootLocalDevelopment() || forceLocalBootAssets) {
             return localPath;
           }
 
-          var normalizedPath = String(localPath)
-            .replace(/^\.\//, '')
-            .replace(/^\//, '');
+          var normalizedPath = String(localPath).trim();
+
+          if (/^https?:\/\//i.test(normalizedPath)) {
+            return normalizedPath;
+          }
+
+          normalizedPath = normalizedPath
+            .replace(/^\.?\//, '')
+            .replace(/^npm\/aitu-app@[^/]+\//, '')
+            .replace(/^aitu-app@[^/]+\//, '');
 
           return (
             BOOT_CDN_BASE_URL +
@@ -494,6 +555,14 @@
                   ? '首屏样式加载失败，请刷新页面后重试。'
                   : '首屏资源加载失败，请刷新页面后重试。'
             );
+            return true;
+          }
+
+          if (
+            target.tagName === 'SCRIPT' &&
+            target.getAttribute('type') === 'module' &&
+            scheduleBootSelfHealReload()
+          ) {
             return true;
           }
 
@@ -580,10 +649,10 @@
           }
 
           simulationTimer = window.setInterval(function () {
-            if (bootReady || hasSWProgress) {
-              window.clearInterval(simulationTimer);
-              simulationTimer = 0;
-              return;
+              if (bootReady) {
+                window.clearInterval(simulationTimer);
+                simulationTimer = 0;
+                return;
             }
 
             var elapsed = Date.now() - simulationStartAt;
@@ -603,14 +672,6 @@
         function setProgress(value, options) {
           if (bootReady) {
             return;
-          }
-
-          if (options && options.source === 'sw') {
-            hasSWProgress = true;
-            if (simulationTimer) {
-              window.clearInterval(simulationTimer);
-              simulationTimer = 0;
-            }
           }
 
           if (typeof value === 'number' && isFinite(value)) {
@@ -638,6 +699,7 @@
           if (bootReady) {
             return;
           }
+          clearBootLocalRetryFlag();
           setProgress(100, {
             tip: '启动完成，正在进入工作台...',
           });
@@ -681,94 +743,6 @@
           markError: markError,
           setProgress: setProgress,
         };
-
-        function isSWBootProgressMessage(value) {
-          return (
-            value &&
-            typeof value === 'object' &&
-            value.type === 'SW_BOOT_PROGRESS' &&
-            typeof value.phase === 'string' &&
-            typeof value.percent === 'number'
-          );
-        }
-
-        function formatSWBootTip(payload) {
-          if (payload.phase === 'precache' && payload.total > 0) {
-            var completed = Math.min(payload.completed || 0, payload.total);
-            var failureText = payload.failed > 0 ? '，' + payload.failed + ' 项回退' : '';
-            return (
-              '正在预热启动资源（' +
-              completed +
-              '/' +
-              payload.total +
-              failureText +
-              '）...'
-            );
-          }
-
-          if (payload.phase === 'activating') {
-            return '启动缓存服务已完成，正在接管页面...';
-          }
-
-          if (payload.phase === 'activated') {
-            return '启动资源已就绪，正在进入工作台...';
-          }
-
-          if (payload.phase === 'development') {
-            return '开发模式下跳过静态预缓存，正在继续启动...';
-          }
-
-          if (payload.phase === 'error') {
-            return payload.message || '启动缓存预热失败，正在直接启动工作台...';
-          }
-
-          return payload.message || '正在准备启动资源...';
-        }
-
-        function mapSWBootProgressToPercent(payload) {
-          switch (payload.phase) {
-            case 'installing':
-              return 52;
-            case 'precache':
-              return 55 + payload.percent * 0.35;
-            case 'activating':
-              return 93;
-            case 'activated':
-              return 96;
-            case 'development':
-              return 72;
-            case 'error':
-              return 68;
-            default:
-              return 50;
-          }
-        }
-
-        function requestSWBootProgress(registration) {
-          if (!registration) {
-            return;
-          }
-
-          var payload = { type: 'SW_BOOT_PROGRESS_GET' };
-          var targets = [];
-          var maybeWorkers = [
-            navigator.serviceWorker.controller,
-            registration.active,
-            registration.waiting,
-            registration.installing,
-          ];
-
-          for (var i = 0; i < maybeWorkers.length; i++) {
-            var worker = maybeWorkers[i];
-            if (worker && targets.indexOf(worker) === -1) {
-              targets.push(worker);
-            }
-          }
-
-          for (var j = 0; j < targets.length; j++) {
-            targets[j].postMessage(payload);
-          }
-        }
 
         function getRuntimeCDNPreference() {
           var preference = window.__OPENTU_CDN__ || window.__AITU_CDN__;
@@ -881,20 +855,6 @@
             return;
           }
 
-          if (!window.__OPENTU_SW_BOOT_MESSAGES_BOUND__) {
-            window.__OPENTU_SW_BOOT_MESSAGES_BOUND__ = true;
-            navigator.serviceWorker.addEventListener('message', function (event) {
-              if (!isSWBootProgressMessage(event.data)) {
-                return;
-              }
-
-              setProgress(mapSWBootProgressToPercent(event.data), {
-                tip: formatSWBootTip(event.data),
-                source: 'sw',
-              });
-            });
-          }
-
           if (!window.__OPENTU_SW_REGISTRATION_PROMISE__) {
             setProgress(undefined, {
               tip: '正在连接启动缓存服务...',
@@ -909,8 +869,6 @@
                   tip: '启动缓存服务已连接，正在准备资源清单...',
                   source: 'phase',
                 });
-
-                requestSWBootProgress(registration);
 
                 if (
                   registration.active &&
@@ -941,7 +899,6 @@
               registration
             ) {
               syncEarlyCDNPreference(registration);
-              requestSWBootProgress(registration);
             });
           }
         }

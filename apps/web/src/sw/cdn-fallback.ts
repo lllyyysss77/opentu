@@ -338,8 +338,26 @@ export function getAvailableCDNs(version?: string): CDNSource[] {
 }
 
 function cleanResourcePath(resourcePath: string): string {
-  const versionPrefixPattern = /^\/?(aitu-app@[\d.]+\/)/;
-  return resourcePath.replace(versionPrefixPattern, '/');
+  const rawPath = String(resourcePath || '').trim();
+  if (!rawPath) {
+    return rawPath;
+  }
+
+  let normalizedPath = rawPath;
+
+  try {
+    if (/^https?:\/\//i.test(normalizedPath)) {
+      normalizedPath = new URL(normalizedPath).pathname;
+    }
+  } catch {
+    // 保持原始路径，继续走后续正则归一化。
+  }
+
+  normalizedPath = normalizedPath
+    .replace(/^\/?npm\/aitu-app@[^/]+\//, '/')
+    .replace(/^\/?aitu-app@[^/]+\//, '/');
+
+  return normalizedPath;
 }
 
 export function buildCDNUrl(

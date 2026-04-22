@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  buildCDNUrl,
   fetchFromCDNWithFallback,
   getAvailableCDNs,
   getCDNStatusReport,
@@ -74,6 +75,30 @@ describe('cdn-fallback', () => {
     expect(fetchMock.mock.calls[0]?.[0]).toContain(
       'https://origin.example.com/assets/index.js'
     );
+  });
+
+  it('normalizes npm-prefixed origin paths before building CDN URLs', () => {
+    const [jsdelivr] = getAvailableCDNs('3.0.0');
+
+    expect(
+      buildCDNUrl(
+        jsdelivr,
+        '3.0.0',
+        '/npm/aitu-app@3.0.0/assets/tool-windows.css'
+      )
+    ).toBe('https://cdn.jsdelivr.net/npm/aitu-app@3.0.0/assets/tool-windows.css');
+  });
+
+  it('normalizes absolute jsdelivr URLs before rebuilding fallback URLs', () => {
+    const [jsdelivr] = getAvailableCDNs('3.0.0');
+
+    expect(
+      buildCDNUrl(
+        jsdelivr,
+        '3.0.0',
+        'https://cdn.jsdelivr.net/npm/aitu-app@3.0.0/assets/tool-windows.css'
+      )
+    ).toBe('https://cdn.jsdelivr.net/npm/aitu-app@3.0.0/assets/tool-windows.css');
   });
 
   it('falls back to jsdelivr after local miss when runtime assets enable local-first', async () => {
