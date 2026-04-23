@@ -58,6 +58,10 @@ import { ModelHealthBadge } from '../shared/ModelHealthBadge';
 import { ParametersDropdown } from './ParametersDropdown';
 import { PromptHistoryPopover } from './PromptHistoryPopover';
 import { usePromptHistory } from '../../hooks/usePromptHistory';
+import {
+  addImagePromptHistory,
+  addVideoPromptHistory,
+} from '../../services/prompt-storage-service';
 import { useSelectableModels } from '../../hooks/use-runtime-models';
 import { getPinnedSelectableModel } from '../../utils/runtime-model-discovery';
 import {
@@ -2545,8 +2549,14 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
             }
 
             if (prompt.trim()) {
+              const trimmedPrompt = prompt.trim();
               const hasSelection = allContent.length > 0;
-              addPromptHistory(prompt.trim(), hasSelection, generationType);
+              addPromptHistory(trimmedPrompt, hasSelection, generationType);
+              if (generationType === 'image') {
+                addImagePromptHistory(trimmedPrompt);
+              } else if (generationType === 'video') {
+                addVideoPromptHistory(trimmedPrompt);
+              }
             }
             setPrompt('');
             setSelectedContent([]);
@@ -2582,8 +2592,14 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
 
         // 工作流已提交，立即保存历史、清空输入并解锁，步骤执行在后台继续
         if (prompt.trim()) {
+          const trimmedPrompt = prompt.trim();
           const hasSelection = allContent.length > 0;
-          addPromptHistory(prompt.trim(), hasSelection, generationType);
+          addPromptHistory(trimmedPrompt, hasSelection, generationType);
+          if (generationType === 'image') {
+            addImagePromptHistory(trimmedPrompt);
+          } else if (generationType === 'video') {
+            addVideoPromptHistory(trimmedPrompt);
+          }
         }
         setPrompt('');
         setSelectedContent([]);
@@ -3705,6 +3721,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
             )}
 
             <PromptHistoryPopover
+              generationType={generationType}
               onSelectPrompt={handleSelectHistoryPrompt}
               language={language}
               extraActions={

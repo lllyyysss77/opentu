@@ -67,6 +67,66 @@ Style: Disney-style animation, vibrant colors, dreamy lighting.`,
   ]
 } as const;
 
+// AI 音频默认提示词
+export const AI_AUDIO_PROMPTS = {
+  zh: [
+    '创作一段温柔治愈的钢琴纯音乐，节奏舒缓，适合作为夜晚阅读的背景音乐',
+    '生成一首轻快的城市流行歌曲，带有明亮节拍和朗朗上口的副歌',
+    '写一段梦幻电子氛围音乐，层次逐渐推进，适合作为产品宣传片配乐',
+    '创作一首民谣风格歌曲，木吉他主导，歌词关于旅行与自由',
+    '生成一段电影预告片风格配乐，从低沉铺垫逐步推向高潮',
+    '制作一段 Lo-fi 学习音乐，带黑胶噪点和慵懒鼓点',
+  ],
+  en: [
+    'Compose a soft healing piano instrumental with a slow tempo for late-night reading.',
+    'Generate an upbeat city pop song with bright rhythm and a catchy chorus.',
+    'Create dreamy electronic ambient music with layered progression for a product promo.',
+    'Write a folk-style song led by acoustic guitar about travel and freedom.',
+    'Generate a cinematic trailer soundtrack that builds from tension to a strong climax.',
+    'Create a lo-fi study track with vinyl noise and laid-back drums.',
+  ],
+} as const;
+
+// AI 文本默认提示词
+export const AI_TEXT_PROMPTS = {
+  zh: [
+    '写一篇结构清晰的文章，解释这个主题的核心概念、背景和实际应用。',
+    '把下面的信息整理成一份条理清晰的总结，并提炼 5 个关键结论。',
+    '根据这个主题生成一份可直接演讲的 Markdown 大纲，包含标题、要点和结尾。',
+    '把这些零散想法扩展成一段完整文案，语气专业但易懂。',
+    '将这段内容改写得更简洁、更有说服力，适合对外发布。',
+    '基于这个主题输出一份问答列表，覆盖常见问题与对应答案。',
+  ],
+  en: [
+    'Write a well-structured article explaining the core concept, background, and practical uses of this topic.',
+    'Turn the information below into a clear summary and extract 5 key takeaways.',
+    'Create a presentation-ready Markdown outline with a title, talking points, and a closing section.',
+    'Expand these rough ideas into a complete piece of copy with a professional but accessible tone.',
+    'Rewrite this content to be more concise and persuasive for external publishing.',
+    'Generate a Q&A list for this topic that covers the most common questions and answers.',
+  ],
+} as const;
+
+// AI Agent 默认提示词
+export const AI_AGENT_PROMPTS = {
+  zh: [
+    '把这个主题拆解成一个可执行的任务计划，并按优先级列出下一步行动。',
+    '围绕这个主题生成一份结构清晰的思维导图，突出层级关系和关键节点。',
+    '把这段内容转换成流程图方案，明确步骤、判断节点和输出结果。',
+    '基于这个主题整理一份 PPT 大纲，包含封面、目录、核心页面和结论。',
+    '围绕这个方向做一轮创意发散，给出 10 个不同角度的方案或灵感点。',
+    '分析这个问题的成因、影响和解决路径，并给出推荐方案。',
+  ],
+  en: [
+    'Break this topic into an actionable task plan and list the next steps by priority.',
+    'Generate a clear mind map for this topic with strong hierarchy and key branches.',
+    'Turn this content into a flowchart outline with steps, decision points, and outputs.',
+    'Create a PPT outline for this topic including cover, agenda, key slides, and conclusion.',
+    'Run a creative ideation pass and provide 10 different directions or inspiration angles.',
+    'Analyze the causes, impact, and solution paths for this problem and recommend an approach.',
+  ],
+} as const;
+
 // AI 指令项接口 - 用于 AI 输入框的指令建议
 export interface InstructionItemData {
   content: string;
@@ -284,15 +344,178 @@ export const AI_COLD_START_SUGGESTIONS: Record<'zh' | 'en', ColdStartSuggestion[
 
 // 类型定义
 export type Language = 'zh' | 'en';
+export type PromptGenerationType =
+  | 'image'
+  | 'video'
+  | 'audio'
+  | 'text'
+  | 'agent';
+export type PromptPreviewExample =
+  | {
+      kind: 'image';
+      src: string;
+      alt: string;
+    }
+  | {
+      kind: 'video';
+      src: string;
+      alt: string;
+      posterSrc?: string;
+      playable?: boolean;
+    };
+
+type PromptPreviewExampleSet = readonly PromptPreviewExample[];
+
+const createPromptPreviewExample = (
+  generationType: PromptGenerationType,
+  index: number,
+  alt: string
+): PromptPreviewExample => ({
+  kind: 'image',
+  src: `/prompt-examples/${generationType}/${String(index + 1).padStart(2, '0')}.png`,
+  alt,
+});
+
+const createVideoPromptPreviewExample = (
+  index: number,
+  alt: string
+): PromptPreviewExample => ({
+  kind: 'video',
+  src: `/prompt-examples/video/${String(index + 1).padStart(2, '0')}.mp4`,
+  posterSrc: `/prompt-examples/video/${String(index + 1).padStart(2, '0')}.png`,
+  playable: true,
+  alt,
+});
+
+const createPromptPreviewExampleSets = (
+  generationType: PromptGenerationType,
+  alts: readonly string[]
+): readonly PromptPreviewExampleSet[] =>
+  alts.map((alt, index) => [
+    createPromptPreviewExample(generationType, index, alt),
+  ]);
+
+const createVideoPromptPreviewExampleSets = (
+  alts: readonly string[]
+): readonly PromptPreviewExampleSet[] =>
+  alts.map((alt, index) => [
+    createVideoPromptPreviewExample(index, alt),
+  ]);
+
+const normalizePromptLanguage = (language: Language): Language =>
+  language === 'en' ? 'en' : 'zh';
+
+export const DEFAULT_PROMPT_PREVIEW_EXAMPLE_SETS: Record<
+  PromptGenerationType,
+  readonly PromptPreviewExampleSet[]
+> = {
+  image: createPromptPreviewExampleSets('image', [
+    'Hotel lobby portrait preview',
+    'Kitten on windowsill preview',
+    'Mountain landscape preview',
+    'Minimalist interior preview',
+    'Neon city skyline preview',
+    'Cherry blossom preview',
+    'Space station preview',
+    'Cozy cafe preview',
+    'Abstract geometry preview',
+  ]),
+  video: createVideoPromptPreviewExampleSets([
+    'Castle courtyard video preview',
+    'Sunrise video preview',
+    'Forest video preview',
+    'Seaside video preview',
+    'Garden video preview',
+    'Rainbow after rain video preview',
+    'Winter snow video preview',
+    'Moonlit sky video preview',
+    'Mountain stream video preview',
+  ]),
+  audio: createPromptPreviewExampleSets('audio', [
+    'Soft piano cover preview',
+    'City pop cover preview',
+    'Electronic ambient cover preview',
+    'Folk travel cover preview',
+    'Trailer soundtrack cover preview',
+    'Lo-fi study cover preview',
+  ]),
+  text: createPromptPreviewExampleSets('text', [
+    'Article layout preview',
+    'Summary card preview',
+    'Markdown outline preview',
+    'Expanded copy preview',
+    'Publishing rewrite preview',
+    'Q and A layout preview',
+  ]),
+  agent: createPromptPreviewExampleSets('agent', [
+    'Task planning board preview',
+    'Mind map preview',
+    'Flowchart preview',
+    'Presentation outline preview',
+    'Creative ideation board preview',
+    'Problem analysis dashboard preview',
+  ]),
+} as const;
 
 // 获取图片提示词的辅助函数
 export const getImagePrompts = (language: Language): readonly string[] => {
-  return AI_IMAGE_PROMPTS[language];
+  return AI_IMAGE_PROMPTS[normalizePromptLanguage(language)];
 };
 
 // 获取视频提示词的辅助函数
 export const getVideoPrompts = (language: Language): readonly string[] => {
-  return AI_VIDEO_PROMPTS[language];
+  return AI_VIDEO_PROMPTS[normalizePromptLanguage(language)];
+};
+
+// 获取音频提示词的辅助函数
+export const getAudioPrompts = (language: Language): readonly string[] => {
+  return AI_AUDIO_PROMPTS[normalizePromptLanguage(language)];
+};
+
+// 获取文本提示词的辅助函数
+export const getTextPrompts = (language: Language): readonly string[] => {
+  return AI_TEXT_PROMPTS[normalizePromptLanguage(language)];
+};
+
+// 获取 Agent 提示词的辅助函数
+export const getAgentPrompts = (language: Language): readonly string[] => {
+  return AI_AGENT_PROMPTS[normalizePromptLanguage(language)];
+};
+
+// 获取指定生成类型默认提示词的辅助函数
+export const getDefaultPromptsByGenerationType = (
+  generationType: PromptGenerationType,
+  language: Language
+): readonly string[] => {
+  switch (generationType) {
+    case 'image':
+      return getImagePrompts(language);
+    case 'video':
+      return getVideoPrompts(language);
+    case 'audio':
+      return getAudioPrompts(language);
+    case 'text':
+      return getTextPrompts(language);
+    case 'agent':
+      return getAgentPrompts(language);
+    default:
+      return [];
+  }
+};
+
+export const getDefaultPromptPreviewExamples = (
+  generationType: PromptGenerationType,
+  language: Language,
+  promptContent: string
+): readonly PromptPreviewExample[] => {
+  const defaultPrompts = getDefaultPromptsByGenerationType(generationType, language);
+  const promptIndex = defaultPrompts.findIndex((prompt) => prompt === promptContent);
+
+  if (promptIndex < 0) {
+    return [];
+  }
+
+  return DEFAULT_PROMPT_PREVIEW_EXAMPLE_SETS[generationType]?.[promptIndex] || [];
 };
 
 // 获取 AI 指令的辅助函数
