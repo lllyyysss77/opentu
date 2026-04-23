@@ -1,6 +1,13 @@
 {
-  "version": "0.6.58",
-  "buildTime": "2026-04-23T02:47:46.016Z",
+  "version": "0.6.59",
+  "buildTime": "2026-04-23T03:48:08.288Z",
   "gitCommit": "unknown",
-  "changelog": []
+  "changelog": [
+    "恢复 Gemini 图片模型的 generateContent 路由策略",
+    "将 SW 升级切换改为整包 ready 后再接管",
+    "修正 SW 静态资源版本命中与启动页提示",
+    "老用户沿用旧版壳并修正图层锁定失效路径",
+    "增强错误上下文收集并修复资源错误跟踪",
+    "统一 PostHog 版本上下文"
+  ]
 }

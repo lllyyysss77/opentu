@@ -1,3 +1,28 @@
+## 0.6.59 (2026-04-23)
+
+### 🩹 Fixes
+
+- 增强错误上下文收集并修复资源错误跟踪 ([b1825467](https://github.com/ljquan/aitu/commit/b1825467))
+- 修正 SW 静态资源版本命中与启动页提示 ([497703c5](https://github.com/ljquan/aitu/commit/497703c5))
+- 统一 PostHog 版本上下文 ([f10d11b8](https://github.com/ljquan/aitu/commit/f10d11b8))
+- 老用户沿用旧版壳并修正图层锁定失效路径 ([6e88c9d4](https://github.com/ljquan/aitu/commit/6e88c9d4))
+- 将 SW 升级切换改为整包 ready 后再接管 ([12bdc930](https://github.com/ljquan/aitu/commit/12bdc930))
+- 恢复 Gemini 图片模型的 generateContent 路由策略 ([d70f9d72](https://github.com/ljquan/aitu/commit/d70f9d72))
+
+### 🔧 Chores
+
+- bump version to 0.6.58 ([91a0747b](https://github.com/ljquan/aitu/commit/91a0747b))
+- bump version to 0.6.57 ([be81f306](https://github.com/ljquan/aitu/commit/be81f306))
+- 更新应用版本至0.6.56并同步构建时间 ([54253348](https://github.com/ljquan/aitu/commit/54253348))
+- bump version to 0.6.56 ([f75b4289](https://github.com/ljquan/aitu/commit/f75b4289))
+- 更新版本号至0.6.55并刷新构建时间 ([159f2ebf](https://github.com/ljquan/aitu/commit/159f2ebf))
+- bump version to 0.6.55 ([43a6cdb5](https://github.com/ljquan/aitu/commit/43a6cdb5))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+- gongchengtu <1817063960@qq.com>
+
 ## 0.6.57 (2026-04-23)
 
 ### 🩹 Fixes
