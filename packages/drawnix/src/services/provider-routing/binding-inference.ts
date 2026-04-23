@@ -77,18 +77,6 @@ function isGeminiFamilyModel(model: ModelConfig): boolean {
   ]);
 }
 
-function isOfficialGoogleBaseUrl(baseUrl: string): boolean {
-  const normalized = baseUrl.trim().toLowerCase();
-  return (
-    normalized.includes('generativelanguage.googleapis.com') ||
-    normalized.includes('vertex.googleapis.com')
-  );
-}
-
-function isTuziBaseUrl(baseUrl: string): boolean {
-  return baseUrl.trim().toLowerCase().includes('api.tu-zi.com');
-}
-
 function isMidjourneyModel(model: ModelConfig): boolean {
   const lowerId = model.id.toLowerCase();
   return (
@@ -315,11 +303,6 @@ function inferImageBindings(
   const bindings: ProviderModelBinding[] = [];
   const isGeminiImageModel =
     isGeminiFamilyModel(model) && !isAsyncImageModel(model.id);
-  const isTuziProfile = isTuziBaseUrl(profile.baseUrl);
-  const preferImagesGenerationsForBuiltinGemini =
-    profile.providerType === 'gemini-compatible' &&
-    isGeminiImageModel &&
-    !isOfficialGoogleBaseUrl(profile.baseUrl);
 
   if (isMidjourneyModel(model)) {
     bindings.push(
@@ -365,25 +348,7 @@ function inferImageBindings(
     );
   }
 
-  if (preferImagesGenerationsForBuiltinGemini) {
-    bindings.push(
-      buildBinding(profile, model, {
-        protocol: 'openai.images.generations',
-        requestSchema: 'openai.image.basic-json',
-        responseSchema: 'openai.image.data',
-        submitPath: '/images/generations',
-        priority: 500,
-        confidence: 'high',
-        source: 'template',
-      })
-    );
-  }
-
-  if (
-    profile.providerType === 'gemini-compatible' &&
-    isGeminiImageModel &&
-    !isTuziProfile
-  ) {
+  if (profile.providerType === 'gemini-compatible' && isGeminiImageModel) {
     bindings.push(
       buildBinding(profile, model, {
         protocol: 'google.generateContent',
@@ -391,7 +356,7 @@ function inferImageBindings(
         responseSchema: 'google.generate-content.parts',
         submitPath: '/v1beta/models/{model}:generateContent',
         baseUrlStrategy: 'trim-v1',
-        priority: preferImagesGenerationsForBuiltinGemini ? 460 : 480,
+        priority: 480,
         confidence: 'high',
         source: 'template',
       })
