@@ -1,9 +1,6 @@
 {
-  "version": "0.6.60",
-  "buildTime": "2026-04-23T04:55:02.122Z",
+  "version": "0.6.61",
+  "buildTime": "2026-04-23T05:41:36.345Z",
   "gitCommit": "unknown",
-  "changelog": [
-    "稳定 service worker 分阶段加载与版本提交协议",
-    "支持多供应商分组的模型健康状态显示"
-  ]
+  "changelog": []
 }
