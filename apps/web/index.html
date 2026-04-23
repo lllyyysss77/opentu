@@ -114,8 +114,6 @@
       content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"
     />
     <meta name="app-version" content="0.6.58" />
-    <!-- 提前拉起 SW 脚本，尽量让后续静态资源命中 SW/CDN 链路 -->
-    <link rel="preload" href="/sw.js" as="script" />
     <style>
       :root {
         --app-boot-bg: radial-gradient(
@@ -656,13 +654,13 @@
             }
 
             var elapsed = Date.now() - simulationStartAt;
-            var simulatedProgress = Math.min(50, (elapsed / 2000) * 50);
+            var simulatedProgress = Math.min(68, (elapsed / 2600) * 68);
             if (simulatedProgress > bootProgress) {
               bootProgress = simulatedProgress;
               renderProgress();
             }
 
-            if (simulatedProgress >= 50) {
+            if (simulatedProgress >= 68) {
               window.clearInterval(simulationTimer);
               simulationTimer = 0;
             }
