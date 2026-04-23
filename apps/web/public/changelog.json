@@ -1,6 +1,22 @@
 {
   "versions": [
     {
+      "version": "0.6.64",
+      "date": "2026-04-23",
+      "changes": {
+        "features": [
+          "添加CDN恢复探测和详细日志记录"
+        ],
+        "fixes": [
+          "修复 LLM API Logger 的 IDB 连接关闭导致大模型调用失败",
+          "HTML 缓存双 key 存储，导航请求直接命中"
+        ],
+        "improvements": []
+      },
+      "type": "patch",
+      "highlights": "添加CDN恢复探测和详细日志记录"
+    },
+    {
       "version": "0.6.60",
       "date": "2026-04-23",
       "changes": {

@@ -1,3 +1,18 @@
+## 0.6.64 (2026-04-23)
+
+### 🚀 Features
+
+- 添加CDN恢复探测和详细日志记录 ([7559e132](https://github.com/ljquan/aitu/commit/7559e132))
+
+### 🩹 Fixes
+
+- 修复 LLM API Logger 的 IDB 连接关闭导致大模型调用失败 ([f13d842a](https://github.com/ljquan/aitu/commit/f13d842a))
+- HTML 缓存双 key 存储，导航请求直接命中 ([2ee82aea](https://github.com/ljquan/aitu/commit/2ee82aea))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+
 ## 0.6.60 (2026-04-23)
 
 ### 🚀 Features
