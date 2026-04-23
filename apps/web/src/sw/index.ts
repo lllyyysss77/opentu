@@ -1235,6 +1235,37 @@ function logSWDebug(message: string, detail?: unknown): void {
   console.info(`[SWDebug] ${message}`, detail);
 }
 
+function getUnavailableCDNSnapshot(): Array<{
+  name: string;
+  failCount: number;
+  remainingCooldownMs: number;
+  lastFailureReason?: string;
+}> {
+  return getCDNStatusReport()
+    .filter((item) => item.remainingCooldownMs > 0 && !item.status.isHealthy)
+    .map((item) => ({
+      name: item.name,
+      failCount: item.status.failCount,
+      remainingCooldownMs: item.remainingCooldownMs,
+      lastFailureReason: item.status.lastFailureReason,
+    }));
+}
+
+function logStatic503Decision(
+  stage: string,
+  request: Request,
+  detail?: Record<string, unknown>
+): void {
+  console.warn('[SW Static 503]', {
+    stage,
+    requestUrl: request.url,
+    destination: request.destination,
+    mode: request.mode,
+    unavailableCDNs: getUnavailableCDNSnapshot(),
+    ...detail,
+  });
+}
+
 type SWBootProgressPhase =
   | 'idle'
   | 'installing'
@@ -2103,6 +2134,12 @@ async function tryFetchStaticResourceFromCDN(
     );
 
     if (!cdnResult?.response.ok) {
+      console.warn('[SW CDN] Static resource unavailable from all fallback sources', {
+        requestUrl: request.url,
+        resourcePath,
+        appVersion,
+        unavailableCDNs: getUnavailableCDNSnapshot(),
+      });
       return null;
     }
 
@@ -4635,6 +4672,12 @@ async function handleStaticRequest(request: Request): Promise<Response> {
       return smartResponse;
     }
 
+    logStatic503Decision('smart-cdn-resource-failed', request, {
+      resourcePath,
+      committedVersion,
+      hasEmbeddedVersion: Boolean(embeddedVersion),
+      attemptedVersion: cdnVersion,
+    });
     return new Response('Resource unavailable offline', {
       status: 503,
       statusText: 'Service Unavailable',
@@ -4703,6 +4746,10 @@ async function handleStaticRequest(request: Request): Promise<Response> {
       return oldCachedResponse;
     }
 
+    logStatic503Decision('origin-fetch-exception', request, {
+      resourcePath,
+      committedVersion,
+    });
     // 所有来源都失败了
     return new Response('Resource unavailable offline', {
       status: 503,

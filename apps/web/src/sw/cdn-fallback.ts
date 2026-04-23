@@ -423,6 +423,45 @@ async function tryFetchFromLocalOrigin(
   }
 }
 
+async function tryFetchFromCDNList(
+  cdnList: CDNSource[],
+  version: string,
+  resourcePath: string,
+  timeout: number
+): Promise<{ response: Response; source: string; targetUrl: string } | null> {
+  for (const cdn of cdnList) {
+    const url = buildCDNUrl(cdn, version, resourcePath);
+
+    try {
+      console.log(`[CDN Fallback] Trying ${cdn.name}: ${url}`);
+      const response = await fetchWithTimeout(url, timeout);
+
+      if (!response.ok) {
+        markCDNFailure(cdn.name, `status:${response.status}`);
+        console.warn(`[CDN Fallback] ${cdn.name} returned ${response.status}`);
+        continue;
+      }
+
+      if (!(await isValidCDNResponse(response, cdn.name))) {
+        continue;
+      }
+
+      markCDNSuccess(cdn.name);
+      console.log(`[CDN Fallback] Success from ${cdn.name}`);
+      return { response, source: cdn.name, targetUrl: url };
+    } catch (error) {
+      const reason =
+        error instanceof Error && error.name === 'AbortError'
+          ? 'timeout'
+          : 'network-error';
+      markCDNFailure(cdn.name, reason);
+      console.warn(`[CDN Fallback] ${cdn.name} failed:`, error);
+    }
+  }
+
+  return null;
+}
+
 async function isValidCDNResponse(response: Response, cdnName: string): Promise<boolean> {
   const contentType = response.headers.get('Content-Type') || '';
   const isValidContentType =
@@ -519,35 +558,14 @@ export async function fetchFromCDNWithFallback(
   }
 
   const availableCDNs = getAvailableCDNs(version);
-
-  for (const cdn of availableCDNs) {
-    const url = buildCDNUrl(cdn, version, resourcePath);
-
-    try {
-      console.log(`[CDN Fallback] Trying ${cdn.name}: ${url}`);
-      const response = await fetchWithTimeout(url, cdnTimeout);
-
-      if (!response.ok) {
-        markCDNFailure(cdn.name, `status:${response.status}`);
-        console.warn(`[CDN Fallback] ${cdn.name} returned ${response.status}`);
-        continue;
-      }
-
-      if (!(await isValidCDNResponse(response, cdn.name))) {
-        continue;
-      }
-
-      markCDNSuccess(cdn.name);
-      console.log(`[CDN Fallback] Success from ${cdn.name}`);
-      return { response, source: cdn.name, targetUrl: url };
-    } catch (error) {
-      const reason =
-        error instanceof Error && error.name === 'AbortError'
-          ? 'timeout'
-          : 'network-error';
-      markCDNFailure(cdn.name, reason);
-      console.warn(`[CDN Fallback] ${cdn.name} failed:`, error);
-    }
+  const cdnResult = await tryFetchFromCDNList(
+    availableCDNs,
+    version,
+    resourcePath,
+    cdnTimeout
+  );
+  if (cdnResult) {
+    return cdnResult;
   }
 
   if (!preferLocal) {
@@ -558,6 +576,25 @@ export async function fetchFromCDNWithFallback(
     );
     if (localResult) {
       return { ...localResult, targetUrl: getLocalUrl(localOrigin, resourcePath) };
+    }
+  }
+
+  const recoveryCDNs = CDN_SOURCES.filter(
+    (source) =>
+      source.enabled && !availableCDNs.some((candidate) => candidate.name === source.name)
+  );
+  if (recoveryCDNs.length > 0) {
+    console.warn(
+      `[CDN Fallback] Local origin failed, forcing CDN recovery probe for: ${resourcePath}`
+    );
+    const recoveryResult = await tryFetchFromCDNList(
+      recoveryCDNs,
+      version,
+      resourcePath,
+      cdnTimeout
+    );
+    if (recoveryResult) {
+      return recoveryResult;
     }
   }
 
