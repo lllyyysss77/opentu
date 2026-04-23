@@ -127,12 +127,13 @@ async function main() {
   }
 
   // 构建远程命令
-  // deploy.sh --rollback [--test|--prod] [version]
-  // 使用 sudo 运行，因为脚本在受限目录且可能涉及系统级操作
-  let remoteCommand = `bash ${config.DEPLOY_SCRIPT_PATH} --rollback ${envFlag}`;
+  // 关键：参数顺序必须是 --rollback [version] [--test|--prod]
+  // 否则 deploy.sh 可能会把 --test 误认为是版本号
+  let remoteCommand = `bash ${config.DEPLOY_SCRIPT_PATH} --rollback`;
   if (version) {
     remoteCommand += ` ${shellEscape(version)}`;
   }
+  remoteCommand += ` ${envFlag}`;
 
   const sshArgs = [];
   const sshKeyPath = resolveSshKeyPath(config.DEPLOY_SSH_KEY);
