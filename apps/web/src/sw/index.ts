@@ -1621,6 +1621,16 @@ async function cacheFile(
         fetchTarget,
         appVersion: APP_VERSION,
       });
+
+      // index.html 额外存一份 '/' 的 key，导航请求直接命中无需回退查找
+      if (targets.resourcePath === '/index.html') {
+        const rootUrl = new URL('/', self.location.origin).href;
+        const rootResponse = await cache.match(targets.cacheKey);
+        if (rootResponse) {
+          await cache.put(rootUrl, rootResponse.clone());
+        }
+      }
+
       return { url, success: true, source };
     }
     return { url, success: false, status: response.status };
@@ -4571,6 +4581,14 @@ async function handleStaticRequest(request: Request): Promise<Response> {
         committedVersion === APP_VERSION
       ) {
         cache.put(request, response.clone());
+        // 同时存 '/' 和 '/index.html'，确保后续导航请求直接命中
+        const reqUrl = new URL(request.url);
+        if (reqUrl.pathname === '/' || reqUrl.pathname.endsWith('/index.html')) {
+          const rootUrl = new URL('/', reqUrl.origin).href;
+          const indexUrl = new URL('/index.html', reqUrl.origin).href;
+          if (request.url !== rootUrl) cache.put(rootUrl, response.clone());
+          if (request.url !== indexUrl) cache.put(indexUrl, response.clone());
+        }
         return response;
       }
 
