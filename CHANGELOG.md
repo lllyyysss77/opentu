@@ -1,3 +1,17 @@
+## 0.6.60 (2026-04-23)
+
+### 🚀 Features
+
+- 支持多供应商分组的模型健康状态显示 ([f0eef23c](https://github.com/ljquan/aitu/commit/f0eef23c))
+
+### 🩹 Fixes
+
+- 稳定 service worker 分阶段加载与版本提交协议 ([8051cd18](https://github.com/ljquan/aitu/commit/8051cd18))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+
 ## 0.6.59 (2026-04-23)
 
 ### 🩹 Fixes

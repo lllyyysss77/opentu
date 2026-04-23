@@ -1,6 +1,21 @@
 {
   "versions": [
     {
+      "version": "0.6.60",
+      "date": "2026-04-23",
+      "changes": {
+        "features": [
+          "支持多供应商分组的模型健康状态显示"
+        ],
+        "fixes": [
+          "稳定 service worker 分阶段加载与版本提交协议"
+        ],
+        "improvements": []
+      },
+      "type": "patch",
+      "highlights": "支持多供应商分组的模型健康状态显示"
+    },
+    {
       "version": "0.6.59",
       "date": "2026-04-23",
       "changes": {
