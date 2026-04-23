@@ -10,10 +10,24 @@
 
 import { sanitizeObject } from '@aitu/utils';
 
+declare const __APP_VERSION__: string;
+
+export interface AnalyticsReleaseContext {
+  version: string;
+  appVersion: string;
+  app_version: string;
+  deployment_env: 'local' | 'preview' | 'staging' | 'production';
+  release_channel: 'local' | 'preview' | 'staging' | 'production';
+  host: string;
+  hostname: string;
+  route_name: string;
+}
+
 declare global {
   interface Window {
     posthog?: {
       capture: (eventName: string, properties?: Record<string, any>) => void;
+      register?: (properties: Record<string, any>) => void;
     };
   }
 }
@@ -78,17 +92,69 @@ function inferDeploymentEnv(hostname: string): 'local' | 'preview' | 'staging' |
   return 'production';
 }
 
-function getCommonEventProperties(): AnalyticsEventData {
+function getAppVersion(): string {
+  if (typeof __APP_VERSION__ !== 'undefined' && __APP_VERSION__) {
+    return __APP_VERSION__;
+  }
+
+  if (typeof document !== 'undefined') {
+    return (
+      document.querySelector('meta[name="app-version"]')?.getAttribute('content') ||
+      '0.0.0'
+    );
+  }
+
+  return '0.0.0';
+}
+
+export function getAnalyticsReleaseContext(): AnalyticsReleaseContext {
+  const appVersion = getAppVersion();
   if (typeof window === 'undefined') {
-    return {};
+    return {
+      version: appVersion,
+      appVersion,
+      app_version: appVersion,
+      deployment_env: 'local',
+      release_channel: 'local',
+      host: '',
+      hostname: '',
+      route_name: '/',
+    };
   }
 
   const { hostname, pathname } = window.location;
+  const deploymentEnv = inferDeploymentEnv(hostname);
   return {
+    version: appVersion,
+    appVersion,
+    app_version: appVersion,
+    host: window.location.host || hostname,
     hostname,
     route_name: pathname || '/',
-    deployment_env: inferDeploymentEnv(hostname),
+    deployment_env: deploymentEnv,
+    release_channel: deploymentEnv,
   };
+}
+
+function getCommonEventProperties(): AnalyticsEventData {
+  return getAnalyticsReleaseContext();
+}
+
+export function registerAnalyticsSuperProperties(
+  properties?: Partial<AnalyticsReleaseContext>
+): void {
+  if (typeof window === 'undefined' || !window.posthog?.register) {
+    return;
+  }
+
+  try {
+    window.posthog.register({
+      ...getAnalyticsReleaseContext(),
+      ...(properties || {}),
+    });
+  } catch (error) {
+    console.debug('[Analytics] register super properties failed', error);
+  }
 }
 
 function buildAICompatProperties(params: {

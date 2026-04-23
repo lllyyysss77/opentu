@@ -18,6 +18,10 @@ import {
   swChannelClient,
   safeReload,
 } from '@drawnix/drawnix/runtime';
+import {
+  getAnalyticsReleaseContext,
+  registerAnalyticsSuperProperties,
+} from '@drawnix/drawnix';
 import { sanitizeObject, sanitizeUrl } from '@aitu/utils';
 import { initSWConsoleCapture } from './utils/sw-console-capture';
 
@@ -55,6 +59,7 @@ const APP_VERSION =
   import.meta.env.VITE_APP_VERSION ||
   document.querySelector('meta[name="app-version"]')?.getAttribute('content') ||
   '0.0.0';
+const RELEASE_CONTEXT = getAnalyticsReleaseContext();
 const LAZY_CHUNK_RETRY_PARAM = '_lazy_chunk_retry';
 const LAZY_CHUNK_RETRY_TS_PARAM = '_t';
 
@@ -300,6 +305,10 @@ Sentry.init({
     return event;
   },
 });
+Sentry.setTag('app_version', APP_VERSION);
+Sentry.setTag('deployment_env', RELEASE_CONTEXT.deployment_env);
+Sentry.setTag('release_channel', RELEASE_CONTEXT.release_channel);
+Sentry.setTag('host', RELEASE_CONTEXT.host || 'unknown');
 
 updateBootStatus({
   tip: '正在初始化启动服务...',
@@ -310,6 +319,20 @@ updateBootStatus({
 // 必须在任何其他代码之前执行，确保事件监听器最先注册
 if (typeof window !== 'undefined') {
   initPreventPinchZoom();
+
+  const initPostHogContext = () => {
+    if (window.posthog) {
+      registerAnalyticsSuperProperties(RELEASE_CONTEXT);
+      return;
+    }
+
+    setTimeout(initPostHogContext, 300);
+  };
+
+  scheduleAfterFirstFrameIdle(initPostHogContext, {
+    delay: 0,
+    timeout: 1000,
+  });
 
   scheduleAfterFirstFrameIdle(
     () => {
