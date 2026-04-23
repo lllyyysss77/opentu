@@ -28,6 +28,7 @@ import {
 } from './task-queue/utils/message-bus';
 import {
   fetchFromCDNWithFallback,
+  extractVersionFromCDNPath,
   getCDNStatusReport,
   resetCDNStatus,
   performHealthCheck,
@@ -1908,21 +1909,15 @@ sw.addEventListener('activate', (event: ExtendableEvent) => {
   event.waitUntil(
     (async () => {
       const versionStateBeforeActivate = await readVersionState();
-      if (!installingVersionIsUpdate) {
-        await updateVersionState({
-          committedVersion: APP_VERSION,
-          pendingVersion: null,
-          pendingReadyAt: null,
-          upgradeState: 'idle',
-        });
-      } else if (shouldClaimClientsOnActivate) {
-        await updateVersionState({
-          committedVersion: APP_VERSION,
-          pendingVersion: null,
-          pendingReadyAt: null,
-          upgradeState: 'idle',
-        });
-      }
+      // SW 一旦激活，committedVersion 就应该是当前版本。
+      // 无论是首次安装、用户确认升级、还是所有旧 tab 关闭后自然激活，
+      // 都需要更新，否则新 tab 会用旧版本号请求新 hash 资源导致 404。
+      await updateVersionState({
+        committedVersion: APP_VERSION,
+        pendingVersion: null,
+        pendingReadyAt: null,
+        upgradeState: 'idle',
+      });
       await postVersionState();
 
       // 预热 CDN 偏好，后续静态资源请求可以直接复用
@@ -4608,11 +4603,15 @@ async function handleStaticRequest(request: Request): Promise<Response> {
       return oldCachedResponse;
     }
 
+    // 请求 URL 中已包含 CDN 版本号时优先使用，避免版本重写导致 404
+    const embeddedVersion = extractVersionFromCDNPath(url.pathname);
+    const cdnVersion = embeddedVersion || committedVersion;
+
     const smartResponse = await tryFetchStaticResourceFromCDN(
       cache,
       request,
       resourcePath,
-      committedVersion
+      cdnVersion
     );
     if (smartResponse) {
       return smartResponse;

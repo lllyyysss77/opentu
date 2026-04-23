@@ -127,8 +127,16 @@ import {
   requestServiceWorkerIdlePrefetch,
   type IdlePrefetchGroup,
 } from './utils/startup-prefetch';
-import { DeferredAIInputBar } from './components/startup/DeferredAIInputBar';
-import { ChatDrawer } from './components/chat-drawer';
+const DeferredAIInputBar = lazy(() =>
+  import('./components/startup/DeferredAIInputBar').then((module) => ({
+    default: module.DeferredAIInputBar,
+  }))
+);
+const ChatDrawer = lazy(() =>
+  import('./components/chat-drawer').then((module) => ({
+    default: module.ChatDrawer,
+  }))
+);
 import type { MediaLibraryModalProps } from './types/asset.types';
 import { SelectionMode } from './types/asset.types';
 
@@ -141,6 +149,15 @@ interface SWIdlePrefetchStatusMessage {
   type: 'SW_IDLE_PREFETCH_STATUS';
   completedGroups?: string[];
 }
+
+const TOOL_RUNTIME_GROUPS: IdlePrefetchGroup[] = ['tool-runtime'];
+const TOOL_DRAWER_GROUPS: IdlePrefetchGroup[] = ['tool-drawers'];
+const TOOL_DIALOG_GROUPS: IdlePrefetchGroup[] = ['tool-dialogs'];
+const TOOL_WINDOW_GROUPS: IdlePrefetchGroup[] = [
+  'tool-runtime',
+  'tool-drawers',
+  'tool-dialogs',
+];
 
 const DrawnixDeferredFeatures = lazy(() =>
   import('./components/startup/DrawnixDeferredFeatures').then((module) => ({
@@ -197,7 +214,7 @@ export type DrawnixProps = {
   currentBoardId?: string | null;
 } & Omit<React.HTMLAttributes<HTMLDivElement>, 'onChange'>;
 
-const DEFAULT_IDLE_PREFETCH_GROUPS: IdlePrefetchGroup[] = ['tool-windows'];
+const DEFAULT_IDLE_PREFETCH_GROUPS: IdlePrefetchGroup[] = [];
 
 export const Drawnix: React.FC<DrawnixProps> = ({
   value,
@@ -275,7 +292,7 @@ export const Drawnix: React.FC<DrawnixProps> = ({
   );
 
   const enableToolWindows = useCallback(
-    (groups: IdlePrefetchGroup[] = ['tool-windows']) => {
+    (groups: IdlePrefetchGroup[] = TOOL_WINDOW_GROUPS) => {
       enableDeferredRuntime(groups);
       setMinimizedToolsBarEnabled(true);
       setToolWindowManagerEnabled(true);
@@ -285,7 +302,7 @@ export const Drawnix: React.FC<DrawnixProps> = ({
 
   // 处理知识库切换（通过 WinBox 打开）
   const handleKnowledgeBaseToggle = useCallback(() => {
-    enableToolWindows(['tool-windows']);
+    enableToolWindows([...TOOL_RUNTIME_GROUPS, ...TOOL_DRAWER_GROUPS]);
     void Promise.all([
       import('./services/tool-window-service'),
       import('./constants/built-in-tools'),
@@ -310,7 +327,7 @@ export const Drawnix: React.FC<DrawnixProps> = ({
   useEffect(() => {
     const handleKBOpen = (e: Event) => {
       const { noteId } = (e as CustomEvent<{ noteId?: string }>).detail;
-      enableToolWindows(['tool-windows']);
+      enableToolWindows([...TOOL_RUNTIME_GROUPS, ...TOOL_DRAWER_GROUPS]);
       void Promise.all([
         import('./services/tool-window-service'),
         import('./constants/built-in-tools'),
@@ -342,7 +359,7 @@ export const Drawnix: React.FC<DrawnixProps> = ({
 
   // 处理项目抽屉切换（互斥逻辑）
   const handleProjectDrawerToggle = useCallback(() => {
-    enableToolWindows(['tool-windows']);
+    enableToolWindows([...TOOL_RUNTIME_GROUPS, ...TOOL_DRAWER_GROUPS]);
     if (projectDrawerOpen) {
       setProjectDrawerOpen(false);
       return;
@@ -356,7 +373,7 @@ export const Drawnix: React.FC<DrawnixProps> = ({
 
   // 处理工具箱抽屉切换（互斥逻辑）
   const handleToolboxDrawerToggle = useCallback(() => {
-    enableToolWindows(['tool-windows']);
+    enableToolWindows([...TOOL_RUNTIME_GROUPS, ...TOOL_DRAWER_GROUPS]);
     if (toolboxDrawerOpen) {
       setToolboxDrawerOpen(false);
       return;
@@ -370,7 +387,7 @@ export const Drawnix: React.FC<DrawnixProps> = ({
 
   // 处理任务面板切换（互斥逻辑）
   const handleTaskPanelToggle = useCallback(() => {
-    enableDeferredRuntime(['tool-windows']);
+    enableDeferredRuntime(TOOL_RUNTIME_GROUPS);
     if (taskPanelExpanded) {
       setTaskPanelExpanded(false);
       return;
@@ -384,7 +401,7 @@ export const Drawnix: React.FC<DrawnixProps> = ({
 
   // 打开素材库（用于缓存满提示）
   const handleOpenMediaLibrary = useCallback((config?: MediaLibraryOpenConfig) => {
-    enableToolWindows(['tool-windows']);
+    enableToolWindows([...TOOL_RUNTIME_GROUPS, ...TOOL_DIALOG_GROUPS]);
     closeAllDrawers();
     setMediaLibraryConfig({
       mode: SelectionMode.BROWSE,
@@ -394,12 +411,12 @@ export const Drawnix: React.FC<DrawnixProps> = ({
   }, [closeAllDrawers, enableToolWindows]);
 
   const handleOpenBackupRestore = useCallback(() => {
-    enableDeferredRuntime(['tool-windows']);
+    enableDeferredRuntime([...TOOL_RUNTIME_GROUPS, ...TOOL_DIALOG_GROUPS]);
     setBackupRestoreOpen(true);
   }, [enableDeferredRuntime]);
 
   const handleOpenCloudSync = useCallback(() => {
-    enableDeferredRuntime(['tool-windows']);
+    enableDeferredRuntime([...TOOL_RUNTIME_GROUPS, ...TOOL_DIALOG_GROUPS]);
     setCloudSyncOpen(true);
   }, [enableDeferredRuntime]);
 
@@ -432,54 +449,18 @@ export const Drawnix: React.FC<DrawnixProps> = ({
   }, [board, appState, stableSetAppState]);
 
   useEffect(() => {
-    let disposed = false;
     const shouldLoadImmediately = new URLSearchParams(
       window.location.search
     ).has('tool');
 
-    const startDeferredRuntime = () => {
-      if (!disposed) {
-        enableDeferredRuntime(
-          shouldLoadImmediately
-            ? ['tool-windows']
-            : DEFAULT_IDLE_PREFETCH_GROUPS
-        );
-      }
-    };
-
     if (shouldLoadImmediately) {
-      enableToolWindows(['tool-windows']);
+      enableToolWindows(TOOL_WINDOW_GROUPS);
       return;
     }
 
-    const idleCallback = (
-      window as Window & {
-        requestIdleCallback?: (
-          callback: () => void,
-          options?: { timeout: number }
-        ) => number;
-        cancelIdleCallback?: (id: number) => void;
-      }
-    ).requestIdleCallback;
-
-    if (typeof idleCallback === 'function') {
-      const id = idleCallback(startDeferredRuntime, { timeout: 1800 });
-      return () => {
-        disposed = true;
-        (
-          window as Window & {
-            cancelIdleCallback?: (callbackId: number) => void;
-          }
-        ).cancelIdleCallback?.(id);
-      };
-    }
-
-    const timer = window.setTimeout(startDeferredRuntime, 700);
-    return () => {
-      disposed = true;
-      window.clearTimeout(timer);
-    };
-  }, [enableDeferredRuntime, enableToolWindows]);
+    // 默认不在首屏主动拉起工具运行时/工具面板分组，避免与首屏关键资源抢占带宽。
+    // 真正需要时再由用户交互路径触发 enableToolWindows / enableDeferredRuntime。
+  }, [enableToolWindows]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
@@ -498,7 +479,7 @@ export const Drawnix: React.FC<DrawnixProps> = ({
         return;
       }
 
-      if (!event.data.completedGroups?.includes('tool-windows')) {
+      if (!event.data.completedGroups?.includes('tool-drawers')) {
         return;
       }
 
@@ -577,7 +558,7 @@ export const Drawnix: React.FC<DrawnixProps> = ({
       }
 
       enableNonCriticalUi();
-    }, 1200);
+    }, 5000);
 
     return () => {
       window.clearTimeout(timer);
@@ -1490,7 +1471,9 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
             </Suspense>
           )}
           <CleanConfirm container={containerRef.current}></CleanConfirm>
-          <DeferredAIInputBar isDataReady={isDataReady} activationKey={0} />
+          <Suspense fallback={null}>
+            <DeferredAIInputBar isDataReady={isDataReady} activationKey={0} />
+          </Suspense>
           {/* Quick Creation Toolbar - 双击空白区域显示的快捷工具栏 */}
           <QuickCreationToolbar
             position={quickToolbarPosition}
@@ -1558,7 +1541,9 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
           {/* ViewNavigation - 视图导航（缩放 + 小地图） */}
           <ViewNavigation />
         </Wrapper>
-        <ChatDrawer ref={chatDrawerRef} />
+        <Suspense fallback={null}>
+          <ChatDrawer ref={chatDrawerRef} />
+        </Suspense>
         {deferredRuntimeEnabled && (
           <Suspense fallback={null}>
             <DrawnixDeferredRuntime board={board} value={value} />

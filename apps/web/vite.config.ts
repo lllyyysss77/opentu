@@ -45,19 +45,27 @@ function resolveIdlePrefetchGroup(id: string): IdlePrefetchGroup | undefined {
 
   if (
     normalizedId.includes('/packages/drawnix/src/components/startup/DrawnixDeferredRuntime.tsx') ||
-    normalizedId.includes('/packages/drawnix/src/components/startup/DrawnixDeferredFeatures.tsx') ||
     normalizedId.includes('/packages/drawnix/src/components/startup/DeferredMediaLibraryModal.tsx') ||
     normalizedId.includes('/packages/drawnix/src/components/startup/DeferredSyncSettings.tsx') ||
+    normalizedId.includes('/packages/drawnix/src/services/asset-integration-service') ||
+    normalizedId.includes('/packages/drawnix/src/services/font-manager-service') ||
+    normalizedId.includes('/packages/drawnix/src/utils/model-pricing-service') ||
+    normalizedId.includes('/packages/drawnix/src/hooks/useTaskStorage') ||
+    normalizedId.includes('/packages/drawnix/src/hooks/useTaskExecutor') ||
+    normalizedId.includes('/packages/drawnix/src/hooks/useAutoInsertToCanvas') ||
+    normalizedId.includes('/packages/drawnix/src/hooks/useImageGenerationAnchorSync') ||
+    normalizedId.includes('/packages/drawnix/src/hooks/useBeforeUnload') ||
+    normalizedId.includes('/packages/drawnix/src/hooks/useProviderProfiles') ||
     normalizedId.includes('/packages/drawnix/src/components/toolbox-drawer/') ||
     normalizedId.includes('/packages/drawnix/src/components/project-drawer/') ||
+    normalizedId.includes('/packages/drawnix/src/components/toolbar/minimized-tools-bar/') ||
+    normalizedId.includes('/packages/drawnix/src/services/tool-window-service') ||
+    normalizedId.includes('/packages/drawnix/src/tools/') ||
     normalizedId.includes('/packages/drawnix/src/components/backup-restore/') ||
     normalizedId.includes('/packages/drawnix/src/components/performance-panel/') ||
+    normalizedId.includes('/packages/drawnix/src/components/version-update/') ||
     normalizedId.includes('/packages/drawnix/src/components/command-palette/') ||
-    normalizedId.includes('/packages/drawnix/src/components/canvas-search/') ||
-    normalizedId.includes('/packages/drawnix/src/components/toolbar/minimized-tools-bar/') ||
-    normalizedId.includes('/packages/drawnix/src/components/settings-dialog/') ||
-    normalizedId.includes('/packages/drawnix/src/services/tool-window-service') ||
-    normalizedId.includes('/packages/drawnix/src/tools/')
+    normalizedId.includes('/packages/drawnix/src/components/canvas-search/')
   ) {
     return 'tool-windows';
   }

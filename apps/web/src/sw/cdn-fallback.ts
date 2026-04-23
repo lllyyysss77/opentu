@@ -360,6 +360,13 @@ function cleanResourcePath(resourcePath: string): string {
   return normalizedPath;
 }
 
+export function extractVersionFromCDNPath(
+  resourcePath: string
+): string | null {
+  const match = resourcePath.match(/(?:^|\/)(?:npm\/)?aitu-app@([^/]+)\//);
+  return match ? match[1] : null;
+}
+
 export function buildCDNUrl(
   source: CDNSource,
   version: string,

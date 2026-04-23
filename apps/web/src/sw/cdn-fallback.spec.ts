@@ -84,9 +84,9 @@ describe('cdn-fallback', () => {
       buildCDNUrl(
         jsdelivr,
         '3.0.0',
-        '/npm/aitu-app@3.0.0/assets/tool-windows.css'
+        '/npm/aitu-app@3.0.0/assets/tool-drawers.css'
       )
-    ).toBe('https://cdn.jsdelivr.net/npm/aitu-app@3.0.0/assets/tool-windows.css');
+    ).toBe('https://cdn.jsdelivr.net/npm/aitu-app@3.0.0/assets/tool-drawers.css');
   });
 
   it('normalizes absolute jsdelivr URLs before rebuilding fallback URLs', () => {
@@ -96,9 +96,9 @@ describe('cdn-fallback', () => {
       buildCDNUrl(
         jsdelivr,
         '3.0.0',
-        'https://cdn.jsdelivr.net/npm/aitu-app@3.0.0/assets/tool-windows.css'
+        'https://cdn.jsdelivr.net/npm/aitu-app@3.0.0/assets/tool-drawers.css'
       )
-    ).toBe('https://cdn.jsdelivr.net/npm/aitu-app@3.0.0/assets/tool-windows.css');
+    ).toBe('https://cdn.jsdelivr.net/npm/aitu-app@3.0.0/assets/tool-drawers.css');
   });
 
   it('uses CDN first for same-origin absolute asset URLs', async () => {

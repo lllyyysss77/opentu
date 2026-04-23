@@ -333,6 +333,7 @@ if (typeof window !== 'undefined') {
   const initPostHogContext = () => {
     if (window.posthog) {
       registerAnalyticsSuperProperties(RELEASE_CONTEXT);
+      initPageReport();
       return;
     }
 
@@ -379,11 +380,10 @@ if (typeof window !== 'undefined') {
     }
   );
 
-  // 统计上报为旁路逻辑：在空闲时初始化，不占首屏主流程
+  // 统计上报为旁路逻辑：page view 尽早初始化，性能指标继续延迟
   const initMonitoring = () => {
     if (window.posthog) {
       initWebVitals();
-      initPageReport();
     } else {
       setTimeout(initMonitoring, 500);
     }
@@ -513,6 +513,8 @@ if ('serviceWorker' in navigator) {
                 newWorker.postMessage({ type: 'FORCE_UPGRADE' });
               } else {
                 requestSWVersionState(newWorker);
+                // 重试：覆盖 SW 仍在预缓存、首次响应丢失的情况
+                setTimeout(() => requestSWVersionState(newWorker), 5000);
               }
             }
           });
@@ -535,6 +537,13 @@ if ('serviceWorker' in navigator) {
           console.warn('Update check failed:', error);
         });
       }, 5 * 60 * 1000);
+
+      // 页面重新可见时检查版本状态，捕获 tab 切走期间错过的升级通知
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          requestSWVersionState();
+        }
+      });
     })
     .catch((error) => {
       updateBootStatus({
