@@ -790,7 +790,10 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
           ) : null}
           <span className="model-dropdown__at">#</span>
           <span className="model-dropdown__code">{shortCode}</span>
-          <ModelHealthBadge modelId={selectedModel} />
+          <ModelHealthBadge
+            modelId={selectedModel}
+            profileId={currentProfile?.id || currentModel?.sourceProfileId || null}
+          />
           <ChevronDown
             size={14}
             className={`model-dropdown__chevron ${
@@ -845,7 +848,10 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
             }
             disabled={disabled}
           />
-          <ModelHealthBadge modelId={selectedModel} />
+          <ModelHealthBadge
+            modelId={selectedModel}
+            profileId={currentProfile?.id || currentModel?.sourceProfileId || null}
+          />
         </div>
         <ChevronDown
           size={16}
@@ -1040,7 +1046,10 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
                                   NEW
                                 </span>
                               )}
-                              <ModelHealthBadge modelId={model.id} />
+                              <ModelHealthBadge
+                                modelId={model.id}
+                                profileId={model.sourceProfileId || null}
+                              />
                               <ModelBenchmarkBadge modelId={model.id} />
                               <ModelDropdownPriceTag model={model} />
                             </div>

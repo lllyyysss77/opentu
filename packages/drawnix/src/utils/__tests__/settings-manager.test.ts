@@ -1,9 +1,40 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DRAWNIX_SETTINGS_KEY } from '../../constants/storage';
 
+function createStorageMock(): Storage {
+  const store = new Map<string, string>();
+
+  return {
+    get length() {
+      return store.size;
+    },
+    clear() {
+      store.clear();
+    },
+    getItem(key: string) {
+      return store.get(key) ?? null;
+    },
+    key(index: number) {
+      return Array.from(store.keys())[index] ?? null;
+    },
+    removeItem(key: string) {
+      store.delete(key);
+    },
+    setItem(key: string, value: string) {
+      store.set(key, value);
+    },
+  } as Storage;
+}
+
 describe('settings-manager', () => {
   beforeEach(() => {
     vi.resetModules();
+    if (typeof localStorage?.clear !== 'function') {
+      Object.defineProperty(globalThis, 'localStorage', {
+        value: createStorageMock(),
+        configurable: true,
+      });
+    }
     localStorage.clear();
   });
 
@@ -59,6 +90,7 @@ describe('settings-manager', () => {
       providerProfilesSettings,
       LEGACY_DEFAULT_PROVIDER_PROFILE_ID,
       TUZI_ORIGINAL_PROVIDER_PROFILE_ID,
+      TUZI_CODEX_PROVIDER_PROFILE_ID,
     } = await import('../settings-manager');
 
     const profiles = providerProfilesSettings.get();
@@ -68,6 +100,9 @@ describe('settings-manager', () => {
     const tuziOriginProfile = profiles.find(
       (profile) => profile.id === TUZI_ORIGINAL_PROVIDER_PROFILE_ID
     );
+    const tuziCodexProfile = profiles.find(
+      (profile) => profile.id === TUZI_CODEX_PROVIDER_PROFILE_ID
+    );
 
     expect(legacyProfile).toMatchObject({
       providerType: 'custom',
@@ -76,6 +111,10 @@ describe('settings-manager', () => {
     expect(tuziOriginProfile).toMatchObject({
       providerType: 'gemini-compatible',
       authType: 'header',
+      pricingGroup: 'default',
+    });
+    expect(tuziCodexProfile).toMatchObject({
+      pricingGroup: 'codex',
     });
   });
 });

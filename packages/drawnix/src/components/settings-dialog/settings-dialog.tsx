@@ -62,6 +62,7 @@ import {
   providerCatalogsSettings,
   providerProfilesSettings,
   TUZI_MIX_PROVIDER_PROFILE_ID,
+  TUZI_CODEX_PROVIDER_PROFILE_ID,
   TUZI_ORIGINAL_PROVIDER_PROFILE_ID,
   TUZI_PROVIDER_DEFAULT_BASE_URL,
   type InvocationPreset,
@@ -413,7 +414,8 @@ function isManagedProviderProfile(profileId: string): boolean {
   return (
     profileId === LEGACY_DEFAULT_PROVIDER_PROFILE_ID ||
     profileId === TUZI_ORIGINAL_PROVIDER_PROFILE_ID ||
-    profileId === TUZI_MIX_PROVIDER_PROFILE_ID
+    profileId === TUZI_MIX_PROVIDER_PROFILE_ID ||
+    profileId === TUZI_CODEX_PROVIDER_PROFILE_ID
   );
 }
 

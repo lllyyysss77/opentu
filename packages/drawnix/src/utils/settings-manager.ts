@@ -124,11 +124,13 @@ export const LEGACY_DEFAULT_PROVIDER_PROFILE_ID = 'legacy-default';
 export const DEFAULT_INVOCATION_PRESET_ID = 'default';
 export const TUZI_ORIGINAL_PROVIDER_PROFILE_ID = 'tuzi-origin';
 export const TUZI_MIX_PROVIDER_PROFILE_ID = 'tuzi-mix';
+export const TUZI_CODEX_PROVIDER_PROFILE_ID = 'tuzi-codex';
 export const TUZI_PROVIDER_ICON_URL = '/logo-tuzi.png';
 export const TUZI_PROVIDER_DEFAULT_BASE_URL = 'https://api.tu-zi.com/v1';
 export const TUZI_DEFAULT_PROVIDER_NAME = 'default 分组';
 export const TUZI_ORIGINAL_PROVIDER_NAME = '原价分组';
 export const TUZI_MIX_PROVIDER_NAME = 'gemini-mix 分组';
+export const TUZI_CODEX_PROVIDER_NAME = 'codex 分组';
 
 const DEFAULT_PROVIDER_CAPABILITIES: ProviderCapabilities = {
   supportsModelsEndpoint: true,
@@ -482,6 +484,10 @@ class SettingsManager {
       extraHeaders: this.normalizeStringRecord(profile?.extraHeaders),
       enabled: profile?.enabled !== false,
       capabilities: this.normalizeCapabilities(profile?.capabilities),
+      pricingGroup:
+        typeof profile?.pricingGroup === 'string' && profile.pricingGroup.trim()
+          ? profile.pricingGroup.trim()
+          : 'default',
     };
   }
 
@@ -512,6 +518,44 @@ class SettingsManager {
       extraHeaders: this.normalizeStringRecord(profile?.extraHeaders),
       enabled: profile?.enabled !== false,
       capabilities: this.normalizeCapabilities(profile?.capabilities),
+      pricingGroup:
+        typeof profile?.pricingGroup === 'string' && profile.pricingGroup.trim()
+          ? profile.pricingGroup.trim()
+          : 'gemini-mix',
+    };
+  }
+
+  private buildTuziCodexProfile(
+    profile?: Partial<ProviderProfile>
+  ): ProviderProfile {
+    const baseUrl =
+      typeof profile?.baseUrl === 'string' && profile.baseUrl.trim()
+        ? profile.baseUrl
+        : TUZI_PROVIDER_DEFAULT_BASE_URL;
+    const providerType = this.normalizeProviderType(
+      baseUrl,
+      profile?.providerType
+    );
+
+    return {
+      id: TUZI_CODEX_PROVIDER_PROFILE_ID,
+      name: TUZI_CODEX_PROVIDER_NAME,
+      iconUrl: TUZI_PROVIDER_ICON_URL,
+      providerType,
+      baseUrl,
+      apiKey: typeof profile?.apiKey === 'string' ? profile.apiKey : '',
+      authType: this.normalizeProviderAuthType(
+        baseUrl,
+        providerType,
+        profile?.authType
+      ),
+      extraHeaders: this.normalizeStringRecord(profile?.extraHeaders),
+      enabled: profile?.enabled !== false,
+      capabilities: this.normalizeCapabilities(profile?.capabilities),
+      pricingGroup:
+        typeof profile?.pricingGroup === 'string' && profile.pricingGroup.trim()
+          ? profile.pricingGroup.trim()
+          : 'codex',
     };
   }
 
@@ -756,6 +800,9 @@ class SettingsManager {
     const existingTuziMixProfile = settings.providerProfiles.find(
       (profile) => profile.id === TUZI_MIX_PROVIDER_PROFILE_ID
     );
+    const existingTuziCodexProfile = settings.providerProfiles.find(
+      (profile) => profile.id === TUZI_CODEX_PROVIDER_PROFILE_ID
+    );
 
     const legacyProfile = {
       ...this.buildLegacyDefaultProfile(settings.gemini, existingLegacyProfile),
@@ -770,17 +817,20 @@ class SettingsManager {
       existingTuziOriginProfile
     );
     const tuziMixProfile = this.buildTuziMixProfile(existingTuziMixProfile);
+    const tuziCodexProfile = this.buildTuziCodexProfile(existingTuziCodexProfile);
     const legacyPreset = this.buildLegacyDefaultPreset(settings.gemini);
 
     const providerProfiles = [
       legacyProfile,
       tuziOriginProfile,
       tuziMixProfile,
+      tuziCodexProfile,
       ...settings.providerProfiles.filter(
         (profile) =>
           profile.id !== LEGACY_DEFAULT_PROVIDER_PROFILE_ID &&
           profile.id !== TUZI_ORIGINAL_PROVIDER_PROFILE_ID &&
-          profile.id !== TUZI_MIX_PROVIDER_PROFILE_ID
+          profile.id !== TUZI_MIX_PROVIDER_PROFILE_ID &&
+          profile.id !== TUZI_CODEX_PROVIDER_PROFILE_ID
       ),
     ];
 
@@ -838,6 +888,21 @@ class SettingsManager {
         discoveredModels: [],
         selectedModelIds: [],
         sourceBaseUrl: tuziMixProfile.baseUrl,
+        error: null,
+      });
+    }
+
+    if (
+      !providerCatalogs.some(
+        (catalog) => catalog.profileId === TUZI_CODEX_PROVIDER_PROFILE_ID
+      )
+    ) {
+      providerCatalogs.push({
+        profileId: TUZI_CODEX_PROVIDER_PROFILE_ID,
+        discoveredAt: null,
+        discoveredModels: [],
+        selectedModelIds: [],
+        sourceBaseUrl: tuziCodexProfile.baseUrl,
         error: null,
       });
     }

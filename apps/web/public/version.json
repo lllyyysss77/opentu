@@ -1,6 +1,6 @@
 {
   "version": "0.6.59",
-  "buildTime": "2026-04-23T03:48:08.288Z",
+  "buildTime": "2026-04-23T03:48:08.891Z",
   "gitCommit": "unknown",
   "changelog": [
     "恢复 Gemini 图片模型的 generateContent 路由策略",
