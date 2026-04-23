@@ -246,6 +246,7 @@ const SW_CACHE_CREATED_AT_HEADER = 'sw-cache-created-at';
 const STATIC_SOURCE_HEADER = 'x-sw-source';
 const STATIC_REVISION_HEADER = 'x-sw-revision';
 const STATIC_APP_VERSION_HEADER = 'x-sw-app-version';
+const STATIC_FETCH_TARGET_HEADER = 'x-sw-fetch-target';
 
 // 缓存 URL 前缀 - 用于合并视频、图片等本地缓存资源
 const CACHE_URL_PREFIX = '/__aitu_cache__/';
@@ -449,6 +450,8 @@ interface DebugLogEntry {
   responseHeaders?: Record<string, string>;
   size?: number;
   details?: string;
+  resourceSource?: string;
+  resourceFetchTarget?: string;
   // 控制台日志专用字段
   logLevel?: 'log' | 'info' | 'warn' | 'error' | 'debug';
   logMessage?: string;
@@ -1293,6 +1296,27 @@ function isVersionedStaticResource(request: Request, url: URL): boolean {
   );
 }
 
+function resolveStaticResourceFetchTargets(inputUrl: string): {
+  requestUrl: URL;
+  resourcePath: string;
+  cacheKey: string;
+  originFetchUrl: string;
+} {
+  const requestUrl = new URL(inputUrl, self.location.origin);
+  const normalizedResourceUrl = new URL(
+    `${requestUrl.pathname}${requestUrl.search}`,
+    self.location.origin
+  );
+
+  return {
+    requestUrl,
+    resourcePath: `${requestUrl.pathname}${requestUrl.search}`,
+    cacheKey: normalizedResourceUrl.href,
+    // 源站兜底始终回到当前 origin，避免被上游传入的绝对 URL 带偏。
+    originFetchUrl: normalizedResourceUrl.href,
+  };
+}
+
 function isStaticHtmlFallbackResponse(
   request: Request,
   url: URL,
@@ -1308,12 +1332,15 @@ function isStaticHtmlFallbackResponse(
 
 function decorateStaticCacheResponse(
   response: Response,
-  metadata: { source: string; revision: string }
+  metadata: { source: string; revision: string; fetchTarget?: string }
 ): Response {
   const headers = new Headers(response.headers);
   headers.set(STATIC_SOURCE_HEADER, metadata.source);
   headers.set(STATIC_REVISION_HEADER, metadata.revision);
   headers.set(STATIC_APP_VERSION_HEADER, APP_VERSION);
+  if (metadata.fetchTarget) {
+    headers.set(STATIC_FETCH_TARGET_HEADER, metadata.fetchTarget);
+  }
   headers.set('x-sw-cached-at', new Date().toISOString());
 
   return new Response(response.body, {
@@ -1327,7 +1354,7 @@ async function cacheStaticResponse(
   cache: Cache,
   request: RequestInfo | URL,
   response: Response,
-  metadata: { source: string; revision: string }
+  metadata: { source: string; revision: string; fetchTarget?: string }
 ): Promise<Response> {
   const cachedResponse = decorateStaticCacheResponse(response, metadata);
   await cache.put(request, cachedResponse.clone());
@@ -1373,8 +1400,10 @@ async function cacheFile(
   source?: string;
 }> {
   try {
+    const targets = resolveStaticResourceFetchTargets(url);
+
     // 检查缓存中是否已有相同 revision 的文件
-    const cachedResponse = await cache.match(url);
+    const cachedResponse = await cache.match(targets.cacheKey);
 
     if (cachedResponse) {
       const cachedRevision = cachedResponse.headers.get(STATIC_REVISION_HEADER);
@@ -1389,12 +1418,12 @@ async function cacheFile(
 
     let response: Response | null = null;
     let source = 'server';
-    const requestUrl = new URL(url, self.location.origin);
-    const syntheticRequest = new Request(requestUrl.href, { method: 'GET' });
+    let fetchTarget = targets.originFetchUrl;
+    const syntheticRequest = new Request(targets.cacheKey, { method: 'GET' });
 
-    if (isVersionedStaticResource(syntheticRequest, requestUrl)) {
+    if (isVersionedStaticResource(syntheticRequest, targets.requestUrl)) {
       const cdnResult = await fetchFromCDNWithFallback(
-        url.startsWith('/') ? url.slice(1) : url,
+        targets.resourcePath,
         APP_VERSION,
         location.origin
       );
@@ -1402,17 +1431,23 @@ async function cacheFile(
       if (cdnResult?.response.ok) {
         response = cdnResult.response;
         source = cdnResult.source;
+        fetchTarget = cdnResult.targetUrl;
       }
     }
 
     if (!response) {
-      response = await fetch(url, { cache: 'reload' });
+      response = await fetch(targets.originFetchUrl, { cache: 'reload' });
       source = 'server';
+      fetchTarget = targets.originFetchUrl;
     }
 
     if (
       response.ok &&
-      isStaticHtmlFallbackResponse(syntheticRequest, requestUrl, response)
+      isStaticHtmlFallbackResponse(
+        syntheticRequest,
+        targets.requestUrl,
+        response
+      )
     ) {
       return {
         url,
@@ -1423,11 +1458,10 @@ async function cacheFile(
     }
 
     if (response.ok) {
-      // 使用完整 URL 作为缓存 key，确保与运行时请求匹配
-      const fullUrl = new URL(url, self.location.origin).href;
-      await cacheStaticResponse(cache, fullUrl, response, {
+      await cacheStaticResponse(cache, targets.cacheKey, response, {
         source,
         revision,
+        fetchTarget,
       });
       return { url, success: true, source };
     }
@@ -1879,11 +1913,26 @@ async function tryFetchStaticResourceFromCDN(
     return await cacheStaticResponse(cache, request, cdnResult.response, {
       source: cdnResult.source,
       revision: 'runtime',
+      fetchTarget: cdnResult.targetUrl,
     });
   } catch (cdnError) {
     console.warn('[SW CDN] CDN fallback failed:', cdnError);
     return null;
   }
+}
+
+function getStaticDebugMetadata(response: Response): {
+  resourceSource?: string;
+  resourceFetchTarget?: string;
+} {
+  const resourceSource = response.headers.get(STATIC_SOURCE_HEADER) || undefined;
+  const resourceFetchTarget =
+    response.headers.get(STATIC_FETCH_TARGET_HEADER) || undefined;
+
+  return {
+    resourceSource,
+    resourceFetchTarget,
+  };
 }
 
 function isSuspiciousStaticCacheResponse(
@@ -3230,11 +3279,28 @@ sw.addEventListener('fetch', (event: FetchEvent) => {
       event.respondWith(
         handleStaticRequest(event.request)
           .then((response) => {
+            const staticMetadata = getStaticDebugMetadata(response);
             updateDebugLog(debugId, {
               status: response.status,
               statusText: response.statusText,
               responseType: response.type,
               duration: Date.now() - startTime,
+              resourceSource: staticMetadata.resourceSource,
+              resourceFetchTarget: staticMetadata.resourceFetchTarget,
+              details:
+                isNavigationRequest
+                  ? 'Navigation request'
+                  : [
+                      `Static resource (${event.request.destination})`,
+                      staticMetadata.resourceSource
+                        ? `来源: ${staticMetadata.resourceSource}`
+                        : null,
+                      staticMetadata.resourceFetchTarget
+                        ? `实际拉取: ${staticMetadata.resourceFetchTarget}`
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join('\n'),
             });
             return response;
           })
@@ -4303,6 +4369,11 @@ async function handleStaticRequest(request: Request): Promise<Response> {
   const isSmartCDNResource = isVersionedStaticResource(request, url);
 
   if (isSmartCDNResource) {
+    const oldCachedResponse = await findStaticResponseInOldCaches(request);
+    if (oldCachedResponse) {
+      return oldCachedResponse;
+    }
+
     const smartResponse = await tryFetchStaticResourceFromCDN(
       cache,
       request,
@@ -4310,11 +4381,6 @@ async function handleStaticRequest(request: Request): Promise<Response> {
     );
     if (smartResponse) {
       return smartResponse;
-    }
-
-    const oldCachedResponse = await findStaticResponseInOldCaches(request);
-    if (oldCachedResponse) {
-      return oldCachedResponse;
     }
 
     return new Response('Resource unavailable offline', {

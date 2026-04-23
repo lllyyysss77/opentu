@@ -486,7 +486,7 @@ export async function fetchFromCDNWithFallback(
   version: string,
   localOrigin: string,
   options: FetchFallbackOptions = {}
-): Promise<{ response: Response; source: string } | null> {
+): Promise<{ response: Response; source: string; targetUrl: string } | null> {
   if (isDevelopment) {
     console.log('[CDN Fallback] 开发模式，跳过 CDN 回退');
     return null;
@@ -507,7 +507,7 @@ export async function fetchFromCDNWithFallback(
       localTimeout
     );
     if (localResult) {
-      return localResult;
+      return { ...localResult, targetUrl: getLocalUrl(localOrigin, resourcePath) };
     }
   }
 
@@ -532,7 +532,7 @@ export async function fetchFromCDNWithFallback(
 
       markCDNSuccess(cdn.name);
       console.log(`[CDN Fallback] Success from ${cdn.name}`);
-      return { response, source: cdn.name };
+      return { response, source: cdn.name, targetUrl: url };
     } catch (error) {
       const reason =
         error instanceof Error && error.name === 'AbortError'
@@ -550,7 +550,7 @@ export async function fetchFromCDNWithFallback(
       localTimeout
     );
     if (localResult) {
-      return localResult;
+      return { ...localResult, targetUrl: getLocalUrl(localOrigin, resourcePath) };
     }
   }
 

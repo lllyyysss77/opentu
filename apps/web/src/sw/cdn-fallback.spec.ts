@@ -101,6 +101,44 @@ describe('cdn-fallback', () => {
     ).toBe('https://cdn.jsdelivr.net/npm/aitu-app@3.0.0/assets/tool-windows.css');
   });
 
+  it('uses CDN first for same-origin absolute asset URLs', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async (input: RequestInfo | URL) => {
+        const url = String(input);
+
+        if (url.includes('cdn.jsdelivr.net')) {
+          return new Response('console.log("cdn");', {
+            status: 200,
+            headers: {
+              'Content-Type': 'application/javascript',
+              'Content-Length': '200',
+            },
+          });
+        }
+
+        return new Response('origin', {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/javascript',
+            'Content-Length': '200',
+          },
+        });
+      });
+
+    const result = await fetchFromCDNWithFallback(
+      'https://pr.opentu.ai/assets/yacas-BJ4BC0dw.js',
+      '3.0.0',
+      'https://pr.opentu.ai'
+    );
+
+    expect(result?.source).toBe('jsdelivr');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      'https://cdn.jsdelivr.net/npm/aitu-app@3.0.0/assets/yacas-BJ4BC0dw.js'
+    );
+  });
+
   it('falls back to jsdelivr after local miss when runtime assets enable local-first', async () => {
     const fetchMock = vi
       .spyOn(globalThis, 'fetch')
