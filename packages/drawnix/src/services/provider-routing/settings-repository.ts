@@ -38,7 +38,7 @@ export interface SettingsInvocationPlannerOptions {
   includeLegacyProfile?: boolean;
   manualBindings?: ProviderModelBinding[];
   bindingId?: string | null;
-  preferredRequestSchema?: string | string[] | null;
+  preferredRequestSchema?: string | readonly string[] | null;
 }
 
 function inferProviderTypeFromBaseUrl(

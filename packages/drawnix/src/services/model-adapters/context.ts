@@ -14,7 +14,7 @@ import type { AdapterContext } from './types';
 
 interface AdapterContextRouteOptions {
   bindingId?: string | null;
-  preferredRequestSchema?: string | string[] | null;
+  preferredRequestSchema?: string | readonly string[] | null;
 }
 
 export const getAdapterContextFromSettings = (

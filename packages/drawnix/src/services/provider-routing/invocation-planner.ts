@@ -57,7 +57,7 @@ function compareBindings(
 }
 
 function normalizePreferredRequestSchemas(
-  preferredRequestSchema?: string | string[] | null
+  preferredRequestSchema?: string | readonly string[] | null
 ): string[] {
   const rawValues = Array.isArray(preferredRequestSchema)
     ? preferredRequestSchema

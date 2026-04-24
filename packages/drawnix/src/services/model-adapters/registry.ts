@@ -127,7 +127,7 @@ export function resolveAdapterForInvocation(
   modelRef?: ModelRef | null,
   options: {
     bindingId?: string | null;
-    preferredRequestSchema?: string | string[] | null;
+    preferredRequestSchema?: string | readonly string[] | null;
   } = {}
 ): ModelAdapter | undefined {
   const routeModel = modelRef || modelId || null;

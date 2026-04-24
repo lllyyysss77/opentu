@@ -157,7 +157,7 @@ export interface InvocationPlanRequest {
   modelRef?: ModelRef | null;
   fallbackModelRef?: ModelRef | null;
   bindingId?: string | null;
-  preferredRequestSchema?: string | string[] | null;
+  preferredRequestSchema?: string | readonly string[] | null;
 }
 
 export interface InvocationPlannerRepositories {

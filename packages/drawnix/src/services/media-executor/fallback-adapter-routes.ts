@@ -58,8 +58,8 @@ function resolvePreferredRequestSchema(params: {
   maskImage?: string;
   referenceImages?: string[];
   params?: Record<string, unknown>;
-  preferredRequestSchema?: string | string[];
-}): string | string[] | undefined {
+  preferredRequestSchema?: string | readonly string[];
+}): string | readonly string[] | undefined {
   const generationMode =
     params.generationMode ||
     getStringParam(params, ['generationMode', 'generation_mode']);
@@ -100,7 +100,7 @@ export async function executeImageViaAdapter(
     outputFormat?: ImageOutputFormat;
     outputCompression?: number;
     params?: Record<string, unknown>;
-    preferredRequestSchema?: string | string[];
+    preferredRequestSchema?: string | readonly string[];
   },
   options?: ExecutionOptions,
   startTime?: number
