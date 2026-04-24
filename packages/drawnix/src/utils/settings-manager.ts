@@ -36,6 +36,13 @@ export interface GeminiSettings {
 
 export type ProviderType = 'openai-compatible' | 'gemini-compatible' | 'custom';
 export type ProviderAuthType = 'bearer' | 'header' | 'query' | 'custom';
+export type ImageApiCompatibility =
+  | 'auto'
+  | 'openai-gpt-image'
+  | 'tuzi-gpt-image'
+  | 'openai-compatible-basic';
+export const DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY: ImageApiCompatibility =
+  'openai-gpt-image';
 
 export interface ProviderCapabilities {
   supportsModelsEndpoint: boolean;
@@ -54,6 +61,7 @@ export interface ProviderProfile {
   baseUrl: string;
   apiKey: string;
   authType: ProviderAuthType;
+  imageApiCompatibility?: ImageApiCompatibility;
   extraHeaders?: Record<string, string>;
   enabled: boolean;
   capabilities: ProviderCapabilities;
@@ -399,6 +407,35 @@ class SettingsManager {
     return this.inferProviderAuthType(baseUrl, providerType);
   }
 
+  private normalizeImageApiCompatibility(
+    value?: ImageApiCompatibility | string | null
+  ): ImageApiCompatibility {
+    if (
+      value === 'auto' ||
+      value === 'openai-gpt-image' ||
+      value === 'tuzi-gpt-image' ||
+      value === 'openai-compatible-basic'
+    ) {
+      return value;
+    }
+
+    if (value === 'tuzi-compatible') {
+      return 'tuzi-gpt-image';
+    }
+
+    return 'auto';
+  }
+
+  private normalizeStoredImageApiCompatibility(
+    value?: ImageApiCompatibility | string | null
+  ): ImageApiCompatibility {
+    if (value === undefined || value === null || value === '') {
+      return DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY;
+    }
+
+    return this.normalizeImageApiCompatibility(value);
+  }
+
   private normalizeCapabilities(value: unknown): ProviderCapabilities {
     const capabilities =
       value && typeof value === 'object'
@@ -450,6 +487,9 @@ class SettingsManager {
         providerType,
         profile?.authType
       ),
+      imageApiCompatibility: this.normalizeStoredImageApiCompatibility(
+        profile?.imageApiCompatibility
+      ),
       enabled: true,
       capabilities: { ...DEFAULT_PROVIDER_CAPABILITIES },
     };
@@ -478,6 +518,9 @@ class SettingsManager {
         baseUrl,
         providerType,
         profile?.authType
+      ),
+      imageApiCompatibility: this.normalizeStoredImageApiCompatibility(
+        profile?.imageApiCompatibility
       ),
       extraHeaders: this.normalizeStringRecord(profile?.extraHeaders),
       enabled: profile?.enabled !== false,
@@ -508,6 +551,9 @@ class SettingsManager {
         baseUrl,
         providerType,
         profile?.authType
+      ),
+      imageApiCompatibility: this.normalizeStoredImageApiCompatibility(
+        profile?.imageApiCompatibility
       ),
       extraHeaders: this.normalizeStringRecord(profile?.extraHeaders),
       enabled: profile?.enabled !== false,
@@ -585,6 +631,9 @@ class SettingsManager {
             baseUrl,
             providerType,
             profile.authType
+          ),
+          imageApiCompatibility: this.normalizeStoredImageApiCompatibility(
+            profile.imageApiCompatibility
           ),
           extraHeaders: this.normalizeStringRecord(profile.extraHeaders),
           enabled: profile.enabled !== false,
