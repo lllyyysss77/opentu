@@ -1843,6 +1843,15 @@ function isVersionedStaticResource(request: Request, url: URL): boolean {
   );
 }
 
+function normalizeAituPackageResourcePath(pathnameWithSearch: string): string {
+  const [pathname, search = ''] = pathnameWithSearch.split(/([?#].*)/, 2);
+  const normalizedPathname = pathname
+    .replace(/^\/npm\/aitu-app@[^/]+\//, '/')
+    .replace(/^\/aitu-app@[^/]+\//, '/');
+
+  return `${normalizedPathname}${search}`;
+}
+
 function resolveStaticResourceFetchTargets(inputUrl: string): {
   requestUrl: URL;
   resourcePath: string;
@@ -1850,14 +1859,17 @@ function resolveStaticResourceFetchTargets(inputUrl: string): {
   originFetchUrl: string;
 } {
   const requestUrl = new URL(inputUrl, self.location.origin);
+  const resourcePath = normalizeAituPackageResourcePath(
+    `${requestUrl.pathname}${requestUrl.search}`
+  );
   const normalizedResourceUrl = new URL(
-    `${requestUrl.pathname}${requestUrl.search}`,
+    resourcePath,
     self.location.origin
   );
 
   return {
     requestUrl,
-    resourcePath: `${requestUrl.pathname}${requestUrl.search}`,
+    resourcePath,
     cacheKey: normalizedResourceUrl.href,
     // 源站兜底始终回到当前 origin，避免被上游传入的绝对 URL 带偏。
     originFetchUrl: normalizedResourceUrl.href,
@@ -1949,6 +1961,28 @@ async function findStaticResponseInOldCaches(
       } catch {
         // Ignore cache errors
       }
+    }
+  }
+
+  return null;
+}
+
+async function findStaticResponseInBrowserCache(
+  request: Request,
+  fallbackKeys: string[] = []
+): Promise<Response | null> {
+  const candidates = [request.url, ...fallbackKeys].filter(Boolean);
+  for (const candidate of candidates) {
+    try {
+      const cachedResponse = await fetch(candidate, {
+        cache: 'only-if-cached',
+        mode: 'same-origin',
+      });
+      if (cachedResponse.ok) {
+        return cachedResponse;
+      }
+    } catch {
+      void candidate;
     }
   }
 
@@ -2995,6 +3029,14 @@ function isSuspiciousStaticCacheResponse(
   const versionHeader = response.headers.get(STATIC_APP_VERSION_HEADER);
 
   if (!sourceHeader || !revisionHeader || !versionHeader) {
+    const responseUrl = new URL(request.url);
+    if (
+      response.ok &&
+      !isStaticHtmlFallbackResponse(request, responseUrl, response)
+    ) {
+      return false;
+    }
+
     return true;
   }
 
@@ -5504,6 +5546,14 @@ async function handleStaticRequest(request: Request): Promise<Response> {
     ]);
     if (oldCachedResponse) {
       return oldCachedResponse;
+    }
+
+    const browserCachedResponse = await findStaticResponseInBrowserCache(
+      request,
+      [normalizedCacheKey]
+    );
+    if (browserCachedResponse) {
+      return browserCachedResponse;
     }
 
     // 请求 URL 中已包含 CDN 版本号时优先使用，避免版本重写导致 404
