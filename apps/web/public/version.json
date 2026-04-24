@@ -1,6 +1,15 @@
 {
-  "version": "0.6.69",
-  "buildTime": "2026-04-24T05:12:53.216Z",
+  "version": "0.6.70",
+  "buildTime": "2026-04-24T07:20:00.936Z",
   "gitCommit": "unknown",
-  "changelog": []
+  "changelog": [
+    "修复 GPT Image 适配器 readonly 元组类型不兼容和灵感图缺少 imageQuality 默认值",
+    "接力完整离线补齐并清理 drawnix tsc",
+    "限制 app shell 仅匹配根壳页面",
+    "完善 GPT Image 兼容链路",
+    "修复离线模式下懒加载模块资源未预热",
+    "收口预缓存并补齐按需工具离线资源",
+    "修正跨域静态资源离线缓存命中",
+    "修正按需资源预缓存与预热分组"
+  ]
 }

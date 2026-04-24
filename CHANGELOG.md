@@ -1,3 +1,33 @@
+## 0.6.70 (2026-04-24)
+
+### 🚀 Features
+
+- 完善 GPT Image 兼容链路 ([fafb3ae6](https://github.com/ljquan/aitu/commit/fafb3ae6))
+
+### 🩹 Fixes
+
+- 收口预缓存并补齐按需工具离线资源 ([c511ba29](https://github.com/ljquan/aitu/commit/c511ba29))
+- 接力完整离线补齐并清理 drawnix tsc ([317291d8](https://github.com/ljquan/aitu/commit/317291d8))
+- 修正跨域静态资源离线缓存命中 ([99054680](https://github.com/ljquan/aitu/commit/99054680))
+- 修正按需资源预缓存与预热分组 ([2dcd6928](https://github.com/ljquan/aitu/commit/2dcd6928))
+- 限制 app shell 仅匹配根壳页面 ([3b8f28f1](https://github.com/ljquan/aitu/commit/3b8f28f1))
+- 修复离线模式下懒加载模块资源未预热 ([55eee6a2](https://github.com/ljquan/aitu/commit/55eee6a2))
+- 修复 GPT Image 适配器 readonly 元组类型不兼容和灵感图缺少 imageQuality 默认值 ([9da7d380](https://github.com/ljquan/aitu/commit/9da7d380))
+
+### 🔧 Chores
+
+- 更新版本号至0.6.69并刷新构建时间 ([52915fd2](https://github.com/ljquan/aitu/commit/52915fd2))
+- bump version to 0.6.69 ([c99a25ee](https://github.com/ljquan/aitu/commit/c99a25ee))
+- bump version to 0.6.68 ([7e005fd2](https://github.com/ljquan/aitu/commit/7e005fd2))
+- bump version to 0.6.67 ([ba280129](https://github.com/ljquan/aitu/commit/ba280129))
+- bump version to 0.6.66 ([c4124d29](https://github.com/ljquan/aitu/commit/c4124d29))
+- bump version to 0.6.65 ([ebf074bc](https://github.com/ljquan/aitu/commit/ebf074bc))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+- gongchengtu <1817063960@qq.com>
+
 ## 0.6.68 (2026-04-24)
 
 ### 🩹 Fixes
