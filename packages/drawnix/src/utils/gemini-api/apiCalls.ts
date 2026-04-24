@@ -13,7 +13,10 @@ import {
   VideoGenerationOptions,
 } from './types';
 import { VIDEO_DEFAULT_CONFIG } from './config';
-import { analytics } from '../posthog-analytics';
+import {
+  analytics,
+  getProviderEndpointAnalytics,
+} from '../posthog-analytics';
 
 type GoogleInlineData = {
   mime_type?: string;
@@ -39,6 +42,19 @@ function buildProviderContext(config: GeminiConfig): ResolvedProviderContext {
       extraHeaders: config.extraHeaders,
     }
   );
+}
+
+function buildAPIAnalyticsContext(config: GeminiConfig): Record<string, unknown> {
+  const endpoint = getProviderEndpointAnalytics(config.baseUrl);
+  return {
+    providerType: config.provider?.providerType || config.providerType || 'custom',
+    profileId: config.provider?.profileId,
+    profileName: config.provider?.profileName,
+    providerOrigin: endpoint?.origin,
+    providerHost: endpoint?.host,
+    providerProtocol: endpoint?.protocol,
+    baseUrlStrategy: config.binding?.baseUrlStrategy,
+  };
 }
 
 function resolveBindingPath(
@@ -352,6 +368,7 @@ export async function callGoogleGenerateContentRaw(
     model,
     messageCount: messages.length,
     stream: options.stream,
+    ...buildAPIAnalyticsContext(config),
   });
 
   const providerContext = buildProviderContext(config);
@@ -384,6 +401,7 @@ export async function callGoogleGenerateContentRaw(
         error: errorMessage,
         httpStatus: response.status,
         stream: options.stream,
+        ...buildAPIAnalyticsContext(config),
       });
       const error = new Error(`HTTP ${response.status}: ${errorMessage}`);
       (error as any).httpStatus = response.status;
@@ -400,6 +418,7 @@ export async function callGoogleGenerateContentRaw(
         duration,
         responseLength: normalized.choices[0]?.message?.content?.length || 0,
         stream: false,
+        ...buildAPIAnalyticsContext(config),
       });
       return normalized;
     }
@@ -461,6 +480,7 @@ export async function callGoogleGenerateContentRaw(
       duration,
       responseLength: fullContent.length,
       stream: true,
+      ...buildAPIAnalyticsContext(config),
     });
 
     return {
@@ -493,6 +513,7 @@ export async function callGoogleGenerateContentRaw(
       duration,
       error: errorMessage,
       stream: options.stream,
+      ...buildAPIAnalyticsContext(config),
     });
     throw normalizedError;
   } finally {
@@ -523,6 +544,7 @@ export async function callApiRaw(
     model,
     messageCount: messages.length,
     stream: false,
+    ...buildAPIAnalyticsContext(config),
   });
 
   const headers = {
@@ -569,6 +591,7 @@ export async function callApiRaw(
         error: errorMessage,
         httpStatus: response.status,
         stream: false,
+        ...buildAPIAnalyticsContext(config),
       });
       const error = new Error(`HTTP ${response.status}: ${errorMessage}`);
       (error as any).apiErrorBody = errorBody;
@@ -586,6 +609,7 @@ export async function callApiRaw(
       duration,
       responseLength: result.choices?.[0]?.message?.content?.length,
       stream: false,
+      ...buildAPIAnalyticsContext(config),
     });
 
     return result;
@@ -599,6 +623,7 @@ export async function callApiRaw(
       duration,
       error: errorMessage,
       stream: false,
+      ...buildAPIAnalyticsContext(config),
     });
 
     throw error;
@@ -655,6 +680,7 @@ async function callApiStreamDirect(
     model,
     messageCount: messages.length,
     stream: true,
+    ...buildAPIAnalyticsContext(config),
   });
 
   const headers = {
@@ -704,6 +730,7 @@ async function callApiStreamDirect(
         error: errorMessage,
         httpStatus: response.status,
         stream: true,
+        ...buildAPIAnalyticsContext(config),
       });
       const error = new Error(`HTTP ${response.status}: ${errorMessage}`);
       (error as any).apiErrorBody = errorBody;
@@ -788,6 +815,7 @@ async function callApiStreamDirect(
       duration,
       responseLength: fullContent.length,
       stream: true,
+      ...buildAPIAnalyticsContext(config),
     });
 
     // 返回标准格式的响应
@@ -809,6 +837,7 @@ async function callApiStreamDirect(
       duration,
       error: errorMessage,
       stream: true,
+      ...buildAPIAnalyticsContext(config),
     });
 
     throw error;
@@ -833,6 +862,7 @@ export async function callVideoApiStreamRaw(
     model,
     messageCount: messages.length + 1, // +1 for system message
     stream: true,
+    ...buildAPIAnalyticsContext(config),
   });
 
   const headers = {
@@ -893,6 +923,7 @@ export async function callVideoApiStreamRaw(
         error: errorMessage,
         httpStatus: response.status,
         stream: true,
+        ...buildAPIAnalyticsContext(config),
       });
       const error = new Error(`HTTP ${response.status}: ${errorMessage}`);
       (error as any).apiErrorBody = errorBody;
@@ -948,6 +979,7 @@ export async function callVideoApiStreamRaw(
       duration,
       responseLength: fullContent.length,
       stream: true,
+      ...buildAPIAnalyticsContext(config),
     });
 
     // 返回标准格式的响应
@@ -969,6 +1001,7 @@ export async function callVideoApiStreamRaw(
       duration,
       error: errorMessage,
       stream: true,
+      ...buildAPIAnalyticsContext(config),
     });
 
     throw error;

@@ -1,6 +1,6 @@
 {
   "version": "0.6.73",
-  "buildTime": "2026-04-24T09:45:21.100Z",
+  "buildTime": "2026-04-24T09:45:22.416Z",
   "gitCommit": "unknown",
   "changelog": [
     "修复版本更新条假升级与 SW 提交时序"

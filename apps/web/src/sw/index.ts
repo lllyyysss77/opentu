@@ -1232,6 +1232,7 @@ const IDLE_PREFETCH_FAILURE_RETRY_MAX_DELAY_MS = 60000;
 const IDLE_PREFETCH_MANIFEST_RETRY_DELAY_MS = 5000;
 const UPDATE_FULL_PREWARM_TIMEOUT_MS = 10 * 60 * 1000;
 const FOLLOW_UP_IDLE_PREFETCH_GROUPS = ['offline-static-assets'] as const;
+const IDLE_PREFETCH_MANIFEST_DISABLED_REASON = 'disabled-in-development';
 let lastObservedClientFetchAt = 0;
 let lastIdlePrefetchFetchKickAt = 0;
 const completedIdlePrefetchEntries = new Set<string>();
@@ -1396,6 +1397,10 @@ let idlePrefetchManifestPromise: Promise<IdlePrefetchManifest | null> | null =
 let idlePrefetchManifestLastFailureAt = 0;
 let idlePrefetchManifestLastFailureReason: string | null = null;
 
+function isIdlePrefetchManifestDisabled(): boolean {
+  return isDevelopment;
+}
+
 async function readResponsePreview(
   response: Response,
   maxChars = 200
@@ -1412,6 +1417,11 @@ async function readResponsePreview(
 }
 
 async function loadIdlePrefetchManifest(): Promise<IdlePrefetchManifest | null> {
+  if (isIdlePrefetchManifestDisabled()) {
+    logSWDebug('loadIdlePrefetchManifest: skipped in development mode');
+    return null;
+  }
+
   const manifestUrl = new URL(
     '/idle-prefetch-manifest.json',
     self.location.origin
@@ -1494,6 +1504,14 @@ async function loadIdlePrefetchManifest(): Promise<IdlePrefetchManifest | null> 
 }
 
 async function getIdlePrefetchManifest(): Promise<IdlePrefetchManifest | null> {
+  if (isIdlePrefetchManifestDisabled()) {
+    idlePrefetchManifestLastFailureAt = 0;
+    idlePrefetchManifestLastFailureReason =
+      IDLE_PREFETCH_MANIFEST_DISABLED_REASON;
+    idlePrefetchManifestPromise = null;
+    return null;
+  }
+
   const now = Date.now();
 
   if (!idlePrefetchManifestPromise) {
@@ -2505,6 +2523,20 @@ async function prefetchPendingIdleGroups(
   reason: string,
   preferredGroups: string[] = []
 ): Promise<IdlePrefetchRunSummary> {
+  if (isIdlePrefetchManifestDisabled()) {
+    logSWDebug('prefetchPendingIdleGroups skipped: disabled in development', {
+      reason,
+      preferredGroups,
+    });
+    return {
+      completedGroups: [],
+      pendingGroups: [],
+      queuedEntries: 0,
+      coolingEntries: 0,
+      nextRetryDelayMs: null,
+    };
+  }
+
   const manifest = await getIdlePrefetchManifest();
   if (!manifest) {
     scheduleIdlePrefetchSweep(
@@ -2573,6 +2605,11 @@ async function prefetchPendingIdleGroups(
 }
 
 async function prefetchDefaultIdleGroups(): Promise<void> {
+  if (isIdlePrefetchManifestDisabled()) {
+    logSWDebug('prefetchDefaultIdleGroups skipped: disabled in development');
+    return;
+  }
+
   const manifest = await getIdlePrefetchManifest();
   if (!manifest) {
     scheduleIdlePrefetchSweep(
@@ -2599,6 +2636,13 @@ async function prefetchDefaultIdleGroups(): Promise<void> {
 }
 
 async function prewarmAllIdlePrefetchGroupsForUpdateReady(): Promise<void> {
+  if (isIdlePrefetchManifestDisabled()) {
+    logSWDebug(
+      'prewarmAllIdlePrefetchGroupsForUpdateReady skipped: disabled in development'
+    );
+    return;
+  }
+
   const startedAt = Date.now();
   let iteration = 0;
   let orderedGroups: string[] | null = null;
