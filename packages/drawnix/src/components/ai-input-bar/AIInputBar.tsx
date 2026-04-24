@@ -19,6 +19,7 @@
 import React, {
   useState,
   useEffect,
+  useLayoutEffect,
   useCallback,
   useRef,
   useMemo,
@@ -242,6 +243,55 @@ function getPromptLengthBucket(length: number): string {
   if (length <= 300) return '101-300';
   if (length <= 800) return '301-800';
   return '800+';
+}
+
+const AI_INPUT_COLLAPSED_ROWS = 1;
+const AI_INPUT_EXPANDED_ROWS = 4;
+const AI_INPUT_MAX_ROWS = 6;
+const AI_INPUT_LINE_HEIGHT = 1.5;
+
+function getTextareaHeightForRows(
+  textarea: HTMLTextAreaElement,
+  rows: number
+) {
+  const styles = window.getComputedStyle(textarea);
+  const fontSize = Number.parseFloat(styles.fontSize) || 15;
+  const lineHeight =
+    Number.parseFloat(styles.lineHeight) || fontSize * AI_INPUT_LINE_HEIGHT;
+  const verticalPadding =
+    Number.parseFloat(styles.paddingTop) +
+    Number.parseFloat(styles.paddingBottom);
+  const verticalBorder =
+    Number.parseFloat(styles.borderTopWidth) +
+    Number.parseFloat(styles.borderBottomWidth);
+
+  return Math.ceil(lineHeight * rows + verticalPadding + verticalBorder);
+}
+
+function resizeAIInputTextarea(
+  textarea: HTMLTextAreaElement | null,
+  isExpanded: boolean
+) {
+  if (!textarea) return;
+
+  if (!isExpanded) {
+    textarea.style.height = '';
+    textarea.style.overflowY = '';
+    return;
+  }
+
+  const minHeight = getTextareaHeightForRows(
+    textarea,
+    AI_INPUT_EXPANDED_ROWS
+  );
+  const maxHeight = getTextareaHeightForRows(textarea, AI_INPUT_MAX_ROWS);
+
+  textarea.style.height = 'auto';
+  const contentHeight = textarea.scrollHeight;
+  const nextHeight = Math.min(Math.max(contentHeight, minHeight), maxHeight);
+
+  textarea.style.height = `${nextHeight}px`;
+  textarea.style.overflowY = contentHeight > maxHeight ? 'auto' : 'hidden';
 }
 
 function findMatchingSelectableModel(
@@ -3537,6 +3587,10 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
     const shouldKeepExpanded =
       isFocused || allContent.length > 0 || isPromptOptimizeOpen;
 
+    useLayoutEffect(() => {
+      resizeAIInputTextarea(inputRef.current, shouldKeepExpanded);
+    }, [shouldKeepExpanded, prompt]);
+
     return (
       <div
         ref={containerRef}
@@ -3735,7 +3789,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
               <textarea
                 ref={inputRef}
                 className={classNames('ai-input-bar__input', {
-                  'ai-input-bar__input--focused': isFocused,
+                  'ai-input-bar__input--focused': shouldKeepExpanded,
                 })}
                 value={prompt}
                 onChange={handleInputChange}
@@ -3767,7 +3821,11 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
                         generationType === 'image' ? 'image' : 'video'
                       } you want to create`
                 }
-                rows={shouldKeepExpanded ? 4 : 1}
+                rows={
+                  shouldKeepExpanded
+                    ? AI_INPUT_EXPANDED_ROWS
+                    : AI_INPUT_COLLAPSED_ROWS
+                }
                 disabled={isSubmitting}
                 data-testid="ai-input-textarea"
               />
