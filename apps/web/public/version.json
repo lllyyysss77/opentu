@@ -1,6 +1,6 @@
 {
   "version": "0.6.74",
-  "buildTime": "2026-04-24T17:28:14.234Z",
+  "buildTime": "2026-04-24T17:28:14.776Z",
   "gitCommit": "unknown",
   "changelog": [
     "添加UI交互埋点并优化剪贴板权限检测",
