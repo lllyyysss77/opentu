@@ -1,6 +1,9 @@
 {
-  "version": "0.6.71",
-  "buildTime": "2026-04-24T08:19:40.382Z",
+  "version": "0.6.72",
+  "buildTime": "2026-04-24T08:50:32.068Z",
   "gitCommit": "unknown",
-  "changelog": []
+  "changelog": [
+    "perf(sw): 优化空闲预取机制并移除调试日志",
+    "确保更新安装时所有预缓存资源就绪后再提示升级"
+  ]
 }

@@ -1,3 +1,17 @@
+## 0.6.72 (2026-04-24)
+
+### 🩹 Fixes
+
+- 确保更新安装时所有预缓存资源就绪后再提示升级 ([a1833973](https://github.com/ljquan/aitu/commit/a1833973))
+
+### 🔧 Chores
+
+- perf(sw): 优化空闲预取机制并移除调试日志 ([cd0b738d](https://github.com/ljquan/aitu/commit/cd0b738d))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+
 ## 0.6.70 (2026-04-24)
 
 ### 🚀 Features
