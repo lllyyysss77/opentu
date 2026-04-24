@@ -1,6 +1,19 @@
 {
   "versions": [
     {
+      "version": "0.6.73",
+      "date": "2026-04-24",
+      "changes": {
+        "features": [],
+        "fixes": [
+          "修复版本更新条假升级与 SW 提交时序"
+        ],
+        "improvements": []
+      },
+      "type": "patch",
+      "highlights": "修复版本更新条假升级与 SW 提交时序"
+    },
+    {
       "version": "0.6.72",
       "date": "2026-04-24",
       "changes": {

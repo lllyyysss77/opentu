@@ -1,3 +1,13 @@
+## 0.6.73 (2026-04-24)
+
+### 🩹 Fixes
+
+- 修复版本更新条假升级与 SW 提交时序 ([328468bf](https://github.com/ljquan/aitu/commit/328468bf))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+
 ## 0.6.72 (2026-04-24)
 
 ### 🩹 Fixes
