@@ -1225,10 +1225,14 @@ interface IdlePrefetchManifest {
 
 const IDLE_PREFETCH_CONCURRENCY = 2;
 const IDLE_PREFETCH_RECENT_FETCH_WINDOW_MS = 1500;
+const FOLLOW_UP_IDLE_PREFETCH_DELAY_MS = 2500;
+const FOLLOW_UP_IDLE_PREFETCH_GROUPS = ['offline-static-assets'] as const;
 let lastObservedClientFetchAt = 0;
 const completedIdlePrefetchEntries = new Set<string>();
 const activeIdlePrefetchEntries = new Set<string>();
 const completedIdlePrefetchGroups = new Set<string>();
+let idlePrefetchTaskQueue: Promise<void> = Promise.resolve();
+let scheduledFollowUpIdlePrefetchTimer: number | null = null;
 let installingVersionIsUpdate = false;
 let shouldClaimClientsOnActivate = false;
 
@@ -1458,6 +1462,105 @@ async function getCacheEntryCount(cache: Cache): Promise<number> {
   } catch {
     return -1;
   }
+}
+
+function enqueueIdlePrefetchTask(
+  label: string,
+  task: () => Promise<void>
+): Promise<void> {
+  const run = idlePrefetchTaskQueue
+    .catch(() => undefined)
+    .then(async () => {
+      logSWDebug('idle prefetch task start', { label });
+      try {
+        await task();
+      } finally {
+        logSWDebug('idle prefetch task done', { label });
+      }
+    });
+
+  idlePrefetchTaskQueue = run.catch((error) => {
+    console.warn('[SWDebug] idle prefetch task failed', {
+      label,
+      error: getSafeErrorMessage(error),
+    });
+  });
+
+  return run;
+}
+
+function resolveFollowUpIdlePrefetchGroups(
+  manifest: IdlePrefetchManifest | null
+): string[] {
+  if (!manifest) {
+    return [];
+  }
+
+  return FOLLOW_UP_IDLE_PREFETCH_GROUPS.filter((groupName) => {
+    const entries = manifest.groups[groupName] || [];
+    return (
+      entries.length > 0 &&
+      !completedIdlePrefetchGroups.has(groupName) &&
+      !manifest.defaults?.includes(groupName)
+    );
+  });
+}
+
+async function prefetchFollowUpIdleGroups(reason: string): Promise<void> {
+  const manifest = await getIdlePrefetchManifest();
+  const followUpGroups = resolveFollowUpIdlePrefetchGroups(manifest);
+
+  if (followUpGroups.length === 0) {
+    logSWDebug('prefetchFollowUpIdleGroups skipped: no pending groups', {
+      reason,
+      completedGroups: Array.from(completedIdlePrefetchGroups),
+    });
+    return;
+  }
+
+  logSWDebug('prefetchFollowUpIdleGroups start', {
+    reason,
+    followUpGroups,
+    groupEntryCounts: Object.fromEntries(
+      followUpGroups.map((groupName) => [
+        groupName,
+        manifest?.groups[groupName]?.length || 0,
+      ])
+    ),
+  });
+
+  const completedGroups = await prefetchIdleGroups(followUpGroups);
+  if (completedGroups.length > 0) {
+    await broadcastIdlePrefetchStatus();
+  }
+
+  logSWDebug('prefetchFollowUpIdleGroups done', {
+    reason,
+    followUpGroups,
+    completedGroups,
+  });
+}
+
+function scheduleFollowUpIdlePrefetch(reason: string): void {
+  if (scheduledFollowUpIdlePrefetchTimer !== null) {
+    logSWDebug('scheduleFollowUpIdlePrefetch skipped: already scheduled', {
+      reason,
+    });
+    return;
+  }
+
+  scheduledFollowUpIdlePrefetchTimer = self.setTimeout(() => {
+    scheduledFollowUpIdlePrefetchTimer = null;
+    void enqueueIdlePrefetchTask(
+      `follow-up:${reason}`,
+      async () => prefetchFollowUpIdleGroups(reason)
+    );
+  }, FOLLOW_UP_IDLE_PREFETCH_DELAY_MS);
+
+  logSWDebug('scheduleFollowUpIdlePrefetch queued', {
+    reason,
+    delayMs: FOLLOW_UP_IDLE_PREFETCH_DELAY_MS,
+  });
 }
 
 function shouldDeferIdlePrefetch(): boolean {
@@ -2125,6 +2228,7 @@ async function prefetchDefaultIdleGroups(): Promise<void> {
   if (completedGroups.length > 0) {
     await broadcastIdlePrefetchStatus();
   }
+  scheduleFollowUpIdlePrefetch('default-groups-completed');
   logSWDebug('prefetchDefaultIdleGroups done', { completedGroups });
 }
 
@@ -2239,7 +2343,9 @@ sw.addEventListener('activate', (event: ExtendableEvent) => {
       // prefetchIdleGroups 会在最近有客户端请求时自动延后，避免抢占首屏。
       setTimeout(() => {
         logSWDebug('activate: scheduling default idle prefetch');
-        void prefetchDefaultIdleGroups();
+        void enqueueIdlePrefetchTask('default-groups', async () =>
+          prefetchDefaultIdleGroups()
+        );
       }, 800);
 
       // 使用 channelManager 通知所有客户端 SW 已更新
@@ -2609,11 +2715,11 @@ sw.addEventListener('message', (event: ExtendableMessageEvent) => {
       : [];
     logSWDebug('message: SW_PREFETCH_GROUPS', { groups });
     event.waitUntil(
-      prefetchIdleGroups(groups).then((completedGroups) => {
+      enqueueIdlePrefetchTask(`message:${groups.join(',') || 'empty'}`, async () => {
+        const completedGroups = await prefetchIdleGroups(groups);
         if (completedGroups.length > 0) {
-          return broadcastIdlePrefetchStatus();
+          await broadcastIdlePrefetchStatus();
         }
-        return Promise.resolve();
       })
     );
     return;
