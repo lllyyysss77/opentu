@@ -1,3 +1,18 @@
+## 0.6.74 (2026-04-24)
+
+### 🚀 Features
+
+- 添加UI交互埋点并优化剪贴板权限检测 ([26ae1854](https://github.com/ljquan/aitu/commit/26ae1854))
+- 为缓存失败的媒体添加下载提示角标 ([a42ed0ff](https://github.com/ljquan/aitu/commit/a42ed0ff))
+
+### 🩹 Fixes
+
+- 修复离线 CDN 资源缓存回退 ([b70ad2ae](https://github.com/ljquan/aitu/commit/b70ad2ae))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+
 ## 0.6.73 (2026-04-24)
 
 ### 🩹 Fixes

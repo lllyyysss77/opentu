@@ -1,6 +1,22 @@
 {
   "versions": [
     {
+      "version": "0.6.74",
+      "date": "2026-04-24",
+      "changes": {
+        "features": [
+          "添加UI交互埋点并优化剪贴板权限检测",
+          "为缓存失败的媒体添加下载提示角标"
+        ],
+        "fixes": [
+          "修复离线 CDN 资源缓存回退"
+        ],
+        "improvements": []
+      },
+      "type": "patch",
+      "highlights": "添加UI交互埋点并优化剪贴板权限检测"
+    },
+    {
       "version": "0.6.73",
       "date": "2026-04-24",
       "changes": {
