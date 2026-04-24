@@ -1825,6 +1825,7 @@ async function cacheFile(
         location.origin,
         {
           preferLocal: false,
+          requestKind: 'background-prefetch',
         }
       );
 
@@ -2494,6 +2495,7 @@ async function tryFetchStaticResourceFromCDN(
       {
         // 运行时 hash 资源优先走 CDN，失败后再回源站兜底。
         preferLocal: false,
+        requestKind: 'interactive-runtime',
       }
     );
 

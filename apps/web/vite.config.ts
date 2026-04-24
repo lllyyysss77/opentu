@@ -2,6 +2,7 @@
 import { defineConfig, Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { nxViteTsPaths } from '@nx/vite/plugins/nx-tsconfig-paths.plugin';
+import type { OutputAsset, OutputBundle, OutputChunk } from 'rollup';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
@@ -42,6 +43,11 @@ const IDLE_PREFETCH_DEFAULTS = [
 type IdlePrefetchGroup = (typeof IDLE_PREFETCH_GROUPS)[number];
 
 type ManifestEntry = { url: string; revision: string };
+type ViteOutputChunk = OutputChunk & {
+  viteMetadata?: {
+    importedCss?: Set<string>;
+  };
+};
 
 const STATIC_SCAN_EXCLUDED_DIRS = new Set([
   'product_showcase',
@@ -89,6 +95,23 @@ function createRevision(fullPath: string): string {
     .update(new Uint8Array(content))
     .digest('hex')
     .substring(0, 8);
+}
+
+function createContentRevision(content: string | Uint8Array): string {
+  return crypto.createHash('md5').update(content).digest('hex').substring(0, 8);
+}
+
+function createBundleFileRevision(file: OutputAsset | OutputChunk): string {
+  if (file.type === 'asset') {
+    const source = file.source ?? '';
+    return createContentRevision(
+      typeof source === 'string' || source instanceof Uint8Array
+        ? source
+        : String(source)
+    );
+  }
+
+  return createContentRevision(file.code);
 }
 
 function shouldExcludeStaticScanUrl(url: string): boolean {
@@ -144,8 +167,281 @@ function collectStaticEntries(
   return manifest;
 }
 
+function normalizeStaticUrlCandidate(candidate: string): string | null {
+  if (!candidate) {
+    return null;
+  }
+
+  if (
+    candidate.startsWith('http://') ||
+    candidate.startsWith('https://') ||
+    candidate.startsWith('data:') ||
+    candidate.startsWith('blob:')
+  ) {
+    return null;
+  }
+
+  const [withoutQuery] = candidate.split(/[?#]/, 1);
+  if (!withoutQuery) {
+    return null;
+  }
+
+  if (withoutQuery.startsWith('./')) {
+    return `/${withoutQuery.slice(2)}`;
+  }
+
+  if (withoutQuery.startsWith('/')) {
+    return withoutQuery;
+  }
+
+  return `/${withoutQuery}`;
+}
+
+function collectSelectedEntries(
+  outDir: string,
+  urls: Iterable<string>,
+  shouldInclude: (url: string, ext: string) => boolean
+): ManifestEntry[] {
+  const manifest: ManifestEntry[] = [];
+  const normalizedUrls = new Set<string>();
+
+  for (const url of urls) {
+    const normalizedUrl = normalizeStaticUrlCandidate(url);
+    if (!normalizedUrl) {
+      continue;
+    }
+
+    normalizedUrls.add(normalizedUrl);
+  }
+
+  for (const url of normalizedUrls) {
+    const ext = path.extname(url).toLowerCase();
+    if (shouldExcludeStaticScanUrl(url) || !shouldInclude(url, ext)) {
+      continue;
+    }
+
+    const fullPath = path.join(outDir, url.replace(/^\//, ''));
+    if (!fs.existsSync(fullPath) || !fs.statSync(fullPath).isFile()) {
+      continue;
+    }
+
+    manifest.push({
+      url,
+      revision: createRevision(fullPath),
+    });
+  }
+
+  manifest.sort((a, b) => a.url.localeCompare(b.url));
+  return manifest;
+}
+
+function collectHtmlShellPrecacheUrls(indexHtmlPath: string): Set<string> {
+  const urls = new Set<string>(PRECACHE_ALWAYS_INCLUDE);
+
+  if (!fs.existsSync(indexHtmlPath)) {
+    return urls;
+  }
+
+  const html = fs.readFileSync(indexHtmlPath, 'utf8');
+  const attrPattern = /\b(?:data-local-(?:src|href)|src|href)="([^"]+)"/g;
+
+  for (const match of html.matchAll(attrPattern)) {
+    const normalizedUrl = normalizeStaticUrlCandidate(match[1]);
+    if (normalizedUrl) {
+      urls.add(normalizedUrl);
+    }
+  }
+
+  return urls;
+}
+
 function normalizePathForChunking(id: string): string {
   return id.replace(/\\/g, '/');
+}
+
+function normalizeBundleFileName(fileName: string): string {
+  return normalizePathForChunking(fileName).replace(/^\.\//, '');
+}
+
+function toManifestUrl(fileName: string): string {
+  const normalizedFileName = normalizeBundleFileName(fileName);
+  return normalizedFileName.startsWith('/')
+    ? normalizedFileName
+    : `/${normalizedFileName}`;
+}
+
+function shouldIncludeIdlePrefetchBundleFile(fileName: string): boolean {
+  const normalizedFileName = normalizeBundleFileName(fileName).toLowerCase();
+  return normalizedFileName.endsWith('.js') || normalizedFileName.endsWith('.css');
+}
+
+function isNamedIdlePrefetchGroupFile(
+  fileName: string,
+  group: IdlePrefetchGroup
+): boolean {
+  const baseName = path.posix.basename(normalizeBundleFileName(fileName)).toLowerCase();
+  return baseName.startsWith(`${group.toLowerCase()}-`);
+}
+
+function getNamedIdlePrefetchGroupForFile(
+  fileName: string
+): IdlePrefetchGroup | undefined {
+  return IDLE_PREFETCH_GROUPS.find((group) =>
+    isNamedIdlePrefetchGroupFile(fileName, group)
+  );
+}
+
+function collectNamedGroupEntriesFromOutputDir(
+  assetsDir: string,
+  group: IdlePrefetchGroup
+): ManifestEntry[] {
+  if (!fs.existsSync(assetsDir)) {
+    return [];
+  }
+
+  const files = fs.readdirSync(assetsDir);
+  const entries: ManifestEntry[] = [];
+
+  for (const file of files) {
+    const normalizedFileName = normalizeBundleFileName(file);
+    if (
+      !isNamedIdlePrefetchGroupFile(normalizedFileName, group) ||
+      !shouldIncludeIdlePrefetchBundleFile(normalizedFileName)
+    ) {
+      continue;
+    }
+
+    const fullPath = path.join(assetsDir, file);
+    entries.push({
+      url: toManifestUrl(path.posix.join('assets', normalizedFileName)),
+      revision: createRevision(fullPath),
+    });
+  }
+
+  entries.sort((a, b) => a.url.localeCompare(b.url));
+  return entries;
+}
+
+function chunkBelongsToIdlePrefetchGroup(
+  chunk: ViteOutputChunk,
+  group: IdlePrefetchGroup
+): boolean {
+  if (isNamedIdlePrefetchGroupFile(chunk.fileName, group)) {
+    return true;
+  }
+
+  const moduleIds = [chunk.facadeModuleId, ...Object.keys(chunk.modules)];
+  return moduleIds.some(
+    (moduleId) =>
+      typeof moduleId === 'string' && resolveIdlePrefetchGroup(moduleId) === group
+  );
+}
+
+function collectIdlePrefetchGroupEntriesFromBundle(
+  bundle: OutputBundle,
+  group: IdlePrefetchGroup
+): ManifestEntry[] {
+  if (group === 'runtime-static-assets' || group === 'offline-static-assets') {
+    return [];
+  }
+
+  const chunksByFileName = new Map<string, ViteOutputChunk>();
+  const assetsByFileName = new Map<string, OutputAsset>();
+
+  for (const output of Object.values(bundle)) {
+    const normalizedFileName = normalizeBundleFileName(output.fileName);
+
+    if (output.type === 'chunk') {
+      chunksByFileName.set(normalizedFileName, output as ViteOutputChunk);
+      continue;
+    }
+
+    assetsByFileName.set(normalizedFileName, output);
+  }
+
+  const pendingChunkFileNames = Array.from(chunksByFileName.values())
+    .filter((chunk) => chunkBelongsToIdlePrefetchGroup(chunk, group))
+    .map((chunk) => normalizeBundleFileName(chunk.fileName));
+
+  if (pendingChunkFileNames.length === 0) {
+    return [];
+  }
+
+  const visitedChunkFileNames = new Set<string>();
+  const pendingCssFileNames = new Set<string>();
+  const entriesByUrl = new Map<string, ManifestEntry>();
+
+  const addBundleEntry = (file: OutputAsset | OutputChunk) => {
+    if (!shouldIncludeIdlePrefetchBundleFile(file.fileName)) {
+      return;
+    }
+
+    const entry = {
+      url: toManifestUrl(file.fileName),
+      revision: createBundleFileRevision(file),
+    };
+    entriesByUrl.set(entry.url, entry);
+  };
+
+  while (pendingChunkFileNames.length > 0) {
+    const currentFileName = pendingChunkFileNames.pop();
+    if (!currentFileName || visitedChunkFileNames.has(currentFileName)) {
+      continue;
+    }
+
+    visitedChunkFileNames.add(currentFileName);
+
+    const chunk = chunksByFileName.get(currentFileName);
+    if (!chunk) {
+      continue;
+    }
+
+    addBundleEntry(chunk);
+
+    chunk.viteMetadata?.importedCss?.forEach((cssFileName) => {
+      pendingCssFileNames.add(normalizeBundleFileName(cssFileName));
+    });
+
+    chunk.referencedFiles.forEach((referencedFileName) => {
+      const normalizedReferencedFileName = normalizeBundleFileName(referencedFileName);
+      if (normalizedReferencedFileName.toLowerCase().endsWith('.css')) {
+        pendingCssFileNames.add(normalizedReferencedFileName);
+      }
+    });
+
+    for (const importedFileName of [...chunk.imports, ...chunk.dynamicImports]) {
+      const normalizedImportedFileName = normalizeBundleFileName(importedFileName);
+      const importedGroup = getNamedIdlePrefetchGroupForFile(normalizedImportedFileName);
+
+      if (importedGroup && importedGroup !== group) {
+        continue;
+      }
+
+      if (!visitedChunkFileNames.has(normalizedImportedFileName)) {
+        pendingChunkFileNames.push(normalizedImportedFileName);
+      }
+    }
+  }
+
+  for (const cssFileName of pendingCssFileNames) {
+    const cssAsset = assetsByFileName.get(cssFileName);
+    if (cssAsset) {
+      addBundleEntry(cssAsset);
+    }
+  }
+
+  for (const asset of assetsByFileName.values()) {
+    if (
+      isNamedIdlePrefetchGroupFile(asset.fileName, group) &&
+      asset.fileName.toLowerCase().endsWith('.css')
+    ) {
+      addBundleEntry(asset);
+    }
+  }
+
+  return Array.from(entriesByUrl.values()).sort((a, b) =>
+    a.url.localeCompare(b.url)
+  );
 }
 
 function resolveIdlePrefetchGroup(id: string): IdlePrefetchGroup | undefined {
@@ -200,8 +496,11 @@ function precacheManifestPlugin(): Plugin {
       order: 'post',
       async handler() {
         const outDir = path.resolve(__dirname, '../../dist/apps/web');
-        const manifest = collectStaticEntries(
+        const indexHtmlPath = path.join(outDir, 'index.html');
+        const precacheUrls = collectHtmlShellPrecacheUrls(indexHtmlPath);
+        const manifest = collectSelectedEntries(
           outDir,
+          precacheUrls,
           (url, ext) =>
             PRECACHE_ALWAYS_INCLUDE.has(url) ||
             (ext !== '.html' && PRECACHE_EXTENSIONS.has(ext))
@@ -228,9 +527,21 @@ function precacheManifestPlugin(): Plugin {
 }
 
 function idlePrefetchManifestPlugin(): Plugin {
+  let bundleGroupEntries = Object.fromEntries(
+    IDLE_PREFETCH_GROUPS.map((group) => [group, [] as ManifestEntry[]])
+  ) as Record<IdlePrefetchGroup, ManifestEntry[]>;
+
   return {
     name: 'idle-prefetch-manifest',
     apply: 'build',
+    generateBundle(_options, bundle) {
+      bundleGroupEntries = Object.fromEntries(
+        IDLE_PREFETCH_GROUPS.map((group) => [
+          group,
+          collectIdlePrefetchGroupEntriesFromBundle(bundle, group),
+        ])
+      ) as Record<IdlePrefetchGroup, ManifestEntry[]>;
+    },
     closeBundle: {
       sequential: true,
       order: 'post',
@@ -268,32 +579,20 @@ function idlePrefetchManifestPlugin(): Plugin {
         }
 
         if (fs.existsSync(assetsDir)) {
-          const files = fs.readdirSync(assetsDir);
           for (const group of IDLE_PREFETCH_GROUPS) {
             if (group === 'offline-static-assets') {
               continue;
             }
-            const groupFiles = files.filter((file) => {
-              const lower = file.toLowerCase();
-              return (
-                lower.startsWith(`${group}-`) &&
-                (lower.endsWith('.js') || lower.endsWith('.css'))
-              );
-            });
 
-            for (const file of groupFiles) {
-              const fullPath = path.join(assetsDir, file);
-              const content = fs.readFileSync(fullPath);
-              const revision = crypto
-                .createHash('md5')
-                .update(new Uint8Array(content))
-                .digest('hex')
-                .substring(0, 8);
-              groups[group].push({
-                url: `/assets/${file}`,
-                revision,
-              });
-            }
+            const expandedEntries =
+              bundleGroupEntries[group].length > 0
+                ? bundleGroupEntries[group]
+                : collectNamedGroupEntriesFromOutputDir(assetsDir, group);
+
+            groups[group] = expandedEntries.filter((entry) => {
+              const fullPath = path.join(outDir, entry.url.replace(/^\//, ''));
+              return fs.existsSync(fullPath) && !precachedUrls.has(entry.url);
+            });
           }
         }
 
