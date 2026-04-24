@@ -1,6 +1,31 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DRAWNIX_SETTINGS_KEY } from '../../constants/storage';
 
+function createStorageMock(): Storage {
+  const store = new Map<string, string>();
+
+  return {
+    get length() {
+      return store.size;
+    },
+    clear() {
+      store.clear();
+    },
+    getItem(key: string) {
+      return store.get(key) ?? null;
+    },
+    key(index: number) {
+      return Array.from(store.keys())[index] ?? null;
+    },
+    removeItem(key: string) {
+      store.delete(key);
+    },
+    setItem(key: string, value: string) {
+      store.set(key, value);
+    },
+  } as Storage;
+}
+
 function mockSettingsManagerDeps() {
   vi.doMock('../crypto-utils', () => ({
     CryptoUtils: {
@@ -21,33 +46,42 @@ function mockSettingsManagerDeps() {
 describe('settings-manager', () => {
   beforeEach(() => {
     vi.resetModules();
-    const storage = new Map<string, string>();
-    vi.stubGlobal('window', {
-      location: {
-        search: '',
-        href: 'https://example.com/app',
-      },
-      history: {
-        replaceState: () => {},
-      },
-      dispatchEvent: () => true,
-    });
-    vi.stubGlobal('localStorage', {
-      getItem: (key: string) => storage.get(key) ?? null,
-      setItem: (key: string, value: string) => {
-        storage.set(key, value);
-      },
-      removeItem: (key: string) => {
-        storage.delete(key);
-      },
-      clear: () => {
-        storage.clear();
-      },
-    });
+
+    if (typeof globalThis.localStorage?.clear !== 'function') {
+      Object.defineProperty(globalThis, 'localStorage', {
+        value: createStorageMock(),
+        configurable: true,
+      });
+    }
+
+    if (typeof window === 'undefined') {
+      vi.stubGlobal('window', {
+        location: {
+          search: '',
+          href: 'https://example.com/app',
+        },
+        history: {
+          replaceState: () => {},
+        },
+        dispatchEvent: () => true,
+      });
+    } else {
+      Object.assign(window, {
+        location: {
+          search: '',
+          href: 'https://example.com/app',
+        },
+        history: {
+          replaceState: () => {},
+        },
+        dispatchEvent: () => true,
+      });
+    }
+
     localStorage.clear();
   });
 
-  it('defaults missing compatibility to OpenAI GPT while preserving explicit values', async () => {
+  it('defaults missing compatibility while preserving managed profile details and explicit values', async () => {
     mockSettingsManagerDeps();
 
     localStorage.setItem(
@@ -128,9 +162,10 @@ describe('settings-manager', () => {
 
     const {
       providerProfilesSettings,
-      LEGACY_DEFAULT_PROVIDER_PROFILE_ID,
-      TUZI_ORIGINAL_PROVIDER_PROFILE_ID,
       DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY,
+      LEGACY_DEFAULT_PROVIDER_PROFILE_ID,
+      TUZI_CODEX_PROVIDER_PROFILE_ID,
+      TUZI_ORIGINAL_PROVIDER_PROFILE_ID,
     } = await import('../settings-manager');
 
     const profiles = providerProfilesSettings.get();
@@ -140,12 +175,24 @@ describe('settings-manager', () => {
     const tuziOriginProfile = profiles.find(
       (profile) => profile.id === TUZI_ORIGINAL_PROVIDER_PROFILE_ID
     );
+    const tuziCodexProfile = profiles.find(
+      (profile) => profile.id === TUZI_CODEX_PROVIDER_PROFILE_ID
+    );
 
     expect(legacyProfile).toMatchObject({
+      providerType: 'custom',
+      authType: 'query',
       imageApiCompatibility: DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY,
     });
     expect(tuziOriginProfile).toMatchObject({
+      providerType: 'gemini-compatible',
+      authType: 'header',
+      pricingGroup: 'default',
       imageApiCompatibility: 'tuzi-gpt-image',
+    });
+    expect(tuziCodexProfile).toMatchObject({
+      pricingGroup: 'codex',
+      imageApiCompatibility: DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY,
     });
     expect(
       profiles.find((profile) => profile.id === 'custom-auto')
@@ -215,6 +262,7 @@ describe('settings-manager', () => {
     const {
       providerProfilesSettings,
       LEGACY_DEFAULT_PROVIDER_PROFILE_ID,
+      TUZI_CODEX_PROVIDER_PROFILE_ID,
       TUZI_MIX_PROVIDER_PROFILE_ID,
       TUZI_ORIGINAL_PROVIDER_PROFILE_ID,
     } = await import('../settings-manager');
@@ -244,6 +292,13 @@ describe('settings-manager', () => {
           };
         }
 
+        if (profile.id === TUZI_CODEX_PROVIDER_PROFILE_ID) {
+          return {
+            ...profile,
+            imageApiCompatibility: 'tuzi-gpt-image' as const,
+          };
+        }
+
         return profile;
       })
     );
@@ -269,9 +324,18 @@ describe('settings-manager', () => {
       imageApiCompatibility: 'auto',
     });
     expect(
-      reloadedProfiles.find((profile) => profile.id === TUZI_MIX_PROVIDER_PROFILE_ID)
+      reloadedProfiles.find(
+        (profile) => profile.id === TUZI_MIX_PROVIDER_PROFILE_ID
+      )
     ).toMatchObject({
       imageApiCompatibility: 'openai-compatible-basic',
+    });
+    expect(
+      reloadedProfiles.find(
+        (profile) => profile.id === TUZI_CODEX_PROVIDER_PROFILE_ID
+      )
+    ).toMatchObject({
+      imageApiCompatibility: 'tuzi-gpt-image',
     });
   });
 });

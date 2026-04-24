@@ -84,9 +84,9 @@ describe('cdn-fallback', () => {
       buildCDNUrl(
         jsdelivr,
         '3.0.0',
-        '/npm/aitu-app@3.0.0/assets/tool-windows.css'
+        '/npm/aitu-app@3.0.0/assets/tool-drawers.css'
       )
-    ).toBe('https://cdn.jsdelivr.net/npm/aitu-app@3.0.0/assets/tool-windows.css');
+    ).toBe('https://cdn.jsdelivr.net/npm/aitu-app@3.0.0/assets/tool-drawers.css');
   });
 
   it('normalizes absolute jsdelivr URLs before rebuilding fallback URLs', () => {
@@ -96,9 +96,9 @@ describe('cdn-fallback', () => {
       buildCDNUrl(
         jsdelivr,
         '3.0.0',
-        'https://cdn.jsdelivr.net/npm/aitu-app@3.0.0/assets/tool-windows.css'
+        'https://cdn.jsdelivr.net/npm/aitu-app@3.0.0/assets/tool-drawers.css'
       )
-    ).toBe('https://cdn.jsdelivr.net/npm/aitu-app@3.0.0/assets/tool-windows.css');
+    ).toBe('https://cdn.jsdelivr.net/npm/aitu-app@3.0.0/assets/tool-drawers.css');
   });
 
   it('uses CDN first for same-origin absolute asset URLs', async () => {
@@ -265,6 +265,48 @@ describe('cdn-fallback', () => {
     expect(getAvailableCDNs('1.0.0').map((item) => item.name)).toEqual([
       'jsdelivr',
     ]);
+  });
+
+  it('forces a final CDN recovery probe when local origin also misses', async () => {
+    markCDNFailure('jsdelivr', 'timeout');
+    markCDNFailure('jsdelivr', 'timeout');
+    markCDNFailure('jsdelivr', 'timeout');
+
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async (input: RequestInfo | URL) => {
+        const url = String(input);
+
+        if (url.startsWith('https://origin.example.com/')) {
+          return new Response('missing', { status: 404 });
+        }
+
+        if (url.includes('cdn.jsdelivr.net')) {
+          return new Response('console.log("recovered");', {
+            status: 200,
+            headers: {
+              'Content-Type': 'application/javascript',
+              'Content-Length': '180',
+            },
+          });
+        }
+
+        return new Response('missing', { status: 404 });
+      });
+
+    const result = await fetchFromCDNWithFallback(
+      'assets/tool-windows-pGtQqqCf.js',
+      '3.0.0',
+      'https://origin.example.com'
+    );
+
+    expect(result?.source).toBe('jsdelivr');
+    expect(fetchMock.mock.calls[0]?.[0]).toContain(
+      'https://origin.example.com/assets/tool-windows-pGtQqqCf.js'
+    );
+    expect(fetchMock.mock.calls[1]?.[0]).toContain(
+      'https://cdn.jsdelivr.net/npm/aitu-app@3.0.0/assets/tool-windows-pGtQqqCf.js'
+    );
   });
 
   it('includes fail count and cooldown info in status report', () => {

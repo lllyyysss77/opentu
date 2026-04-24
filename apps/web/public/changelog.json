@@ -1,6 +1,57 @@
 {
   "versions": [
     {
+      "version": "0.6.64",
+      "date": "2026-04-23",
+      "changes": {
+        "features": [
+          "添加CDN恢复探测和详细日志记录"
+        ],
+        "fixes": [
+          "修复 LLM API Logger 的 IDB 连接关闭导致大模型调用失败",
+          "HTML 缓存双 key 存储，导航请求直接命中"
+        ],
+        "improvements": []
+      },
+      "type": "patch",
+      "highlights": "添加CDN恢复探测和详细日志记录"
+    },
+    {
+      "version": "0.6.60",
+      "date": "2026-04-23",
+      "changes": {
+        "features": [
+          "支持多供应商分组的模型健康状态显示"
+        ],
+        "fixes": [
+          "稳定 service worker 分阶段加载与版本提交协议"
+        ],
+        "improvements": []
+      },
+      "type": "patch",
+      "highlights": "支持多供应商分组的模型健康状态显示"
+    },
+    {
+      "version": "0.6.59",
+      "date": "2026-04-23",
+      "changes": {
+        "features": [],
+        "fixes": [
+          "增强错误上下文收集并修复资源错误跟踪",
+          "修正 SW 静态资源版本命中与启动页提示",
+          "统一 PostHog 版本上下文",
+          "老用户沿用旧版壳并修正图层锁定失效路径",
+          "将 SW 升级切换改为整包 ready 后再接管",
+          "恢复 Gemini 图片模型的 generateContent 路由策略"
+        ],
+        "improvements": [
+          "更新版本号至0.6.55并刷新构建时间"
+        ]
+      },
+      "type": "patch",
+      "highlights": "增强错误上下文收集并修复资源错误跟踪"
+    },
+    {
       "version": "0.6.57",
       "date": "2026-04-23",
       "changes": {

@@ -28,6 +28,7 @@ import {
 } from './task-queue/utils/message-bus';
 import {
   fetchFromCDNWithFallback,
+  extractVersionFromCDNPath,
   getCDNStatusReport,
   resetCDNStatus,
   performHealthCheck,
@@ -247,6 +248,11 @@ const STATIC_SOURCE_HEADER = 'x-sw-source';
 const STATIC_REVISION_HEADER = 'x-sw-revision';
 const STATIC_APP_VERSION_HEADER = 'x-sw-app-version';
 const STATIC_FETCH_TARGET_HEADER = 'x-sw-fetch-target';
+const SERVICE_WORKER_DB_NAME = 'ServiceWorkerDB';
+const SERVICE_WORKER_DB_VERSION = 2;
+const FAILED_DOMAINS_STORE = 'failedDomains';
+const VERSION_STATE_STORE = 'versionState';
+const VERSION_STATE_KEY = 'app-version-state';
 
 // 缓存 URL 前缀 - 用于合并视频、图片等本地缓存资源
 const CACHE_URL_PREFIX = '/__aitu_cache__/';
@@ -265,6 +271,16 @@ interface CorsDomain {
   hostname: string;
   pathPattern: string;
   fallbackDomain: string;
+}
+
+type SWUpgradeState = 'idle' | 'prewarming' | 'ready' | 'committing';
+
+interface SWVersionState {
+  committedVersion: string;
+  pendingVersion: string | null;
+  pendingReadyAt: number | null;
+  upgradeState: SWUpgradeState;
+  updatedAt: number;
 }
 
 // 允许跨域处理的域名配置 - 仅拦截需要CORS处理的域名
@@ -906,37 +922,173 @@ function isGenerateContentRequest(url: URL): boolean {
   );
 }
 
+function getStaticCacheName(version: string): string {
+  return `drawnix-static-v${version}`;
+}
+
+function createDefaultVersionState(): SWVersionState {
+  return {
+    committedVersion: APP_VERSION,
+    pendingVersion: null,
+    pendingReadyAt: null,
+    upgradeState: 'idle',
+    updatedAt: Date.now(),
+  };
+}
+
+function normalizeVersionState(value: unknown): SWVersionState {
+  const raw = (value || {}) as Partial<SWVersionState>;
+  const committedVersion =
+    typeof raw.committedVersion === 'string' && raw.committedVersion
+      ? raw.committedVersion
+      : APP_VERSION;
+  const pendingVersion =
+    typeof raw.pendingVersion === 'string' && raw.pendingVersion
+      ? raw.pendingVersion
+      : null;
+  const pendingReadyAt =
+    typeof raw.pendingReadyAt === 'number' && Number.isFinite(raw.pendingReadyAt)
+      ? raw.pendingReadyAt
+      : null;
+  const upgradeState: SWUpgradeState =
+    raw.upgradeState === 'prewarming' ||
+    raw.upgradeState === 'ready' ||
+    raw.upgradeState === 'committing'
+      ? raw.upgradeState
+      : 'idle';
+
+  return {
+    committedVersion,
+    pendingVersion,
+    pendingReadyAt,
+    upgradeState,
+    updatedAt:
+      typeof raw.updatedAt === 'number' && Number.isFinite(raw.updatedAt)
+        ? raw.updatedAt
+        : Date.now(),
+  };
+}
+
+function openServiceWorkerDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(
+      SERVICE_WORKER_DB_NAME,
+      SERVICE_WORKER_DB_VERSION
+    );
+
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => resolve(request.result);
+    request.onupgradeneeded = (event: IDBVersionChangeEvent) => {
+      const db = (event.target as IDBOpenDBRequest).result;
+      if (!db.objectStoreNames.contains(FAILED_DOMAINS_STORE)) {
+        db.createObjectStore(FAILED_DOMAINS_STORE, { keyPath: 'domain' });
+      }
+      if (!db.objectStoreNames.contains(VERSION_STATE_STORE)) {
+        db.createObjectStore(VERSION_STATE_STORE, { keyPath: 'key' });
+      }
+    };
+  });
+}
+
+async function readVersionState(): Promise<SWVersionState> {
+  try {
+    const db = await openServiceWorkerDB();
+    return await new Promise((resolve, reject) => {
+      const transaction = db.transaction([VERSION_STATE_STORE], 'readonly');
+      const store = transaction.objectStore(VERSION_STATE_STORE);
+      const request = store.get(VERSION_STATE_KEY);
+
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const result = request.result;
+        resolve(
+          normalizeVersionState(result?.state || createDefaultVersionState())
+        );
+      };
+    });
+  } catch (error) {
+    console.warn('Service Worker: 无法读取版本状态:', error);
+    return createDefaultVersionState();
+  }
+}
+
+async function writeVersionState(state: SWVersionState): Promise<SWVersionState> {
+  const normalized = normalizeVersionState(state);
+  try {
+    const db = await openServiceWorkerDB();
+    await new Promise<void>((resolve, reject) => {
+      const transaction = db.transaction([VERSION_STATE_STORE], 'readwrite');
+      const store = transaction.objectStore(VERSION_STATE_STORE);
+      store.put({
+        key: VERSION_STATE_KEY,
+        state: normalized,
+      });
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+    });
+  } catch (error) {
+    console.warn('Service Worker: 无法写入版本状态:', error);
+  }
+
+  return normalized;
+}
+
+async function updateVersionState(
+  patch:
+    | Partial<SWVersionState>
+    | ((current: SWVersionState) => Partial<SWVersionState>)
+): Promise<SWVersionState> {
+  const current = await readVersionState();
+  const nextPatch = typeof patch === 'function' ? patch(current) : patch;
+  return writeVersionState({
+    ...current,
+    ...nextPatch,
+    updatedAt: Date.now(),
+  });
+}
+
+async function postVersionState(
+  target?: Client | ServiceWorker | null
+): Promise<SWVersionState> {
+  const state = await readVersionState();
+  const payload = {
+    type: 'SW_VERSION_STATE' as const,
+    ...state,
+    swVersion: APP_VERSION,
+  };
+
+  if (target) {
+    target.postMessage(payload);
+    return state;
+  }
+
+  const clients = await sw.clients.matchAll({
+    type: 'window',
+    includeUncontrolled: true,
+  });
+
+  for (const client of clients) {
+    client.postMessage(payload);
+  }
+
+  return state;
+}
+
 // 从IndexedDB恢复失败域名列表
 async function loadFailedDomains(): Promise<void> {
   try {
-    const request = indexedDB.open('ServiceWorkerDB', 1);
+    const db = await openServiceWorkerDB();
+    return await new Promise((resolve, reject) => {
+      const transaction = db.transaction([FAILED_DOMAINS_STORE], 'readonly');
+      const store = transaction.objectStore(FAILED_DOMAINS_STORE);
+      const getAllRequest = store.getAll();
 
-    return new Promise((resolve, reject) => {
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => {
-        const db = request.result;
-        if (db.objectStoreNames.contains('failedDomains')) {
-          const transaction = db.transaction(['failedDomains'], 'readonly');
-          const store = transaction.objectStore('failedDomains');
-          const getAllRequest = store.getAll();
-
-          getAllRequest.onsuccess = () => {
-            const domains = getAllRequest.result;
-            domains.forEach((item: any) => failedDomains.add(item.domain));
-            // console.log('Service Worker: 恢复失败域名列表:', Array.from(failedDomains));
-            resolve();
-          };
-          getAllRequest.onerror = () => reject(getAllRequest.error);
-        } else {
-          resolve();
-        }
+      getAllRequest.onsuccess = () => {
+        const domains = getAllRequest.result;
+        domains.forEach((item: any) => failedDomains.add(item.domain));
+        resolve();
       };
-      request.onupgradeneeded = (event: IDBVersionChangeEvent) => {
-        const db = (event.target as IDBOpenDBRequest).result;
-        if (!db.objectStoreNames.contains('failedDomains')) {
-          db.createObjectStore('failedDomains', { keyPath: 'domain' });
-        }
-      };
+      getAllRequest.onerror = () => reject(getAllRequest.error);
     });
   } catch (error) {
     console.warn('Service Worker: 无法加载失败域名列表:', error);
@@ -946,28 +1098,14 @@ async function loadFailedDomains(): Promise<void> {
 // 保存失败域名到IndexedDB
 async function saveFailedDomain(domain: string): Promise<void> {
   try {
-    const request = indexedDB.open('ServiceWorkerDB', 1);
+    const db = await openServiceWorkerDB();
+    return await new Promise((resolve, reject) => {
+      const transaction = db.transaction([FAILED_DOMAINS_STORE], 'readwrite');
+      const store = transaction.objectStore(FAILED_DOMAINS_STORE);
 
-    return new Promise((resolve, reject) => {
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => {
-        const db = request.result;
-        const transaction = db.transaction(['failedDomains'], 'readwrite');
-        const store = transaction.objectStore('failedDomains');
-
-        store.put({ domain: domain, timestamp: Date.now() });
-        transaction.oncomplete = () => {
-          // console.log('Service Worker: 已保存失败域名到数据库:', domain);
-          resolve();
-        };
-        transaction.onerror = () => reject(transaction.error);
-      };
-      request.onupgradeneeded = (event: IDBVersionChangeEvent) => {
-        const db = (event.target as IDBOpenDBRequest).result;
-        if (!db.objectStoreNames.contains('failedDomains')) {
-          db.createObjectStore('failedDomains', { keyPath: 'domain' });
-        }
-      };
+      store.put({ domain: domain, timestamp: Date.now() });
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
     });
   } catch (error) {
     console.warn('Service Worker: 无法保存失败域名:', error);
@@ -978,21 +1116,30 @@ async function saveFailedDomain(domain: string): Promise<void> {
 
 // 标记新版本已准备好，等待用户确认
 // isUpdate: 是否是版本更新（有旧版本存在）
-function markNewVersionReady(isUpdate: boolean) {
-  // console.log(`Service Worker: 新版本 v${APP_VERSION} 已准备好，isUpdate=${isUpdate}`);
-
-  // 只有在版本更新时才通知客户端显示升级提示
-  // 首次安装不需要显示，因为没有"旧版本"可更新
+async function markNewVersionReady(isUpdate: boolean): Promise<void> {
   if (!isUpdate) {
-    // console.log('Service Worker: 首次安装，不显示更新提示');
+    await updateVersionState({
+      committedVersion: APP_VERSION,
+      pendingVersion: null,
+      pendingReadyAt: null,
+      upgradeState: 'idle',
+    });
+    await postVersionState();
     return;
   }
 
-  // 使用 channelManager 通知客户端有新版本可用
+  await updateVersionState((current) => ({
+    committedVersion: current.committedVersion || APP_VERSION,
+    pendingVersion: APP_VERSION,
+    pendingReadyAt: Date.now(),
+    upgradeState: 'ready',
+  }));
+
   const cm = getChannelManager();
   if (cm) {
     cm.sendSWNewVersionReady(APP_VERSION);
   }
+  await postVersionState();
 }
 
 // 清理旧的缓存条目以释放空间（基于LRU策略）
@@ -1086,6 +1233,37 @@ function logSWDebug(message: string, detail?: unknown): void {
   }
 
   console.info(`[SWDebug] ${message}`, detail);
+}
+
+function getUnavailableCDNSnapshot(): Array<{
+  name: string;
+  failCount: number;
+  remainingCooldownMs: number;
+  lastFailureReason?: string;
+}> {
+  return getCDNStatusReport()
+    .filter((item) => item.remainingCooldownMs > 0 && !item.status.isHealthy)
+    .map((item) => ({
+      name: item.name,
+      failCount: item.status.failCount,
+      remainingCooldownMs: item.remainingCooldownMs,
+      lastFailureReason: item.status.lastFailureReason,
+    }));
+}
+
+function logStatic503Decision(
+  stage: string,
+  request: Request,
+  detail?: Record<string, unknown>
+): void {
+  console.warn('[SW Static 503]', {
+    stage,
+    requestUrl: request.url,
+    destination: request.destination,
+    mode: request.mode,
+    unavailableCDNs: getUnavailableCDNSnapshot(),
+    ...detail,
+  });
 }
 
 type SWBootProgressPhase =
@@ -1332,12 +1510,17 @@ function isStaticHtmlFallbackResponse(
 
 function decorateStaticCacheResponse(
   response: Response,
-  metadata: { source: string; revision: string; fetchTarget?: string }
+  metadata: {
+    source: string;
+    revision: string;
+    fetchTarget?: string;
+    appVersion?: string;
+  }
 ): Response {
   const headers = new Headers(response.headers);
   headers.set(STATIC_SOURCE_HEADER, metadata.source);
   headers.set(STATIC_REVISION_HEADER, metadata.revision);
-  headers.set(STATIC_APP_VERSION_HEADER, APP_VERSION);
+  headers.set(STATIC_APP_VERSION_HEADER, metadata.appVersion || APP_VERSION);
   if (metadata.fetchTarget) {
     headers.set(STATIC_FETCH_TARGET_HEADER, metadata.fetchTarget);
   }
@@ -1354,7 +1537,12 @@ async function cacheStaticResponse(
   cache: Cache,
   request: RequestInfo | URL,
   response: Response,
-  metadata: { source: string; revision: string; fetchTarget?: string }
+  metadata: {
+    source: string;
+    revision: string;
+    fetchTarget?: string;
+    appVersion?: string;
+  }
 ): Promise<Response> {
   const cachedResponse = decorateStaticCacheResponse(response, metadata);
   await cache.put(request, cachedResponse.clone());
@@ -1462,7 +1650,18 @@ async function cacheFile(
         source,
         revision,
         fetchTarget,
+        appVersion: APP_VERSION,
       });
+
+      // index.html 额外存一份 '/' 的 key，导航请求直接命中无需回退查找
+      if (targets.resourcePath === '/index.html') {
+        const rootUrl = new URL('/', self.location.origin).href;
+        const rootResponse = await cache.match(targets.cacheKey);
+        if (rootResponse) {
+          await cache.put(rootUrl, rootResponse.clone());
+        }
+      }
+
       return { url, success: true, source };
     }
     return { url, success: false, status: response.status };
@@ -1696,6 +1895,13 @@ sw.addEventListener('install', (event: ExtendableEvent) => {
   event.waitUntil(
     (async () => {
       await loadFailedDomains();
+      await updateVersionState((current) => ({
+        committedVersion: current.committedVersion || APP_VERSION,
+        pendingVersion: installingVersionIsUpdate ? APP_VERSION : null,
+        pendingReadyAt: null,
+        upgradeState: installingVersionIsUpdate ? 'prewarming' : 'idle',
+      }));
+      await postVersionState();
       try {
         const files = await loadPrecacheManifest();
         if (files && files.length > 0) {
@@ -1713,8 +1919,15 @@ sw.addEventListener('install', (event: ExtendableEvent) => {
         }
 
         // 更新场景下，直到整包资源写入成功后才通知主线程可以提示升级。
-        markNewVersionReady(installingVersionIsUpdate);
+        await markNewVersionReady(installingVersionIsUpdate);
       } catch (err) {
+        await updateVersionState((current) => ({
+          committedVersion: current.committedVersion || APP_VERSION,
+          pendingVersion: null,
+          pendingReadyAt: null,
+          upgradeState: 'idle',
+        }));
+        await postVersionState();
         setSWBootProgress({
           phase: 'error',
           message: `启动资源预热失败：${getSafeErrorMessage(err)}`,
@@ -1736,6 +1949,18 @@ sw.addEventListener('activate', (event: ExtendableEvent) => {
 
   event.waitUntil(
     (async () => {
+      const versionStateBeforeActivate = await readVersionState();
+      // SW 一旦激活，committedVersion 就应该是当前版本。
+      // 无论是首次安装、用户确认升级、还是所有旧 tab 关闭后自然激活，
+      // 都需要更新，否则新 tab 会用旧版本号请求新 hash 资源导致 404。
+      await updateVersionState({
+        committedVersion: APP_VERSION,
+        pendingVersion: null,
+        pendingReadyAt: null,
+        upgradeState: 'idle',
+      });
+      await postVersionState();
+
       // 预热 CDN 偏好，后续静态资源请求可以直接复用
       // 失败仅影响优先级排序，不影响激活
       try {
@@ -1817,9 +2042,15 @@ sw.addEventListener('activate', (event: ExtendableEvent) => {
       }
 
       // 找出旧版本的静态资源缓存（但不立即删除）
+      const currentVersionState = await readVersionState();
+      const committedStaticCacheName = getStaticCacheName(
+        currentVersionState.committedVersion || APP_VERSION
+      );
       const oldStaticCaches = cacheNames.filter(
         (name) =>
-          name.startsWith('drawnix-static-v') && name !== STATIC_CACHE_NAME
+          name.startsWith('drawnix-static-v') &&
+          name !== STATIC_CACHE_NAME &&
+          name !== committedStaticCacheName
       );
 
       const oldAppCaches = cacheNames.filter(
@@ -1884,7 +2115,8 @@ function broadcastPostMessageLog(entry: PostMessageLogEntry): void {
 async function tryFetchStaticResourceFromCDN(
   cache: Cache,
   request: Request,
-  resourcePath: string
+  resourcePath: string,
+  appVersion: string
 ): Promise<Response | null> {
   if (isDevelopment) {
     return null;
@@ -1893,7 +2125,7 @@ async function tryFetchStaticResourceFromCDN(
   try {
     const cdnResult = await fetchFromCDNWithFallback(
       resourcePath,
-      APP_VERSION,
+      appVersion,
       location.origin,
       {
         // 运行时 hash 资源优先走 CDN，失败后再回源站兜底。
@@ -1902,6 +2134,12 @@ async function tryFetchStaticResourceFromCDN(
     );
 
     if (!cdnResult?.response.ok) {
+      console.warn('[SW CDN] Static resource unavailable from all fallback sources', {
+        requestUrl: request.url,
+        resourcePath,
+        appVersion,
+        unavailableCDNs: getUnavailableCDNSnapshot(),
+      });
       return null;
     }
 
@@ -1914,6 +2152,7 @@ async function tryFetchStaticResourceFromCDN(
       source: cdnResult.source,
       revision: 'runtime',
       fetchTarget: cdnResult.targetUrl,
+      appVersion,
     });
   } catch (cdnError) {
     console.warn('[SW CDN] CDN fallback failed:', cdnError);
@@ -1937,7 +2176,8 @@ function getStaticDebugMetadata(response: Response): {
 
 function isSuspiciousStaticCacheResponse(
   request: Request,
-  response: Response
+  response: Response,
+  expectedVersion = APP_VERSION
 ): boolean {
   const sourceHeader = response.headers.get(STATIC_SOURCE_HEADER);
   const revisionHeader = response.headers.get(STATIC_REVISION_HEADER);
@@ -1947,7 +2187,7 @@ function isSuspiciousStaticCacheResponse(
     return true;
   }
 
-  if (versionHeader !== APP_VERSION) {
+  if (versionHeader !== expectedVersion) {
     return true;
   }
 
@@ -2070,6 +2310,13 @@ sw.addEventListener('message', (event: ExtendableMessageEvent) => {
     return;
   }
 
+  if (event.data && event.data.type === 'GET_VERSION_STATE') {
+    const client = event.source as Client | null;
+    logSWDebug('message: GET_VERSION_STATE', { clientId: client?.id ?? null });
+    event.waitUntil(postVersionState(client));
+    return;
+  }
+
   if (event.data && event.data.type === 'SW_IDLE_PREFETCH_STATUS_GET') {
     const client = event.source as Client | null;
     logSWDebug('message: SW_IDLE_PREFETCH_STATUS_GET', {
@@ -2097,29 +2344,51 @@ sw.addEventListener('message', (event: ExtendableMessageEvent) => {
     return;
   }
 
-  if (event.data && event.data.type === 'SKIP_WAITING') {
-    // 主线程请求立即升级（用户主动触发）
-    // console.log('Service Worker: 收到主线程的 SKIP_WAITING 请求');
+  if (
+    event.data &&
+    (event.data.type === 'COMMIT_UPGRADE' ||
+      event.data.type === 'SKIP_WAITING')
+  ) {
+    const client = event.source as Client | null;
+    logSWDebug('message: COMMIT_UPGRADE', { clientId: client?.id ?? null });
+    event.waitUntil(
+      (async () => {
+        shouldClaimClientsOnActivate = true;
+        await updateVersionState({
+          committedVersion: APP_VERSION,
+          pendingVersion: null,
+          pendingReadyAt: null,
+          upgradeState: 'committing',
+        });
+        await postVersionState(client);
+        sw.skipWaiting();
 
-    shouldClaimClientsOnActivate = true;
-    // 直接调用 skipWaiting
-    sw.skipWaiting();
-
-    // 使用 channelManager 通知客户端 SW 已更新
-    const cm = getChannelManager();
-    if (cm) {
-      cm.sendSWUpdated(APP_VERSION);
-    }
+        const cm = getChannelManager();
+        if (cm) {
+          cm.sendSWUpdated(APP_VERSION);
+        }
+      })()
+    );
   } else if (event.data && event.data.type === 'FORCE_UPGRADE') {
     // 主线程强制升级
-    shouldClaimClientsOnActivate = true;
-    sw.skipWaiting();
+    event.waitUntil(
+      (async () => {
+        shouldClaimClientsOnActivate = true;
+        await updateVersionState({
+          committedVersion: APP_VERSION,
+          pendingVersion: null,
+          pendingReadyAt: null,
+          upgradeState: 'committing',
+        });
+        await postVersionState(event.source as Client | null);
+        sw.skipWaiting();
 
-    // 使用 channelManager 通知客户端 SW 已更新
-    const cm = getChannelManager();
-    if (cm) {
-      cm.sendSWUpdated(APP_VERSION);
-    }
+        const cm = getChannelManager();
+        if (cm) {
+          cm.sendSWUpdated(APP_VERSION);
+        }
+      })()
+    );
   } else if (event.data && event.data.type === 'DELETE_CACHE') {
     // 删除单个缓存
     const { url } = event.data;
@@ -4223,7 +4492,10 @@ async function handleStaticRequest(request: Request): Promise<Response> {
   const url = new URL(request.url);
   const isHtmlRequest =
     request.mode === 'navigate' || url.pathname.endsWith('.html');
-  const cache = await caches.open(STATIC_CACHE_NAME);
+  const versionState = await readVersionState();
+  const committedVersion = versionState.committedVersion || APP_VERSION;
+  const committedStaticCacheName = getStaticCacheName(committedVersion);
+  const cache = await caches.open(committedStaticCacheName);
 
   // ===========================================
   // Development Mode: Network First (for hot reload / live updates)
@@ -4337,13 +4609,23 @@ async function handleStaticRequest(request: Request): Promise<Response> {
         cache: 'reload' as RequestCache,
       });
 
-      // Cache successful responses for future staged upgrades.
+      // 只有 committed 版本与当前 worker 版本一致时，才回写到当前 cache。
+      // staged update 期间避免把网络上的新壳写进旧版本 cache。
       if (
         response &&
         response.status === 200 &&
-        request.url.startsWith('http')
+        request.url.startsWith('http') &&
+        committedVersion === APP_VERSION
       ) {
         cache.put(request, response.clone());
+        // 同时存 '/' 和 '/index.html'，确保后续导航请求直接命中
+        const reqUrl = new URL(request.url);
+        if (reqUrl.pathname === '/' || reqUrl.pathname.endsWith('/index.html')) {
+          const rootUrl = new URL('/', reqUrl.origin).href;
+          const indexUrl = new URL('/index.html', reqUrl.origin).href;
+          if (request.url !== rootUrl) cache.put(rootUrl, response.clone());
+          if (request.url !== indexUrl) cache.put(indexUrl, response.clone());
+        }
         return response;
       }
 
@@ -4357,7 +4639,9 @@ async function handleStaticRequest(request: Request): Promise<Response> {
   // Strategy 2: Static Resources - Cache First (fast offline)
   const cachedResponse = await cache.match(request);
   if (cachedResponse) {
-    if (!isSuspiciousStaticCacheResponse(request, cachedResponse)) {
+    if (
+      !isSuspiciousStaticCacheResponse(request, cachedResponse, committedVersion)
+    ) {
       return cachedResponse;
     }
 
@@ -4374,15 +4658,26 @@ async function handleStaticRequest(request: Request): Promise<Response> {
       return oldCachedResponse;
     }
 
+    // 请求 URL 中已包含 CDN 版本号时优先使用，避免版本重写导致 404
+    const embeddedVersion = extractVersionFromCDNPath(url.pathname);
+    const cdnVersion = embeddedVersion || committedVersion;
+
     const smartResponse = await tryFetchStaticResourceFromCDN(
       cache,
       request,
-      resourcePath
+      resourcePath,
+      cdnVersion
     );
     if (smartResponse) {
       return smartResponse;
     }
 
+    logStatic503Decision('smart-cdn-resource-failed', request, {
+      resourcePath,
+      committedVersion,
+      hasEmbeddedVersion: Boolean(embeddedVersion),
+      attemptedVersion: cdnVersion,
+    });
     return new Response('Resource unavailable offline', {
       status: 503,
       statusText: 'Service Unavailable',
@@ -4418,10 +4713,16 @@ async function handleStaticRequest(request: Request): Promise<Response> {
     }
 
     // Cache successful responses
-    if (response && response.status === 200 && request.url.startsWith('http')) {
+    if (
+      response &&
+      response.status === 200 &&
+      request.url.startsWith('http') &&
+      committedVersion === APP_VERSION
+    ) {
       return await cacheStaticResponse(cache, request, response, {
         source: 'server',
         revision: 'runtime',
+        appVersion: committedVersion,
       });
     }
 
@@ -4445,6 +4746,10 @@ async function handleStaticRequest(request: Request): Promise<Response> {
       return oldCachedResponse;
     }
 
+    logStatic503Decision('origin-fetch-exception', request, {
+      resourcePath,
+      committedVersion,
+    });
     // 所有来源都失败了
     return new Response('Resource unavailable offline', {
       status: 503,

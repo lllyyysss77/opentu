@@ -385,7 +385,10 @@ export const ModelSelector: React.FC<ModelSelectorProps> = React.memo(
                               {getProviderLabel(model)}
                             </span>
                           ) : null}
-                          <ModelHealthBadge modelId={model.id} />
+                          <ModelHealthBadge
+                            modelId={model.id}
+                            profileId={model.sourceProfileId || null}
+                          />
                           <ModelBenchmarkBadge modelId={model.id} />
                           <ModelSelectorPriceTag model={model} />
                         </div>
@@ -445,6 +448,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = React.memo(
           <div className="model-selector__trigger-content">
             <ModelHealthBadge
               modelId={currentModel?.id || selectedModel}
+              profileId={currentModel?.sourceProfileId || null}
               className="model-selector__trigger-health"
             />
             <span className="model-selector__trigger-text">

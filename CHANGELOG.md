@@ -1,3 +1,57 @@
+## 0.6.64 (2026-04-23)
+
+### 🚀 Features
+
+- 添加CDN恢复探测和详细日志记录 ([7559e132](https://github.com/ljquan/aitu/commit/7559e132))
+
+### 🩹 Fixes
+
+- 修复 LLM API Logger 的 IDB 连接关闭导致大模型调用失败 ([f13d842a](https://github.com/ljquan/aitu/commit/f13d842a))
+- HTML 缓存双 key 存储，导航请求直接命中 ([2ee82aea](https://github.com/ljquan/aitu/commit/2ee82aea))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+
+## 0.6.60 (2026-04-23)
+
+### 🚀 Features
+
+- 支持多供应商分组的模型健康状态显示 ([f0eef23c](https://github.com/ljquan/aitu/commit/f0eef23c))
+
+### 🩹 Fixes
+
+- 稳定 service worker 分阶段加载与版本提交协议 ([8051cd18](https://github.com/ljquan/aitu/commit/8051cd18))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+
+## 0.6.59 (2026-04-23)
+
+### 🩹 Fixes
+
+- 增强错误上下文收集并修复资源错误跟踪 ([b1825467](https://github.com/ljquan/aitu/commit/b1825467))
+- 修正 SW 静态资源版本命中与启动页提示 ([497703c5](https://github.com/ljquan/aitu/commit/497703c5))
+- 统一 PostHog 版本上下文 ([f10d11b8](https://github.com/ljquan/aitu/commit/f10d11b8))
+- 老用户沿用旧版壳并修正图层锁定失效路径 ([6e88c9d4](https://github.com/ljquan/aitu/commit/6e88c9d4))
+- 将 SW 升级切换改为整包 ready 后再接管 ([12bdc930](https://github.com/ljquan/aitu/commit/12bdc930))
+- 恢复 Gemini 图片模型的 generateContent 路由策略 ([d70f9d72](https://github.com/ljquan/aitu/commit/d70f9d72))
+
+### 🔧 Chores
+
+- bump version to 0.6.58 ([91a0747b](https://github.com/ljquan/aitu/commit/91a0747b))
+- bump version to 0.6.57 ([be81f306](https://github.com/ljquan/aitu/commit/be81f306))
+- 更新应用版本至0.6.56并同步构建时间 ([54253348](https://github.com/ljquan/aitu/commit/54253348))
+- bump version to 0.6.56 ([f75b4289](https://github.com/ljquan/aitu/commit/f75b4289))
+- 更新版本号至0.6.55并刷新构建时间 ([159f2ebf](https://github.com/ljquan/aitu/commit/159f2ebf))
+- bump version to 0.6.55 ([43a6cdb5](https://github.com/ljquan/aitu/commit/43a6cdb5))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+- gongchengtu <1817063960@qq.com>
+
 ## 0.6.57 (2026-04-23)
 
 ### 🩹 Fixes

@@ -339,16 +339,18 @@ function createDeployPackage() {
         // 检查当前构建产物的关键资源组（文件名哈希是动态的，只检查 chunk 前缀）
         const hasMainJs = files.some(f => f.includes('assets/') && /\/?assets\/main-[^/]+\.js$/.test(f));
         const hasMainCss = files.some(f => f.includes('assets/') && /\/?assets\/main-[^/]+\.css$/.test(f));
-        const hasToolWindowsJs = files.some(f => f.includes('assets/') && /\/?assets\/tool-windows-[^/]+\.js$/.test(f));
-        const hasToolWindowsCss = files.some(f => f.includes('assets/') && /\/?assets\/tool-windows-[^/]+\.css$/.test(f));
+        const hasToolRuntimeJs = files.some(f => f.includes('assets/') && /\/?assets\/tool-runtime-[^/]+\.js$/.test(f));
+        const hasToolDrawersJs = files.some(f => f.includes('assets/') && /\/?assets\/tool-drawers-[^/]+\.js$/.test(f));
+        const hasToolDialogsJs = files.some(f => f.includes('assets/') && /\/?assets\/tool-dialogs-[^/]+\.js$/.test(f));
         const hasExternalSkillsJs = files.some(f => f.includes('assets/') && /\/?assets\/external-skills-[^/]+\.js$/.test(f));
         const hasAnyAssetJs = files.some(f => f.includes('assets/') && f.endsWith('.js'));
         const missingCriticalGroups = [];
 
         if (!hasMainJs) missingCriticalGroups.push('main-*.js');
         if (!hasMainCss) missingCriticalGroups.push('main-*.css');
-        if (!hasToolWindowsJs) missingCriticalGroups.push('tool-windows-*.js');
-        if (!hasToolWindowsCss) missingCriticalGroups.push('tool-windows-*.css');
+        if (!hasToolRuntimeJs) missingCriticalGroups.push('tool-runtime-*.js');
+        if (!hasToolDrawersJs) missingCriticalGroups.push('tool-drawers-*.js');
+        if (!hasToolDialogsJs) missingCriticalGroups.push('tool-dialogs-*.js');
         
         console.log(`📊 打包统计:`);
         console.log(`   总文件数: ${files.length}`);
@@ -356,8 +358,9 @@ function createDeployPackage() {
         console.log(`   关键资源组检查:`);
         console.log(`     - main-*.js: ${hasMainJs ? '✅' : '❌'}`);
         console.log(`     - main-*.css: ${hasMainCss ? '✅' : '❌'}`);
-        console.log(`     - tool-windows-*.js: ${hasToolWindowsJs ? '✅' : '❌'}`);
-        console.log(`     - tool-windows-*.css: ${hasToolWindowsCss ? '✅' : '❌'}`);
+        console.log(`     - tool-runtime-*.js: ${hasToolRuntimeJs ? '✅' : '❌'}`);
+        console.log(`     - tool-drawers-*.js: ${hasToolDrawersJs ? '✅' : '❌'}`);
+        console.log(`     - tool-dialogs-*.js: ${hasToolDialogsJs ? '✅' : '❌'}`);
         console.log(`     - external-skills-*.js: ${hasExternalSkillsJs ? '✅' : 'ℹ️  未生成'}`);
         
         if (!hasAssets) {
