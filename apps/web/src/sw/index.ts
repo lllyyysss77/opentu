@@ -1229,6 +1229,7 @@ const IDLE_PREFETCH_SWEEP_DELAY_MS = 2500;
 const IDLE_PREFETCH_FETCH_RECHECK_INTERVAL_MS = 8000;
 const IDLE_PREFETCH_FAILURE_RETRY_BASE_DELAY_MS = 5000;
 const IDLE_PREFETCH_FAILURE_RETRY_MAX_DELAY_MS = 60000;
+const UPDATE_FULL_PREWARM_TIMEOUT_MS = 10 * 60 * 1000;
 const FOLLOW_UP_IDLE_PREFETCH_GROUPS = ['offline-static-assets'] as const;
 let lastObservedClientFetchAt = 0;
 let lastIdlePrefetchFetchKickAt = 0;
@@ -2012,7 +2013,13 @@ async function cacheFile(
 async function precacheStaticFiles(
   cache: Cache,
   files: { url: string; revision: string }[]
-): Promise<void> {
+): Promise<{
+  total: number;
+  successCount: number;
+  failCount: number;
+  cdnCount: number;
+  serverCount: number;
+}> {
   const CONCURRENCY = 6; // 并发数
   const allResults: Array<{
     url?: string;
@@ -2150,6 +2157,14 @@ async function precacheStaticFiles(
     cacheEntriesBefore,
     cacheEntriesAfter,
   });
+
+  return {
+    total,
+    successCount,
+    failCount,
+    cdnCount,
+    serverCount,
+  };
 }
 
 async function prefetchIdleGroups(
@@ -2428,6 +2443,67 @@ async function prefetchDefaultIdleGroups(): Promise<void> {
   await prefetchPendingIdleGroups('default-groups', defaultGroups);
 }
 
+async function prewarmAllIdlePrefetchGroupsForUpdateReady(): Promise<void> {
+  const manifest = await getIdlePrefetchManifest();
+  if (!manifest) {
+    logSWDebug('prewarmAllIdlePrefetchGroupsForUpdateReady skipped: manifest missing');
+    return;
+  }
+
+  const orderedGroups = getOrderedIdlePrefetchGroups(manifest);
+  if (orderedGroups.length === 0) {
+    logSWDebug('prewarmAllIdlePrefetchGroupsForUpdateReady skipped: no groups');
+    return;
+  }
+
+  const startedAt = Date.now();
+  let iteration = 0;
+
+  while (true) {
+    iteration += 1;
+    const summary = await prefetchIdleGroups(orderedGroups);
+    if (summary.completedGroups.length > 0) {
+      await broadcastIdlePrefetchStatus();
+    }
+
+    if (summary.pendingGroups.length === 0) {
+      logSWDebug('prewarmAllIdlePrefetchGroupsForUpdateReady complete', {
+        orderedGroups,
+        iteration,
+        elapsedMs: Date.now() - startedAt,
+      });
+      return;
+    }
+
+    const elapsedMs = Date.now() - startedAt;
+    if (elapsedMs >= UPDATE_FULL_PREWARM_TIMEOUT_MS) {
+      throw new Error(
+        `idle-prefetch incomplete after ${elapsedMs}ms: pending groups ${summary.pendingGroups.join(', ')}`
+      );
+    }
+
+    const waitMs = Math.max(
+      250,
+      summary.nextRetryDelayMs ??
+        (summary.queuedEntries > 0 ? IDLE_PREFETCH_SWEEP_DELAY_MS : 1000)
+    );
+
+    logSWDebug('prewarmAllIdlePrefetchGroupsForUpdateReady waiting next round', {
+      orderedGroups,
+      iteration,
+      pendingGroups: summary.pendingGroups,
+      coolingEntries: summary.coolingEntries,
+      queuedEntries: summary.queuedEntries,
+      waitMs,
+      elapsedMs,
+    });
+
+    await new Promise((resolve) => {
+      setTimeout(resolve, waitMs);
+    });
+  }
+}
+
 sw.addEventListener('install', (event: ExtendableEvent) => {
   logSWDebug('install event received', { version: APP_VERSION });
   installingVersionIsUpdate = Boolean(sw.registration.active);
@@ -2463,7 +2539,12 @@ sw.addEventListener('install', (event: ExtendableEvent) => {
         const files = await loadPrecacheManifest();
         if (files && files.length > 0) {
           const cache = await caches.open(STATIC_CACHE_NAME);
-          await precacheStaticFiles(cache, files);
+          const precacheSummary = await precacheStaticFiles(cache, files);
+          if (installingVersionIsUpdate && precacheSummary.failCount > 0) {
+            throw new Error(
+              `precache incomplete: ${precacheSummary.failCount}/${precacheSummary.total} files failed`
+            );
+          }
         } else if (isDevelopment) {
           setSWBootProgress({
             phase: 'development',
@@ -2475,7 +2556,12 @@ sw.addEventListener('install', (event: ExtendableEvent) => {
           });
         }
 
-        // 更新场景下，直到整包资源写入成功后才通知主线程可以提示升级。
+        // 更新场景下，直到整包资源（含 idle-prefetch 静态资源）写入成功后
+        // 才通知主线程可以提示升级。否则用户会在只有首屏壳子 ready 时看到“立即更新”。
+        if (installingVersionIsUpdate) {
+          await prewarmAllIdlePrefetchGroupsForUpdateReady();
+        }
+
         await markNewVersionReady(installingVersionIsUpdate);
       } catch (err) {
         await updateVersionState((current) => ({
