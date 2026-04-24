@@ -1229,6 +1229,7 @@ const IDLE_PREFETCH_SWEEP_DELAY_MS = 2500;
 const IDLE_PREFETCH_FETCH_RECHECK_INTERVAL_MS = 8000;
 const IDLE_PREFETCH_FAILURE_RETRY_BASE_DELAY_MS = 5000;
 const IDLE_PREFETCH_FAILURE_RETRY_MAX_DELAY_MS = 60000;
+const IDLE_PREFETCH_MANIFEST_RETRY_DELAY_MS = 5000;
 const UPDATE_FULL_PREWARM_TIMEOUT_MS = 10 * 60 * 1000;
 const FOLLOW_UP_IDLE_PREFETCH_GROUPS = ['offline-static-assets'] as const;
 let lastObservedClientFetchAt = 0;
@@ -1392,22 +1393,87 @@ async function loadPrecacheManifest(): Promise<
 
 let idlePrefetchManifestPromise: Promise<IdlePrefetchManifest | null> | null =
   null;
+let idlePrefetchManifestLastFailureAt = 0;
+let idlePrefetchManifestLastFailureReason: string | null = null;
+
+async function readResponsePreview(
+  response: Response,
+  maxChars = 200
+): Promise<string | undefined> {
+  try {
+    const text = (await response.text()).replace(/\s+/g, ' ').trim();
+    if (!text) {
+      return undefined;
+    }
+    return text.slice(0, maxChars);
+  } catch {
+    return undefined;
+  }
+}
 
 async function loadIdlePrefetchManifest(): Promise<IdlePrefetchManifest | null> {
+  const manifestUrl = new URL(
+    '/idle-prefetch-manifest.json',
+    self.location.origin
+  ).href;
+
   try {
-    const response = await fetch('./idle-prefetch-manifest.json', {
+    const response = await fetch(manifestUrl, {
       cache: 'reload',
     });
+    const contentType = response.headers.get('content-type') || '';
     if (!response.ok) {
+      const preview = await readResponsePreview(response.clone());
       logSWDebug('loadIdlePrefetchManifest: response not ok', {
+        manifestUrl,
         status: response.status,
         statusText: response.statusText,
+        contentType,
+        preview,
       });
       return null;
     }
 
-    const manifest = (await response.json()) as IdlePrefetchManifest;
+    const manifestText = await response.text();
+    const preview = manifestText.replace(/\s+/g, ' ').trim().slice(0, 200);
+
+    if (
+      contentType.includes('text/html') ||
+      /<!DOCTYPE|<html|<HTML/i.test(preview)
+    ) {
+      logSWDebug('loadIdlePrefetchManifest: html fallback detected', {
+        manifestUrl,
+        status: response.status,
+        contentType,
+        preview,
+      });
+      return null;
+    }
+
+    let manifest: IdlePrefetchManifest;
+    try {
+      manifest = JSON.parse(manifestText) as IdlePrefetchManifest;
+    } catch (error) {
+      logSWDebug('loadIdlePrefetchManifest: invalid json', {
+        manifestUrl,
+        contentType,
+        error: getSafeErrorMessage(error),
+        preview,
+      });
+      return null;
+    }
+
+    if (!manifest || typeof manifest !== 'object' || !manifest.groups) {
+      logSWDebug('loadIdlePrefetchManifest: invalid manifest shape', {
+        manifestUrl,
+        contentType,
+        preview,
+      });
+      return null;
+    }
+
     logSWDebug('loadIdlePrefetchManifest: loaded', {
+      manifestUrl,
       version: manifest.version,
       defaults: manifest.defaults || [],
       groupEntryCounts: Object.fromEntries(
@@ -1420,6 +1486,7 @@ async function loadIdlePrefetchManifest(): Promise<IdlePrefetchManifest | null> 
     return manifest;
   } catch (error) {
     logSWDebug('loadIdlePrefetchManifest: failed', {
+      manifestUrl,
       error: getSafeErrorMessage(error),
     });
     return null;
@@ -1427,9 +1494,45 @@ async function loadIdlePrefetchManifest(): Promise<IdlePrefetchManifest | null> 
 }
 
 async function getIdlePrefetchManifest(): Promise<IdlePrefetchManifest | null> {
+  const now = Date.now();
+
   if (!idlePrefetchManifestPromise) {
-    idlePrefetchManifestPromise = loadIdlePrefetchManifest();
+    if (
+      idlePrefetchManifestLastFailureAt > 0 &&
+      now - idlePrefetchManifestLastFailureAt <
+        IDLE_PREFETCH_MANIFEST_RETRY_DELAY_MS
+    ) {
+      const retryAfterMs =
+        IDLE_PREFETCH_MANIFEST_RETRY_DELAY_MS -
+        (now - idlePrefetchManifestLastFailureAt);
+      logSWDebug('getIdlePrefetchManifest: retry cooldown active', {
+        retryAfterMs,
+        lastFailureReason: idlePrefetchManifestLastFailureReason,
+      });
+      return null;
+    }
+
+    idlePrefetchManifestPromise = loadIdlePrefetchManifest()
+      .then((manifest) => {
+        if (!manifest) {
+          idlePrefetchManifestLastFailureAt = Date.now();
+          idlePrefetchManifestLastFailureReason = 'manifest-missing-or-invalid';
+          idlePrefetchManifestPromise = null;
+          return null;
+        }
+
+        idlePrefetchManifestLastFailureAt = 0;
+        idlePrefetchManifestLastFailureReason = null;
+        return manifest;
+      })
+      .catch((error) => {
+        idlePrefetchManifestLastFailureAt = Date.now();
+        idlePrefetchManifestLastFailureReason = getSafeErrorMessage(error);
+        idlePrefetchManifestPromise = null;
+        throw error;
+      });
   }
+
   return idlePrefetchManifestPromise;
 }
 
@@ -2370,16 +2473,22 @@ async function prefetchPendingIdleGroups(
 ): Promise<IdlePrefetchRunSummary> {
   const manifest = await getIdlePrefetchManifest();
   if (!manifest) {
+    scheduleIdlePrefetchSweep(
+      `${reason}:manifest-missing`,
+      IDLE_PREFETCH_MANIFEST_RETRY_DELAY_MS
+    );
     logSWDebug('prefetchPendingIdleGroups skipped: manifest missing', {
       reason,
       preferredGroups,
+      retryDelayMs: IDLE_PREFETCH_MANIFEST_RETRY_DELAY_MS,
+      lastFailureReason: idlePrefetchManifestLastFailureReason,
     });
     return {
       completedGroups: [],
       pendingGroups: [],
       queuedEntries: 0,
       coolingEntries: 0,
-      nextRetryDelayMs: null,
+      nextRetryDelayMs: IDLE_PREFETCH_MANIFEST_RETRY_DELAY_MS,
     };
   }
 
@@ -2431,6 +2540,18 @@ async function prefetchPendingIdleGroups(
 
 async function prefetchDefaultIdleGroups(): Promise<void> {
   const manifest = await getIdlePrefetchManifest();
+  if (!manifest) {
+    scheduleIdlePrefetchSweep(
+      'default-groups:manifest-missing',
+      IDLE_PREFETCH_MANIFEST_RETRY_DELAY_MS
+    );
+    logSWDebug('prefetchDefaultIdleGroups skipped: manifest missing', {
+      retryDelayMs: IDLE_PREFETCH_MANIFEST_RETRY_DELAY_MS,
+      lastFailureReason: idlePrefetchManifestLastFailureReason,
+    });
+    return;
+  }
+
   const defaultGroups = manifest?.defaults?.filter(
     (group): group is string => typeof group === 'string' && group.length > 0
   );
@@ -2444,22 +2565,48 @@ async function prefetchDefaultIdleGroups(): Promise<void> {
 }
 
 async function prewarmAllIdlePrefetchGroupsForUpdateReady(): Promise<void> {
-  const manifest = await getIdlePrefetchManifest();
-  if (!manifest) {
-    logSWDebug('prewarmAllIdlePrefetchGroupsForUpdateReady skipped: manifest missing');
-    return;
-  }
-
-  const orderedGroups = getOrderedIdlePrefetchGroups(manifest);
-  if (orderedGroups.length === 0) {
-    logSWDebug('prewarmAllIdlePrefetchGroupsForUpdateReady skipped: no groups');
-    return;
-  }
-
   const startedAt = Date.now();
   let iteration = 0;
+  let orderedGroups: string[] | null = null;
 
   while (true) {
+    if (!orderedGroups) {
+      const manifest = await getIdlePrefetchManifest();
+      if (!manifest) {
+        const elapsedMs = Date.now() - startedAt;
+        if (elapsedMs >= UPDATE_FULL_PREWARM_TIMEOUT_MS) {
+          throw new Error(
+            `idle-prefetch manifest unavailable after ${elapsedMs}ms`
+          );
+        }
+
+        const waitMs = Math.min(
+          IDLE_PREFETCH_MANIFEST_RETRY_DELAY_MS,
+          UPDATE_FULL_PREWARM_TIMEOUT_MS - elapsedMs
+        );
+        logSWDebug(
+          'prewarmAllIdlePrefetchGroupsForUpdateReady waiting for manifest',
+          {
+            elapsedMs,
+            waitMs,
+            lastFailureReason: idlePrefetchManifestLastFailureReason,
+          }
+        );
+        await new Promise((resolve) => {
+          setTimeout(resolve, waitMs);
+        });
+        continue;
+      }
+
+      orderedGroups = getOrderedIdlePrefetchGroups(manifest);
+      if (orderedGroups.length === 0) {
+        logSWDebug(
+          'prewarmAllIdlePrefetchGroupsForUpdateReady skipped: no groups'
+        );
+        return;
+      }
+    }
+
     iteration += 1;
     const summary = await prefetchIdleGroups(orderedGroups);
     if (summary.completedGroups.length > 0) {
