@@ -32,6 +32,12 @@ import { registerMJImageAdapter } from './mj-image-adapter';
 import { registerFluxAdapter } from './flux-adapter';
 import { registerSeedreamAdapter } from './seedream-adapter';
 import { registerSeedanceAdapter } from './seedance-adapter';
+import { registerGPTImageAdapter } from './gpt-image-adapter';
+import { registerTuziGPTImageAdapter } from './tuzi-gpt-image-adapter';
+import {
+  isGPTImage2Model,
+  resolveImageResolutionTier,
+} from './image-size-quality-resolver';
 
 const imageModelIds = [...IMAGE_MODEL_VIP_OPTIONS, ...IMAGE_MODEL_MORE_OPTIONS]
   .map((model) => model.id)
@@ -155,7 +161,9 @@ export const geminiImageAdapter: ImageModelAdapter = {
       return { url, format, raw: result };
     }
 
-    const quality = request.params?.quality as '1k' | '2k' | '4k' | undefined;
+    const quality =
+      resolveImageResolutionTier(request.params) ||
+      (isGPTImage2Model(model) ? '1k' : undefined);
     const responseFormat = request.params?.response_format as
       | 'url'
       | 'b64_json'
@@ -167,9 +175,7 @@ export const geminiImageAdapter: ImageModelAdapter = {
       response_format: responseFormat || 'url',
       quality,
       count:
-        typeof request.params?.n === 'number'
-          ? request.params.n
-          : undefined,
+        typeof request.params?.n === 'number' ? request.params.n : undefined,
       model,
       modelRef: request.modelRef || null,
     });
@@ -295,6 +301,8 @@ export const sunoAudioAdapter: AudioModelAdapter = {
 };
 
 export function registerDefaultModelAdapters(): void {
+  registerGPTImageAdapter();
+  registerTuziGPTImageAdapter();
   registerModelAdapter(geminiImageAdapter);
   registerModelAdapter(geminiVideoAdapter);
   registerModelAdapter(sunoAudioAdapter);

@@ -220,10 +220,10 @@ const BUILT_IN_MODEL_RECOMMENDATION_SCORES: Readonly<Record<string, number>> = {
   'gemini-3-pro-image-preview-4k-async': 45,
   'doubao-seedream-4-5-251128': 44,
   'seedream-v4': 43,
-  'kling_image': 42,
+  kling_image: 42,
   'gemini-3-pro-image-preview-4k': 41,
 
-  'kling_video': 98,
+  kling_video: 98,
   'seedance-1.5-pro': 97,
   'seedance-1.0-pro': 96,
   'seedance-1.0-pro-fast': 95,
@@ -231,7 +231,7 @@ const BUILT_IN_MODEL_RECOMMENDATION_SCORES: Readonly<Record<string, number>> = {
   'veo3.1': 93,
   'veo3-fast-frames': 92,
   'veo3-pro': 91,
-  'veo3': 84,
+  veo3: 84,
   'veo3-fast': 83,
   'veo3.1-4k': 82,
   'sora-2': 60,
@@ -1318,8 +1318,10 @@ export function getStaticModelsByType(type: ModelType): ModelConfig[] {
 }
 
 export function getStaticModelConfig(modelId: string): ModelConfig | undefined {
-  return ALL_MODELS.find((model) => model.id === modelId)
-    || HIDDEN_VIDEO_MODELS.find((model) => model.id === modelId);
+  return (
+    ALL_MODELS.find((model) => model.id === modelId) ||
+    HIDDEN_VIDEO_MODELS.find((model) => model.id === modelId)
+  );
 }
 
 // ============================================
@@ -1570,7 +1572,12 @@ const SORA_2_MODEL_IDS = ['sora-2'];
 const SORA_2_PRO_MODEL_IDS = ['sora-2-pro'];
 
 /** Sora 2 固定时长模型（模型名已包含时长，不传 seconds） */
-const SORA_2_FIXED_MODEL_IDS = ['sora-2-4s', 'sora-2-8s', 'sora-2-12s', 'sora-2-15s'];
+const SORA_2_FIXED_MODEL_IDS = [
+  'sora-2-4s',
+  'sora-2-8s',
+  'sora-2-12s',
+  'sora-2-15s',
+];
 
 /** Seedance 视频模型 ID */
 const SEEDANCE_MODEL_IDS = [
@@ -1591,7 +1598,7 @@ const SEEDREAM_IMAGE_MODEL_IDS = [
 const GPT_IMAGE_2_MODEL_IDS = ['gpt-image-2-vip', 'gpt-image-2'];
 
 /** 旧版 GPT 图片模型 ID（仅支持有限尺寸） */
-const LEGACY_GPT_IMAGE_MODEL_IDS = ['gpt-image-1.5'];
+const LEGACY_GPT_IMAGE_MODEL_IDS = ['gpt-image-1.5', 'gpt-image-1'];
 
 /** 所有 GPT 图片模型 ID */
 const GPT_IMAGE_MODEL_IDS = [
@@ -2101,6 +2108,39 @@ export const IMAGE_PARAMS: ParamConfig[] = [
     ],
     defaultValue: 'auto',
     compatibleModels: LEGACY_GPT_IMAGE_MODEL_IDS,
+    modelType: 'image',
+  },
+  // GPT Image 2 分辨率档位（由 adapter 结合宽高比映射为官方像素 size）
+  {
+    id: 'resolution',
+    label: '图片分辨率',
+    shortLabel: '分辨率',
+    description: '选择 1K / 2K / 4K 输出档位',
+    valueType: 'enum',
+    options: [
+      { value: '1k', label: '1K' },
+      { value: '2k', label: '2K' },
+      { value: '4k', label: '4K' },
+    ],
+    defaultValue: '1k',
+    compatibleModels: GPT_IMAGE_2_MODEL_IDS,
+    modelType: 'image',
+  },
+  // GPT Image 官方画质参数
+  {
+    id: 'quality',
+    label: '画质',
+    shortLabel: '画质',
+    description: '选择 GPT Image 官方画质',
+    valueType: 'enum',
+    options: [
+      { value: 'auto', label: '自动' },
+      { value: 'low', label: '快速' },
+      { value: 'medium', label: '标准' },
+      { value: 'high', label: '高清' },
+    ],
+    defaultValue: 'auto',
+    compatibleModels: GPT_IMAGE_MODEL_IDS,
     modelType: 'image',
   },
   // Gemini 图片模型尺寸（支持完整尺寸）
