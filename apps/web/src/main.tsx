@@ -515,7 +515,7 @@ if ('serviceWorker' in navigator) {
   const swRegistrationPromise =
     window.__OPENTU_SW_REGISTRATION_PROMISE__ ||
     navigator.serviceWorker
-      .register('/sw.js')
+      .register('./sw.js')
       .catch((error) => {
         console.warn('[Main] Service worker registration failed:', error);
         return null;

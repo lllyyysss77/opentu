@@ -1113,7 +1113,7 @@
             });
 
             window.__OPENTU_SW_REGISTRATION_PROMISE__ = navigator.serviceWorker
-              .register('/sw.js')
+              .register('./sw.js')
               .then(function (registration) {
                 syncEarlyCDNPreference(registration);
                 setProgress(54, {
