@@ -51,11 +51,15 @@ export const Video: React.FC<VideoProps> = (props: VideoProps) => {
     return undefined;
   }, [url]);
 
+  const stopCanvasPropagation = (e: React.SyntheticEvent) => {
+    e.stopPropagation();
+  };
+
   const handleVideoClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
     if (readonly) {
       // 在只读模式下，点击视频在新窗口打开
       e.preventDefault();
-      e.stopPropagation();
       window.open(url, '_blank');
     }
   };
@@ -71,7 +75,13 @@ export const Video: React.FC<VideoProps> = (props: VideoProps) => {
 
   if (videoError) {
     return (
-      <div style={containerStyle} onClick={handleVideoClick}>
+      <div
+        style={containerStyle}
+        data-slideshow-media-control="true"
+        onClick={handleVideoClick}
+        onPointerDown={stopCanvasPropagation}
+        onPointerUp={stopCanvasPropagation}
+      >
         <div style={{
           display: 'flex',
           flexDirection: 'column',
@@ -97,7 +107,13 @@ export const Video: React.FC<VideoProps> = (props: VideoProps) => {
   }
 
   return (
-    <div style={containerStyle} onClick={handleVideoClick}>
+    <div
+      style={containerStyle}
+      data-slideshow-media-control="true"
+      onClick={handleVideoClick}
+      onPointerDown={stopCanvasPropagation}
+      onPointerUp={stopCanvasPropagation}
+    >
       {isLoading && (
         <div style={{
           position: 'absolute',
@@ -120,6 +136,7 @@ export const Video: React.FC<VideoProps> = (props: VideoProps) => {
       )}
       <video
         ref={videoRef}
+        data-slideshow-media-control="true"
         src={url}
         poster={poster}
         width="100%"
@@ -137,6 +154,8 @@ export const Video: React.FC<VideoProps> = (props: VideoProps) => {
           height: '100%',
           objectFit: 'contain',
         }}
+        onPointerDown={stopCanvasPropagation}
+        onPointerUp={stopCanvasPropagation}
         onError={() => setVideoError(true)}
       />
       {readonly && (

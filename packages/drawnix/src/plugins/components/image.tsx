@@ -48,6 +48,11 @@ export const Image: React.FC<ImageProps> = (props: ImageProps) => {
     | undefined;
   const pptPrompt = elementData?.pptImagePrompt as string | undefined;
   const pptFrameId = elementData?.frameId as string | undefined;
+  const isLegacyAudioElement =
+    elementData?.isAudio === true ||
+    elementData?.audioType === 'music-card' ||
+    (typeof elementData?.audioUrl === 'string' &&
+      elementData.audioUrl.length > 0);
 
   const handlePPTImageGenerate = useCallback(async () => {
     if (!props.board || !pptFrameId || !pptPrompt || pptStatus === 'loading') return;
@@ -151,7 +156,11 @@ export const Image: React.FC<ImageProps> = (props: ImageProps) => {
     width: '100%',
   };
   return (
-    <div>
+    <div
+      data-slideshow-legacy-audio={
+        isLegacyAudioElement ? 'true' : undefined
+      }
+    >
       <img
         {...imgProps}
         className={classNames('image-origin', {

@@ -234,15 +234,16 @@ const PPTSlideHistoryMenuLabel: React.FC<{
     >
       <img
         src={item.imageUrl}
-        alt={`历史图片 ${index + 1}`}
+        alt={`图片 ${index + 1}`}
         loading="lazy"
         className="frame-panel__history-menu-thumb"
       />
       <span className="frame-panel__history-menu-text">
         <span className="frame-panel__history-menu-title">
           <span className="frame-panel__history-menu-title-main">
-            历史图片 {index + 1}
-            {createdAtText ? ` · ${createdAtText}` : ''}
+            {index + 1}
+            {' · '}
+            {createdAtText || '生成时间未知'}
           </span>
           {isCurrent ? (
             <span className="frame-panel__history-menu-current">当前</span>
@@ -257,7 +258,7 @@ const PPTSlideHistoryMenuLabel: React.FC<{
       <span className="frame-panel__history-menu-preview">
         <img
           src={item.imageUrl}
-          alt={`历史图片 ${index + 1} 预览`}
+          alt={`图片 ${index + 1} 预览`}
           loading="lazy"
           decoding="async"
         />

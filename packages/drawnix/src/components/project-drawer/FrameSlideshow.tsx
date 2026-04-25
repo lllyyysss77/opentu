@@ -188,6 +188,8 @@ export const FrameSlideshow: React.FC<FrameSlideshowProps> = ({
   const [activeTool, setActiveTool] = useState<ToolType>('select');
   const setPointer = useSetPointer();
   const controlsTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const pendingFrameClickRef = useRef<{ x: number; y: number } | null>(null);
+  const suppressNextClickRef = useRef(false);
   const savedViewportRef = useRef<{
     origination: [number, number] | null;
     zoom: number;
@@ -447,7 +449,13 @@ export const FrameSlideshow: React.FC<FrameSlideshowProps> = ({
 
       // 忽略来自控制栏、导航按钮等交互元素的点击
       const target = e.target as HTMLElement;
-      if (target.closest('.frame-slideshow__controls') || target.closest('.frame-slideshow__nav')) {
+      if (
+        target.closest('.frame-slideshow__controls') ||
+        target.closest('.frame-slideshow__nav')
+      ) {
+        return;
+      }
+      if (target.closest('[data-slideshow-media-control]')) {
         return;
       }
 
@@ -458,6 +466,148 @@ export const FrameSlideshow: React.FC<FrameSlideshowProps> = ({
     },
     [activeTool, currentIndex, goToFrame]
   );
+
+  // 选择模式下：Frame 内非媒体点击翻页；媒体控件保留原生播放能力。
+  useEffect(() => {
+    if (!visible || !frameRect || activeTool !== 'select') {
+      pendingFrameClickRef.current = null;
+      suppressNextClickRef.current = false;
+      return;
+    }
+
+    const isInsideCurrentFrame = (event: MouseEvent | PointerEvent) => {
+      return (
+        event.clientX >= frameRect.left &&
+        event.clientX <= frameRect.left + frameRect.width &&
+        event.clientY >= frameRect.top &&
+        event.clientY <= frameRect.top + frameRect.height
+      );
+    };
+
+    const isSlideshowUiTarget = (target: EventTarget | null) => {
+      return (
+        target instanceof Element &&
+        !!target.closest('.frame-slideshow__controls, .frame-slideshow__nav')
+      );
+    };
+
+    const isMediaTarget = (target: EventTarget | null) => {
+      return (
+        target instanceof Element &&
+        !!target.closest('[data-slideshow-media-control], video, audio')
+      );
+    };
+
+    const isLegacyAudioTarget = (target: EventTarget | null) => {
+      return (
+        target instanceof Element &&
+        !!target.closest('[data-slideshow-legacy-audio]')
+      );
+    };
+
+    const shouldHandleFrameClick = (event: MouseEvent | PointerEvent) => {
+      const target = event.target;
+      return (
+        isInsideCurrentFrame(event) &&
+        !isSlideshowUiTarget(target) &&
+        !isMediaTarget(target) &&
+        !isLegacyAudioTarget(target)
+      );
+    };
+
+    const stopCanvasInteraction = (event: MouseEvent | PointerEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+    };
+
+    const handlePointerDownCapture = (event: PointerEvent) => {
+      if (
+        event.button === 0 &&
+        isInsideCurrentFrame(event) &&
+        isLegacyAudioTarget(event.target)
+      ) {
+        pendingFrameClickRef.current = null;
+        event.stopPropagation();
+        return;
+      }
+
+      if (event.button !== 0 || !shouldHandleFrameClick(event)) {
+        pendingFrameClickRef.current = null;
+        return;
+      }
+      pendingFrameClickRef.current = {
+        x: event.clientX,
+        y: event.clientY,
+      };
+      stopCanvasInteraction(event);
+    };
+
+    const handlePointerUpCapture = (event: PointerEvent) => {
+      if (
+        event.button === 0 &&
+        isInsideCurrentFrame(event) &&
+        isLegacyAudioTarget(event.target)
+      ) {
+        pendingFrameClickRef.current = null;
+        event.stopPropagation();
+        return;
+      }
+
+      const pending = pendingFrameClickRef.current;
+      if (!pending) return;
+
+      pendingFrameClickRef.current = null;
+      if (!shouldHandleFrameClick(event)) return;
+
+      stopCanvasInteraction(event);
+      suppressNextClickRef.current = true;
+
+      const movedDistance = Math.hypot(
+        event.clientX - pending.x,
+        event.clientY - pending.y
+      );
+      if (movedDistance > 5) return;
+
+      const frames = framesRef.current;
+      if (currentIndex < frames.length - 1) {
+        goToFrame(currentIndex + 1);
+      } else {
+        resetControlsTimer();
+      }
+    };
+
+    const handleClickCapture = (event: MouseEvent) => {
+      if (suppressNextClickRef.current) {
+        suppressNextClickRef.current = false;
+        stopCanvasInteraction(event);
+        return;
+      }
+
+      if (!shouldHandleFrameClick(event)) return;
+      stopCanvasInteraction(event);
+    };
+
+    document.addEventListener('pointerdown', handlePointerDownCapture, true);
+    document.addEventListener('pointerup', handlePointerUpCapture, true);
+    document.addEventListener('click', handleClickCapture, true);
+
+    return () => {
+      document.removeEventListener(
+        'pointerdown',
+        handlePointerDownCapture,
+        true
+      );
+      document.removeEventListener('pointerup', handlePointerUpCapture, true);
+      document.removeEventListener('click', handleClickCapture, true);
+    };
+  }, [
+    activeTool,
+    currentIndex,
+    frameRect,
+    goToFrame,
+    resetControlsTimer,
+    visible,
+  ]);
 
   // 鼠标移动显示控件
   useEffect(() => {
@@ -486,21 +636,6 @@ export const FrameSlideshow: React.FC<FrameSlideshowProps> = ({
           <div key={i} className="frame-slideshow__mask-block" style={style} />
         ))}
       </div>
-
-      {/* 选择模式下的 Frame 内容区域蒙层：拦截点击事件，防止选中画布元素 */}
-      {activeTool === 'select' && (
-        <div
-          className="frame-slideshow__content-overlay"
-          style={{
-            position: 'absolute',
-            left: frameRect.left,
-            top: frameRect.top,
-            width: frameRect.width,
-            height: frameRect.height,
-            cursor: currentIndex < frames.length - 1 ? 'pointer' : 'default',
-          }}
-        />
-      )}
 
       {/* 底部控制栏 */}
       <div

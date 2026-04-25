@@ -228,10 +228,80 @@ describe('frame-insertion-utils PPT helpers', () => {
         (item: any) => item.imageUrl
       )
     ).toEqual([
-      'https://example.com/3.png',
-      'https://example.com/2.png',
       'https://example.com/1.png',
+      'https://example.com/2.png',
+      'https://example.com/3.png',
     ]);
+  });
+
+  it('keeps PPT slide image history order when switching current image', () => {
+    const board = createBoard([
+      createFrame({
+        pptMeta: {
+          slideImageElementId: 'image-2',
+          slideImageUrl: 'https://example.com/2.png',
+          slideImageHistory: [
+            {
+              id: 'history-1',
+              imageUrl: 'https://example.com/1.png',
+              elementId: 'image-1',
+              prompt: 'prompt 1',
+              createdAt: 100,
+            },
+            {
+              id: 'history-2',
+              imageUrl: 'https://example.com/2.png',
+              elementId: 'image-2',
+              prompt: 'prompt 2',
+              createdAt: 200,
+            },
+            {
+              id: 'history-3',
+              imageUrl: 'https://example.com/3.png',
+              elementId: 'image-3',
+              prompt: 'prompt 3',
+              createdAt: 300,
+            },
+          ],
+        },
+      }),
+      ...[1, 2, 3].map((index) => ({
+        id: `image-${index}`,
+        type: 'image',
+        frameId: 'frame-1',
+        url: `https://example.com/${index}.png`,
+        points: [
+          [0, 0],
+          [1920, 1080],
+        ],
+      })),
+    ]);
+
+    replacePPTSlideImage(
+      board,
+      'frame-1',
+      'image-1',
+      'https://example.com/1.png',
+      {
+        replaceElementId: 'image-2',
+        prompt: 'prompt 1',
+        imageCreatedAt: 100,
+      }
+    );
+
+    expect(
+      board.children[0].pptMeta.slideImageHistory.map(
+        (item: any) => item.imageUrl
+      )
+    ).toEqual([
+      'https://example.com/1.png',
+      'https://example.com/2.png',
+      'https://example.com/3.png',
+    ]);
+    expect(board.children[0].pptMeta.slideImageHistory[0]).toMatchObject({
+      id: 'history-1',
+      createdAt: 100,
+    });
   });
 
   it('uses image generation time for PPT slide image history', () => {
@@ -354,7 +424,7 @@ describe('frame-insertion-utils PPT helpers', () => {
         (item: any) => item.imageUrl === 'https://example.com/21.png'
       )
     ).toHaveLength(1);
-    expect(history[0]).toMatchObject({
+    expect(history[history.length - 1]).toMatchObject({
       elementId: 'image-21',
       prompt: 'updated prompt',
     });

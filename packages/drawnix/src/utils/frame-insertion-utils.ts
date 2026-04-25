@@ -191,14 +191,46 @@ function appendPPTSlideImageHistory(
   };
 
   const existing = Array.isArray(history) ? history : [];
-  const filtered = existing.filter((historyItem) => {
+  const matchIndex = existing.findIndex((historyItem) => {
     if (item.elementId && historyItem.elementId === item.elementId) {
-      return false;
+      return true;
     }
-    return historyItem.imageUrl !== imageUrl;
+    return historyItem.imageUrl === imageUrl;
   });
 
-  return [nextItem, ...filtered].slice(0, PPT_SLIDE_IMAGE_HISTORY_LIMIT);
+  const nextHistory =
+    matchIndex === -1
+      ? [...existing, nextItem]
+      : existing.map((historyItem, index) => {
+          if (index !== matchIndex) {
+            return historyItem;
+          }
+          return {
+            ...historyItem,
+            ...nextItem,
+            id: item.id || historyItem.id,
+            createdAt: item.createdAt || historyItem.createdAt,
+            ...(normalizeHistoryPrompt(item.prompt)
+              ? { prompt: normalizeHistoryPrompt(item.prompt) }
+              : historyItem.prompt
+                ? { prompt: historyItem.prompt }
+                : {}),
+          };
+        });
+
+  return nextHistory
+    .map((historyItem, index) => ({ historyItem, index }))
+    .sort((left, right) => {
+      const leftCreatedAt = Number.isFinite(left.historyItem.createdAt)
+        ? left.historyItem.createdAt
+        : 0;
+      const rightCreatedAt = Number.isFinite(right.historyItem.createdAt)
+        ? right.historyItem.createdAt
+        : 0;
+      return leftCreatedAt - rightCreatedAt || left.index - right.index;
+    })
+    .slice(-PPT_SLIDE_IMAGE_HISTORY_LIMIT)
+    .map(({ historyItem }) => historyItem);
 }
 
 function appendPPTSlideImageHistoryItems(
@@ -288,7 +320,7 @@ export function markPPTSlideImage(
     Number.isFinite(imageCreatedAt) &&
     imageCreatedAt > 0
       ? imageCreatedAt
-      : fallbackCreatedAt;
+      : fallbackCreatedAt + historyItems.length;
 
   const elementIndex = board.children.findIndex((el: any) => el.id === elementId);
   if (elementIndex !== -1) {
