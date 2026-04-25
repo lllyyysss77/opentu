@@ -2652,28 +2652,14 @@ async function prewarmAllIdlePrefetchGroupsForUpdateReady(): Promise<void> {
       const manifest = await getIdlePrefetchManifest();
       if (!manifest) {
         const elapsedMs = Date.now() - startedAt;
-        if (elapsedMs >= UPDATE_FULL_PREWARM_TIMEOUT_MS) {
-          throw new Error(
-            `idle-prefetch manifest unavailable after ${elapsedMs}ms`
-          );
-        }
-
-        const waitMs = Math.min(
-          IDLE_PREFETCH_MANIFEST_RETRY_DELAY_MS,
-          UPDATE_FULL_PREWARM_TIMEOUT_MS - elapsedMs
-        );
         logSWDebug(
-          'prewarmAllIdlePrefetchGroupsForUpdateReady waiting for manifest',
+          'prewarmAllIdlePrefetchGroupsForUpdateReady skipped: manifest unavailable',
           {
             elapsedMs,
-            waitMs,
             lastFailureReason: idlePrefetchManifestLastFailureReason,
           }
         );
-        await new Promise((resolve) => {
-          setTimeout(resolve, waitMs);
-        });
-        continue;
+        return;
       }
 
       orderedGroups = getOrderedIdlePrefetchGroups(manifest);
