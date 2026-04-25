@@ -62,9 +62,7 @@ import {
   getLyricsTitle,
   isLyricsTask,
 } from '../utils/lyrics-task-utils';
-import {
-  getImageGenerationTaskInsertGroupKey,
-} from '../utils/image-generation-anchor-task';
+import { getImageGenerationTaskInsertGroupKey } from '../utils/image-generation-anchor-task';
 import { findImageGenerationAnchorForTaskOnBoard } from '../utils/image-generation-anchor-lookup';
 
 /**
@@ -674,9 +672,7 @@ export function useAutoInsertToCanvas(
                 type,
                 taskFrameId,
                 taskFrameDims,
-                dimensions,
-                undefined,
-                { fit: 'stretch' }
+                undefined
               );
               if (frameInsert) {
                 insertedPoint = frameInsert.point;
@@ -694,8 +690,9 @@ export function useAutoInsertToCanvas(
                   currentImageUrl,
                   {
                     targetFrameId: taskFrameId,
-                    replaceElementId:
-                      task.params.pptReplaceElementId as string | undefined,
+                    replaceElementId: task.params.pptReplaceElementId as
+                      | string
+                      | undefined,
                     historyItems: createPPTSlideImageHistoryItems(
                       allUrls.slice(0, -1),
                       task.params.prompt,
@@ -713,16 +710,16 @@ export function useAutoInsertToCanvas(
               type !== 'text' &&
               allUrls.length === 1
             ) {
-              // 插入到 Frame 内部。PPT 页面图需要严格铺满 Frame，普通媒体保持 contain。
+              // 插入到 Frame 内部。PPT 页面图和普通媒体都保持 contain，确保图片完整展示。
               const frameInsert = await insertMediaIntoFrame(
                 board,
                 allUrls[0],
                 type,
                 taskFrameId,
                 taskFrameDims,
-                dimensions,
-                undefined,
-                task.params.pptSlideImage ? { fit: 'stretch' } : undefined
+                task.params.pptSlideImage && type === 'image'
+                  ? undefined
+                  : dimensions
               );
               if (frameInsert) {
                 insertedPoint = frameInsert.point;
@@ -749,14 +746,19 @@ export function useAutoInsertToCanvas(
                           title:
                             task.result?.clips?.[index]?.title ||
                             (allUrls.length > 1
-                              ? `${audioMetadata?.title || task.params.title || 'Audio'} ${index + 1}`
+                              ? `${
+                                  audioMetadata?.title ||
+                                  task.params.title ||
+                                  'Audio'
+                                } ${index + 1}`
                               : audioMetadata?.title),
                           previewImageUrl:
                             task.result?.clips?.[index]?.imageLargeUrl ||
                             task.result?.clips?.[index]?.imageUrl ||
                             audioMetadata?.previewImageUrl,
                           duration:
-                            typeof task.result?.clips?.[index]?.duration === 'number'
+                            typeof task.result?.clips?.[index]?.duration ===
+                            'number'
                               ? task.result.clips[index]!.duration || undefined
                               : audioMetadata?.duration,
                           clipId:
@@ -834,7 +836,9 @@ export function useAutoInsertToCanvas(
                     title:
                       task.result?.clips?.[index]?.title ||
                       (allUrls.length > 1
-                        ? `${audioMetadata?.title || task.params.title || 'Audio'} ${index + 1}`
+                        ? `${
+                            audioMetadata?.title || task.params.title || 'Audio'
+                          } ${index + 1}`
                         : audioMetadata?.title),
                     previewImageUrl:
                       task.result?.clips?.[index]?.imageLargeUrl ||
@@ -913,8 +917,9 @@ export function useAutoInsertToCanvas(
                 allUrls[0],
                 {
                   targetFrameId: taskFrameId,
-                  replaceElementId:
-                    task.params.pptReplaceElementId as string | undefined,
+                  replaceElementId: task.params.pptReplaceElementId as
+                    | string
+                    | undefined,
                 }
               );
             }
@@ -973,14 +978,19 @@ export function useAutoInsertToCanvas(
                         title:
                           task.result?.clips?.[index]?.title ||
                           (taskUrls.length > 1
-                            ? `${taskBaseMetadata.title || task.params.title || 'Audio'} ${index + 1}`
+                            ? `${
+                                taskBaseMetadata.title ||
+                                task.params.title ||
+                                'Audio'
+                              } ${index + 1}`
                             : taskBaseMetadata.title),
                         previewImageUrl:
                           task.result?.clips?.[index]?.imageLargeUrl ||
                           task.result?.clips?.[index]?.imageUrl ||
                           taskBaseMetadata.previewImageUrl,
                         duration:
-                          typeof task.result?.clips?.[index]?.duration === 'number'
+                          typeof task.result?.clips?.[index]?.duration ===
+                          'number'
                             ? task.result.clips[index]!.duration || undefined
                             : taskBaseMetadata.duration,
                         clipId:
@@ -1057,8 +1067,7 @@ export function useAutoInsertToCanvas(
                   getTaskImageGeneratedAt(task)
                 )
               );
-              const currentHistoryItem =
-                historyItems[historyItems.length - 1];
+              const currentHistoryItem = historyItems[historyItems.length - 1];
 
               if (!currentHistoryItem) {
                 for (const { task } of inserts) {
@@ -1077,9 +1086,7 @@ export function useAutoInsertToCanvas(
                 type,
                 targetFrameId,
                 targetFrameDimensions,
-                dimensions,
-                undefined,
-                { fit: 'stretch' }
+                undefined
               );
 
               if (frameInsert) {
@@ -1092,9 +1099,8 @@ export function useAutoInsertToCanvas(
                   currentHistoryItem.imageUrl,
                   {
                     targetFrameId,
-                    replaceElementId:
-                      firstInsertTask.params
-                        .pptReplaceElementId as string | undefined,
+                    replaceElementId: firstInsertTask.params
+                      .pptReplaceElementId as string | undefined,
                     prompt: currentHistoryItem.prompt,
                     imageCreatedAt: currentHistoryItem.createdAt,
                     historyItems: historyItems.slice(0, -1),

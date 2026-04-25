@@ -213,8 +213,8 @@ function appendPPTSlideImageHistory(
             ...(normalizeHistoryPrompt(item.prompt)
               ? { prompt: normalizeHistoryPrompt(item.prompt) }
               : historyItem.prompt
-                ? { prompt: historyItem.prompt }
-                : {}),
+              ? { prompt: historyItem.prompt }
+              : {}),
           };
         });
 
@@ -251,7 +251,9 @@ export function findPPTSlideImage(
   const preferredElementId = pptMeta?.slideImageElementId;
 
   if (preferredElementId) {
-    const index = board.children.findIndex((el: any) => el.id === preferredElementId);
+    const index = board.children.findIndex(
+      (el: any) => el.id === preferredElementId
+    );
     const element = board.children[index] as any;
     if (index !== -1 && isImageElement(element)) {
       return {
@@ -264,7 +266,8 @@ export function findPPTSlideImage(
   }
 
   const taggedIndex = board.children.findIndex(
-    (el: any) => el?.frameId === frameId && el?.pptSlideImage && isImageElement(el)
+    (el: any) =>
+      el?.frameId === frameId && el?.pptSlideImage && isImageElement(el)
   );
   if (taggedIndex !== -1) {
     const element = board.children[taggedIndex] as any;
@@ -278,9 +281,7 @@ export function findPPTSlideImage(
 
   const fallbackIndex = board.children.findIndex(
     (el: any) =>
-      el?.frameId === frameId &&
-      !el?.pptImagePlaceholder &&
-      isImageElement(el)
+      el?.frameId === frameId && !el?.pptImagePlaceholder && isImageElement(el)
   );
   if (fallbackIndex !== -1) {
     const element = board.children[fallbackIndex] as any;
@@ -300,6 +301,53 @@ export function findPPTSlideImage(
   }
 
   return null;
+}
+
+function getPPTFramePageIndex(element: any): number | undefined {
+  const pageIndex = element?.pptMeta?.pageIndex;
+  return typeof pageIndex === 'number' && Number.isFinite(pageIndex)
+    ? pageIndex
+    : undefined;
+}
+
+export function findPreviousPPTSlideImage(
+  board: PlaitBoard,
+  frameId: string
+): PPTSlideImageInfo | null {
+  const currentFrameIndex = getFrameIndex(board, frameId);
+  if (currentFrameIndex === -1) return null;
+
+  const currentFrame = board.children[currentFrameIndex] as any;
+  const currentPageIndex = getPPTFramePageIndex(currentFrame);
+  let previousFrameId: string | undefined;
+
+  if (currentPageIndex !== undefined) {
+    let bestPageIndex = -Infinity;
+    for (const element of board.children as any[]) {
+      if (!isFrameElement(element) || element.id === frameId) continue;
+      const pageIndex = getPPTFramePageIndex(element);
+      if (
+        pageIndex !== undefined &&
+        pageIndex < currentPageIndex &&
+        pageIndex > bestPageIndex
+      ) {
+        bestPageIndex = pageIndex;
+        previousFrameId = element.id;
+      }
+    }
+  }
+
+  if (!previousFrameId) {
+    for (let i = currentFrameIndex - 1; i >= 0; i -= 1) {
+      const element = board.children[i] as any;
+      if (isFrameElement(element)) {
+        previousFrameId = element.id;
+        break;
+      }
+    }
+  }
+
+  return previousFrameId ? findPPTSlideImage(board, previousFrameId) : null;
 }
 
 export function markPPTSlideImage(
@@ -322,7 +370,9 @@ export function markPPTSlideImage(
       ? imageCreatedAt
       : fallbackCreatedAt + historyItems.length;
 
-  const elementIndex = board.children.findIndex((el: any) => el.id === elementId);
+  const elementIndex = board.children.findIndex(
+    (el: any) => el.id === elementId
+  );
   if (elementIndex !== -1) {
     Transforms.setNode(
       board,
@@ -398,7 +448,9 @@ export function replacePPTSlideImage(
     return;
   }
 
-  const oldIndex = board.children.findIndex((el: any) => el.id === replaceElementId);
+  const oldIndex = board.children.findIndex(
+    (el: any) => el.id === replaceElementId
+  );
   if (oldIndex !== -1) {
     Transforms.removeNode(board, [oldIndex]);
   }
@@ -414,7 +466,10 @@ export function setPPTImagePlaceholderStatus(
   Transforms.setNode(board, { pptImageStatus: status } as any, [hit.index]);
 }
 
-export function removePPTImagePlaceholder(board: PlaitBoard, frameId: string): void {
+export function removePPTImagePlaceholder(
+  board: PlaitBoard,
+  frameId: string
+): void {
   const hit = findPPTImagePlaceholder(board, frameId);
   if (!hit) return;
   Transforms.removeNode(board, [hit.index]);
@@ -437,7 +492,10 @@ export function insertPPTImagePlaceholder(
   });
 
   const startPoint: Point = [imageRegion.x, imageRegion.y];
-  const endPoint: Point = [imageRegion.x + imageRegion.width, imageRegion.y + imageRegion.height];
+  const endPoint: Point = [
+    imageRegion.x + imageRegion.width,
+    imageRegion.y + imageRegion.height,
+  ];
 
   const placeholderElement = {
     id: idCreator(),
@@ -519,11 +577,14 @@ export async function insertMediaIntoFrame(
   };
   const regionDimensions = { width: region.width, height: region.height };
 
-  // 默认 contain 等比缩放；PPT 页面回填可用 stretch 严格铺满 Frame。
+  // 默认 contain 等比缩放；仅显式要求时才 stretch 铺满 Frame。
+  const shouldStretch = options?.fit === 'stretch';
+  const shouldLoadImageForContain =
+    mediaType === 'image' && !shouldStretch && !mediaDimensions;
   let mediaWidth: number;
   let mediaHeight: number;
 
-  if (options?.fit === 'stretch') {
+  if (shouldStretch) {
     mediaWidth = regionDimensions.width;
     mediaHeight = regionDimensions.height;
   } else if (
@@ -574,15 +635,54 @@ export async function insertMediaIntoFrame(
       false,
       { width: mediaWidth, height: mediaHeight },
       true, // skipScroll
-      true, // skipImageLoad（使用 Frame 尺寸立即插入）
-      options?.fit === 'stretch' // lockReferenceDimensions（PPT 回填需要严格占满 Frame）
+      !shouldLoadImageForContain, // skipImageLoad（未知图片尺寸时先加载，确保 contain 完整展示）
+      shouldStretch // lockReferenceDimensions（显式 stretch 时保持目标尺寸）
     );
   }
+
+  let finalPoint = insertionPoint;
+  let finalSize = {
+    width: mediaWidth,
+    height: mediaHeight,
+  };
 
   // 查找新插入的元素并绑定到 Frame
   if (board.children.length > childrenCountBefore) {
     const newElement = board.children[childrenCountBefore];
     if (newElement) {
+      if (
+        mediaType === 'image' &&
+        shouldLoadImageForContain &&
+        (newElement as any).points?.length >= 2
+      ) {
+        const insertedRect = RectangleClient.getRectangleByPoints(
+          (newElement as any).points
+        );
+        const centeredRect = {
+          x: region.x + (region.width - insertedRect.width) / 2,
+          y: region.y + (region.height - insertedRect.height) / 2,
+          width: insertedRect.width,
+          height: insertedRect.height,
+        };
+        finalPoint = [centeredRect.x, centeredRect.y];
+        finalSize = {
+          width: centeredRect.width,
+          height: centeredRect.height,
+        };
+        Transforms.setNode(
+          board,
+          {
+            points: [
+              [centeredRect.x, centeredRect.y],
+              [
+                centeredRect.x + centeredRect.width,
+                centeredRect.y + centeredRect.height,
+              ],
+            ],
+          } as any,
+          [childrenCountBefore]
+        );
+      }
       FrameTransforms.bindToFrame(board, newElement, frameElement);
     }
   }
@@ -592,11 +692,8 @@ export async function insertMediaIntoFrame(
     | undefined;
 
   return {
-    point: insertionPoint,
+    point: finalPoint,
     elementId: insertedElement?.id,
-    size: {
-      width: mediaWidth,
-      height: mediaHeight,
-    },
+    size: finalSize,
   };
 }

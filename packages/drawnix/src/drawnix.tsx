@@ -128,6 +128,7 @@ import {
   type IdlePrefetchGroup,
 } from './utils/startup-prefetch';
 import { DRAWER_PIN_KEYS, getDrawerPinned } from './utils/drawer-pin';
+import { PPT_EDITOR_OPEN_EVENT } from './services/ppt/ppt-ui-events';
 const DeferredAIInputBar = lazy(() =>
   import('./components/startup/DeferredAIInputBar').then((module) => ({
     default: module.DeferredAIInputBar,
@@ -144,7 +145,9 @@ import { SelectionMode } from './types/asset.types';
 type MediaLibraryOpenConfig = Pick<
   MediaLibraryModalProps,
   'mode' | 'filterType' | 'onSelect' | 'selectButtonText'
->;
+> & {
+  keepProjectDrawerOpen?: boolean;
+};
 
 interface SWIdlePrefetchStatusMessage {
   type: 'SW_IDLE_PREFETCH_STATUS';
@@ -404,6 +407,24 @@ export const Drawnix: React.FC<DrawnixProps> = ({
     setProjectDrawerOpen(true);
   }, [enableToolWindows, projectDrawerOpen]);
 
+  useEffect(() => {
+    const handleOpenPPTEditor = () => {
+      enableToolWindows(TOOL_WINDOW_GROUPS);
+      if (shouldAutoCloseToolboxDrawer()) {
+        setToolboxDrawerOpen(false);
+      }
+      if (shouldAutoCloseTaskDrawer()) {
+        setTaskPanelExpanded(false);
+      }
+      setMediaLibraryOpen(false);
+      setProjectDrawerOpen(true);
+    };
+
+    window.addEventListener(PPT_EDITOR_OPEN_EVENT, handleOpenPPTEditor);
+    return () =>
+      window.removeEventListener(PPT_EDITOR_OPEN_EVENT, handleOpenPPTEditor);
+  }, [enableToolWindows]);
+
   // 处理工具箱抽屉切换（互斥逻辑）
   const handleToolboxDrawerToggle = useCallback(() => {
     enableToolWindows(TOOL_WINDOW_GROUPS);
@@ -441,15 +462,29 @@ export const Drawnix: React.FC<DrawnixProps> = ({
   }, [enableDeferredRuntime, taskPanelExpanded]);
 
   // 打开素材库（用于缓存满提示）
-  const handleOpenMediaLibrary = useCallback((config?: MediaLibraryOpenConfig) => {
-    enableToolWindows(TOOL_WINDOW_GROUPS);
-    closeAllDrawers();
-    setMediaLibraryConfig({
-      mode: SelectionMode.BROWSE,
-      ...config,
-    });
-    setMediaLibraryOpen(true);
-  }, [closeAllDrawers, enableToolWindows]);
+  const handleOpenMediaLibrary = useCallback(
+    (config?: MediaLibraryOpenConfig) => {
+      enableToolWindows(TOOL_WINDOW_GROUPS);
+      const { keepProjectDrawerOpen, ...mediaLibraryConfig } = config || {};
+      if (keepProjectDrawerOpen) {
+        if (shouldAutoCloseToolboxDrawer()) {
+          setToolboxDrawerOpen(false);
+        }
+        if (shouldAutoCloseTaskDrawer()) {
+          setTaskPanelExpanded(false);
+        }
+        setMediaLibraryOpen(false);
+      } else {
+        closeAllDrawers();
+      }
+      setMediaLibraryConfig({
+        mode: SelectionMode.BROWSE,
+        ...mediaLibraryConfig,
+      });
+      setMediaLibraryOpen(true);
+    },
+    [closeAllDrawers, enableToolWindows]
+  );
 
   const handleOpenBackupRestore = useCallback(() => {
     enableDeferredRuntime(TOOL_WINDOW_GROUPS);
@@ -812,7 +847,9 @@ export const Drawnix: React.FC<DrawnixProps> = ({
                       onCreateProjectForMemory={handleCreateProjectForMemory}
                       currentBoardId={currentBoardId}
                       deferredRuntimeEnabled={deferredRuntimeEnabled}
-                      shouldRenderDeferredFeatures={shouldRenderDeferredFeatures}
+                      shouldRenderDeferredFeatures={
+                        shouldRenderDeferredFeatures
+                      }
                       versionUpdateEnabled={versionUpdateEnabled}
                       performancePanelEnabled={performancePanelEnabled}
                       toolWindowManagerEnabled={toolWindowManagerEnabled}
@@ -1627,6 +1664,7 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
               setMediaLibraryOpen={setMediaLibraryOpen}
               setBackupRestoreOpen={setBackupRestoreOpen}
               setCloudSyncOpen={setCloudSyncOpen}
+              handleOpenMediaLibrary={handleOpenMediaLibrary}
               handleBeforeSwitch={handleBeforeSwitch}
               onCreateProjectForMemory={onCreateProjectForMemory}
             />

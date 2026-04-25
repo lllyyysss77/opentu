@@ -59,6 +59,11 @@ import { ConfirmDialog } from '../dialog/ConfirmDialog';
 import { FramePanel } from './FramePanel';
 import { LayerPanel } from './LayerPanel';
 import { DRAWER_PIN_KEYS } from '../../utils/drawer-pin';
+import type { MediaLibraryConfig } from '../../types/asset.types';
+import {
+  PPT_EDITOR_OPEN_EVENT,
+  type PPTEditorOpenEventDetail,
+} from '../../services/ppt/ppt-ui-events';
 import './project-drawer.scss';
 
 export interface ProjectDrawerProps {
@@ -70,6 +75,12 @@ export interface ProjectDrawerProps {
   onBeforeSwitch?: () => Promise<void>;
   /** Called after board is switched */
   onBoardSwitch?: (board: Board) => void;
+  /** Called when a child panel wants to open the global media library */
+  onOpenMediaLibrary?: (
+    config?: Partial<MediaLibraryConfig> & {
+      selectButtonText?: string;
+    }
+  ) => void;
 }
 
 // Storage key for drawer width
@@ -1005,6 +1016,7 @@ export const ProjectDrawer: React.FC<ProjectDrawerProps> = ({
   onOpenChange,
   onBeforeSwitch,
   onBoardSwitch,
+  onOpenMediaLibrary,
 }) => {
   const {
     isLoading,
@@ -1069,6 +1081,23 @@ export const ProjectDrawer: React.FC<ProjectDrawerProps> = ({
     setActiveTab(tab);
     saveProjectDrawerTab(tab);
   }, []);
+
+  useEffect(() => {
+    const handleOpenPPTEditor = (
+      event: Event | CustomEvent<PPTEditorOpenEventDetail>
+    ) => {
+      const detail = (event as CustomEvent<PPTEditorOpenEventDetail>).detail;
+      if (detail?.viewMode === 'outline' || detail?.viewMode === 'slides') {
+        handleTabChange('frames');
+      } else {
+        handleTabChange('frames');
+      }
+    };
+
+    window.addEventListener(PPT_EDITOR_OPEN_EVENT, handleOpenPPTEditor);
+    return () =>
+      window.removeEventListener(PPT_EDITOR_OPEN_EVENT, handleOpenPPTEditor);
+  }, [handleTabChange]);
 
   // Handle creating new board
   const handleCreateBoard = useCallback(
@@ -1654,7 +1683,7 @@ export const ProjectDrawer: React.FC<ProjectDrawerProps> = ({
         {activeTab === 'layers' ? (
           <LayerPanel />
         ) : activeTab === 'frames' ? (
-          <FramePanel />
+          <FramePanel onOpenMediaLibrary={onOpenMediaLibrary} />
         ) : isLoading ? (
           <div className="project-drawer__loading">加载中...</div>
         ) : filteredTree.length === 0 ? (
