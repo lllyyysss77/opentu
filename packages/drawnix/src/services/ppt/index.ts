@@ -7,6 +7,7 @@ export type {
   PPTLayoutType,
   PPTPageSpec,
   PPTOutline,
+  PPTStyleSpec,
   PPTPageCountOption,
   PPTGenerateOptions,
   PPTFrameMeta,
@@ -25,6 +26,8 @@ export {
   generateOutlineSystemPrompt,
   generateOutlineUserPrompt,
   generateSlideImagePrompt,
+  createDefaultPPTStyleSpec,
+  normalizePPTStyleSpec,
   validateOutline,
   parseOutlineResponse,
 } from './ppt-prompts';

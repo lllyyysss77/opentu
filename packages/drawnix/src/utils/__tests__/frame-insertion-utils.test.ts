@@ -1,6 +1,7 @@
 import { createTestingBoard } from '@plait/core';
 import { describe, expect, it } from 'vitest';
 import {
+  findPreviousPPTSlideImage,
   findPPTSlideImage,
   getPPTSlidePrompt,
   markPPTSlideImage,
@@ -78,6 +79,41 @@ describe('frame-insertion-utils PPT helpers', () => {
       ],
     });
     expect(findPPTSlideImage(board, 'frame-1')?.elementId).toBe('image-1');
+  });
+
+  it('finds the previous PPT slide image by page index', () => {
+    const board = createBoard([
+      createFrame({
+        id: 'frame-1',
+        pptMeta: {
+          pageIndex: 1,
+          slideImageElementId: 'image-1',
+        },
+      }),
+      createFrame({
+        id: 'frame-2',
+        name: 'Slide 2',
+        pptMeta: {
+          pageIndex: 2,
+        },
+      }),
+      {
+        id: 'image-1',
+        type: 'image',
+        frameId: 'frame-1',
+        pptSlideImage: true,
+        url: 'https://example.com/slide-1.png',
+        points: [
+          [0, 0],
+          [1920, 1080],
+        ],
+      },
+    ]);
+
+    expect(findPreviousPPTSlideImage(board, 'frame-2')).toMatchObject({
+      elementId: 'image-1',
+      url: 'https://example.com/slide-1.png',
+    });
   });
 
   it('uses the first 10 prompt characters as title for default PPT frame titles', () => {

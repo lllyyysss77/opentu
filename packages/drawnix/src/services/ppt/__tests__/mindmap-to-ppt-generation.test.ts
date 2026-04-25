@@ -80,8 +80,16 @@ describe('generatePPTFromMindmap image-first output', () => {
         slideImageStatus: 'loading',
         imageStatus: 'loading',
       });
+      expect(frame.pptMeta.styleSpec).toBeDefined();
+      expect(frame.pptMeta.styleSpec.visualStyle).toContain(
+        'presentation design'
+      );
       expect(frame.pptMeta.slidePrompt).toContain(
         '完整的 16:9 PowerPoint 幻灯片图片'
+      );
+      expect(frame.pptMeta.slidePrompt).toContain('全局风格规格');
+      expect(frame.pptMeta.slidePrompt).toContain(
+        frame.pptMeta.styleSpec.visualStyle
       );
 
       expect(mocks.createImageTask).toHaveBeenNthCalledWith(

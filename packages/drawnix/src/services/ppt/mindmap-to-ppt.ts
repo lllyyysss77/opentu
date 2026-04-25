@@ -25,7 +25,10 @@ import type {
   PPTFrameMeta,
 } from './ppt.types';
 import { PPT_FRAME_WIDTH, PPT_FRAME_HEIGHT } from './ppt-layout-engine';
-import { generateSlideImagePrompt } from './ppt-prompts';
+import {
+  createDefaultPPTStyleSpec,
+  generateSlideImagePrompt,
+} from './ppt-prompts';
 import {
   calcPPTFrameInsertionStartPosition,
   getPPTFrameGridPositions,
@@ -186,6 +189,7 @@ export function convertMindmapToOutline(
 
   return {
     title,
+    styleSpec: createDefaultPPTStyleSpec(),
     pages,
   };
 }
@@ -257,6 +261,7 @@ function createPPTPage(
     layout: pageSpec.layout,
     pageIndex,
     slidePrompt,
+    styleSpec: outline.styleSpec,
     slideImageStatus: 'loading',
     imageStatus: 'loading',
   };

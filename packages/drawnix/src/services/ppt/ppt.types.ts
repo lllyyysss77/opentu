@@ -29,10 +29,28 @@ export interface PPTPageSpec {
   notes?: string;
 }
 
+/** PPT 全局风格规格：每页共用，避免整套 PPT 视觉漂移 */
+export interface PPTStyleSpec {
+  /** 整体视觉风格 */
+  visualStyle: string;
+  /** 主色、背景色、强调色等色板规则 */
+  colorPalette: string;
+  /** 字体气质与层级规则 */
+  typography: string;
+  /** 网格、留白、组件复用等布局规则 */
+  layout: string;
+  /** 可复用装饰元素或视觉母题 */
+  decorativeElements: string;
+  /** 需要避免的风格漂移项 */
+  avoid?: string;
+}
+
 /** PPT 大纲（AI 生成的完整大纲结构） */
 export interface PPTOutline {
   /** PPT 总标题 */
   title: string;
+  /** 整套 PPT 共用的风格规格 */
+  styleSpec?: PPTStyleSpec;
   /** 所有页面规格 */
   pages: PPTPageSpec[];
 }
@@ -73,6 +91,8 @@ export interface PPTFrameMeta {
   imageStatus?: 'placeholder' | 'loading' | 'generated' | 'failed';
   /** 整页幻灯片生成提示词（优先于旧 imagePrompt） */
   slidePrompt?: string;
+  /** 整套 PPT 共用的风格规格 */
+  styleSpec?: PPTStyleSpec;
   /** 当前整页幻灯片图片 URL */
   slideImageUrl?: string;
   /** 当前整页幻灯片图片元素 ID */

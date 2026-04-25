@@ -10,6 +10,7 @@ import type {
   PPTLayoutType,
   PPTOutline,
   PPTPageSpec,
+  PPTStyleSpec,
 } from './ppt.types';
 
 /** 页数范围映射 */
@@ -28,6 +29,87 @@ const LAYOUT_DESCRIPTIONS: Record<PPTLayoutType, string> = {
   comparison: '对比页 - 左右对比两个概念或事物',
   ending: '结尾页 - 用于PPT结尾，包含感谢语或总结',
 };
+
+const STYLE_FIELD_TEXT_LIMIT = 480;
+const STYLE_REQUIREMENT_TEXT_LIMIT = 280;
+
+function truncateText(value: string, maxLength: number): string {
+  return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value;
+}
+
+/**
+ * 默认 PPT 全局风格规格。
+ * 只保存短文本，不保存图片或 base64，避免增大画布元数据。
+ */
+export function createDefaultPPTStyleSpec(
+  options: PPTGenerateOptions = {}
+): PPTStyleSpec {
+  const extraRequirements = options.extraRequirements?.trim()
+    ? truncateText(options.extraRequirements.trim(), STYLE_REQUIREMENT_TEXT_LIMIT)
+    : '';
+  const visualStyle = extraRequirements
+    ? `professional modern premium presentation design, incorporate this user style requirement consistently: ${extraRequirements}`
+    : 'professional modern premium presentation design, clean keynote style, polished SaaS editorial look';
+
+  return {
+    visualStyle,
+    colorPalette:
+      'warm white or very light neutral background, deep charcoal text, one consistent accent color, muted supporting colors, no random palette changes',
+    typography:
+      'consistent geometric sans-serif, bold concise titles, clear body hierarchy, same font mood and weight system on every slide',
+    layout:
+      'stable 16:9 grid, generous margins, repeated header/title rhythm, reusable cards/charts/content blocks, balanced whitespace',
+    decorativeElements:
+      'subtle geometric shapes, thin dividers, soft shadows, restrained icons, repeated visual motif across slides',
+    avoid:
+      'do not switch art styles, do not change color families between slides, do not use mismatched fonts, do not create busy backgrounds',
+  };
+}
+
+function readStyleField(
+  styleSpec: Record<string, unknown>,
+  key: keyof PPTStyleSpec,
+  fallback: string | undefined
+): string | undefined {
+  const value = styleSpec[key];
+  return typeof value === 'string' && value.trim()
+    ? truncateText(value.trim(), STYLE_FIELD_TEXT_LIMIT)
+    : fallback;
+}
+
+export function normalizePPTStyleSpec(
+  styleSpec: unknown,
+  options: PPTGenerateOptions = {}
+): PPTStyleSpec {
+  const fallback = createDefaultPPTStyleSpec(options);
+  if (!styleSpec || typeof styleSpec !== 'object') {
+    return fallback;
+  }
+
+  const s = styleSpec as Record<string, unknown>;
+  return {
+    visualStyle: readStyleField(s, 'visualStyle', fallback.visualStyle)!,
+    colorPalette: readStyleField(s, 'colorPalette', fallback.colorPalette)!,
+    typography: readStyleField(s, 'typography', fallback.typography)!,
+    layout: readStyleField(s, 'layout', fallback.layout)!,
+    decorativeElements: readStyleField(
+      s,
+      'decorativeElements',
+      fallback.decorativeElements
+    )!,
+    avoid: readStyleField(s, 'avoid', fallback.avoid),
+  };
+}
+
+function normalizeOutlineStyle(
+  outline: PPTOutline,
+  options: PPTGenerateOptions = {}
+): PPTOutline {
+  return {
+    ...outline,
+    styleSpec: normalizePPTStyleSpec(outline.styleSpec, options),
+  };
+}
 
 /**
  * 生成 PPT 大纲的系统提示词
@@ -53,7 +135,17 @@ ${Object.entries(LAYOUT_DESCRIPTIONS)
 \`\`\`typescript
 interface PPTOutline {
   title: string;          // PPT总标题
+  styleSpec: PPTStyleSpec; // 整套PPT共用的全局风格规格
   pages: PPTPageSpec[];   // 所有页面
+}
+
+interface PPTStyleSpec {
+  visualStyle: string;        // 整体视觉风格，具体且可复用
+  colorPalette: string;       // 主色、背景色、强调色、辅助色规则
+  typography: string;         // 字体气质、字号层级、字重规则
+  layout: string;             // 网格、留白、组件复用、版面节奏
+  decorativeElements: string; // 重复出现的图形、图标、纹理或视觉母题
+  avoid?: string;             // 禁止漂移项
 }
 
 interface PPTPageSpec {
@@ -70,8 +162,14 @@ interface PPTPageSpec {
 - imagePrompt 是可选视觉概念，不是单独配图任务；可为需要更强画面指引的页面生成
 - imagePrompt 使用英文描述，便于图片生成模型理解
 - 描述应具体、可视化，包含主体、风格、氛围等要素
-- 风格统一为：professional, modern, clean, premium presentation design
+- imagePrompt 必须服从全局 styleSpec，不得为单页创造新的画风、色板或字体体系
 - 示例："A futuristic city with flying cars and holographic billboards, professional flat design illustration, clean and modern style"
+
+## 全局风格规格规则
+1. 必须生成 styleSpec，且所有页面都必须共享同一套 styleSpec
+2. styleSpec 要具体到可执行的视觉规则，不能只写 generic、modern、clean 这类泛词
+3. 若额外要求中包含风格要求，必须融合进 styleSpec
+4. 各页允许版式变化，但颜色、字体气质、组件样式、装饰母题必须一致
 
 ## 设计原则
 1. **标题精简**：每页标题控制在 10 个中文字符以内（约 20 个英文字符），避免在幻灯片上换行
@@ -116,11 +214,26 @@ function formatBullets(bullets?: string[]): string {
   return bullets.map((bullet, index) => `${index + 1}. ${bullet}`).join('\n');
 }
 
+function formatStyleSpec(styleSpec: PPTStyleSpec): string {
+  return `- 整体视觉风格：${styleSpec.visualStyle}
+- 色板规则：${styleSpec.colorPalette}
+- 字体规则：${styleSpec.typography}
+- 布局规则：${styleSpec.layout}
+- 装饰元素：${styleSpec.decorativeElements}
+- 禁止事项：${styleSpec.avoid || '不得偏离上述全局风格规格'}`;
+}
+
+function summarizePage(page?: PPTPageSpec): string {
+  if (!page) return '无';
+  const bullets = page.bullets?.slice(0, 3).join('；') || '无要点';
+  return `${page.layout}｜${page.title}${page.subtitle ? `｜${page.subtitle}` : ''}｜${bullets}`;
+}
+
 /**
  * 生成单页整图 PPT 的图片提示词。
  */
 export function generateSlideImagePrompt(
-  outline: Pick<PPTOutline, 'title' | 'pages'>,
+  outline: Pick<PPTOutline, 'title' | 'pages' | 'styleSpec'>,
   page: PPTPageSpec,
   pageIndex: number,
   options: PPTGenerateOptions = {}
@@ -135,6 +248,9 @@ export function generateSlideImagePrompt(
       : page.layout === 'toc'
       ? '目录页'
       : `第 ${pageIndex} 页内容页`;
+  const styleSpec = normalizePPTStyleSpec(outline.styleSpec, options);
+  const previousPage = outline.pages[pageIndex - 2];
+  const nextPage = outline.pages[pageIndex];
 
   return `请生成一张完整的 16:9 PowerPoint 幻灯片图片，适合直接作为 PPT 第 ${pageIndex}/${totalPages} 页使用。
 
@@ -142,8 +258,12 @@ export function generateSlideImagePrompt(
 - 输出必须是一整页幻灯片设计，不要只生成插画、背景图或局部元素。
 - 幻灯片内需要直接包含清晰可读的文字，不需要额外叠加文本。
 - 文字语言：${language}
-- 风格：professional, modern, clean, premium presentation design
 - 画面比例：16:9，留白合理，层级清晰，适合正式演示。
+- 必须严格延续“全局风格规格”，不得为当前页另起一套画风、色板、字体或组件样式。
+- 当前页可以有不同版式，但必须像同一套 PPT 模板中的一页。
+
+## 全局风格规格（整套 PPT 所有页面完全共用）
+${formatStyleSpec(styleSpec)}
 
 ## PPT 信息
 - PPT 总标题：${outline.title}
@@ -154,6 +274,10 @@ export function generateSlideImagePrompt(
 - 页面要点：
 ${formatBullets(page.bullets)}
 - 视觉概念：${page.imagePrompt || '根据页面内容自行设计专业视觉元素'}
+
+## 相邻页面上下文（用于保持连续性，不要照抄内容）
+- 上一页：${summarizePage(previousPage)}
+- 下一页：${summarizePage(nextPage)}
 
 ${extraRequirements ? `## 额外要求\n${extraRequirements}\n` : ''}
 请只生成最终幻灯片画面。`;
@@ -228,7 +352,10 @@ function extractJsonObject(text: string): string | null {
 /**
  * 解析 AI 返回的大纲 JSON
  */
-export function parseOutlineResponse(response: string): import('./ppt.types').PPTOutline {
+export function parseOutlineResponse(
+  response: string,
+  options: PPTGenerateOptions = {}
+): import('./ppt.types').PPTOutline {
   let jsonStr = response.trim();
 
   // 移除可能的 markdown 代码块标记
@@ -246,7 +373,7 @@ export function parseOutlineResponse(response: string): import('./ppt.types').PP
   try {
     const parsed = JSON.parse(jsonStr);
     if (validateOutline(parsed)) {
-      return parsed;
+      return normalizeOutlineStyle(parsed, options);
     }
   } catch {
     // 直接解析失败，尝试其他策略
@@ -258,7 +385,7 @@ export function parseOutlineResponse(response: string): import('./ppt.types').PP
     try {
       const parsed = JSON.parse(extracted);
       if (validateOutline(parsed)) {
-        return parsed;
+        return normalizeOutlineStyle(parsed, options);
       }
     } catch {
       // 提取后仍然解析失败
@@ -274,7 +401,7 @@ export function parseOutlineResponse(response: string): import('./ppt.types').PP
 
     const parsed = JSON.parse(fixedStr);
     if (validateOutline(parsed)) {
-      return parsed;
+      return normalizeOutlineStyle(parsed, options);
     }
   } catch {
     // 修复也失败

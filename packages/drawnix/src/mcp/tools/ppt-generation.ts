@@ -112,7 +112,7 @@ async function generatePPTOutline(
     fullResponse = response.choices[0].message.content || fullResponse;
   }
 
-  return parseOutlineResponse(fullResponse);
+  return parseOutlineResponse(fullResponse, options);
 }
 
 /**
@@ -145,6 +145,7 @@ function createPPTPage(
     layout: pageSpec.layout,
     pageIndex,
     slidePrompt,
+    styleSpec: outline.styleSpec,
     slideImageStatus: 'loading',
     imageStatus: 'loading',
   };
