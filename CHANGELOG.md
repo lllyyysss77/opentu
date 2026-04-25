@@ -1,3 +1,17 @@
+## 0.6.75 (2026-04-25)
+
+### 🩹 Fixes
+
+- 离线时跳过 idle prefetch 清单预热 ([a20393e2](https://github.com/ljquan/aitu/commit/a20393e2))
+
+### 🔧 Chores
+
+- 更新应用版本号至0.6.74并同步构建时间 ([19cecd26](https://github.com/ljquan/aitu/commit/19cecd26))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+
 ## 0.6.74 (2026-04-24)
 
 ### 🚀 Features

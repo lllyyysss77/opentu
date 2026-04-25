@@ -1,6 +1,21 @@
 {
   "versions": [
     {
+      "version": "0.6.75",
+      "date": "2026-04-25",
+      "changes": {
+        "features": [],
+        "fixes": [
+          "离线时跳过 idle prefetch 清单预热"
+        ],
+        "improvements": [
+          "更新应用版本号至0.6.74并同步构建时间"
+        ]
+      },
+      "type": "patch",
+      "highlights": "离线时跳过 idle prefetch 清单预热"
+    },
+    {
       "version": "0.6.74",
       "date": "2026-04-24",
       "changes": {
