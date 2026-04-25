@@ -10,19 +10,17 @@ import React, {
   useCallback,
   useState,
   useEffect,
-  useRef,
 } from 'react';
 import classNames from 'classnames';
-import { Input, Button, MessagePlugin, Loading } from 'tdesign-react';
+import { Input, Button, MessagePlugin, Loading, Dropdown } from 'tdesign-react';
+import { Check, LayoutGrid, Presentation } from 'lucide-react';
 import {
   SearchIcon,
   EditIcon,
   DeleteIcon,
-  ViewListIcon,
   AddIcon,
   PlayCircleIcon,
   ImageIcon,
-  LayersIcon,
   FileCopyIcon,
 } from 'tdesign-icons-react';
 import {
@@ -34,29 +32,41 @@ import {
   Transforms,
   clearSelectedElement,
   addSelectedElement,
+  getSelectedElements,
 } from '@plait/core';
-import { PlaitFrame, isFrameElement } from '../../types/frame.types';
+import {
+  PlaitFrame,
+  getFrameDisplayName,
+  isFrameElement,
+} from '../../types/frame.types';
 import { FrameTransforms } from '../../plugins/with-frame';
-import { useDrawnix } from '../../hooks/use-drawnix';
+import { DialogType, useDrawnix } from '../../hooks/use-drawnix';
 import { useDragSort } from '../../hooks/use-drag-sort';
 import { AddFrameDialog } from './AddFrameDialog';
 import { FrameSlideshow } from './FrameSlideshow';
-import { generateImage } from '../../mcp/tools/image-generation';
 import {
+  findPPTSlideImage,
+  getPPTSlidePrompt,
   insertMediaIntoFrame,
-  insertPPTImagePlaceholder,
-  removePPTImagePlaceholder,
-  setFramePPTImageStatus,
-  setPPTImagePlaceholderStatus,
+  replacePPTSlideImage,
+  setFramePPTMeta,
 } from '../../utils/frame-insertion-utils';
-import { getImageRegion, type PPTFrameMeta } from '../../services/ppt';
-import { duplicateFrame, focusFrame } from '../../utils/frame-duplicate';
-import { useI18n } from '../../i18n';
-import { DownloadIcon } from '../icons';
 import {
-  exportAllPPTFrames,
-  exportFramesToPPT,
-} from '../../services/ppt/ppt-export-service';
+  type PPTFrameMeta,
+  type PPTSlideImageHistoryItem,
+  getPPTFrameGridPosition,
+  loadPPTFrameLayoutColumns,
+  sanitizePPTFrameLayoutColumns,
+  savePPTFrameLayoutColumns,
+} from '../../services/ppt';
+import { duplicateFrame, focusFrame } from '../../utils/frame-duplicate';
+import {
+  getFrameAwareSelection,
+  moveElementWithFrameRelations,
+} from '../../transforms/frame-aware';
+import { useI18n } from '../../i18n';
+import { AIImageIcon, DownloadIcon } from '../icons';
+import { exportAllPPTFrames } from '../../services/ppt/ppt-export-service';
 import {
   ContextMenu,
   useContextMenuState,
@@ -64,6 +74,7 @@ import {
 } from '../shared';
 import { useConfirmDialog } from '../dialog/ConfirmDialog';
 import { HoverTip } from '../shared';
+import { useThumbnailUrl } from '../../hooks/useThumbnailUrl';
 
 interface FrameInfo {
   frame: PlaitFrame;
@@ -75,10 +86,192 @@ interface FrameInfo {
   height: number;
   /** PPT 元数据（如果有） */
   pptMeta?: PPTFrameMeta;
+  slideImageUrl?: string;
+  slideImageElementId?: string;
+  slidePrompt?: string;
 }
 
+const PPT_HISTORY_PROMPT_PREVIEW_LENGTH = 36;
+const PPT_LAYOUT_COLUMN_OPTIONS = Array.from(
+  { length: 10 },
+  (_, index) => index + 1
+);
+const DEFAULT_FRAME_NAME_REGEXP = /^(?:Frame|Slide|PPT\s*页面)\s*\d+$/i;
+type PPTPageInsertPlacement = 'before' | 'after';
+
+function getPPTPageFrameName(pageIndex: number): string {
+  return `PPT 页面 ${pageIndex}`;
+}
+
+function isDefaultFrameName(name?: string): boolean {
+  return DEFAULT_FRAME_NAME_REGEXP.test((name || '').trim());
+}
+
+function getOrderedPPTFrameInfos(frameInfos: FrameInfo[]): FrameInfo[] {
+  const sourceOrder = new Map(
+    frameInfos.map((info, index) => [info.frame.id, index])
+  );
+
+  return [...frameInfos].sort((left, right) => {
+    const leftIndex = left.pptMeta?.pageIndex;
+    const rightIndex = right.pptMeta?.pageIndex;
+    const hasLeftIndex =
+      typeof leftIndex === 'number' && !Number.isNaN(leftIndex);
+    const hasRightIndex =
+      typeof rightIndex === 'number' && !Number.isNaN(rightIndex);
+
+    if (hasLeftIndex && hasRightIndex && leftIndex !== rightIndex) {
+      return leftIndex - rightIndex;
+    }
+    if (hasLeftIndex !== hasRightIndex) {
+      return hasLeftIndex ? -1 : 1;
+    }
+    return (
+      (sourceOrder.get(left.frame.id) ?? 0) -
+      (sourceOrder.get(right.frame.id) ?? 0)
+    );
+  });
+}
+
+function areStringSetsEqual(left: Set<string>, right: Set<string>): boolean {
+  if (left.size !== right.size) {
+    return false;
+  }
+  for (const value of left) {
+    if (!right.has(value)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function getSlideImageHistory(
+  frameInfo: FrameInfo
+): PPTSlideImageHistoryItem[] {
+  const history = (frameInfo.pptMeta?.slideImageHistory || []).filter(
+    (item) => !!item.imageUrl
+  );
+
+  if (!frameInfo.slideImageUrl) {
+    return history;
+  }
+
+  const hasCurrentImage = history.some((item) => {
+    if (
+      frameInfo.slideImageElementId &&
+      item.elementId === frameInfo.slideImageElementId
+    ) {
+      return true;
+    }
+    return item.imageUrl === frameInfo.slideImageUrl;
+  });
+
+  if (hasCurrentImage) {
+    return history;
+  }
+
+  return [
+    {
+      id: `current-${frameInfo.frame.id}-${
+        frameInfo.slideImageElementId || frameInfo.slideImageUrl
+      }`,
+      imageUrl: frameInfo.slideImageUrl,
+      ...(frameInfo.slideImageElementId
+        ? { elementId: frameInfo.slideImageElementId }
+        : {}),
+      ...(frameInfo.slidePrompt ? { prompt: frameInfo.slidePrompt } : {}),
+      createdAt: 0,
+    },
+    ...history,
+  ];
+}
+
+function formatHistoryCreatedAt(createdAt: number): string {
+  if (!Number.isFinite(createdAt) || createdAt <= 0) {
+    return '';
+  }
+  return new Date(createdAt).toLocaleString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+const PPTSlideHistoryMenuLabel: React.FC<{
+  item: PPTSlideImageHistoryItem;
+  index: number;
+}> = ({ item, index }) => {
+  const prompt = item.prompt?.trim();
+  const promptPreview =
+    prompt && prompt.length > PPT_HISTORY_PROMPT_PREVIEW_LENGTH
+      ? `${prompt.slice(0, PPT_HISTORY_PROMPT_PREVIEW_LENGTH)}…`
+      : prompt;
+
+  return (
+    <span className="frame-panel__history-menu-item">
+      <img
+        src={item.imageUrl}
+        alt={`历史图片 ${index + 1}`}
+        loading="lazy"
+        className="frame-panel__history-menu-thumb"
+      />
+      <span className="frame-panel__history-menu-text">
+        <span className="frame-panel__history-menu-title">
+          历史图片 {index + 1}
+          {formatHistoryCreatedAt(item.createdAt)
+            ? ` · ${formatHistoryCreatedAt(item.createdAt)}`
+            : ''}
+        </span>
+        {promptPreview ? (
+          <span className="frame-panel__history-menu-prompt">
+            {promptPreview}
+          </span>
+        ) : null}
+      </span>
+      <span className="frame-panel__history-menu-preview">
+        <img
+          src={item.imageUrl}
+          alt={`历史图片 ${index + 1} 预览`}
+          loading="lazy"
+          decoding="async"
+        />
+      </span>
+    </span>
+  );
+};
+
+const PPTSlidePreview: React.FC<{
+  imageUrl?: string;
+  title: string;
+  status?: PPTFrameMeta['slideImageStatus'] | PPTFrameMeta['imageStatus'];
+}> = ({ imageUrl, title, status }) => {
+  const thumbnailUrl = useThumbnailUrl(imageUrl, 'image', 'small');
+  const emptyText =
+    status === 'loading'
+      ? '生成中'
+      : status === 'failed'
+        ? '生成失败'
+        : '空白页';
+
+  return (
+    <div className="frame-panel__slide-preview">
+      {thumbnailUrl ? (
+        <img
+          src={thumbnailUrl}
+          alt={title}
+          loading="lazy"
+          className="frame-panel__slide-preview-img"
+        />
+      ) : (
+        <div className="frame-panel__slide-preview-empty">{emptyText}</div>
+      )}
+    </div>
+  );
+};
+
 export const FramePanel: React.FC = () => {
-  const { board } = useDrawnix();
+  const { board, openDialog } = useDrawnix();
   const { language } = useI18n();
   const { confirm, confirmDialog } = useConfirmDialog({
     container: board ? PlaitBoard.getBoardContainer(board) : null,
@@ -86,21 +279,23 @@ export const FramePanel: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
-  const [selectedFrameKey, setSelectedFrameKey] = useState<string | null>(null);
+  const [selectedFrameIds, setSelectedFrameIds] = useState<Set<string>>(
+    () => new Set()
+  );
+  const [lastSelectedFrameId, setLastSelectedFrameId] = useState<string | null>(
+    null
+  );
   const [addDialogVisible, setAddDialogVisible] = useState(false);
   const [slideshowVisible, setSlideshowVisible] = useState(false);
-  const [generatingImageIds, setGeneratingImageIds] = useState<Set<string>>(
-    new Set()
-  );
-  const [isGeneratingAll, setIsGeneratingAll] = useState(false);
-  const bgFileInputRef = useRef<HTMLInputElement>(null);
   const {
     contextMenu,
     open: openContextMenu,
     close: closeContextMenu,
   } = useContextMenuState<FrameInfo>();
   const [isExportingAllPPT, setIsExportingAllPPT] = useState(false);
-  const [exportingFrameId, setExportingFrameId] = useState<string | null>(null);
+  const [pptLayoutColumns, setPPTLayoutColumns] = useState(() =>
+    loadPPTFrameLayoutColumns()
+  );
 
   // 监听画布变化，强制刷新 Frame 列表
   // FramePanel 在 BoardContext（Wrapper）外部渲染，无法通过 BoardContext 的 v 版本号触发重渲染
@@ -115,6 +310,56 @@ export const FramePanel: React.FC = () => {
     };
     return () => {
       board.afterChange = originalAfterChange;
+    };
+  }, [board]);
+
+  useEffect(() => {
+    if (!board) return;
+
+    let animationFrameId = 0;
+    let lastRawSelectionKey = '';
+    let lastSelectedFrameKey = '';
+
+    const syncCanvasSelection = () => {
+      const rawSelectionKey = JSON.stringify(board.selection) || '';
+      if (rawSelectionKey === lastRawSelectionKey) {
+        animationFrameId = requestAnimationFrame(syncCanvasSelection);
+        return;
+      }
+      lastRawSelectionKey = rawSelectionKey;
+
+      const selectedFrameIdsFromCanvas = getSelectedElements(board)
+        .filter(isFrameElement)
+        .map((frame) => frame.id);
+      const nextSelectionKey = selectedFrameIdsFromCanvas.join('|');
+
+      if (nextSelectionKey !== lastSelectedFrameKey) {
+        lastSelectedFrameKey = nextSelectionKey;
+        const nextSelectedFrameIds = new Set(selectedFrameIdsFromCanvas);
+
+        setSelectedFrameIds((current) =>
+          areStringSetsEqual(current, nextSelectedFrameIds)
+            ? current
+            : nextSelectedFrameIds
+        );
+
+        setLastSelectedFrameId((current) => {
+          const nextLastSelectedFrameId =
+            selectedFrameIdsFromCanvas[selectedFrameIdsFromCanvas.length - 1] ||
+            null;
+          return current === nextLastSelectedFrameId
+            ? current
+            : nextLastSelectedFrameId;
+        });
+      }
+
+      animationFrameId = requestAnimationFrame(syncCanvasSelection);
+    };
+
+    animationFrameId = requestAnimationFrame(syncCanvasSelection);
+
+    return () => {
+      cancelAnimationFrame(animationFrameId);
     };
   }, [board]);
 
@@ -138,6 +383,7 @@ export const FramePanel: React.FC = () => {
           const frame = element as PlaitFrame;
           const rect = RectangleClient.getRectangleByPoints(frame.points);
           const pptMeta = (frame as any).pptMeta as PPTFrameMeta | undefined;
+          const slideImage = findPPTSlideImage(board, frame.id);
           result.push({
             frame,
             path,
@@ -147,6 +393,9 @@ export const FramePanel: React.FC = () => {
             width: Math.round(rect.width),
             height: Math.round(rect.height),
             pptMeta,
+            slideImageUrl: slideImage?.url,
+            slideImageElementId: slideImage?.elementId,
+            slidePrompt: getPPTSlidePrompt(pptMeta),
           });
         }
 
@@ -166,12 +415,27 @@ export const FramePanel: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [board, refreshKey]);
 
-  // 过滤 Frame
+  // 过滤 PPT 页面
   const filteredFrames = useMemo(() => {
     if (!searchQuery.trim()) return frames;
     const query = searchQuery.toLowerCase().trim();
-    return frames.filter((f) => f.frame.name.toLowerCase().includes(query));
+    return frames.filter((f) =>
+      getFrameDisplayName(f.frame).toLowerCase().includes(query)
+    );
   }, [frames, searchQuery]);
+
+  useEffect(() => {
+    const existingFrameIds = new Set(frames.map((info) => info.frame.id));
+    setSelectedFrameIds((current) => {
+      const next = new Set(
+        Array.from(current).filter((id) => existingFrameIds.has(id))
+      );
+      return next.size === current.size ? current : next;
+    });
+    if (lastSelectedFrameId && !existingFrameIds.has(lastSelectedFrameId)) {
+      setLastSelectedFrameId(null);
+    }
+  }, [frames, lastSelectedFrameId]);
 
   const rootFrames = useMemo(() => {
     return frames.filter((item) => item.isRoot);
@@ -185,19 +449,12 @@ export const FramePanel: React.FC = () => {
     return map;
   }, [rootFrames]);
 
-  // 点击 Frame：选中并聚焦视图
-  const handleFrameClick = useCallback(
-    (frameInfo: FrameInfo) => {
+  const focusFrameViewport = useCallback(
+    (frame: PlaitFrame) => {
       if (!board) return;
 
-      setSelectedFrameKey(frameInfo.listKey);
-
-      // 选中该 Frame
-      clearSelectedElement(board);
-      addSelectedElement(board, frameInfo.frame);
-
       // 计算 Frame 矩形
-      const rect = RectangleClient.getRectangleByPoints(frameInfo.frame.points);
+      const rect = RectangleClient.getRectangleByPoints(frame.points);
       const padding = 80;
 
       // 获取画布容器尺寸
@@ -243,12 +500,86 @@ export const FramePanel: React.FC = () => {
     [board]
   );
 
+  const syncCanvasSelectedFrames = useCallback(
+    (frameInfos: FrameInfo[]) => {
+      if (!board) return;
+      clearSelectedElement(board);
+      for (const info of frameInfos) {
+        addSelectedElement(board, info.frame);
+      }
+    },
+    [board]
+  );
+
+  // 点击 Frame：选中并聚焦视图，Shift 连续选择
+  const handleFrameClick = useCallback(
+    (frameInfo: FrameInfo, e: React.MouseEvent) => {
+      if (!board) return;
+
+      const isShift = e.shiftKey;
+      const isCtrlOrCmd = e.ctrlKey || e.metaKey;
+      let nextSelectedFrameIds = new Set<string>();
+      let selectedInfos: FrameInfo[] = [frameInfo];
+
+      if (isShift && lastSelectedFrameId) {
+        const startIndex = filteredFrames.findIndex(
+          (info) => info.frame.id === lastSelectedFrameId
+        );
+        const endIndex = filteredFrames.findIndex(
+          (info) => info.frame.id === frameInfo.frame.id
+        );
+        if (startIndex !== -1 && endIndex !== -1) {
+          const [from, to] =
+            startIndex < endIndex
+              ? [startIndex, endIndex]
+              : [endIndex, startIndex];
+          nextSelectedFrameIds = new Set(selectedFrameIds);
+          filteredFrames
+            .slice(from, to + 1)
+            .forEach((info) => nextSelectedFrameIds.add(info.frame.id));
+          selectedInfos = frames.filter((info) =>
+            nextSelectedFrameIds.has(info.frame.id)
+          );
+        } else {
+          nextSelectedFrameIds.add(frameInfo.frame.id);
+        }
+      } else if (isCtrlOrCmd) {
+        nextSelectedFrameIds = new Set(selectedFrameIds);
+        if (nextSelectedFrameIds.has(frameInfo.frame.id)) {
+          nextSelectedFrameIds.delete(frameInfo.frame.id);
+        } else {
+          nextSelectedFrameIds.add(frameInfo.frame.id);
+        }
+        selectedInfos = frames.filter((info) =>
+          nextSelectedFrameIds.has(info.frame.id)
+        );
+        setLastSelectedFrameId(frameInfo.frame.id);
+      } else {
+        nextSelectedFrameIds.add(frameInfo.frame.id);
+        setLastSelectedFrameId(frameInfo.frame.id);
+      }
+
+      setSelectedFrameIds(nextSelectedFrameIds);
+      syncCanvasSelectedFrames(selectedInfos);
+      focusFrameViewport(frameInfo.frame);
+    },
+    [
+      board,
+      filteredFrames,
+      focusFrameViewport,
+      frames,
+      lastSelectedFrameId,
+      selectedFrameIds,
+      syncCanvasSelectedFrames,
+    ]
+  );
+
   // 开始重命名
   const handleStartRename = useCallback(
     (frameInfo: FrameInfo, e: React.MouseEvent) => {
       e.stopPropagation();
       setEditingKey(frameInfo.listKey);
-      setEditingName(frameInfo.frame.name);
+      setEditingName(getFrameDisplayName(frameInfo.frame));
     },
     []
   );
@@ -267,17 +598,41 @@ export const FramePanel: React.FC = () => {
     [board, editingName]
   );
 
-  // 删除 Frame
+  const getFrameDeleteTargets = useCallback(
+    (frameInfo: FrameInfo) => {
+      if (
+        selectedFrameIds.size > 1 &&
+        selectedFrameIds.has(frameInfo.frame.id)
+      ) {
+        const selectedInfos = frames.filter((info) =>
+          selectedFrameIds.has(info.frame.id)
+        );
+        if (selectedInfos.length > 0) {
+          return selectedInfos;
+        }
+      }
+      return [frameInfo];
+    },
+    [frames, selectedFrameIds]
+  );
+
+  // 删除 Frame，并删除绑定到 Frame 的画布内容
   const handleDelete = useCallback(
     async (frameInfo: FrameInfo, e?: React.MouseEvent) => {
       e?.stopPropagation();
       if (!board) return;
 
+      const targets = getFrameDeleteTargets(frameInfo);
+      const targetFrameIds = new Set(targets.map((info) => info.frame.id));
+      const isBatchDelete = targetFrameIds.size > 1;
+
       const confirmed = await confirm({
-        title: '确认删除 Frame',
-        description: `确定要删除 Frame「${
-          frameInfo.frame.name || '未命名 Frame'
-        }」吗？此操作不可撤销。`,
+        title: isBatchDelete ? '确认删除选中的 PPT 页面' : '确认删除 PPT 页面',
+        description: isBatchDelete
+          ? `确定要删除选中的 ${targetFrameIds.size} 个 PPT 页面及其内容吗？此操作不可撤销。`
+          : `确定要删除 PPT 页面「${
+              getFrameDisplayName(frameInfo.frame)
+            }」及其内容吗？此操作不可撤销。`,
         confirmText: '删除',
         cancelText: '取消',
         danger: true,
@@ -287,17 +642,31 @@ export const FramePanel: React.FC = () => {
         return;
       }
 
-      // 先解绑所有子元素
-      const children = FrameTransforms.getFrameChildren(board, frameInfo.frame);
-      for (const child of children) {
-        FrameTransforms.unbindFromFrame(board, child);
+      const elementsToDelete = FrameTransforms.getFrameContents(
+        board,
+        targetFrameIds
+      );
+      if (elementsToDelete.length === 0) {
+        MessagePlugin.warning('未找到可删除的 PPT 页面');
+        return;
       }
 
-      // 删除 Frame
-      Transforms.removeNode(board, frameInfo.path);
-      MessagePlugin.success('已删除 Frame');
+      board.deleteFragment(elementsToDelete);
+      setSelectedFrameIds((current) => {
+        const next = new Set(current);
+        targetFrameIds.forEach((id) => next.delete(id));
+        return next;
+      });
+      setLastSelectedFrameId((current) =>
+        current && targetFrameIds.has(current) ? null : current
+      );
+      MessagePlugin.success(
+        isBatchDelete
+          ? `已删除 ${targetFrameIds.size} 个 PPT 页面及其内容`
+          : '已删除 PPT 页面及其内容'
+      );
     },
-    [board, confirm]
+    [board, confirm, getFrameDeleteTargets]
   );
 
   // 复制 Frame
@@ -381,31 +750,429 @@ export const FramePanel: React.FC = () => {
     [getDragProps, rootIndexMap, noop]
   );
 
+  const handleArrangePPTFrames = useCallback(
+    (columns = pptLayoutColumns) => {
+      if (!board) return;
+
+      const targetFrames = rootFrames.length > 0 ? rootFrames : frames;
+      if (targetFrames.length === 0) {
+        MessagePlugin.info('当前没有可排列的 PPT 页面');
+        return;
+      }
+
+      const safeColumns = sanitizePPTFrameLayoutColumns(columns);
+      const sortedFrames = getOrderedPPTFrameInfos(targetFrames);
+      const frameRects = sortedFrames.map((info) =>
+        RectangleClient.getRectangleByPoints(info.frame.points)
+      );
+      const startPosition: [number, number] = [
+        Math.min(...frameRects.map((rect) => rect.x)),
+        Math.min(...frameRects.map((rect) => rect.y)),
+      ];
+      const frameAwareSelection = getFrameAwareSelection(
+        board,
+        sortedFrames.map((info) => info.frame)
+      );
+      const movedElementIds = new Set<string>();
+
+      sortedFrames.forEach((info, index) => {
+        const rect = RectangleClient.getRectangleByPoints(info.frame.points);
+        const targetPosition = getPPTFrameGridPosition(
+          startPosition,
+          index,
+          safeColumns
+        );
+        moveElementWithFrameRelations(
+          board,
+          info.frame,
+          targetPosition[0] - rect.x,
+          targetPosition[1] - rect.y,
+          frameAwareSelection.relatedByFrameId,
+          movedElementIds
+        );
+      });
+
+      sortedFrames.forEach((info) => {
+        const frame = board.children.find(
+          (element) => element.id === info.frame.id && isFrameElement(element)
+        );
+        if (frame && isFrameElement(frame)) {
+          FrameTransforms.updateFrameMembers(board, frame);
+        }
+      });
+
+      MessagePlugin.success(`已按每行 ${safeColumns} 个排列 PPT 页面`);
+    },
+    [board, frames, pptLayoutColumns, rootFrames]
+  );
+
+  const pptLayoutMenuOptions = useMemo(
+    () =>
+      PPT_LAYOUT_COLUMN_OPTIONS.map((columns) => ({
+        content: `每行 ${columns} 个`,
+        value: columns,
+        prefixIcon:
+          columns === pptLayoutColumns ? (
+            <Check size={14} />
+          ) : (
+            <span className="frame-panel__layout-menu-placeholder" />
+          ),
+      })),
+    [pptLayoutColumns]
+  );
+
+  const handlePPTLayoutMenuClick = useCallback(
+    (data: { value?: unknown }) => {
+      const columns = sanitizePPTFrameLayoutColumns(data.value);
+      setPPTLayoutColumns(columns);
+      savePPTFrameLayoutColumns(columns);
+      handleArrangePPTFrames(columns);
+    },
+    [handleArrangePPTFrames]
+  );
+
+  const reorderRootFramesByIds = useCallback(
+    (orderedFrameIds: string[]) => {
+      if (!board) return;
+
+      const framePositions: number[] = [];
+      const frameById = new Map<string, PlaitFrame>();
+      const existingFrameIds: string[] = [];
+      board.children.forEach((element, index) => {
+        if (!isFrameElement(element)) return;
+        framePositions.push(index);
+        frameById.set(element.id, element as PlaitFrame);
+        existingFrameIds.push(element.id);
+      });
+
+      if (framePositions.length <= 1) return;
+
+      const orderedIdSet = new Set(orderedFrameIds);
+      const nextFrames: PlaitFrame[] = [];
+      for (const id of orderedFrameIds) {
+        const frame = frameById.get(id);
+        if (frame) {
+          nextFrames.push(frame);
+        }
+      }
+      for (const id of existingFrameIds) {
+        if (orderedIdSet.has(id)) continue;
+        const frame = frameById.get(id);
+        if (frame) {
+          nextFrames.push(frame);
+        }
+      }
+
+      if (nextFrames.length !== framePositions.length) return;
+
+      for (let i = framePositions.length - 1; i >= 0; i -= 1) {
+        Transforms.removeNode(board, [framePositions[i]]);
+      }
+      for (let i = 0; i < framePositions.length; i += 1) {
+        Transforms.insertNode(board, nextFrames[i], [framePositions[i]]);
+      }
+    },
+    [board]
+  );
+
+  const renumberPPTFrames = useCallback(
+    (orderedFrameIds: string[]) => {
+      if (!board) return;
+
+      orderedFrameIds.forEach((frameId, index) => {
+        const frameIndex = board.children.findIndex(
+          (element) => element.id === frameId && isFrameElement(element)
+        );
+        if (frameIndex === -1) return;
+
+        const pageIndex = index + 1;
+        const frame = board.children[frameIndex] as PlaitFrame & {
+          pptMeta?: PPTFrameMeta;
+        };
+        setFramePPTMeta(board, frameId, {
+          pageIndex,
+          ...(!frame.pptMeta
+            ? { slideImageStatus: 'placeholder' as const }
+            : {}),
+        });
+
+        if (isDefaultFrameName(frame.name)) {
+          Transforms.setNode(
+            board,
+            { name: getPPTPageFrameName(pageIndex) } as any,
+            [frameIndex]
+          );
+        }
+      });
+    },
+    [board]
+  );
+
+  const arrangePPTFramesByIds = useCallback(
+    (
+      orderedFrameIds: string[],
+      startPosition: [number, number],
+      columns: number
+    ) => {
+      if (!board) return;
+
+      const orderedFrames: PlaitFrame[] = [];
+      for (const frameId of orderedFrameIds) {
+        const frame = board.children.find(
+          (element) => element.id === frameId && isFrameElement(element)
+        );
+        if (frame && isFrameElement(frame)) {
+          orderedFrames.push(frame);
+        }
+      }
+
+      if (orderedFrames.length === 0) return;
+
+      const safeColumns = sanitizePPTFrameLayoutColumns(columns);
+      const frameAwareSelection = getFrameAwareSelection(board, orderedFrames);
+      const movedElementIds = new Set<string>();
+
+      orderedFrames.forEach((frame, index) => {
+        const currentFrame = board.children.find(
+          (element) => element.id === frame.id && isFrameElement(element)
+        );
+        if (!currentFrame || !isFrameElement(currentFrame)) return;
+
+        const rect = RectangleClient.getRectangleByPoints(currentFrame.points);
+        const targetPosition = getPPTFrameGridPosition(
+          startPosition,
+          index,
+          safeColumns
+        );
+        moveElementWithFrameRelations(
+          board,
+          currentFrame,
+          targetPosition[0] - rect.x,
+          targetPosition[1] - rect.y,
+          frameAwareSelection.relatedByFrameId,
+          movedElementIds
+        );
+      });
+
+      orderedFrameIds.forEach((frameId) => {
+        const frame = board.children.find(
+          (element) => element.id === frameId && isFrameElement(element)
+        );
+        if (frame && isFrameElement(frame)) {
+          FrameTransforms.updateFrameMembers(board, frame);
+        }
+      });
+    },
+    [board]
+  );
+
+  const handleInsertPPTPage = useCallback(
+    (frameInfo: FrameInfo, placement: PPTPageInsertPlacement) => {
+      if (!board) return;
+      if (!frameInfo.isRoot) {
+        MessagePlugin.warning('暂不支持在嵌套 PPT 页面前后插入新页');
+        return;
+      }
+
+      const orderedFrames = getOrderedPPTFrameInfos(rootFrames);
+      const targetIndex = orderedFrames.findIndex(
+        (info) => info.frame.id === frameInfo.frame.id
+      );
+      if (targetIndex === -1) {
+        MessagePlugin.warning('未找到目标 PPT 页');
+        return;
+      }
+
+      const insertIndex = placement === 'before' ? targetIndex : targetIndex + 1;
+      const frameRects = orderedFrames.map((info) =>
+        RectangleClient.getRectangleByPoints(info.frame.points)
+      );
+      const targetRect = RectangleClient.getRectangleByPoints(
+        frameInfo.frame.points
+      );
+      const startPosition: [number, number] = [
+        Math.min(...frameRects.map((rect) => rect.x)),
+        Math.min(...frameRects.map((rect) => rect.y)),
+      ];
+      const insertPosition = getPPTFrameGridPosition(
+        startPosition,
+        insertIndex,
+        pptLayoutColumns
+      );
+      const frame = FrameTransforms.insertFrame(
+        board,
+        [
+          insertPosition,
+          [
+            insertPosition[0] + targetRect.width,
+            insertPosition[1] + targetRect.height,
+          ],
+        ],
+        getPPTPageFrameName(insertIndex + 1)
+      );
+      setFramePPTMeta(board, frame.id, {
+        pageIndex: insertIndex + 1,
+        slideImageStatus: 'placeholder',
+      });
+
+      const orderedFrameIds = orderedFrames.map((info) => info.frame.id);
+      orderedFrameIds.splice(insertIndex, 0, frame.id);
+      reorderRootFramesByIds(orderedFrameIds);
+      renumberPPTFrames(orderedFrameIds);
+      arrangePPTFramesByIds(orderedFrameIds, startPosition, pptLayoutColumns);
+
+      const insertedFrame =
+        (board.children.find(
+          (element) => element.id === frame.id && isFrameElement(element)
+        ) as PlaitFrame | undefined) || frame;
+      setSelectedFrameIds(new Set([frame.id]));
+      setLastSelectedFrameId(frame.id);
+      focusFrame(board, insertedFrame);
+      MessagePlugin.success(
+        placement === 'before'
+          ? '已在前面插入新 PPT 页'
+          : '已在后面插入新 PPT 页'
+      );
+    },
+    [
+      arrangePPTFramesByIds,
+      board,
+      pptLayoutColumns,
+      renumberPPTFrames,
+      reorderRootFramesByIds,
+      rootFrames,
+    ]
+  );
+
+  const handleFrameAdded = useCallback(
+    (frame: PlaitFrame) => {
+      if (!board) return;
+      const pageIndex = board.children.filter((element) =>
+        isFrameElement(element)
+      ).length;
+      setFramePPTMeta(board, frame.id, {
+        pageIndex,
+        slideImageStatus: 'placeholder',
+      });
+    },
+    [board]
+  );
+
   const handleContextMenu = useCallback(
     (e: React.MouseEvent, frameInfo: FrameInfo) => {
       e.preventDefault();
       e.stopPropagation();
-      setSelectedFrameKey(frameInfo.listKey);
+      if (!selectedFrameIds.has(frameInfo.frame.id)) {
+        setSelectedFrameIds(new Set([frameInfo.frame.id]));
+        setLastSelectedFrameId(frameInfo.frame.id);
+        syncCanvasSelectedFrames([frameInfo]);
+      }
       openContextMenu(e, frameInfo);
     },
-    [openContextMenu]
+    [openContextMenu, selectedFrameIds, syncCanvasSelectedFrames]
   );
 
   const handleContextMenuAction = useCallback(
-    (action: 'rename' | 'duplicate' | 'delete', frameInfo: FrameInfo) => {
+    (
+      action:
+        | 'rename'
+        | 'duplicate'
+        | 'insert-before'
+        | 'insert-after'
+        | 'delete',
+      frameInfo: FrameInfo
+    ) => {
       if (action === 'rename') {
         setEditingKey(frameInfo.listKey);
-        setEditingName(frameInfo.frame.name);
+        setEditingName(getFrameDisplayName(frameInfo.frame));
       }
       if (action === 'duplicate') {
         handleDuplicate(frameInfo);
+      }
+      if (action === 'insert-before') {
+        handleInsertPPTPage(frameInfo, 'before');
+      }
+      if (action === 'insert-after') {
+        handleInsertPPTPage(frameInfo, 'after');
       }
       if (action === 'delete') {
         void handleDelete(frameInfo);
       }
       closeContextMenu();
     },
-    [handleDelete, handleDuplicate, closeContextMenu]
+    [handleDelete, handleDuplicate, handleInsertPPTPage, closeContextMenu]
+  );
+
+  const handleUseHistoryImage = useCallback(
+    async (
+      frameInfo: FrameInfo,
+      historyItem: PPTSlideImageHistoryItem
+    ) => {
+      if (!board) return;
+
+      const currentSlideImage = findPPTSlideImage(board, frameInfo.frame.id);
+      const historyElementIndex = historyItem.elementId
+        ? board.children.findIndex(
+            (element: any) =>
+              element.id === historyItem.elementId &&
+              element.type === 'image'
+          )
+        : -1;
+
+      try {
+        if (historyItem.elementId && historyElementIndex !== -1) {
+          replacePPTSlideImage(
+            board,
+            frameInfo.frame.id,
+            historyItem.elementId,
+            historyItem.imageUrl,
+            {
+              replaceElementId: currentSlideImage?.elementId,
+              prompt: historyItem.prompt || frameInfo.slidePrompt,
+            }
+          );
+        } else {
+          const insertResult = await insertMediaIntoFrame(
+            board,
+            historyItem.imageUrl,
+            'image',
+            frameInfo.frame.id,
+            {
+              width: frameInfo.width,
+              height: frameInfo.height,
+            },
+            {
+              width: frameInfo.width,
+              height: frameInfo.height,
+            },
+            undefined,
+            { fit: 'stretch' }
+          );
+
+          if (!insertResult?.elementId) {
+            MessagePlugin.error('历史图片插入失败');
+            return;
+          }
+
+          replacePPTSlideImage(
+            board,
+            frameInfo.frame.id,
+            insertResult.elementId,
+            historyItem.imageUrl,
+            {
+              replaceElementId: currentSlideImage?.elementId,
+              prompt: historyItem.prompt || frameInfo.slidePrompt,
+            }
+          );
+        }
+
+        MessagePlugin.success('已切换到历史图片');
+      } catch (error) {
+        console.error('[FramePanel] Failed to use history image:', error);
+        MessagePlugin.error('切换历史图片失败');
+      }
+    },
+    [board]
   );
 
   const contextMenuItems = useMemo<ContextMenuEntry<FrameInfo>[]>(
@@ -423,245 +1190,93 @@ export const FramePanel: React.FC = () => {
         onSelect: (frameInfo) =>
           handleContextMenuAction('duplicate', frameInfo),
       },
+      {
+        key: 'insert-before',
+        label: '在前面插入新页',
+        icon: <AddIcon />,
+        disabled: (frameInfo) => !frameInfo.isRoot,
+        onSelect: (frameInfo) =>
+          handleContextMenuAction('insert-before', frameInfo),
+      },
+      {
+        key: 'insert-after',
+        label: '在后面插入新页',
+        icon: <AddIcon />,
+        disabled: (frameInfo) => !frameInfo.isRoot,
+        onSelect: (frameInfo) =>
+          handleContextMenuAction('insert-after', frameInfo),
+      },
+      {
+        key: 'image-history',
+        type: 'submenu',
+        label: '生图历史',
+        icon: <ImageIcon />,
+        disabled: (frameInfo) => getSlideImageHistory(frameInfo).length === 0,
+        children: (frameInfo) =>
+          getSlideImageHistory(frameInfo).map((historyItem, index) => ({
+            key: historyItem.id || `history-${index}`,
+            label: (
+              <PPTSlideHistoryMenuLabel
+                item={historyItem}
+                index={index}
+              />
+            ),
+            onSelect: () => {
+              void handleUseHistoryImage(frameInfo, historyItem);
+            },
+          })),
+      },
       { key: 'divider-1', type: 'divider' },
       {
         key: 'delete',
-        label: '删除',
+        label: (frameInfo) =>
+          selectedFrameIds.size > 1 &&
+          selectedFrameIds.has(frameInfo.frame.id)
+            ? `删除选中 ${selectedFrameIds.size} 项`
+            : '删除',
         icon: <DeleteIcon />,
         danger: true,
         onSelect: (frameInfo) => handleContextMenuAction('delete', frameInfo),
       },
     ],
-    [handleContextMenuAction]
+    [handleContextMenuAction, handleUseHistoryImage, selectedFrameIds]
   );
 
-  // 统计有配图提示词的 Frame 数量
-  const framesWithImagePrompt = useMemo(() => {
-    return frames.filter((f) => f.pptMeta?.imagePrompt).length;
-  }, [frames]);
-
-  // 统计 PPT Frame 数量（有 pptMeta 的 Frame）
-  const pptFrames = useMemo(() => {
-    return frames.filter((f) => f.pptMeta);
-  }, [frames]);
-
-  // 检查当前是否已有背景图
-  const currentBackgroundUrl = useMemo(() => {
-    const firstPptFrame = pptFrames.find((f) => f.frame.backgroundUrl);
-    return firstPptFrame?.frame.backgroundUrl;
-  }, [pptFrames]);
-
-  // 处理背景图文件上传
-  const handleBackgroundUpload = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      if (!board || pptFrames.length === 0) return;
-
-      const file = e.target.files?.[0];
-      if (!file) return;
-
-      // 验证文件类型
-      if (!file.type.startsWith('image/')) {
-        MessagePlugin.error('请选择图片文件');
-        return;
-      }
-
-      // 转为 data URL 并设置给所有 PPT Frame
-      const reader = new FileReader();
-      reader.onload = () => {
-        const dataUrl = reader.result as string;
-
-        for (const frameInfo of pptFrames) {
-          Transforms.setNode(
-            board,
-            { backgroundUrl: dataUrl } as any,
-            frameInfo.path
-          );
-        }
-
-        MessagePlugin.success(`已为 ${pptFrames.length} 个 PPT 页面设置背景图`);
-      };
-      reader.readAsDataURL(file);
-
-      // 重置 input 以便重复选择同一文件
-      e.target.value = '';
-    },
-    [board, pptFrames]
-  );
-
-  // 清除所有 PPT Frame 的背景图
-  const handleClearBackground = useCallback(() => {
-    if (!board || pptFrames.length === 0) return;
-
-    for (const frameInfo of pptFrames) {
-      Transforms.setNode(
-        board,
-        { backgroundUrl: undefined } as any,
-        frameInfo.path
-      );
-    }
-
-    MessagePlugin.success('已清除所有 PPT 页面的背景图');
-  }, [board, pptFrames]);
-
-  // 为单个 Frame 生成配图
-  const handleGenerateImage = useCallback(
-    async (frameInfo: FrameInfo, e?: React.MouseEvent) => {
+  const handleRegenerateSlide = useCallback(
+    (frameInfo: FrameInfo, e?: React.MouseEvent) => {
       e?.stopPropagation();
-      if (!board || !frameInfo.pptMeta?.imagePrompt) return;
 
-      const frameId = frameInfo.frame.id;
-      setGeneratingImageIds((prev) => new Set(prev).add(frameId));
-
-      insertPPTImagePlaceholder(
-        board,
-        frameInfo.frame,
-        frameInfo.pptMeta.imagePrompt
-      );
-      setPPTImagePlaceholderStatus(board, frameId, 'loading');
-      setFramePPTImageStatus(board, frameId, 'loading');
-
-      try {
-        // 调用图片生成
-        const result = await generateImage({
-          prompt: frameInfo.pptMeta.imagePrompt,
-          size: '16x9', // PPT 页面使用 16:9 比例
-        });
-
-        if (result.success && (result.data as any)?.url) {
-          // 计算图片区域并插入
-          const frameRect = RectangleClient.getRectangleByPoints(
-            frameInfo.frame.points
-          );
-          const imgRegion = getImageRegion({
-            x: frameRect.x,
-            y: frameRect.y,
-            width: frameRect.width,
-            height: frameRect.height,
-          });
-          removePPTImagePlaceholder(board, frameId);
-          await insertMediaIntoFrame(
-            board,
-            (result.data as any).url,
-            'image',
-            frameId,
-            { width: frameInfo.width, height: frameInfo.height },
-            { width: 800, height: 450 }, // 16:9 默认尺寸
-            imgRegion
-          );
-          setFramePPTImageStatus(board, frameId, 'generated');
-          MessagePlugin.success(`已为「${frameInfo.frame.name}」生成配图`);
-        } else {
-          setPPTImagePlaceholderStatus(board, frameId, 'placeholder');
-          setFramePPTImageStatus(board, frameId, 'placeholder');
-          MessagePlugin.error(result.error || '图片生成失败');
-        }
-      } catch (error: any) {
-        console.error('[FramePanel] Generate image failed:', error);
-        setPPTImagePlaceholderStatus(board, frameId, 'placeholder');
-        setFramePPTImageStatus(board, frameId, 'placeholder');
-        MessagePlugin.error(error.message || '图片生成失败');
-      } finally {
-        setGeneratingImageIds((prev) => {
-          const next = new Set(prev);
-          next.delete(frameId);
-          return next;
-        });
-      }
+      openDialog(DialogType.aiImageGeneration, {
+        initialPrompt: frameInfo.slidePrompt || '',
+        initialImages: frameInfo.slideImageUrl
+          ? [
+              {
+                url: frameInfo.slideImageUrl,
+                name: `${frameInfo.frame.name || 'slide'}-reference.png`,
+              },
+            ]
+          : [],
+        initialAspectRatio: '16x9',
+        initialWidth: frameInfo.width,
+        initialHeight: frameInfo.height,
+        targetFrameId: frameInfo.frame.id,
+        targetFrameDimensions: {
+          width: frameInfo.width,
+          height: frameInfo.height,
+        },
+        autoInsertToCanvas: true,
+        pptSlideImage: true,
+        pptReplaceElementId: frameInfo.slideImageElementId,
+      });
     },
-    [board]
+    [openDialog]
   );
 
-  // 为所有有配图提示词的 Frame 生成配图
-  const handleGenerateAllImages = useCallback(async () => {
-    if (!board || isGeneratingAll) return;
-
-    const framesToGenerate = frames.filter((f) => f.pptMeta?.imagePrompt);
-    if (framesToGenerate.length === 0) {
-      MessagePlugin.info('没有需要配图的页面');
-      return;
-    }
-
-    setIsGeneratingAll(true);
-    let successCount = 0;
-    let failCount = 0;
-
-    try {
-      // 必须串行：并行 insertMediaIntoFrame 会用 childrenCountBefore 定位新节点，竞态会导致 frameId 绑错页、导出时配图挤在同一页
-      for (const frameInfo of framesToGenerate) {
-        const frameId = frameInfo.frame.id;
-        setGeneratingImageIds((prev) => new Set(prev).add(frameId));
-
-        insertPPTImagePlaceholder(
-          board,
-          frameInfo.frame,
-          frameInfo.pptMeta!.imagePrompt!
-        );
-        setPPTImagePlaceholderStatus(board, frameId, 'loading');
-        setFramePPTImageStatus(board, frameId, 'loading');
-
-        try {
-          const result = await generateImage({
-            prompt: frameInfo.pptMeta!.imagePrompt!,
-            size: '16x9',
-          });
-
-          if (result.success && (result.data as any)?.url) {
-            const frameRect = RectangleClient.getRectangleByPoints(
-              frameInfo.frame.points
-            );
-            const imgRegion = getImageRegion({
-              x: frameRect.x,
-              y: frameRect.y,
-              width: frameRect.width,
-              height: frameRect.height,
-            });
-            removePPTImagePlaceholder(board, frameId);
-            await insertMediaIntoFrame(
-              board,
-              (result.data as any).url,
-              'image',
-              frameId,
-              { width: frameInfo.width, height: frameInfo.height },
-              { width: 800, height: 450 },
-              imgRegion
-            );
-            setFramePPTImageStatus(board, frameId, 'generated');
-            successCount++;
-          } else {
-            setPPTImagePlaceholderStatus(board, frameId, 'placeholder');
-            setFramePPTImageStatus(board, frameId, 'placeholder');
-            failCount++;
-          }
-        } catch {
-          setPPTImagePlaceholderStatus(board, frameId, 'placeholder');
-          setFramePPTImageStatus(board, frameId, 'placeholder');
-          failCount++;
-        } finally {
-          setGeneratingImageIds((prev) => {
-            const next = new Set(prev);
-            next.delete(frameId);
-            return next;
-          });
-        }
-      }
-
-      if (successCount > 0 && failCount === 0) {
-        MessagePlugin.success(`已为 ${successCount} 个页面生成配图`);
-      } else if (successCount > 0 && failCount > 0) {
-        MessagePlugin.warning(`成功 ${successCount} 个，失败 ${failCount} 个`);
-      } else {
-        MessagePlugin.error('所有配图生成失败');
-      }
-    } finally {
-      setIsGeneratingAll(false);
-    }
-  }, [board, frames, isGeneratingAll]);
-
-  // 导出所有 Frame 为一个 PPT 文件
+  // 导出所有 PPT 页面为一个 PPT 文件
   const handleExportAllPPT = useCallback(async () => {
     if (!board) return;
     if (frames.length === 0) {
-      MessagePlugin.info('当前没有可导出的 Frame');
+      MessagePlugin.info('当前没有可导出的 PPT 页面');
       return;
     }
 
@@ -678,30 +1293,6 @@ export const FramePanel: React.FC = () => {
     }
   }, [board, isExportingAllPPT, frames]);
 
-  // 导出单个 Frame 为 PPT 文件
-  const handleExportSinglePPT = useCallback(
-    async (frameInfo: FrameInfo, e?: React.MouseEvent) => {
-      e?.stopPropagation();
-      if (!board) return;
-
-      if (exportingFrameId) return;
-      setExportingFrameId(frameInfo.frame.id);
-      try {
-        await exportFramesToPPT(board, [frameInfo.frame], {
-          fileName: frameInfo.frame.name || 'slide',
-        });
-        MessagePlugin.success(`已导出「${frameInfo.frame.name}」为 PPT`);
-      } catch (error) {
-        // eslint-disable-next-line no-console
-        console.error('[FramePanel] Export single PPT failed:', error);
-        MessagePlugin.error('PPT 导出失败');
-      } finally {
-        setExportingFrameId(null);
-      }
-    },
-    [board, exportingFrameId]
-  );
-
   if (!board) {
     return (
       <div className="frame-panel__empty">
@@ -715,7 +1306,7 @@ export const FramePanel: React.FC = () => {
       {/* 搜索 */}
       <div className="frame-panel__filter">
         <Input
-          placeholder="搜索 Frame..."
+          placeholder="搜索 PPT 页面..."
           value={searchQuery}
           onChange={setSearchQuery}
           prefixIcon={<SearchIcon />}
@@ -725,7 +1316,7 @@ export const FramePanel: React.FC = () => {
 
       {/* 操作栏：icon + hover 文字 */}
       <div className="frame-panel__actions">
-        <HoverTip content="添加 Frame">
+        <HoverTip content="添加 PPT 页面">
           <Button
             variant="outline"
             size="small"
@@ -735,7 +1326,7 @@ export const FramePanel: React.FC = () => {
           />
         </HoverTip>
         <HoverTip
-          content={frames.length === 0 ? '没有 Frame 可播放' : '幻灯片播放'}
+          content={frames.length === 0 ? '没有 PPT 页面可播放' : '播放 PPT'}
         >
           <Button
             variant="outline"
@@ -746,24 +1337,6 @@ export const FramePanel: React.FC = () => {
             onClick={() => setSlideshowVisible(true)}
           />
         </HoverTip>
-        {framesWithImagePrompt > 0 && (
-          <HoverTip
-            content={
-              isGeneratingAll
-                ? '正在生成...'
-                : `全部配图 (${framesWithImagePrompt})`
-            }
-          >
-            <Button
-              variant="outline"
-              size="small"
-              shape="square"
-              icon={isGeneratingAll ? <Loading size="small" /> : <ImageIcon />}
-              disabled={isGeneratingAll}
-              onClick={handleGenerateAllImages}
-            />
-          </HoverTip>
-        )}
         {frames.length > 0 && (
           <HoverTip
             content={
@@ -786,56 +1359,50 @@ export const FramePanel: React.FC = () => {
             />
           </HoverTip>
         )}
-        {pptFrames.length > 0 && (
-          <>
-            <HoverTip
-              content={currentBackgroundUrl ? '更换背景图' : '设置背景图'}
-            >
+        {frames.length > 0 && (
+          <Dropdown
+            trigger="click"
+            options={pptLayoutMenuOptions}
+            onClick={handlePPTLayoutMenuClick}
+            minColumnWidth={120}
+          >
+            <HoverTip content={`排列 PPT 页面（当前每行 ${pptLayoutColumns} 个）`}>
               <Button
                 variant="outline"
                 size="small"
                 shape="square"
-                icon={<LayersIcon />}
-                onClick={() => bgFileInputRef.current?.click()}
+                icon={<LayoutGrid size={16} />}
+                onClick={() => handleArrangePPTFrames(pptLayoutColumns)}
               />
             </HoverTip>
-            {currentBackgroundUrl && (
-              <HoverTip content="清除背景图">
-                <Button
-                  variant="outline"
-                  size="small"
-                  shape="square"
-                  theme="danger"
-                  icon={<DeleteIcon />}
-                  onClick={handleClearBackground}
-                />
-              </HoverTip>
-            )}
-            <input
-              ref={bgFileInputRef}
-              type="file"
-              accept="image/*"
-              style={{ display: 'none' }}
-              onChange={handleBackgroundUpload}
-            />
-          </>
+          </Dropdown>
         )}
       </div>
 
-      {/* Frame 列表 */}
+      {/* PPT 页面列表 */}
       {filteredFrames.length === 0 ? (
         <div className="frame-panel__empty">
-          <ViewListIcon
-            style={{ fontSize: 32, color: 'var(--td-text-color-placeholder)' }}
-          />
-          <p>
-            {frames.length === 0 ? '当前画布没有 Frame' : '未找到匹配的 Frame'}
-          </p>
-          {frames.length === 0 && (
-            <p className="frame-panel__empty-hint">
-              使用工具栏的 Frame 工具 (F) 创建
-            </p>
-          )}
+          <div className="frame-panel__empty-icon" aria-hidden="true">
+            {frames.length === 0 ? (
+              <Presentation size={24} strokeWidth={1.8} />
+            ) : (
+              <SearchIcon />
+            )}
+          </div>
+          <div className="frame-panel__empty-copy">
+            {frames.length === 0 ? (
+              <>
+                <p className="frame-panel__empty-title">
+                  当前画布没有 PPT 页面
+                </p>
+                <p className="frame-panel__empty-hint">
+                  可以通过“生成完整PPT”的 SKILL 进行创建
+                </p>
+              </>
+            ) : (
+              <p className="frame-panel__empty-title">未找到匹配的 PPT 页面</p>
+            )}
+          </div>
         </div>
       ) : (
         <div className="frame-panel__list">
@@ -846,7 +1413,7 @@ export const FramePanel: React.FC = () => {
                 key={info.listKey}
                 className={classNames('frame-panel__item', {
                   'frame-panel__item--active':
-                    selectedFrameKey === info.listKey,
+                    selectedFrameIds.has(info.frame.id),
                   'frame-panel__item--dragging': dragProps['data-dragging'],
                   'frame-panel__item--drag-over': dragProps['data-drag-over'],
                   'frame-panel__item--drag-before':
@@ -854,25 +1421,35 @@ export const FramePanel: React.FC = () => {
                   'frame-panel__item--drag-after':
                     dragProps['data-drag-position'] === 'after',
                 })}
-                onClick={() => handleFrameClick(info)}
+                onClick={(e) => handleFrameClick(info, e)}
                 onContextMenu={(e) => handleContextMenu(e, info)}
                 {...dragProps}
               >
-                <div className="frame-panel__item-icon">
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                    <rect
-                      x="1.5"
-                      y="1.5"
-                      width="13"
-                      height="13"
-                      rx="2"
-                      stroke="currentColor"
-                      strokeWidth="1.2"
-                      strokeDasharray="3 2"
-                      fill="none"
-                    />
-                  </svg>
-                </div>
+                {info.pptMeta ? (
+                  <PPTSlidePreview
+                    imageUrl={info.slideImageUrl}
+                    title={getFrameDisplayName(info.frame)}
+                    status={
+                      info.pptMeta.slideImageStatus || info.pptMeta.imageStatus
+                    }
+                  />
+                ) : (
+                  <div className="frame-panel__item-icon">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                      <rect
+                        x="1.5"
+                        y="1.5"
+                        width="13"
+                        height="13"
+                        rx="2"
+                        stroke="currentColor"
+                        strokeWidth="1.2"
+                        strokeDasharray="3 2"
+                        fill="none"
+                      />
+                    </svg>
+                  </div>
+                )}
 
                 <div className="frame-panel__item-content">
                   {editingKey === info.listKey ? (
@@ -890,7 +1467,7 @@ export const FramePanel: React.FC = () => {
                   ) : (
                     <>
                       <span className="frame-panel__item-name">
-                        {info.frame.name}
+                        {getFrameDisplayName(info.frame)}
                       </span>
                       <span className="frame-panel__item-meta">
                         {info.width} × {info.height}
@@ -901,59 +1478,21 @@ export const FramePanel: React.FC = () => {
                 </div>
 
                 <div className="frame-panel__item-actions">
-                  <HoverTip
-                    content={
-                      exportingFrameId === info.frame.id
-                        ? '正在导出 PPT...'
-                        : '导出单页 PPT'
-                    }
-                  >
-                    <Button
-                      variant="text"
-                      size="small"
-                      shape="square"
-                      icon={
-                        exportingFrameId === info.frame.id ? (
-                          <Loading size="small" />
-                        ) : (
-                          <DownloadIcon size={16} />
-                        )
-                      }
-                      onClick={(e) =>
-                        handleExportSinglePPT(
-                          info,
-                          e as unknown as React.MouseEvent
-                        )
-                      }
-                      disabled={exportingFrameId === info.frame.id}
-                    />
-                  </HoverTip>
-                  {info.pptMeta?.imagePrompt && (
+                  {info.pptMeta && (
                     <HoverTip
-                      content={
-                        generatingImageIds.has(info.frame.id)
-                          ? '生成中...'
-                          : '生成配图'
-                      }
+                      content={info.slidePrompt ? '重新生成' : 'AI 图片生成'}
                     >
                       <Button
                         variant="text"
                         size="small"
                         shape="square"
-                        icon={
-                          generatingImageIds.has(info.frame.id) ? (
-                            <Loading size="small" />
-                          ) : (
-                            <ImageIcon />
-                          )
-                        }
+                        icon={<AIImageIcon size={16} />}
                         onClick={(e) =>
-                          handleGenerateImage(
+                          handleRegenerateSlide(
                             info,
                             e as unknown as React.MouseEvent
                           )
                         }
-                        disabled={generatingImageIds.has(info.frame.id)}
                       />
                     </HoverTip>
                   )}
@@ -971,7 +1510,15 @@ export const FramePanel: React.FC = () => {
                       }
                     />
                   </HoverTip>
-                  <HoverTip content="删除" showArrow={false}>
+                  <HoverTip
+                    content={
+                      selectedFrameIds.size > 1 &&
+                      selectedFrameIds.has(info.frame.id)
+                        ? `删除选中 ${selectedFrameIds.size} 项`
+                        : '删除'
+                    }
+                    showArrow={false}
+                  >
                     <Button
                       variant="text"
                       size="small"
@@ -999,11 +1546,12 @@ export const FramePanel: React.FC = () => {
         onClose={closeContextMenu}
       />
 
-      {/* 添加 Frame 弹窗 */}
+      {/* 添加 PPT 页面弹窗 */}
       <AddFrameDialog
         visible={addDialogVisible}
         board={board}
         onClose={() => setAddDialogVisible(false)}
+        onFrameAdded={handleFrameAdded}
       />
 
       {/* 幻灯片播放 */}

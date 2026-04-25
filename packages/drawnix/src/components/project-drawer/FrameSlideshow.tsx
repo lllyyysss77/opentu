@@ -16,7 +16,11 @@ import {
   RectangleClient,
 } from '@plait/core';
 import { BoardCreationMode, setCreationMode } from '@plait/common';
-import { PlaitFrame, isFrameElement } from '../../types/frame.types';
+import {
+  PlaitFrame,
+  getFrameDisplayName,
+  isFrameElement,
+} from '../../types/frame.types';
 import { Z_INDEX } from '../../constants/z-index';
 import { FreehandShape } from '../../plugins/freehand/type';
 import { useSetPointer } from '../../hooks/use-drawnix';
@@ -507,7 +511,7 @@ export const FrameSlideshow: React.FC<FrameSlideshowProps> = ({
         <div className="frame-slideshow__controls-left">
           {currentFrame && (
             <div className="frame-slideshow__title">
-              {currentFrame.name || `Frame ${currentIndex + 1}`}
+              {getFrameDisplayName(currentFrame, currentIndex + 1)}
             </div>
           )}
           <div className="frame-slideshow__esc-hint">

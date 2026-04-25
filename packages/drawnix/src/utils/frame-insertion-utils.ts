@@ -9,12 +9,32 @@ import type { PlaitBoard, Point } from '@plait/core';
 import { RectangleClient, Transforms, idCreator } from '@plait/core';
 import { isFrameElement, type PlaitFrame } from '../types/frame.types';
 import { FrameTransforms } from '../plugins/with-frame';
-import { getImageRegion } from '../services/ppt';
+import { getImageRegion } from '../services/ppt/ppt-layout-engine';
+import type {
+  PPTFrameMeta,
+  PPTSlideImageHistoryItem,
+} from '../services/ppt/ppt.types';
 
 const PPT_PLACEHOLDER_IMAGE_URL =
   'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=';
 
-type PPTImageStatus = 'placeholder' | 'loading' | 'generated';
+type PPTImageStatus = 'placeholder' | 'loading' | 'generated' | 'failed';
+const PPT_SLIDE_IMAGE_HISTORY_LIMIT = 20;
+const DEFAULT_FRAME_NAME_REGEXP = /^(Frame|Slide|PPT\s*页面)\s*\d+$/i;
+const PPT_FRAME_TITLE_PROMPT_LENGTH = 10;
+
+export interface PPTSlideImageInfo {
+  element?: any;
+  index: number;
+  elementId?: string;
+  url?: string;
+}
+
+export type PPTSlideImageHistoryInput = Omit<
+  PPTSlideImageHistoryItem,
+  'id' | 'createdAt'
+> &
+  Partial<Pick<PPTSlideImageHistoryItem, 'id' | 'createdAt'>>;
 
 export function findPPTImagePlaceholder(
   board: PlaitBoard,
@@ -43,6 +63,313 @@ export function setFramePPTImageStatus(
     imageStatus: status,
   };
   Transforms.setNode(board, { pptMeta: nextMeta } as any, [frameIndex]);
+}
+
+export function getPPTSlidePrompt(pptMeta?: PPTFrameMeta): string {
+  return (pptMeta?.slidePrompt || pptMeta?.imagePrompt || '').trim();
+}
+
+function getFrameIndex(board: PlaitBoard, frameId: string): number {
+  return board.children.findIndex(
+    (el) => el.id === frameId && isFrameElement(el)
+  );
+}
+
+function getFramePPTMeta(
+  board: PlaitBoard,
+  frameId: string
+): PPTFrameMeta | undefined {
+  const frameIndex = getFrameIndex(board, frameId);
+  if (frameIndex === -1) return undefined;
+  return (board.children[frameIndex] as PlaitFrame & { pptMeta?: PPTFrameMeta })
+    .pptMeta;
+}
+
+export function setFramePPTMeta(
+  board: PlaitBoard,
+  frameId: string,
+  patch: Partial<PPTFrameMeta>
+): void {
+  const frameIndex = getFrameIndex(board, frameId);
+  if (frameIndex === -1) return;
+
+  const frame = board.children[frameIndex] as PlaitFrame & {
+    pptMeta?: PPTFrameMeta;
+  };
+  Transforms.setNode(
+    board,
+    {
+      pptMeta: {
+        ...(frame.pptMeta || {}),
+        ...patch,
+      },
+    } as any,
+    [frameIndex]
+  );
+}
+
+function isImageElement(element: any): boolean {
+  return element?.type === 'image' && typeof element.url === 'string';
+}
+
+function normalizeHistoryPrompt(prompt?: string): string | undefined {
+  const normalized = prompt?.trim();
+  return normalized ? normalized : undefined;
+}
+
+function isDefaultFrameTitle(name?: string): boolean {
+  const normalized = name?.trim();
+  return !normalized || DEFAULT_FRAME_NAME_REGEXP.test(normalized);
+}
+
+function createFrameTitleFromPrompt(prompt: string): string {
+  const normalizedPrompt = prompt.trim().replace(/\s+/g, ' ');
+  let title = '';
+  let length = 0;
+
+  for (const char of normalizedPrompt) {
+    if (length >= PPT_FRAME_TITLE_PROMPT_LENGTH) {
+      break;
+    }
+    title += char;
+    length += 1;
+  }
+
+  return title;
+}
+
+function updateDefaultFrameTitleFromPrompt(
+  board: PlaitBoard,
+  frameId: string,
+  prompt?: string
+): void {
+  const normalizedPrompt = normalizeHistoryPrompt(prompt);
+  if (!normalizedPrompt) return;
+
+  const frameIndex = getFrameIndex(board, frameId);
+  if (frameIndex === -1) return;
+
+  const frame = board.children[frameIndex] as PlaitFrame;
+  if (!isDefaultFrameTitle(frame.name)) return;
+
+  const title = createFrameTitleFromPrompt(normalizedPrompt);
+  if (!title || title === frame.name) return;
+
+  Transforms.setNode(board, { name: title } as any, [frameIndex]);
+}
+
+function createSlideImageHistoryId(
+  imageUrl: string,
+  elementId?: string
+): string {
+  const source = elementId || imageUrl;
+  let hash = 0;
+  for (let index = 0; index < source.length; index += 1) {
+    hash = (hash * 31 + source.charCodeAt(index)) >>> 0;
+  }
+  return `slide-image-${Date.now().toString(36)}-${hash.toString(36)}`;
+}
+
+function appendPPTSlideImageHistory(
+  history: PPTSlideImageHistoryItem[] | undefined,
+  item: PPTSlideImageHistoryInput
+): PPTSlideImageHistoryItem[] {
+  const imageUrl = item.imageUrl.trim();
+  if (!imageUrl) {
+    return history || [];
+  }
+
+  const nextItem: PPTSlideImageHistoryItem = {
+    id: item.id || createSlideImageHistoryId(imageUrl, item.elementId),
+    imageUrl,
+    ...(item.elementId ? { elementId: item.elementId } : {}),
+    ...(normalizeHistoryPrompt(item.prompt)
+      ? { prompt: normalizeHistoryPrompt(item.prompt) }
+      : {}),
+    createdAt: item.createdAt || Date.now(),
+    ...(item.source ? { source: item.source } : {}),
+  };
+
+  const existing = Array.isArray(history) ? history : [];
+  const filtered = existing.filter((historyItem) => {
+    if (item.elementId && historyItem.elementId === item.elementId) {
+      return false;
+    }
+    return historyItem.imageUrl !== imageUrl;
+  });
+
+  return [nextItem, ...filtered].slice(0, PPT_SLIDE_IMAGE_HISTORY_LIMIT);
+}
+
+function appendPPTSlideImageHistoryItems(
+  history: PPTSlideImageHistoryItem[] | undefined,
+  items: PPTSlideImageHistoryInput[]
+): PPTSlideImageHistoryItem[] {
+  return items.reduce<PPTSlideImageHistoryItem[]>(
+    (nextHistory, item) => appendPPTSlideImageHistory(nextHistory, item),
+    history || []
+  );
+}
+
+export function findPPTSlideImage(
+  board: PlaitBoard,
+  frameId: string
+): PPTSlideImageInfo | null {
+  const pptMeta = getFramePPTMeta(board, frameId);
+  const preferredElementId = pptMeta?.slideImageElementId;
+
+  if (preferredElementId) {
+    const index = board.children.findIndex((el: any) => el.id === preferredElementId);
+    const element = board.children[index] as any;
+    if (index !== -1 && isImageElement(element)) {
+      return {
+        element,
+        index,
+        elementId: element.id,
+        url: element.url,
+      };
+    }
+  }
+
+  const taggedIndex = board.children.findIndex(
+    (el: any) => el?.frameId === frameId && el?.pptSlideImage && isImageElement(el)
+  );
+  if (taggedIndex !== -1) {
+    const element = board.children[taggedIndex] as any;
+    return {
+      element,
+      index: taggedIndex,
+      elementId: element.id,
+      url: element.url,
+    };
+  }
+
+  const fallbackIndex = board.children.findIndex(
+    (el: any) =>
+      el?.frameId === frameId &&
+      !el?.pptImagePlaceholder &&
+      isImageElement(el)
+  );
+  if (fallbackIndex !== -1) {
+    const element = board.children[fallbackIndex] as any;
+    return {
+      element,
+      index: fallbackIndex,
+      elementId: element.id,
+      url: element.url,
+    };
+  }
+
+  if (pptMeta?.slideImageUrl) {
+    return {
+      index: -1,
+      url: pptMeta.slideImageUrl,
+    };
+  }
+
+  return null;
+}
+
+export function markPPTSlideImage(
+  board: PlaitBoard,
+  frameId: string,
+  elementId: string,
+  imageUrl: string,
+  prompt?: string,
+  historyItems: PPTSlideImageHistoryInput[] = [],
+  imageCreatedAt?: number
+): void {
+  const pptMeta = getFramePPTMeta(board, frameId);
+  const nextPrompt =
+    normalizeHistoryPrompt(prompt) || getPPTSlidePrompt(pptMeta);
+  const fallbackCreatedAt = Date.now();
+  const currentImageCreatedAt =
+    typeof imageCreatedAt === 'number' &&
+    Number.isFinite(imageCreatedAt) &&
+    imageCreatedAt > 0
+      ? imageCreatedAt
+      : fallbackCreatedAt;
+
+  const elementIndex = board.children.findIndex((el: any) => el.id === elementId);
+  if (elementIndex !== -1) {
+    Transforms.setNode(
+      board,
+      {
+        pptSlideImage: true,
+        frameId,
+      } as any,
+      [elementIndex]
+    );
+  }
+
+  updateDefaultFrameTitleFromPrompt(board, frameId, nextPrompt);
+  setFramePPTMeta(board, frameId, {
+    ...(nextPrompt ? { slidePrompt: nextPrompt } : {}),
+    slideImageElementId: elementId,
+    slideImageUrl: imageUrl,
+    slideImageStatus: 'generated',
+    imageStatus: 'generated',
+    slideImageHistory: appendPPTSlideImageHistoryItems(
+      pptMeta?.slideImageHistory,
+      [
+        ...historyItems.map((item, index) => ({
+          ...item,
+          ...(normalizeHistoryPrompt(item.prompt) || !nextPrompt
+            ? {}
+            : { prompt: nextPrompt }),
+          createdAt: item.createdAt || fallbackCreatedAt + index,
+        })),
+        {
+          imageUrl,
+          elementId,
+          prompt: nextPrompt,
+          createdAt: currentImageCreatedAt,
+        },
+      ]
+    ),
+  });
+}
+
+export function replacePPTSlideImage(
+  board: PlaitBoard,
+  frameId: string,
+  newElementId: string,
+  imageUrl: string,
+  options: {
+    replaceElementId?: string;
+    prompt?: string;
+    historyItems?: PPTSlideImageHistoryInput[];
+    imageCreatedAt?: number;
+  } = {}
+): void {
+  const requestedReplaceElementId = options.replaceElementId;
+  const requestedReplaceElementExists = requestedReplaceElementId
+    ? board.children.some((el: any) => el.id === requestedReplaceElementId)
+    : false;
+  const existingElementId =
+    requestedReplaceElementId && requestedReplaceElementExists
+      ? requestedReplaceElementId
+      : findPPTSlideImage(board, frameId)?.elementId;
+
+  markPPTSlideImage(
+    board,
+    frameId,
+    newElementId,
+    imageUrl,
+    options.prompt,
+    options.historyItems,
+    options.imageCreatedAt
+  );
+
+  const replaceElementId = existingElementId;
+  if (!replaceElementId || replaceElementId === newElementId) {
+    return;
+  }
+
+  const oldIndex = board.children.findIndex((el: any) => el.id === replaceElementId);
+  if (oldIndex !== -1) {
+    Transforms.removeNode(board, [oldIndex]);
+  }
 }
 
 export function setPPTImagePlaceholderStatus(
@@ -118,7 +445,8 @@ export async function insertMediaIntoFrame(
   frameId: string,
   frameDimensions: { width: number; height: number },
   mediaDimensions?: { width: number; height: number },
-  targetRegion?: { x: number; y: number; width: number; height: number }
+  targetRegion?: { x: number; y: number; width: number; height: number },
+  options?: { fit?: 'contain' | 'stretch' }
 ): Promise<
   | {
       point: Point;
@@ -159,11 +487,18 @@ export async function insertMediaIntoFrame(
   };
   const regionDimensions = { width: region.width, height: region.height };
 
-  // 使用 contain 模式等比缩放：媒体完整显示在目标区域内，保持宽高比
+  // 默认 contain 等比缩放；PPT 页面回填可用 stretch 严格铺满 Frame。
   let mediaWidth: number;
   let mediaHeight: number;
 
-  if (mediaDimensions && mediaDimensions.width > 0 && mediaDimensions.height > 0) {
+  if (options?.fit === 'stretch') {
+    mediaWidth = regionDimensions.width;
+    mediaHeight = regionDimensions.height;
+  } else if (
+    mediaDimensions &&
+    mediaDimensions.width > 0 &&
+    mediaDimensions.height > 0
+  ) {
     const mediaAspect = mediaDimensions.width / mediaDimensions.height;
     const regionAspect = regionDimensions.width / regionDimensions.height;
 
@@ -207,7 +542,8 @@ export async function insertMediaIntoFrame(
       false,
       { width: mediaWidth, height: mediaHeight },
       true, // skipScroll
-      true // skipImageLoad（使用 Frame 尺寸立即插入）
+      true, // skipImageLoad（使用 Frame 尺寸立即插入）
+      options?.fit === 'stretch' // lockReferenceDimensions（PPT 回填需要严格占满 Frame）
     );
   }
 

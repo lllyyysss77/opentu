@@ -675,35 +675,69 @@
   }
 
   &__empty {
+    flex: 1;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: $spacing-xl;
+    min-height: 220px;
+    padding: 36px 18px;
     text-align: center;
     color: var(--td-text-color-placeholder);
-    gap: $spacing-sm;
+    gap: 12px;
 
     p {
       margin: 0;
-      font-size: 13px;
     }
   }
 
+  &__empty-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 34px;
+    border: 1px solid var(--td-component-border);
+    border-radius: 8px;
+    color: var(--td-brand-color);
+    background: var(--td-bg-color-container);
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+
+    svg {
+      display: block;
+    }
+  }
+
+  &__empty-copy {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    max-width: 280px;
+  }
+
+  &__empty-title {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 22px;
+    color: var(--td-text-color-secondary);
+  }
+
   &__empty-hint {
-    font-size: 12px !important;
-    color: var(--td-text-color-disabled);
+    font-size: 13px;
+    line-height: 21px;
+    color: var(--td-text-color-placeholder);
   }
 
   &__list {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 6px;
   }
 
   &__item {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 8px;
     padding: 8px 10px;
     cursor: pointer;
@@ -721,6 +755,10 @@
 
     &--active {
       background: var(--td-brand-color-light);
+
+      &:hover {
+        background: var(--td-brand-color-light);
+      }
 
       .frame-panel__item-icon {
         color: var(--td-brand-color);
@@ -771,6 +809,124 @@
     align-items: center;
     justify-content: center;
     color: var(--td-text-color-secondary);
+  }
+
+  &__slide-preview {
+    flex-shrink: 0;
+    width: 72px;
+    aspect-ratio: 16 / 9;
+    border: 1px solid var(--td-border-level-1-color);
+    border-radius: 6px;
+    overflow: hidden;
+    background: var(--td-bg-color-container);
+  }
+
+  &__slide-preview-img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  &__slide-preview-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    color: var(--td-text-color-placeholder);
+    font-size: 11px;
+    background:
+      linear-gradient(135deg, rgba(243, 156, 18, 0.08), transparent),
+      var(--td-bg-color-container);
+  }
+
+  &__history-menu-item {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 220px;
+  }
+
+  &__history-menu-thumb {
+    flex-shrink: 0;
+    width: 48px;
+    height: 27px;
+    border-radius: 4px;
+    object-fit: cover;
+    background: var(--td-bg-color-container);
+    border: 1px solid var(--td-border-level-1-color);
+  }
+
+  &__history-menu-text {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  &__history-menu-title,
+  &__history-menu-prompt {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__history-menu-title {
+    color: var(--td-text-color-primary);
+    font-weight: 500;
+  }
+
+  &__history-menu-prompt {
+    max-width: 180px;
+    color: var(--td-text-color-secondary);
+    font-size: 11px;
+  }
+
+  &__history-menu-preview {
+    position: absolute;
+    left: calc(100% + 14px);
+    top: auto;
+    bottom: 0;
+    z-index: 1;
+    width: 360px;
+    aspect-ratio: 16 / 9;
+    padding: 8px;
+    border: 1px solid var(--td-border-level-1-color);
+    border-radius: 12px;
+    background: var(--td-bg-color-container);
+    box-shadow: 0 18px 48px rgba(15, 23, 42, 0.2);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translateX(-4px);
+    transition:
+      opacity 0.12s ease,
+      transform 0.12s ease,
+      visibility 0.12s ease;
+  }
+
+  &__history-menu-preview img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border-radius: 8px;
+    object-fit: contain;
+    background: var(--td-bg-color-container);
+  }
+
+  &__history-menu-item:hover &__history-menu-preview,
+  &__history-menu-item:focus-within &__history-menu-preview {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(0);
+  }
+
+  &__layout-menu-placeholder {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
   }
 
   &__item-content {
