@@ -20,7 +20,15 @@ import {
   Transforms,
   getViewportOrigination,
 } from '@plait/core';
-import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Suspense,
+  lazy,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useBoard } from '@plait-board/react-board';
 import { flip, offset, shift, useFloating } from '@floating-ui/react';
 import { Island } from '../../island';
@@ -84,6 +92,12 @@ import { isFrameElement } from '../../../types/frame.types';
 import { isCardElement } from '../../../types/card.types';
 import { duplicateFrame, focusFrame } from '../../../utils/frame-duplicate';
 import { isPlaitMind, findMindRootFromSelection } from '../../../services/ppt';
+import type { PPTFrameMeta } from '../../../services/ppt';
+import {
+  findPPTSlideImage,
+  getPPTSlidePrompt,
+} from '../../../utils/frame-insertion-utils';
+import { matchFrameAspectRatio } from '../../../utils/frame-size-matcher';
 import {
   extractElementTextContent,
   isPlainTextElement,
@@ -629,6 +643,48 @@ export const PopupToolbar = () => {
     }
   };
 
+  const openAIImageGenerationDialog = useCallback(() => {
+    const selectedFrame =
+      selectedElements.length === 1 && isFrameElement(selectedElements[0])
+        ? selectedElements[0]
+        : null;
+
+    if (!selectedFrame) {
+      openDialog(DialogType.aiImageGeneration);
+      return;
+    }
+
+    const rect = RectangleClient.getRectangleByPoints(selectedFrame.points);
+    const pptMeta = (selectedFrame as any).pptMeta as
+      | PPTFrameMeta
+      | undefined;
+    const slidePrompt = getPPTSlidePrompt(pptMeta);
+    const slideImage = findPPTSlideImage(board, selectedFrame.id);
+
+    openDialog(DialogType.aiImageGeneration, {
+      initialPrompt: slidePrompt,
+      initialImages: slideImage?.url
+        ? [
+            {
+              url: slideImage.url,
+              name: `${selectedFrame.name || 'frame'}-reference.png`,
+            },
+          ]
+        : [],
+      initialAspectRatio: matchFrameAspectRatio(rect.width, rect.height),
+      initialWidth: rect.width,
+      initialHeight: rect.height,
+      targetFrameId: selectedFrame.id,
+      targetFrameDimensions: {
+        width: rect.width,
+        height: rect.height,
+      },
+      autoInsertToCanvas: true,
+      pptSlideImage: true,
+      pptReplaceElementId: slideImage?.elementId,
+    });
+  }, [board, openDialog, selectedElements]);
+
   useEffect(() => {
     if (open) {
       const hasSelected = selectedElements.length > 0;
@@ -1080,9 +1136,7 @@ export const PopupToolbar = () => {
                 title={language === 'zh' ? 'AI图片生成' : 'AI Image Generation'}
                 aria-label={language === 'zh' ? 'AI图片生成' : 'AI Image Generation'}
                 data-track="toolbar_click_ai_image"
-                onPointerUp={() => {
-                  openDialog(DialogType.aiImageGeneration);
-                }}
+                onPointerUp={openAIImageGenerationDialog}
               />
             )}
             {state.hasAIVideo && (

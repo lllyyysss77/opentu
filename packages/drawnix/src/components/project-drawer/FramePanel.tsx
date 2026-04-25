@@ -186,6 +186,22 @@ function getSlideImageHistory(
   ];
 }
 
+function isSlideHistoryCurrentImage(
+  frameInfo: FrameInfo,
+  item: PPTSlideImageHistoryItem
+): boolean {
+  if (!frameInfo.slideImageUrl) {
+    return false;
+  }
+  if (
+    frameInfo.slideImageElementId &&
+    item.elementId === frameInfo.slideImageElementId
+  ) {
+    return true;
+  }
+  return item.imageUrl === frameInfo.slideImageUrl;
+}
+
 function formatHistoryCreatedAt(createdAt: number): string {
   if (!Number.isFinite(createdAt) || createdAt <= 0) {
     return '';
@@ -201,15 +217,21 @@ function formatHistoryCreatedAt(createdAt: number): string {
 const PPTSlideHistoryMenuLabel: React.FC<{
   item: PPTSlideImageHistoryItem;
   index: number;
-}> = ({ item, index }) => {
+  isCurrent: boolean;
+}> = ({ item, index, isCurrent }) => {
   const prompt = item.prompt?.trim();
   const promptPreview =
     prompt && prompt.length > PPT_HISTORY_PROMPT_PREVIEW_LENGTH
       ? `${prompt.slice(0, PPT_HISTORY_PROMPT_PREVIEW_LENGTH)}…`
       : prompt;
+  const createdAtText = formatHistoryCreatedAt(item.createdAt);
 
   return (
-    <span className="frame-panel__history-menu-item">
+    <span
+      className={classNames('frame-panel__history-menu-item', {
+        'frame-panel__history-menu-item--active': isCurrent,
+      })}
+    >
       <img
         src={item.imageUrl}
         alt={`历史图片 ${index + 1}`}
@@ -218,10 +240,13 @@ const PPTSlideHistoryMenuLabel: React.FC<{
       />
       <span className="frame-panel__history-menu-text">
         <span className="frame-panel__history-menu-title">
-          历史图片 {index + 1}
-          {formatHistoryCreatedAt(item.createdAt)
-            ? ` · ${formatHistoryCreatedAt(item.createdAt)}`
-            : ''}
+          <span className="frame-panel__history-menu-title-main">
+            历史图片 {index + 1}
+            {createdAtText ? ` · ${createdAtText}` : ''}
+          </span>
+          {isCurrent ? (
+            <span className="frame-panel__history-menu-current">当前</span>
+          ) : null}
         </span>
         {promptPreview ? (
           <span className="frame-panel__history-menu-prompt">
@@ -1129,6 +1154,7 @@ export const FramePanel: React.FC = () => {
             {
               replaceElementId: currentSlideImage?.elementId,
               prompt: historyItem.prompt || frameInfo.slidePrompt,
+              imageCreatedAt: historyItem.createdAt,
             }
           );
         } else {
@@ -1162,6 +1188,7 @@ export const FramePanel: React.FC = () => {
             {
               replaceElementId: currentSlideImage?.elementId,
               prompt: historyItem.prompt || frameInfo.slidePrompt,
+              imageCreatedAt: historyItem.createdAt,
             }
           );
         }
@@ -1219,6 +1246,10 @@ export const FramePanel: React.FC = () => {
               <PPTSlideHistoryMenuLabel
                 item={historyItem}
                 index={index}
+                isCurrent={isSlideHistoryCurrentImage(
+                  frameInfo,
+                  historyItem
+                )}
               />
             ),
             onSelect: () => {

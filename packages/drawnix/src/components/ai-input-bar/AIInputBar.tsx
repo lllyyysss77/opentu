@@ -87,7 +87,12 @@ import {
   type WorkflowDefinition,
   type WorkflowStepOptions,
 } from './workflow-converter';
-import { SkillDropdown } from './SkillDropdown';
+import { SkillDropdown, type SkillOption } from './SkillDropdown';
+import {
+  inferSkillMediaTypes,
+  type SkillMediaType,
+  type SkillOutputType,
+} from './skill-media-type';
 import {
   SKILL_AUTO_ID,
   findSystemSkillById,
@@ -739,6 +744,12 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
     const initialImageModel =
       resolvePreferredModelSelection('image', imageModels) ||
       getModelConfig(getDefaultImageModel());
+    const initialVideoModel =
+      resolvePreferredModelSelection('video', videoModels) ||
+      getModelConfig(getDefaultVideoModel());
+    const initialAudioModel =
+      resolvePreferredModelSelection('audio', audioModels) ||
+      getModelConfig(getDefaultAudioModel());
     const initialImageRoute = resolveInvocationRoute('image');
     const initialSelectedModelId =
       initialImageModel?.id ||
@@ -788,6 +799,24 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
     const [selectedModelRef, setSelectedModelRef] = useState<ModelRef | null>(
       getModelRefFromConfig(initialSelectedModelConfig) || initialSelectedModelRef
     );
+    const [selectedAgentImageModel, setSelectedAgentImageModel] = useState(
+      initialImageModel?.id || getDefaultImageModel()
+    );
+    const [selectedAgentImageModelRef, setSelectedAgentImageModelRef] =
+      useState<ModelRef | null>(getModelRefFromConfig(initialImageModel));
+    const [selectedAgentVideoModel, setSelectedAgentVideoModel] = useState(
+      initialVideoModel?.id || getDefaultVideoModel()
+    );
+    const [selectedAgentVideoModelRef, setSelectedAgentVideoModelRef] =
+      useState<ModelRef | null>(getModelRefFromConfig(initialVideoModel));
+    const [selectedAgentAudioModel, setSelectedAgentAudioModel] = useState(
+      initialAudioModel?.id || getDefaultAudioModel()
+    );
+    const [selectedAgentAudioModelRef, setSelectedAgentAudioModelRef] =
+      useState<ModelRef | null>(getModelRefFromConfig(initialAudioModel));
+    const [selectedSkillMediaTypes, setSelectedSkillMediaTypes] = useState<
+      SkillMediaType[]
+    >([]);
     const visibleImageModels = useMemo(() => {
       if (generationType !== 'image') {
         return imageModels;
@@ -872,6 +901,57 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
       );
       return pinnedModel ? [pinnedModel, ...textModels] : textModels;
     }, [generationType, selectedModel, selectedModelRef, textModels]);
+    const visibleAgentImageModels = useMemo(() => {
+      const currentMatch = findMatchingSelectableModel(
+        imageModels,
+        selectedAgentImageModel,
+        selectedAgentImageModelRef
+      );
+      if (currentMatch) {
+        return imageModels;
+      }
+
+      const pinnedModel = getPinnedSelectableModel(
+        'image',
+        selectedAgentImageModel,
+        selectedAgentImageModelRef
+      );
+      return pinnedModel ? [pinnedModel, ...imageModels] : imageModels;
+    }, [imageModels, selectedAgentImageModel, selectedAgentImageModelRef]);
+    const visibleAgentVideoModels = useMemo(() => {
+      const currentMatch = findMatchingSelectableModel(
+        videoModels,
+        selectedAgentVideoModel,
+        selectedAgentVideoModelRef
+      );
+      if (currentMatch) {
+        return videoModels;
+      }
+
+      const pinnedModel = getPinnedSelectableModel(
+        'video',
+        selectedAgentVideoModel,
+        selectedAgentVideoModelRef
+      );
+      return pinnedModel ? [pinnedModel, ...videoModels] : videoModels;
+    }, [selectedAgentVideoModel, selectedAgentVideoModelRef, videoModels]);
+    const visibleAgentAudioModels = useMemo(() => {
+      const currentMatch = findMatchingSelectableModel(
+        audioModels,
+        selectedAgentAudioModel,
+        selectedAgentAudioModelRef
+      );
+      if (currentMatch) {
+        return audioModels;
+      }
+
+      const pinnedModel = getPinnedSelectableModel(
+        'audio',
+        selectedAgentAudioModel,
+        selectedAgentAudioModelRef
+      );
+      return pinnedModel ? [pinnedModel, ...audioModels] : audioModels;
+    }, [audioModels, selectedAgentAudioModel, selectedAgentAudioModelRef]);
     // 当前选中的参数映射 (id -> value)
     const [selectedParams, setSelectedParams] = useState<
       Record<string, string>
@@ -1017,6 +1097,68 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
       visibleVideoModels,
     ]);
 
+    useEffect(() => {
+      const syncAgentMediaModel = (
+        type: 'image' | 'video' | 'audio',
+        models: ModelConfig[],
+        selectedModelId: string,
+        selectedRef: ModelRef | null,
+        setModelId: (modelId: string) => void,
+        setModelRef: (modelRef: ModelRef | null) => void
+      ) => {
+        const currentModelConfig = findMatchingSelectableModel(
+          models,
+          selectedModelId,
+          selectedRef
+        );
+        if (currentModelConfig) {
+          return;
+        }
+
+        const nextModelConfig = resolvePreferredModelSelection(type, models);
+        if (nextModelConfig) {
+          setModelId(nextModelConfig.id);
+          setModelRef(getModelRefFromConfig(nextModelConfig));
+        }
+      };
+
+      syncAgentMediaModel(
+        'image',
+        visibleAgentImageModels,
+        selectedAgentImageModel,
+        selectedAgentImageModelRef,
+        setSelectedAgentImageModel,
+        setSelectedAgentImageModelRef
+      );
+      syncAgentMediaModel(
+        'video',
+        visibleAgentVideoModels,
+        selectedAgentVideoModel,
+        selectedAgentVideoModelRef,
+        setSelectedAgentVideoModel,
+        setSelectedAgentVideoModelRef
+      );
+      syncAgentMediaModel(
+        'audio',
+        visibleAgentAudioModels,
+        selectedAgentAudioModel,
+        selectedAgentAudioModelRef,
+        setSelectedAgentAudioModel,
+        setSelectedAgentAudioModelRef
+      );
+    }, [
+      resolvePreferredModelSelection,
+      selectedAgentAudioModel,
+      selectedAgentAudioModelRef,
+      selectedAgentImageModel,
+      selectedAgentImageModelRef,
+      selectedAgentVideoModel,
+      selectedAgentVideoModelRef,
+      visibleAgentAudioModels,
+      visibleAgentImageModels,
+      visibleAgentVideoModels,
+    ]);
+
     // 根据当前生成类型获取模型列表
     const currentModels = useMemo(() => {
       if (generationType === 'video') return visibleVideoModels;
@@ -1031,6 +1173,67 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
       visibleTextModels,
       visibleVideoModels,
     ]);
+
+    useEffect(() => {
+      let cancelled = false;
+
+      const resolveSelectedSkillMediaTypes = async () => {
+        if (generationType !== 'agent' || selectedSkillId === SKILL_AUTO_ID) {
+          setSelectedSkillMediaTypes([]);
+          return;
+        }
+
+        const systemSkill = findSystemSkillById(selectedSkillId);
+        if (systemSkill) {
+          setSelectedSkillMediaTypes(inferSkillMediaTypes(systemSkill));
+          return;
+        }
+
+        const registeredExternalSkill = findExternalSkillById(selectedSkillId);
+        if (registeredExternalSkill) {
+          setSelectedSkillMediaTypes(
+            inferSkillMediaTypes(registeredExternalSkill)
+          );
+          return;
+        }
+
+        const externalSkill = await externalSkillService.getSkillById(
+          selectedSkillId
+        );
+        if (cancelled) return;
+        if (externalSkill) {
+          setSelectedSkillMediaTypes(inferSkillMediaTypes(externalSkill));
+          return;
+        }
+
+        const userNote = await knowledgeBaseService.getNoteById(
+          selectedSkillId
+        );
+        if (cancelled) return;
+        setSelectedSkillMediaTypes(
+          userNote
+            ? inferSkillMediaTypes({
+                id: userNote.id,
+                name: userNote.title,
+                content: userNote.content,
+                outputType: userNote.metadata?.outputType as
+                  | SkillOutputType
+                  | undefined,
+              })
+            : []
+        );
+      };
+
+      resolveSelectedSkillMediaTypes().catch(() => {
+        if (!cancelled) {
+          setSelectedSkillMediaTypes([]);
+        }
+      });
+
+      return () => {
+        cancelled = true;
+      };
+    }, [generationType, selectedSkillId]);
 
     // 预计算当前模型的可用参数，避免子组件内部 stale 计算
     const compatibleParams = useMemo(() => {
@@ -1855,6 +2058,96 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
       [applyModelSelection]
     );
 
+    const applyAgentMediaModelSelection = useCallback(
+      (type: SkillMediaType, model: ModelConfig) => {
+        const modelRef = getModelRefFromConfig(model);
+        if (type === 'image') {
+          setSelectedAgentImageModel(model.id);
+          setSelectedAgentImageModelRef(modelRef);
+        } else if (type === 'video') {
+          setSelectedAgentVideoModel(model.id);
+          setSelectedAgentVideoModelRef(modelRef);
+        } else {
+          setSelectedAgentAudioModel(model.id);
+          setSelectedAgentAudioModelRef(modelRef);
+        }
+
+        setPersistedModelSelection(type, {
+          modelId: model.id,
+          modelRef,
+          providerIdHint: model.sourceProfileId || modelRef?.profileId,
+          vendorHint: model.vendor,
+        });
+
+        analytics.track('ai_input_change_agent_media_model', {
+          model: model.id,
+          type,
+          profileId: model.sourceProfileId || null,
+        });
+      },
+      []
+    );
+
+    const handleAgentMediaModelSelect = useCallback(
+      (type: SkillMediaType, modelId: string, modelRef?: ModelRef | null) => {
+        const models =
+          type === 'image'
+            ? visibleAgentImageModels
+            : type === 'video'
+            ? visibleAgentVideoModels
+            : visibleAgentAudioModels;
+        const model =
+          findMatchingSelectableModel(models, modelId, modelRef || null) ||
+          findMatchingSelectableModel(models, modelId, null) ||
+          getModelConfig(modelId);
+        if (!model) return;
+        applyAgentMediaModelSelection(type, model);
+      },
+      [
+        applyAgentMediaModelSelection,
+        visibleAgentAudioModels,
+        visibleAgentImageModels,
+        visibleAgentVideoModels,
+      ]
+    );
+
+    const handleAgentMediaModelConfigSelect = useCallback(
+      (type: SkillMediaType, model: ModelConfig) => {
+        applyAgentMediaModelSelection(type, model);
+      },
+      [applyAgentMediaModelSelection]
+    );
+
+    const handleSkillOptionSelect = useCallback((skill: SkillOption) => {
+      setSelectedSkillMediaTypes(inferSkillMediaTypes(skill));
+    }, []);
+
+    const agentMediaDefaultModels = useMemo(
+      () => ({
+        image: selectedAgentImageModel,
+        video: selectedAgentVideoModel,
+        audio: selectedAgentAudioModel,
+      }),
+      [
+        selectedAgentAudioModel,
+        selectedAgentImageModel,
+        selectedAgentVideoModel,
+      ]
+    );
+
+    const agentMediaDefaultModelRefs = useMemo(
+      () => ({
+        image: selectedAgentImageModelRef,
+        video: selectedAgentVideoModelRef,
+        audio: selectedAgentAudioModelRef,
+      }),
+      [
+        selectedAgentAudioModelRef,
+        selectedAgentImageModelRef,
+        selectedAgentVideoModelRef,
+      ]
+    );
+
     // 当 selectedModel 被外部逻辑更新时（如生成类型切换、设置变更），重新对齐参数
     // 避免无限循环：只有在参数实际变化时才更新 state
     // 当模型或可用参数变化时同步默认参数，保留用户已选值
@@ -2079,6 +2372,12 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
           params: selectedParams,
           generationType: generationType,
           count: selectedCount,
+          defaultModels:
+            generationType === 'agent' ? agentMediaDefaultModels : undefined,
+          defaultModelRefs:
+            generationType === 'agent'
+              ? agentMediaDefaultModelRefs
+              : undefined,
         });
 
         // 收集所有参考媒体（图片 + 图形 + 视频）
@@ -2161,6 +2460,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
                       | 'image'
                       | 'text'
                       | 'video'
+                      | 'audio'
                       | 'ppt') || undefined;
                   workflow = await convertSkillFlowToWorkflow(
                     parsedParams,
@@ -2490,6 +2790,9 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
           }
         }
 
+        const imageRoute = resolveInvocationRoute('image');
+        const videoRoute = resolveInvocationRoute('video');
+        const audioRoute = resolveInvocationRoute('audio');
         const aiContext = {
           rawInput: prompt,
           userInstruction: parsedParams.userInstruction,
@@ -2498,13 +2801,16 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
             type: parsedParams.generationType,
             isExplicit: parsedParams.isModelExplicit,
           },
-          defaultModels: {
-            audio:
-              resolveInvocationRoute('audio').modelId || getDefaultAudioModel(),
-            image:
-              resolveInvocationRoute('image').modelId ||
-              'gemini-3-pro-image-preview-vip',
-            video: resolveInvocationRoute('video').modelId || 'veo3.1',
+          modelRef: parsedParams.modelRef,
+          defaultModels: parsedParams.defaultModels || {
+            audio: audioRoute.modelId || getDefaultAudioModel(),
+            image: imageRoute.modelId || getDefaultImageModel(),
+            video: videoRoute.modelId || getDefaultVideoModel(),
+          },
+          defaultModelRefs: parsedParams.defaultModelRefs || {
+            audio: createModelRef(audioRoute.profileId, audioRoute.modelId),
+            image: createModelRef(imageRoute.profileId, imageRoute.modelId),
+            video: createModelRef(videoRoute.profileId, videoRoute.modelId),
           },
           params: {
             count: parsedParams.count,
@@ -3014,6 +3320,8 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
       submitWorkflowToSW,
       addPromptHistory,
       selectedParams,
+      agentMediaDefaultModels,
+      agentMediaDefaultModelRefs,
       generationType,
       selectedCount,
       bindCurrentImageAnchorTask,
@@ -3071,6 +3379,9 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
             userInstruction: retryContext.aiContext.userInstruction,
             rawInput: retryContext.aiContext.rawInput,
             modelId: retryContext.aiContext.model.id,
+            modelRef: retryContext.aiContext.modelRef,
+            defaultModels: retryContext.aiContext.defaultModels,
+            defaultModelRefs: retryContext.aiContext.defaultModelRefs,
             isModelExplicit: retryContext.aiContext.model.isExplicit,
             count: workflowMessageData.count,
             size: retryContext.aiContext.params.size,
@@ -3617,6 +3928,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
               <SkillDropdown
                 value={selectedSkillId}
                 onSelect={setSelectedSkillId}
+                onSelectSkill={handleSkillOptionSelect}
                 onAddSkill={handleAddSkill}
                 disabled={isSubmitting}
               />
@@ -3634,12 +3946,91 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
               models={currentModels}
               header={
                 language === 'zh'
-                  ? '选择模型 (↑↓ Tab)'
+                  ? generationType === 'agent'
+                    ? '选择文本模型 (↑↓ Tab)'
+                    : '选择模型 (↑↓ Tab)'
+                  : generationType === 'agent'
+                  ? 'Select text model (↑↓ Tab)'
                   : 'Select model (↑↓ Tab)'
               }
               isOpen={modelDropdownOpen}
               onOpenChange={handleModelDropdownChange}
             />
+
+            {generationType === 'agent' &&
+              selectedSkillId !== SKILL_AUTO_ID &&
+              selectedSkillMediaTypes.includes('image') && (
+                <ModelDropdown
+                  selectedModel={selectedAgentImageModel}
+                  selectedSelectionKey={getSelectionKey(
+                    selectedAgentImageModel,
+                    selectedAgentImageModelRef
+                  )}
+                  onSelect={(modelId, modelRef) =>
+                    handleAgentMediaModelSelect('image', modelId, modelRef)
+                  }
+                  onSelectModel={(model) =>
+                    handleAgentMediaModelConfigSelect('image', model)
+                  }
+                  language={language}
+                  models={visibleAgentImageModels}
+                  header={
+                    language === 'zh'
+                      ? '选择图片模型 (↑↓ Tab)'
+                      : 'Select image model (↑↓ Tab)'
+                  }
+                />
+              )}
+
+            {generationType === 'agent' &&
+              selectedSkillId !== SKILL_AUTO_ID &&
+              selectedSkillMediaTypes.includes('video') && (
+                <ModelDropdown
+                  selectedModel={selectedAgentVideoModel}
+                  selectedSelectionKey={getSelectionKey(
+                    selectedAgentVideoModel,
+                    selectedAgentVideoModelRef
+                  )}
+                  onSelect={(modelId, modelRef) =>
+                    handleAgentMediaModelSelect('video', modelId, modelRef)
+                  }
+                  onSelectModel={(model) =>
+                    handleAgentMediaModelConfigSelect('video', model)
+                  }
+                  language={language}
+                  models={visibleAgentVideoModels}
+                  header={
+                    language === 'zh'
+                      ? '选择视频模型 (↑↓ Tab)'
+                      : 'Select video model (↑↓ Tab)'
+                  }
+                />
+              )}
+
+            {generationType === 'agent' &&
+              selectedSkillId !== SKILL_AUTO_ID &&
+              selectedSkillMediaTypes.includes('audio') && (
+                <ModelDropdown
+                  selectedModel={selectedAgentAudioModel}
+                  selectedSelectionKey={getSelectionKey(
+                    selectedAgentAudioModel,
+                    selectedAgentAudioModelRef
+                  )}
+                  onSelect={(modelId, modelRef) =>
+                    handleAgentMediaModelSelect('audio', modelId, modelRef)
+                  }
+                  onSelectModel={(model) =>
+                    handleAgentMediaModelConfigSelect('audio', model)
+                  }
+                  language={language}
+                  models={visibleAgentAudioModels}
+                  header={
+                    language === 'zh'
+                      ? '选择音频模型 (↑↓ Tab)'
+                      : 'Select audio model (↑↓ Tab)'
+                  }
+                />
+              )}
 
             {/* Parameters dropdown selector - Hidden for Agent mode */}
             {generationType !== 'agent' && compatibleParams.length > 0 && (

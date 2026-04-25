@@ -45,7 +45,12 @@ import {
   handleSplitAndInsertTask,
   type TaskParams,
 } from '../services/media-result-handler';
-import { insertMediaIntoFrame } from '../utils/frame-insertion-utils';
+import {
+  insertMediaIntoFrame,
+  type PPTSlideImageHistoryInput,
+  replacePPTSlideImage,
+  setFramePPTMeta,
+} from '../utils/frame-insertion-utils';
 import { buildImageGenerationAnchorPresentationPatch } from '../utils/image-generation-anchor-state';
 import {
   getAnchorCurrentPosition,
@@ -147,6 +152,69 @@ function releaseTaskInsertion(taskId: string): void {
 function finalizeTaskInsertion(taskId: string): void {
   insertedTaskIds.add(taskId);
   getTaskQueueService().markAsInserted(taskId, 'auto_insert');
+}
+
+function updatePPTSlideImageAfterInsert(
+  task: Task,
+  insertedElementId?: string,
+  imageUrl?: string,
+  options: {
+    targetFrameId?: string;
+    replaceElementId?: string;
+    prompt?: string;
+    historyItems?: PPTSlideImageHistoryInput[];
+    imageCreatedAt?: number;
+  } = {}
+): void {
+  if (!insertedElementId || !imageUrl) {
+    return;
+  }
+
+  const board = getCanvasBoard();
+  const targetFrameId =
+    options.targetFrameId || (task.params.targetFrameId as string | undefined);
+  if (!board || !targetFrameId) {
+    return;
+  }
+
+  replacePPTSlideImage(board, targetFrameId, insertedElementId, imageUrl, {
+    replaceElementId:
+      options.replaceElementId ||
+      (task.params.pptReplaceElementId as string | undefined),
+    prompt: options.prompt || task.params.prompt,
+    historyItems: options.historyItems,
+    imageCreatedAt: options.imageCreatedAt || getTaskImageGeneratedAt(task),
+  });
+}
+
+function getTaskImageGeneratedAt(task: Task): number {
+  const createdAt = task.completedAt || task.updatedAt || task.createdAt;
+  return Number.isFinite(createdAt) && createdAt > 0 ? createdAt : Date.now();
+}
+
+function getImageResultUrls(task: Task): string[] {
+  if (task.result?.urls?.length) {
+    return task.result.urls.filter((url): url is string => !!url);
+  }
+  return task.result?.url ? [task.result.url] : [];
+}
+
+function getTaskBatchIndex(task: Task): number {
+  return typeof task.params.batchIndex === 'number'
+    ? task.params.batchIndex
+    : Number.MAX_SAFE_INTEGER;
+}
+
+function createPPTSlideImageHistoryItems(
+  imageUrls: string[],
+  prompt?: string,
+  createdAt?: number
+): PPTSlideImageHistoryInput[] {
+  return imageUrls.map((imageUrl) => ({
+    imageUrl,
+    ...(prompt ? { prompt } : {}),
+    ...(createdAt ? { createdAt } : {}),
+  }));
 }
 
 function isPoint(value: unknown): value is Point {
@@ -589,8 +657,55 @@ export function useAutoInsertToCanvas(
             let insertedPoint = resolvedInsertionPoint;
             let insertedElementId: string | undefined;
             let insertedSize = targetImageDimensions;
+            let didUpdatePPTSlideImage = false;
 
             if (
+              task.params.pptSlideImage &&
+              taskFrameId &&
+              taskFrameDims &&
+              board &&
+              type === 'image' &&
+              allUrls.length > 0
+            ) {
+              const currentImageUrl = allUrls[allUrls.length - 1];
+              const frameInsert = await insertMediaIntoFrame(
+                board,
+                currentImageUrl,
+                type,
+                taskFrameId,
+                taskFrameDims,
+                dimensions,
+                undefined,
+                { fit: 'stretch' }
+              );
+              if (frameInsert) {
+                insertedPoint = frameInsert.point;
+                insertedElementId = frameInsert.elementId;
+                insertedSize = frameInsert.size;
+                syncImageAnchorGeometry(board, imageAnchor, {
+                  position: frameInsert.point,
+                  size: frameInsert.size,
+                  transitionMode:
+                    imageAnchor?.anchorType === 'ghost' ? 'morph' : 'hold',
+                });
+                updatePPTSlideImageAfterInsert(
+                  task,
+                  insertedElementId,
+                  currentImageUrl,
+                  {
+                    targetFrameId: taskFrameId,
+                    replaceElementId:
+                      task.params.pptReplaceElementId as string | undefined,
+                    historyItems: createPPTSlideImageHistoryItems(
+                      allUrls.slice(0, -1),
+                      task.params.prompt,
+                      getTaskImageGeneratedAt(task)
+                    ),
+                  }
+                );
+                didUpdatePPTSlideImage = true;
+              }
+            } else if (
               taskFrameId &&
               taskFrameDims &&
               board &&
@@ -598,14 +713,16 @@ export function useAutoInsertToCanvas(
               type !== 'text' &&
               allUrls.length === 1
             ) {
-              // 插入到 Frame 内部，contain 模式等比缩放
+              // 插入到 Frame 内部。PPT 页面图需要严格铺满 Frame，普通媒体保持 contain。
               const frameInsert = await insertMediaIntoFrame(
                 board,
                 allUrls[0],
                 type,
                 taskFrameId,
                 taskFrameDims,
-                dimensions
+                dimensions,
+                undefined,
+                task.params.pptSlideImage ? { fit: 'stretch' } : undefined
               );
               if (frameInsert) {
                 insertedPoint = frameInsert.point;
@@ -789,6 +906,19 @@ export function useAutoInsertToCanvas(
               });
             }
 
+            if (type === 'image' && !didUpdatePPTSlideImage) {
+              updatePPTSlideImageAfterInsert(
+                task,
+                insertedElementId,
+                allUrls[0],
+                {
+                  targetFrameId: taskFrameId,
+                  replaceElementId:
+                    task.params.pptReplaceElementId as string | undefined,
+                }
+              );
+            }
+
             workflowCompletionService.completePostProcessing(
               task.id,
               allUrls.length,
@@ -905,7 +1035,73 @@ export function useAutoInsertToCanvas(
 
             // console.log(`[AutoInsert] Inserting group of ${urls.length} ${type}s`);
 
-            if (mergedConfig.insertPrompt && type !== 'text') {
+            if (
+              firstInsertTask.params.pptSlideImage &&
+              targetFrameId &&
+              targetFrameDimensions &&
+              type === 'image'
+            ) {
+              const sortedInserts = inserts
+                .map((insert, sourceIndex) => ({ insert, sourceIndex }))
+                .sort((left, right) => {
+                  const indexDiff =
+                    getTaskBatchIndex(left.insert.task) -
+                    getTaskBatchIndex(right.insert.task);
+                  return indexDiff || left.sourceIndex - right.sourceIndex;
+                })
+                .map(({ insert }) => insert);
+              const historyItems = sortedInserts.flatMap(({ task }) =>
+                createPPTSlideImageHistoryItems(
+                  getImageResultUrls(task),
+                  task.params.prompt,
+                  getTaskImageGeneratedAt(task)
+                )
+              );
+              const currentHistoryItem =
+                historyItems[historyItems.length - 1];
+
+              if (!currentHistoryItem) {
+                for (const { task } of inserts) {
+                  releaseTaskInsertion(task.id);
+                  workflowCompletionService.failPostProcessing(
+                    task.id,
+                    'No result URL'
+                  );
+                }
+                continue;
+              }
+
+              const frameInsert = await insertMediaIntoFrame(
+                board,
+                currentHistoryItem.imageUrl,
+                type,
+                targetFrameId,
+                targetFrameDimensions,
+                dimensions,
+                undefined,
+                { fit: 'stretch' }
+              );
+
+              if (frameInsert) {
+                insertedPoint = frameInsert.point;
+                insertedElementId = frameInsert.elementId;
+                insertedSize = frameInsert.size;
+                updatePPTSlideImageAfterInsert(
+                  firstInsertTask,
+                  insertedElementId,
+                  currentHistoryItem.imageUrl,
+                  {
+                    targetFrameId,
+                    replaceElementId:
+                      firstInsertTask.params
+                        .pptReplaceElementId as string | undefined,
+                    prompt: currentHistoryItem.prompt,
+                    imageCreatedAt: currentHistoryItem.createdAt,
+                    historyItems: historyItems.slice(0, -1),
+                  }
+                );
+              }
+            } else if (mergedConfig.insertPrompt && type !== 'text') {
               const insertionResult = await insertAIFlow(
                 firstInsertTask.params.prompt,
                 urls.map((resultUrl, index) => ({
@@ -1243,8 +1439,17 @@ export function useAutoInsertToCanvas(
      * Note: 步骤状态更新现在由 SW 统一通过 workflow:stepStatus 事件处理
      * 不再需要在这里调用 updateWorkflowStepForTask
      */
-    const handleTaskFailed = (_task: Task) => {
+    const handleTaskFailed = (task: Task) => {
       // image anchor 的失败态由 useImageGenerationAnchorSync 统一推导。
+      if (task.params?.pptSlideImage && task.params?.targetFrameId) {
+        const board = getCanvasBoard();
+        if (board) {
+          setFramePPTMeta(board, task.params.targetFrameId as string, {
+            slideImageStatus: 'failed',
+            imageStatus: 'failed',
+          });
+        }
+      }
     };
 
     // 订阅任务更新事件
@@ -1263,7 +1468,10 @@ export function useAutoInsertToCanvas(
         if (event.type === 'taskUpdated' || event.type === 'taskCompleted') {
           if (event.task.status === TaskStatus.COMPLETED) {
             handleTaskCompleted(event.task);
-          } else if (event.task.status === TaskStatus.FAILED) {
+          } else if (
+            event.task.status === TaskStatus.FAILED ||
+            event.task.status === TaskStatus.CANCELLED
+          ) {
             handleTaskFailed(event.task);
           }
         } else if (event.type === 'taskFailed') {

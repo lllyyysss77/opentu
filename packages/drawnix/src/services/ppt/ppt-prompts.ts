@@ -5,7 +5,12 @@
  * 输出严格 JSON（PPTOutline），内置语言控制和页数控制
  */
 
-import type { PPTGenerateOptions, PPTLayoutType } from './ppt.types';
+import type {
+  PPTGenerateOptions,
+  PPTLayoutType,
+  PPTOutline,
+  PPTPageSpec,
+} from './ppt.types';
 
 /** 页数范围映射 */
 const PAGE_COUNT_RANGES: Record<string, { min: number; max: number }> = {
@@ -19,7 +24,7 @@ const LAYOUT_DESCRIPTIONS: Record<PPTLayoutType, string> = {
   cover: '封面页 - 用于PPT开头，包含主标题和副标题',
   toc: '目录页 - 展示PPT的章节结构',
   'title-body': '标题正文页 - 最常用的版式，标题 + 要点列表',
-  'image-text': '图文页 - 需要配图的内容页，同时包含文字和图片区域',
+  'image-text': '图文页 - 同时包含文字信息和视觉表达',
   comparison: '对比页 - 左右对比两个概念或事物',
   ending: '结尾页 - 用于PPT结尾，包含感谢语或总结',
 };
@@ -56,22 +61,22 @@ interface PPTPageSpec {
   title: string;          // 页面标题（控制在10个中文字符以内，避免换行）
   subtitle?: string;      // 副标题（cover/ending页使用）
   bullets?: string[];     // 要点列表（title-body/image-text/comparison页使用）
-  imagePrompt?: string;   // 配图描述（仅image-text页需要，英文）
+  imagePrompt?: string;   // 视觉概念描述（可选，英文）
   notes?: string;         // 演讲者备注（可选）
 }
 \`\`\`
 
-## imagePrompt 生成规则
-- 仅为 image-text 版式的页面生成 imagePrompt
+## 视觉概念规则
+- imagePrompt 是可选视觉概念，不是单独配图任务；可为需要更强画面指引的页面生成
 - imagePrompt 使用英文描述，便于图片生成模型理解
 - 描述应具体、可视化，包含主体、风格、氛围等要素
-- 风格统一为：professional, modern, clean, flat design illustration
+- 风格统一为：professional, modern, clean, premium presentation design
 - 示例："A futuristic city with flying cars and holographic billboards, professional flat design illustration, clean and modern style"
 
 ## 设计原则
 1. **标题精简**：每页标题控制在 10 个中文字符以内（约 20 个英文字符），避免在幻灯片上换行
 2. **内容充实**：每页 4-6 个要点，每个要点 10-20 字，信息密度适中
-3. **图文并茂**：大量使用 image-text 版式（建议占比 50-70%），让 PPT 更丰富
+3. **视觉完整**：每页都应能被图片模型生成成完整幻灯片画面
 4. **逻辑清晰**：内容有明确的起承转合
 5. **版式多样**：合理搭配不同版式，避免连续多页相同版式
 6. **对比页要点**：comparison 版式需要 6 个要点（左右各 3 个），方便排版
@@ -104,6 +109,54 @@ export function generateOutlineUserPrompt(
 请直接输出JSON格式的PPT大纲。`;
 
   return prompt;
+}
+
+function formatBullets(bullets?: string[]): string {
+  if (!bullets || bullets.length === 0) return '无';
+  return bullets.map((bullet, index) => `${index + 1}. ${bullet}`).join('\n');
+}
+
+/**
+ * 生成单页整图 PPT 的图片提示词。
+ */
+export function generateSlideImagePrompt(
+  outline: Pick<PPTOutline, 'title' | 'pages'>,
+  page: PPTPageSpec,
+  pageIndex: number,
+  options: PPTGenerateOptions = {}
+): string {
+  const { language = '中文', extraRequirements } = options;
+  const totalPages = outline.pages.length;
+  const pageRole =
+    page.layout === 'cover'
+      ? '封面页'
+      : page.layout === 'ending'
+      ? '结束页'
+      : page.layout === 'toc'
+      ? '目录页'
+      : `第 ${pageIndex} 页内容页`;
+
+  return `请生成一张完整的 16:9 PowerPoint 幻灯片图片，适合直接作为 PPT 第 ${pageIndex}/${totalPages} 页使用。
+
+## 核心要求
+- 输出必须是一整页幻灯片设计，不要只生成插画、背景图或局部元素。
+- 幻灯片内需要直接包含清晰可读的文字，不需要额外叠加文本。
+- 文字语言：${language}
+- 风格：professional, modern, clean, premium presentation design
+- 画面比例：16:9，留白合理，层级清晰，适合正式演示。
+
+## PPT 信息
+- PPT 总标题：${outline.title}
+- 当前页面角色：${pageRole}
+- 当前页面版式参考：${page.layout}
+- 页面标题：${page.title}
+- 副标题：${page.subtitle || '无'}
+- 页面要点：
+${formatBullets(page.bullets)}
+- 视觉概念：${page.imagePrompt || '根据页面内容自行设计专业视觉元素'}
+
+${extraRequirements ? `## 额外要求\n${extraRequirements}\n` : ''}
+请只生成最终幻灯片画面。`;
 }
 
 /**

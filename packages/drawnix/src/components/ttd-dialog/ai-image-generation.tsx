@@ -77,6 +77,8 @@ interface AIImageGenerationProps {
   initialAspectRatio?: string;
   targetFrameId?: string;
   targetFrameDimensions?: { width: number; height: number };
+  pptSlideImage?: boolean;
+  pptReplaceElementId?: string;
   selectedModel?: string;
   selectedModelRef?: ModelRef | null;
   onModelChange?: (value: string) => void;
@@ -101,6 +103,8 @@ const AIImageGeneration = ({
   initialAspectRatio,
   targetFrameId,
   targetFrameDimensions,
+  pptSlideImage,
+  pptReplaceElementId,
   selectedModel,
   selectedModelRef,
   onModelChange,
@@ -284,6 +288,9 @@ const AIImageGeneration = ({
       height: initialHeight,
       result: initialResultUrl,
       aspectRatio: initialAspectRatio,
+      targetFrameId,
+      pptSlideImage,
+      pptReplaceElementId,
     });
 
     // Skip if we've already processed these exact props
@@ -310,6 +317,9 @@ const AIImageGeneration = ({
     initialHeight,
     initialResultUrl,
     initialAspectRatio,
+    targetFrameId,
+    pptSlideImage,
+    pptReplaceElementId,
     isManualEdit,
   ]);
 
@@ -577,6 +587,7 @@ const AIImageGeneration = ({
   };
 
   const handleGenerate = async (count = 1) => {
+    const effectiveCount = count;
     // 防止快速双击/重复触发导致多次创建任务
     if (generatingLockRef.current) return;
     generatingLockRef.current = true;
@@ -616,7 +627,7 @@ const AIImageGeneration = ({
       const convertedImages = await convertImagesToSerializable();
 
       // 如果数量大于1，使用批量生成
-      if (count > 1) {
+      if (effectiveCount > 1) {
         const batchTaskIds: string[] = [];
         const batchId = `batch_${Date.now()}`;
 
@@ -641,7 +652,7 @@ const AIImageGeneration = ({
           ? extraParams.size
           : convertAspectRatioToSize(aspectRatio);
 
-        for (let i = 0; i < count; i++) {
+        for (let i = 0; i < effectiveCount; i++) {
           const taskParams = {
             prompt: finalPrompt,
             width: finalWidth,
@@ -653,12 +664,14 @@ const AIImageGeneration = ({
             uploadedImages: convertedImages,
             batchId,
             batchIndex: i + 1,
-            batchTotal: count,
+            batchTotal: effectiveCount,
             autoInsertToCanvas:
               initialAutoInsertToCanvas ??
               getAutoInsertValue(LS_KEYS.AI_IMAGE_AUTO_INSERT),
             targetFrameId,
             targetFrameDimensions,
+            pptSlideImage,
+            pptReplaceElementId,
             ...(extraParams ? { params: extraParams } : {}),
           };
 
@@ -734,6 +747,8 @@ const AIImageGeneration = ({
         batchTotal: 1,
         targetFrameId,
         targetFrameDimensions,
+        pptSlideImage,
+        pptReplaceElementId,
         ...(extraParams ? { params: extraParams } : {}),
       };
 

@@ -10,6 +10,7 @@ export type {
   PPTPageCountOption,
   PPTGenerateOptions,
   PPTFrameMeta,
+  PPTSlideImageHistoryItem,
   LayoutElement,
   FrameRect,
   PPTGenerationParams,
@@ -23,6 +24,7 @@ export type {
 export {
   generateOutlineSystemPrompt,
   generateOutlineUserPrompt,
+  generateSlideImagePrompt,
   validateOutline,
   parseOutlineResponse,
 } from './ppt-prompts';
@@ -38,6 +40,20 @@ export {
   getImageRegion,
 } from './ppt-layout-engine';
 export type { FontStyleLevel } from './ppt-layout-engine';
+
+export {
+  DEFAULT_PPT_FRAME_LAYOUT_COLUMNS,
+  MAX_PPT_FRAME_LAYOUT_COLUMNS,
+  MIN_PPT_FRAME_LAYOUT_COLUMNS,
+  PPT_FRAME_GRID_GAP,
+  PPT_FRAME_LAYOUT_COLUMNS_STORAGE_KEY,
+  calcPPTFrameInsertionStartPosition,
+  getPPTFrameGridPosition,
+  getPPTFrameGridPositions,
+  loadPPTFrameLayoutColumns,
+  sanitizePPTFrameLayoutColumns,
+  savePPTFrameLayoutColumns,
+} from './ppt-frame-layout';
 
 // 思维导图转 PPT
 export {
