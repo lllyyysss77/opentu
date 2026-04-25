@@ -1,6 +1,6 @@
 {
   "version": "0.6.75",
-  "buildTime": "2026-04-25T00:58:04.571Z",
+  "buildTime": "2026-04-25T00:58:05.666Z",
   "gitCommit": "unknown",
   "changelog": [
     "离线时跳过 idle prefetch 清单预热"
