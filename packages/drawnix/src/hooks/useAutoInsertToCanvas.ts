@@ -83,6 +83,8 @@ const DEFAULT_CONFIG: AutoInsertConfig = {
   groupTimeWindow: 5000, // 5秒内完成的同 Prompt 任务会分组
 };
 
+const BOARD_RETRY_DELAY = 500;
+
 /**
  * 已插入任务的记录，防止重复插入
  */
@@ -432,19 +434,37 @@ export function useAutoInsertToCanvas(
     let isActive = true;
 
     /**
+     * 调度 flush 操作
+     */
+    function scheduleFlush(delay = mergedConfig.groupTimeWindow) {
+      if (flushTimerRef.current) {
+        clearTimeout(flushTimerRef.current);
+      }
+      flushTimerRef.current = setTimeout(() => {
+        flushTimerRef.current = null;
+        flushPendingInserts().catch((error) => {
+          console.error('[AutoInsert] Failed to flush pending inserts:', error);
+        });
+      }, delay);
+    }
+
+    /**
      * 执行批量插入
      */
-    const flushPendingInserts = async () => {
+    async function flushPendingInserts() {
       // console.log('[AutoInsert] flushPendingInserts called');
-      const board = getCanvasBoard();
-      if (!board || !isActive) {
-        // console.log(`[AutoInsert] flushPendingInserts aborted: board=${!!board}, isActive=${isActive}`);
-        return;
-      }
-
       const pendingMap = pendingInsertsRef.current;
       if (pendingMap.size === 0) {
         // console.log('[AutoInsert] flushPendingInserts: no pending tasks');
+        return;
+      }
+
+      const board = getCanvasBoard();
+      if (!board || !isActive) {
+        // console.log(`[AutoInsert] flushPendingInserts aborted: board=${!!board}, isActive=${isActive}`);
+        if (!board && isActive) {
+          scheduleFlush(BOARD_RETRY_DELAY);
+        }
         return;
       }
 
@@ -455,7 +475,12 @@ export function useAutoInsertToCanvas(
       pendingMap.clear();
 
       for (const [promptKey, inserts] of toInsert) {
-        if (!isActive) break;
+        if (!isActive) {
+          for (const { task } of inserts) {
+            releaseTaskInsertion(task.id);
+          }
+          continue;
+        }
 
         // console.log(`[AutoInsert] Processing prompt group "${promptKey.substring(0, 30)}..." with ${inserts.length} tasks`);
 
@@ -1052,19 +1077,7 @@ export function useAutoInsertToCanvas(
           }
         }
       }
-    };
-
-    /**
-     * 调度 flush 操作
-     */
-    const scheduleFlush = () => {
-      if (flushTimerRef.current) {
-        clearTimeout(flushTimerRef.current);
-      }
-      flushTimerRef.current = setTimeout(() => {
-        flushPendingInserts();
-      }, mergedConfig.groupTimeWindow);
-    };
+    }
 
     /**
      * 处理宫格图/灵感图任务：使用统一的媒体结果处理服务
@@ -1141,6 +1154,17 @@ export function useAutoInsertToCanvas(
       if (task.insertedToCanvas) {
         // console.log(`[AutoInsert] Task ${task.id} skipped: insertedToCanvas flag is true (persisted)`);
         insertedTaskIds.add(task.id);
+        return;
+      }
+
+      const postProcessingStatus =
+        workflowCompletionService.getPostProcessingStatus(task.id)?.status;
+      if (postProcessingStatus === 'completed') {
+        insertedTaskIds.add(task.id);
+        return;
+      }
+
+      if (postProcessingStatus === 'processing') {
         return;
       }
 
@@ -1234,8 +1258,18 @@ export function useAutoInsertToCanvas(
         scheduleFlush();
       } else {
         // console.log(`[AutoInsert] Flushing immediately`);
-        flushPendingInserts();
+        flushPendingInserts().catch((error) => {
+          console.error('[AutoInsert] Failed to flush pending inserts:', error);
+        });
       }
+    };
+
+    const recoverCompletedAutoInsertTasks = () => {
+      getTaskQueueService().getAllTasks().forEach((task) => {
+        if (task.status === TaskStatus.COMPLETED) {
+          handleTaskCompleted(task);
+        }
+      });
     };
 
     /**
@@ -1272,8 +1306,12 @@ export function useAutoInsertToCanvas(
           if (event.task.status === TaskStatus.COMPLETED) {
             handleTaskCompleted(event.task);
           }
+        } else if (event.type === 'taskCreated') {
+          recoverCompletedAutoInsertTasks();
         }
       });
+
+    recoverCompletedAutoInsertTasks();
 
     // 订阅后处理完成事件，以便在所有任务插入完成后删除 WorkZone
     const completionSub = workflowCompletionService
@@ -1328,13 +1366,33 @@ export function useAutoInsertToCanvas(
         return;
       }
 
-      releaseTaskInsertion(taskId);
-      workflowCompletionService.clearTask(taskId);
-
       const retryTask = getTaskQueueService().getTask(taskId);
       if (!retryTask) {
         return;
       }
+
+      const postProcessingStatus =
+        workflowCompletionService.getPostProcessingStatus(taskId)?.status;
+
+      if (retryTask.status === TaskStatus.COMPLETED) {
+        if (
+          retryTask.insertedToCanvas ||
+          postProcessingStatus === 'completed'
+        ) {
+          insertedTaskIds.add(taskId);
+          return;
+        }
+
+        if (
+          insertedTaskIds.has(taskId) ||
+          postProcessingStatus === 'processing'
+        ) {
+          return;
+        }
+      }
+
+      releaseTaskInsertion(taskId);
+      workflowCompletionService.clearTask(taskId);
 
       if (
         retryTask.status === TaskStatus.FAILED ||
@@ -1345,10 +1403,7 @@ export function useAutoInsertToCanvas(
       }
 
       if (retryTask.status === TaskStatus.COMPLETED) {
-        handleTaskCompleted({
-          ...retryTask,
-          insertedToCanvas: false,
-        });
+        handleTaskCompleted(retryTask);
       }
     };
 
@@ -1368,7 +1423,16 @@ export function useAutoInsertToCanvas(
       );
       if (flushTimerRef.current) {
         clearTimeout(flushTimerRef.current);
+        flushTimerRef.current = null;
       }
+      // 释放所有未处理的待插入任务，防止它们永久卡在 insertedTaskIds 中
+      const pendingMap = pendingInsertsRef.current;
+      for (const [, inserts] of pendingMap) {
+        for (const { task } of inserts) {
+          releaseTaskInsertion(task.id);
+        }
+      }
+      pendingMap.clear();
     };
   }, [
     mergedConfig.enabled,
