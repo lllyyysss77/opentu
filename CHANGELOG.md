@@ -1,3 +1,18 @@
+## 0.6.77 (2026-04-25)
+
+### 🩹 Fixes
+
+- 修复非根路径部署时的资源加载问题 ([9d8d4c8b](https://github.com/ljquan/aitu/commit/9d8d4c8b))
+- 增强 Vite 构建文件句柄重试 ([cee1ab01](https://github.com/ljquan/aitu/commit/cee1ab01))
+
+### 🔧 Chores
+
+- bump version to 0.6.76 ([587a0547](https://github.com/ljquan/aitu/commit/587a0547))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+
 ## 0.6.76 (2026-04-25)
 
 ### 🚀 Features
