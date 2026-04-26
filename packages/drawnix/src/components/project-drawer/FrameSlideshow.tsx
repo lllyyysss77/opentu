@@ -305,7 +305,7 @@ export const FrameSlideshow: React.FC<FrameSlideshowProps> = ({
       .then(() => {
         setTimeout(() => goToFrame(startIndex), 300);
       })
-      .catch(() => {});
+      .catch(() => undefined);
 
     return () => {
       setSlideshowMode(false);
@@ -334,12 +334,21 @@ export const FrameSlideshow: React.FC<FrameSlideshowProps> = ({
       setPointer(savedPointerRef.current as Parameters<typeof setPointer>[0]);
     }
     if (document.fullscreenElement) {
-      document.exitFullscreen?.().catch(() => {});
+      document.exitFullscreen?.().catch(() => undefined);
     }
     setFrameRect(null);
     setActiveTool('select');
     onClose();
   }, [board, onClose, setPointer]);
+
+  const goToNextFrameOrClose = useCallback(() => {
+    const frames = framesRef.current;
+    if (currentIndex < frames.length - 1) {
+      goToFrame(currentIndex + 1);
+      return;
+    }
+    handleClose();
+  }, [currentIndex, goToFrame, handleClose]);
 
   // 监听全屏退出 → 关闭幻灯片
   useEffect(() => {
@@ -459,12 +468,9 @@ export const FrameSlideshow: React.FC<FrameSlideshowProps> = ({
         return;
       }
 
-      const frames = framesRef.current;
-      if (currentIndex < frames.length - 1) {
-        goToFrame(currentIndex + 1);
-      }
+      goToNextFrameOrClose();
     },
-    [activeTool, currentIndex, goToFrame]
+    [activeTool, goToNextFrameOrClose]
   );
 
   // 选择模式下：Frame 内非媒体点击翻页；媒体控件保留原生播放能力。
@@ -568,12 +574,7 @@ export const FrameSlideshow: React.FC<FrameSlideshowProps> = ({
       );
       if (movedDistance > 5) return;
 
-      const frames = framesRef.current;
-      if (currentIndex < frames.length - 1) {
-        goToFrame(currentIndex + 1);
-      } else {
-        resetControlsTimer();
-      }
+      goToNextFrameOrClose();
     };
 
     const handleClickCapture = (event: MouseEvent) => {
@@ -602,10 +603,8 @@ export const FrameSlideshow: React.FC<FrameSlideshowProps> = ({
     };
   }, [
     activeTool,
-    currentIndex,
     frameRect,
-    goToFrame,
-    resetControlsTimer,
+    goToNextFrameOrClose,
     visible,
   ]);
 

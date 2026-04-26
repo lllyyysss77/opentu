@@ -29,6 +29,8 @@ export {
   createDefaultPPTStyleSpec,
   normalizePPTStyleSpec,
   formatPPTCommonPrompt,
+  buildPPTImageGenerationPrompt,
+  normalizePPTSlidePrompt,
   validateOutline,
   parseOutlineResponse,
 } from './ppt-prompts';

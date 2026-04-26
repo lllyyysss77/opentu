@@ -101,6 +101,8 @@ export interface ImageGenerationParams {
   targetFrameDimensions?: { width: number; height: number };
   /** 是否作为 PPT 页整图回填 */
   pptSlideImage?: boolean;
+  /** PPT 大纲中的单页提示词，不含公共提示词 */
+  pptSlidePrompt?: string;
   /** 重新生成时需要替换的旧整页图片元素 ID */
   pptReplaceElementId?: string;
   /** 是否自动插入画布 */
@@ -247,6 +249,7 @@ function getImageQueueConfig(params: ImageGenerationParams) {
       targetFrameId: params.targetFrameId,
       targetFrameDimensions: params.targetFrameDimensions,
       pptSlideImage: params.pptSlideImage,
+      pptSlidePrompt: params.pptSlidePrompt,
       pptReplaceElementId: params.pptReplaceElementId,
       ...(buildAdapterParams(params)
         ? { params: buildAdapterParams(params) }

@@ -203,6 +203,7 @@ const TTDDialogComponent = ({
     targetFrameId?: string; // 目标 Frame ID（用于将生成结果插入到 Frame 内部）
     targetFrameDimensions?: { width: number; height: number }; // Frame 尺寸
     pptSlideImage?: boolean;
+    pptSlidePrompt?: string;
     pptReplaceElementId?: string;
   }>({
     initialPrompt: '',
@@ -352,6 +353,7 @@ const TTDDialogComponent = ({
             targetFrameDimensions:
               imageDialogInitialData.targetFrameDimensions,
             pptSlideImage: imageDialogInitialData.pptSlideImage,
+            pptSlidePrompt: imageDialogInitialData.pptSlidePrompt,
             pptReplaceElementId: imageDialogInitialData.pptReplaceElementId,
           });
           if (imageDialogInitialData.initialModel) {
@@ -764,6 +766,7 @@ const TTDDialogComponent = ({
               targetFrameId={aiImageData.targetFrameId}
               targetFrameDimensions={aiImageData.targetFrameDimensions}
               pptSlideImage={aiImageData.pptSlideImage}
+              pptSlidePrompt={aiImageData.pptSlidePrompt}
               pptReplaceElementId={aiImageData.pptReplaceElementId}
               selectedModel={selectedImageModel}
               selectedModelRef={selectedImageModelRef}

@@ -123,7 +123,12 @@ import { calculateEditedImagePoints } from '../../../utils/image';
 import { isFrameElement } from '../../../types/frame.types';
 import { isCardElement } from '../../../types/card.types';
 import { duplicateFrame, focusFrame } from '../../../utils/frame-duplicate';
-import { isPlaitMind, findMindRootFromSelection } from '../../../services/ppt';
+import {
+  buildPPTImageGenerationPrompt,
+  findMindRootFromSelection,
+  formatPPTCommonPrompt,
+  isPlaitMind,
+} from '../../../services/ppt';
 import type { PPTFrameMeta } from '../../../services/ppt';
 import {
   findPreviousPPTSlideImage,
@@ -782,6 +787,9 @@ export const PopupToolbar = () => {
     const rect = RectangleClient.getRectangleByPoints(selectedFrame.points);
     const pptMeta = (selectedFrame as any).pptMeta as PPTFrameMeta | undefined;
     const slidePrompt = getPPTSlidePrompt(pptMeta);
+    const commonPrompt = pptMeta
+      ? pptMeta.commonPrompt?.trim() || formatPPTCommonPrompt(pptMeta.styleSpec)
+      : '';
     const slideImage = findPPTSlideImage(board, selectedFrame.id);
     const previousSlideImage = findPreviousPPTSlideImage(
       board,
@@ -802,7 +810,7 @@ export const PopupToolbar = () => {
     }
 
     openDialog(DialogType.aiImageGeneration, {
-      initialPrompt: slidePrompt,
+      initialPrompt: buildPPTImageGenerationPrompt(commonPrompt, slidePrompt),
       initialImages,
       initialAspectRatio: matchFrameAspectRatio(rect.width, rect.height),
       initialWidth: rect.width,
@@ -814,6 +822,7 @@ export const PopupToolbar = () => {
       },
       autoInsertToCanvas: true,
       pptSlideImage: true,
+      pptSlidePrompt: slidePrompt,
       pptReplaceElementId: slideImage?.elementId,
     });
   }, [board, openDialog, selectedElements]);

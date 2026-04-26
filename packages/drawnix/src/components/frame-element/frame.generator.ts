@@ -48,6 +48,7 @@ export class FrameGenerator {
     this.rectElement.setAttribute('stroke', FRAME_STROKE_COLOR);
     this.rectElement.setAttribute('stroke-width', '1.5');
     this.rectElement.setAttribute('stroke-dasharray', '8 4');
+    this.rectElement.setAttribute('class', 'frame-element__outline');
     g.appendChild(this.rectElement);
 
     // 背景图（如果有）

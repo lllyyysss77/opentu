@@ -41,6 +41,42 @@ describe('frame-insertion-utils PPT helpers', () => {
     );
   });
 
+  it('keeps final generation prompt in history without overwriting slide prompt', () => {
+    const board = createBoard([
+      createFrame(),
+      {
+        id: 'image-1',
+        type: 'image',
+        frameId: 'frame-1',
+        url: 'https://example.com/slide.png',
+        points: [
+          [0, 0],
+          [1920, 1080],
+        ],
+      },
+    ]);
+
+    markPPTSlideImage(
+      board,
+      'frame-1',
+      'image-1',
+      'https://example.com/slide.png',
+      'common prompt\n\n---\n\nsingle slide prompt',
+      [],
+      undefined,
+      'single slide prompt'
+    );
+
+    expect(board.children[0].pptMeta).toMatchObject({
+      slidePrompt: 'single slide prompt',
+      slideImageHistory: [
+        expect.objectContaining({
+          prompt: 'common prompt\n\n---\n\nsingle slide prompt',
+        }),
+      ],
+    });
+  });
+
   it('marks the inserted image as the PPT slide image', () => {
     const board = createBoard([
       createFrame(),

@@ -37,6 +37,7 @@ import {
   PlayCircleIcon,
   ImageIcon,
   FileCopyIcon,
+  StopCircleIcon,
 } from 'tdesign-icons-react';
 import {
   PlaitBoard,
@@ -75,6 +76,7 @@ import {
   type PPTPageSpec,
   type PPTSlideImageHistoryItem,
   type PPTStyleSpec,
+  buildPPTImageGenerationPrompt,
   formatPPTCommonPrompt,
   generateSlideImagePrompt,
   getPPTFrameGridPosition,
@@ -90,6 +92,9 @@ import {
 } from '../../services/ppt';
 import { createImageTask } from '../../mcp/tools/image-generation';
 import { waitForTaskCompletion } from '../../services/media-executor';
+import { taskQueueService } from '../../services/task-queue';
+import { useSharedTaskState } from '../../hooks/useTaskQueue';
+import { TaskStatus, TaskType, type Task } from '../../types/task.types';
 import { duplicateFrame, focusFrame } from '../../utils/frame-duplicate';
 import {
   getFrameAwareSelection,
@@ -158,12 +163,305 @@ type OutlinePromptOptimizeTarget =
 const PPT_HISTORY_PROMPT_PREVIEW_LENGTH = 36;
 const PPT_PARALLEL_GENERATION_LIMIT = 5;
 const PPT_TASK_WAIT_TIMEOUT_MS = 10 * 60 * 1000;
+const PPT_OUTLINE_BATCH_PREFIX = 'ppt_outline_';
+const PPT_OUTLINE_CANCELLED_ERROR = 'PPT_OUTLINE_GENERATION_CANCELLED';
+const PPT_DEFAULT_IMAGE_SIZE = '16x9';
+const PPT_DEFAULT_IMAGE_PIXEL_SIZE = '1360x768';
 const PPT_LAYOUT_COLUMN_OPTIONS = Array.from(
   { length: 10 },
   (_, index) => index + 1
 );
 const DEFAULT_FRAME_NAME_REGEXP = /^(?:Frame|Slide|PPT\s*页面)\s*\d+$/i;
 type PPTPageInsertPlacement = 'before' | 'after';
+
+const PPT_IMAGE_SIZE_CANDIDATES = [
+  { size: '1024x1024', width: 1024, height: 1024 },
+  { size: '832x1248', width: 832, height: 1248 },
+  { size: '1248x832', width: 1248, height: 832 },
+  { size: '880x1184', width: 880, height: 1184 },
+  { size: '1184x880', width: 1184, height: 880 },
+  { size: '912x1152', width: 912, height: 1152 },
+  { size: '1152x912', width: 1152, height: 912 },
+  { size: '768x1360', width: 768, height: 1360 },
+  { size: '1360x768', width: 1360, height: 768 },
+  { size: '1568x672', width: 1568, height: 672 },
+  { size: '2048x2048', width: 2048, height: 2048 },
+  { size: '1680x2512', width: 1680, height: 2512 },
+  { size: '2512x1680', width: 2512, height: 1680 },
+  { size: '1776x2368', width: 1776, height: 2368 },
+  { size: '2368x1776', width: 2368, height: 1776 },
+  { size: '1824x2288', width: 1824, height: 2288 },
+  { size: '2288x1824', width: 2288, height: 1824 },
+  { size: '1536x2736', width: 1536, height: 2736 },
+  { size: '2736x1536', width: 2736, height: 1536 },
+  { size: '3136x1344', width: 3136, height: 1344 },
+  { size: '2880x2880', width: 2880, height: 2880 },
+  { size: '2352x3520', width: 2352, height: 3520 },
+  { size: '3520x2352', width: 3520, height: 2352 },
+  { size: '2480x3312', width: 2480, height: 3312 },
+  { size: '3312x2480', width: 3312, height: 2480 },
+  { size: '2576x3216', width: 2576, height: 3216 },
+  { size: '3216x2576', width: 3216, height: 2576 },
+  { size: '2160x3840', width: 2160, height: 3840 },
+  { size: '3840x2160', width: 3840, height: 2160 },
+  { size: '3840x1632', width: 3840, height: 1632 },
+] as const;
+
+interface PPTOutlineGenerationRuntime {
+  batchId: string;
+  frameIds: string[];
+  submittedTaskIds: Set<string>;
+  activeTaskIds: Set<string>;
+  controller: AbortController;
+  total: number;
+  successCount: number;
+  failedCount: number;
+  status: string;
+  cancelRequested: boolean;
+}
+
+interface PPTOutlineGenerationSnapshot {
+  batchId: string;
+  frameIds: string[];
+  taskIds: string[];
+  activeTaskIds: string[];
+  status: string;
+}
+
+let activePPTOutlineRuntime: PPTOutlineGenerationRuntime | null = null;
+const pptOutlineRuntimeListeners = new Set<() => void>();
+
+function isTaskActive(task: Task): boolean {
+  return (
+    task.status === TaskStatus.PENDING || task.status === TaskStatus.PROCESSING
+  );
+}
+
+function isTaskForPPTOutlineFrame(task: Task, frameIds: Set<string>): boolean {
+  const batchId = task.params?.batchId;
+  const targetFrameId = task.params?.targetFrameId;
+  return (
+    task.type === TaskType.IMAGE &&
+    task.params?.pptSlideImage === true &&
+    typeof batchId === 'string' &&
+    batchId.startsWith(PPT_OUTLINE_BATCH_PREFIX) &&
+    typeof targetFrameId === 'string' &&
+    frameIds.has(targetFrameId)
+  );
+}
+
+function emitPPTOutlineRuntimeChange(): void {
+  pptOutlineRuntimeListeners.forEach((listener) => listener());
+}
+
+function subscribePPTOutlineRuntime(listener: () => void): () => void {
+  pptOutlineRuntimeListeners.add(listener);
+  return () => {
+    pptOutlineRuntimeListeners.delete(listener);
+  };
+}
+
+function runtimeMatchesFrameIds(
+  runtime: PPTOutlineGenerationRuntime,
+  frameIds: Set<string>
+): boolean {
+  return runtime.frameIds.some((frameId) => frameIds.has(frameId));
+}
+
+function getPPTOutlineRuntimeSnapshot(
+  frameIds: Set<string>
+): PPTOutlineGenerationSnapshot | null {
+  const runtime = activePPTOutlineRuntime;
+  if (!runtime || !runtimeMatchesFrameIds(runtime, frameIds)) {
+    return null;
+  }
+
+  return {
+    batchId: runtime.batchId,
+    frameIds: runtime.frameIds,
+    taskIds: Array.from(runtime.submittedTaskIds),
+    activeTaskIds: Array.from(runtime.activeTaskIds),
+    status: runtime.status,
+  };
+}
+
+function updatePPTOutlineRuntimeStatus(
+  runtime: PPTOutlineGenerationRuntime
+): void {
+  const finished = runtime.successCount + runtime.failedCount;
+  runtime.status = runtime.cancelRequested
+    ? `正在停止 ${finished}/${runtime.total}`
+    : `已完成 ${finished}/${runtime.total}`;
+  emitPPTOutlineRuntimeChange();
+}
+
+function finishPPTOutlineRuntime(runtime: PPTOutlineGenerationRuntime): void {
+  if (activePPTOutlineRuntime === runtime) {
+    activePPTOutlineRuntime = null;
+    emitPPTOutlineRuntimeChange();
+  }
+}
+
+function isPPTOutlineCancelledError(error: unknown): boolean {
+  if (error instanceof Error) {
+    return error.message === PPT_OUTLINE_CANCELLED_ERROR;
+  }
+  return false;
+}
+
+function throwIfPPTOutlineCancelled(signal: AbortSignal): void {
+  if (signal.aborted) {
+    throw new Error(PPT_OUTLINE_CANCELLED_ERROR);
+  }
+}
+
+function cancelActivePPTOutlineTasks(taskIds: string[]): number {
+  let cancelledCount = 0;
+  taskIds.forEach((taskId) => {
+    const task = taskQueueService.getTask(taskId);
+    if (task && isTaskActive(task)) {
+      taskQueueService.cancelTask(taskId);
+      cancelledCount++;
+    }
+  });
+  return cancelledCount;
+}
+
+function getPPTImageElementDimensions(
+  element?: any
+): { width: number; height: number } | undefined {
+  const width =
+    typeof element?.width === 'number' && Number.isFinite(element.width)
+      ? element.width
+      : undefined;
+  const height =
+    typeof element?.height === 'number' && Number.isFinite(element.height)
+      ? element.height
+      : undefined;
+  if (width && height) {
+    return { width, height };
+  }
+
+  if (Array.isArray(element?.points)) {
+    const rect = RectangleClient.getRectangleByPoints(element.points);
+    if (rect.width > 0 && rect.height > 0) {
+      return { width: rect.width, height: rect.height };
+    }
+  }
+
+  return undefined;
+}
+
+function resolveClosestPPTImageTaskSize(
+  dimensions?: { width: number; height: number }
+): string | undefined {
+  if (!dimensions?.width || !dimensions.height) {
+    return undefined;
+  }
+
+  let best: (typeof PPT_IMAGE_SIZE_CANDIDATES)[number] =
+    PPT_IMAGE_SIZE_CANDIDATES[0];
+  let bestScore = Infinity;
+  PPT_IMAGE_SIZE_CANDIDATES.forEach((candidate) => {
+    const widthRatio = dimensions.width / candidate.width;
+    const heightRatio = dimensions.height / candidate.height;
+    const score =
+      Math.log(widthRatio) * Math.log(widthRatio) +
+      Math.log(heightRatio) * Math.log(heightRatio);
+    if (score < bestScore) {
+      best = candidate;
+      bestScore = score;
+    }
+  });
+
+  return best?.size;
+}
+
+function getPPTReferenceImageTaskSize(
+  slideImage: ReturnType<typeof findPPTSlideImage>,
+  fallbackDimensions?: { width: number; height: number }
+): string | undefined {
+  return resolveClosestPPTImageTaskSize(
+    getPPTImageElementDimensions(slideImage?.element) || fallbackDimensions
+  );
+}
+
+function requestCancelPPTOutlineRuntime(batchId?: string): {
+  frameIds: string[];
+  taskIds: string[];
+  cancelledCount: number;
+} {
+  const runtime = activePPTOutlineRuntime;
+  if (!runtime || (batchId && runtime.batchId !== batchId)) {
+    return { frameIds: [], taskIds: [], cancelledCount: 0 };
+  }
+
+  runtime.cancelRequested = true;
+  runtime.controller.abort();
+  updatePPTOutlineRuntimeStatus(runtime);
+
+  const taskIds = Array.from(runtime.submittedTaskIds);
+  return {
+    frameIds: runtime.frameIds,
+    taskIds,
+    cancelledCount: cancelActivePPTOutlineTasks(taskIds),
+  };
+}
+
+function getRecoveredPPTOutlineSnapshot(
+  tasks: Task[],
+  frameIds: Set<string>
+): PPTOutlineGenerationSnapshot | null {
+  const groups = new Map<string, Task[]>();
+  tasks.forEach((task) => {
+    if (!isTaskForPPTOutlineFrame(task, frameIds)) {
+      return;
+    }
+    const batchId = task.params.batchId as string;
+    const group = groups.get(batchId) || [];
+    group.push(task);
+    groups.set(batchId, group);
+  });
+
+  const activeGroups = Array.from(groups.entries())
+    .map(([batchId, batchTasks]) => ({
+      batchId,
+      tasks: batchTasks,
+      activeTasks: batchTasks.filter(isTaskActive),
+      latestUpdatedAt: Math.max(
+        ...batchTasks.map((task) => task.updatedAt || 0)
+      ),
+    }))
+    .filter((group) => group.activeTasks.length > 0)
+    .sort((left, right) => right.latestUpdatedAt - left.latestUpdatedAt);
+
+  const latestGroup = activeGroups[0];
+  if (!latestGroup) {
+    return null;
+  }
+
+  const total =
+    latestGroup.tasks.reduce((max, task) => {
+      const batchTotal = task.params.batchTotal;
+      return typeof batchTotal === 'number' ? Math.max(max, batchTotal) : max;
+    }, 0) || latestGroup.tasks.length;
+  const finished = latestGroup.tasks.filter(
+    (task) =>
+      task.status === TaskStatus.COMPLETED ||
+      task.status === TaskStatus.FAILED ||
+      task.status === TaskStatus.CANCELLED
+  ).length;
+
+  return {
+    batchId: latestGroup.batchId,
+    frameIds: latestGroup.tasks
+      .map((task) => task.params.targetFrameId)
+      .filter((frameId): frameId is string => typeof frameId === 'string'),
+    taskIds: latestGroup.tasks.map((task) => task.id),
+    activeTaskIds: latestGroup.activeTasks.map((task) => task.id),
+    status: `已完成 ${finished}/${total}`,
+  };
+}
 
 function getPPTPageFrameName(pageIndex: number): string {
   return `PPT 页面 ${pageIndex}`;
@@ -231,22 +529,6 @@ function getPPTCommonPromptFromFrameInfos(frameInfos: FrameInfo[]): string {
 
   const frameWithStyle = frameInfos.find((info) => info.pptMeta?.styleSpec);
   return formatPPTCommonPrompt(frameWithStyle?.pptMeta?.styleSpec);
-}
-
-function buildOutlineGenerationPrompt(
-  commonPrompt: string,
-  slidePrompt: string
-): string {
-  const normalizedCommonPrompt = commonPrompt.trim();
-  const normalizedSlidePrompt = slidePrompt.trim();
-  if (!normalizedCommonPrompt) {
-    return normalizedSlidePrompt;
-  }
-  return `${normalizedCommonPrompt}
-
----
-
-${normalizedSlidePrompt}`;
 }
 
 function getTaskResultImageUrl(task: any): string | undefined {
@@ -454,6 +736,7 @@ export const FramePanel: React.FC<FramePanelProps> = ({
 }) => {
   const { board, openDialog } = useDrawnix();
   const { language } = useI18n();
+  const { tasks } = useSharedTaskState();
   const imageModels = useSelectableModels('image');
   const initialOutlineImageRoute = useMemo(
     () => resolveInvocationRoute('image'),
@@ -489,8 +772,7 @@ export const FramePanel: React.FC<FramePanelProps> = ({
     Set<string>
   >(() => new Set());
   const [outlineSerialMode, setOutlineSerialMode] = useState(true);
-  const [isOutlineGenerating, setIsOutlineGenerating] = useState(false);
-  const [outlineGenerationStatus, setOutlineGenerationStatus] = useState('');
+  const [outlineRuntimeVersion, setOutlineRuntimeVersion] = useState(0);
   const [commonPromptDraft, setCommonPromptDraft] = useState('');
   const [slidePromptDrafts, setSlidePromptDrafts] = useState<
     Record<string, string>
@@ -508,6 +790,12 @@ export const FramePanel: React.FC<FramePanelProps> = ({
       )
     );
   const outlineSelectionInitializedRef = useRef(false);
+
+  useEffect(() => {
+    return subscribePPTOutlineRuntime(() => {
+      setOutlineRuntimeVersion((version) => version + 1);
+    });
+  }, []);
 
   // 监听画布变化，强制刷新 Frame 列表
   // FramePanel 在 BoardContext（Wrapper）外部渲染，无法通过 BoardContext 的 v 版本号触发重渲染
@@ -693,6 +981,26 @@ export const FramePanel: React.FC<FramePanelProps> = ({
     () => orderedPPTFrames.map((info) => info.frame.id).join('|'),
     [orderedPPTFrames]
   );
+
+  const orderedPPTFrameIdSet = useMemo(
+    () => new Set(orderedPPTFrames.map((info) => info.frame.id)),
+    [orderedPPTFrameIdsKey, orderedPPTFrames]
+  );
+
+  const outlineRuntimeSnapshot = useMemo(
+    () => getPPTOutlineRuntimeSnapshot(orderedPPTFrameIdSet),
+    [orderedPPTFrameIdSet, outlineRuntimeVersion]
+  );
+
+  const recoveredOutlineSnapshot = useMemo(
+    () => getRecoveredPPTOutlineSnapshot(tasks, orderedPPTFrameIdSet),
+    [orderedPPTFrameIdSet, tasks]
+  );
+
+  const activeOutlineGeneration =
+    outlineRuntimeSnapshot || recoveredOutlineSnapshot;
+  const isOutlineGenerating = Boolean(activeOutlineGeneration);
+  const outlineGenerationStatus = activeOutlineGeneration?.status || '';
 
   const outlinePromptSourceKey = useMemo(
     () =>
@@ -1502,6 +1810,7 @@ export const FramePanel: React.FC<FramePanelProps> = ({
             {
               replaceElementId: currentSlideImage?.elementId,
               prompt: historyItem.prompt || frameInfo.slidePrompt,
+              slidePrompt: frameInfo.slidePrompt,
               imageCreatedAt: historyItem.createdAt,
             }
           );
@@ -1530,6 +1839,7 @@ export const FramePanel: React.FC<FramePanelProps> = ({
             {
               replaceElementId: currentSlideImage?.elementId,
               prompt: historyItem.prompt || frameInfo.slidePrompt,
+              slidePrompt: frameInfo.slidePrompt,
               imageCreatedAt: historyItem.createdAt,
             }
           );
@@ -1594,6 +1904,7 @@ export const FramePanel: React.FC<FramePanelProps> = ({
             {
               replaceElementId: currentSlideImage?.elementId,
               prompt: asset.prompt || getPPTSlidePrompt(targetPPTMeta),
+              slidePrompt: getPPTSlidePrompt(targetPPTMeta),
               historyItems: currentSlideImage?.url
                 ? [
                     {
@@ -1783,6 +2094,10 @@ export const FramePanel: React.FC<FramePanelProps> = ({
   const handleRegenerateSlide = useCallback(
     (frameInfo: FrameInfo, e?: React.MouseEvent) => {
       e?.stopPropagation();
+      const slidePrompt = frameInfo.slidePrompt || '';
+      const commonPrompt =
+        frameInfo.pptMeta?.commonPrompt?.trim() ||
+        getPPTCommonPromptFromFrameInfos(orderedPPTFrames);
       const previousSlideImage = board
         ? findPreviousPPTSlideImage(board, frameInfo.frame.id)
         : null;
@@ -1804,7 +2119,7 @@ export const FramePanel: React.FC<FramePanelProps> = ({
       }
 
       openDialog(DialogType.aiImageGeneration, {
-        initialPrompt: frameInfo.slidePrompt || '',
+        initialPrompt: buildPPTImageGenerationPrompt(commonPrompt, slidePrompt),
         initialImages,
         initialAspectRatio: '16x9',
         initialWidth: frameInfo.width,
@@ -1816,10 +2131,11 @@ export const FramePanel: React.FC<FramePanelProps> = ({
         },
         autoInsertToCanvas: true,
         pptSlideImage: true,
+        pptSlidePrompt: slidePrompt,
         pptReplaceElementId: frameInfo.slideImageElementId,
       });
     },
-    [board, openDialog]
+    [board, openDialog, orderedPPTFrames]
   );
 
   const handleToggleOutlineSelection = useCallback(
@@ -1941,14 +2257,18 @@ export const FramePanel: React.FC<FramePanelProps> = ({
     async (
       frameInfo: FrameInfo,
       slidePrompt: string,
-      referenceImages?: string[]
+      runtime: PPTOutlineGenerationRuntime,
+      batchIndex: number,
+      referenceImages?: string[],
+      referenceSize?: string
     ): Promise<string> => {
       if (!board) {
         throw new Error('画布未初始化');
       }
+      throwIfPPTOutlineCancelled(runtime.controller.signal);
 
       const currentSlideImage = findPPTSlideImage(board, frameInfo.frame.id);
-      const prompt = buildOutlineGenerationPrompt(
+      const prompt = buildPPTImageGenerationPrompt(
         commonPromptDraft,
         slidePrompt
       );
@@ -1961,7 +2281,9 @@ export const FramePanel: React.FC<FramePanelProps> = ({
 
       const result = await createImageTask({
         prompt,
-        size: '16x9',
+        size: referenceImages?.length
+          ? referenceSize || PPT_DEFAULT_IMAGE_SIZE
+          : PPT_DEFAULT_IMAGE_SIZE,
         model: outlineImageModel || undefined,
         modelRef: outlineImageModelRef,
         referenceImages:
@@ -1975,10 +2297,15 @@ export const FramePanel: React.FC<FramePanelProps> = ({
           height: frameInfo.height,
         },
         pptSlideImage: true,
+        pptSlidePrompt: slidePrompt,
         pptReplaceElementId: currentSlideImage?.elementId,
+        batchId: runtime.batchId,
+        batchIndex,
+        batchTotal: runtime.total,
       });
 
       if (!result.success || !result.taskId) {
+        throwIfPPTOutlineCancelled(runtime.controller.signal);
         setFramePPTMeta(board, frameInfo.frame.id, {
           slideImageStatus: 'failed',
           imageStatus: 'failed',
@@ -1986,11 +2313,35 @@ export const FramePanel: React.FC<FramePanelProps> = ({
         throw new Error(result.error || '创建图片任务失败');
       }
 
-      const completion = await waitForTaskCompletion(result.taskId, {
-        timeout: PPT_TASK_WAIT_TIMEOUT_MS,
-      });
-      const imageUrl = getTaskResultImageUrl(completion.task);
+      runtime.submittedTaskIds.add(result.taskId);
+      runtime.activeTaskIds.add(result.taskId);
+      emitPPTOutlineRuntimeChange();
+      if (runtime.controller.signal.aborted) {
+        taskQueueService.cancelTask(result.taskId);
+        throw new Error(PPT_OUTLINE_CANCELLED_ERROR);
+      }
 
+      let completion: Awaited<ReturnType<typeof waitForTaskCompletion>> | null =
+        null;
+      try {
+        completion = await waitForTaskCompletion(result.taskId, {
+          timeout: PPT_TASK_WAIT_TIMEOUT_MS,
+          signal: runtime.controller.signal,
+        });
+      } finally {
+        runtime.activeTaskIds.delete(result.taskId);
+        emitPPTOutlineRuntimeChange();
+      }
+
+      if (
+        !completion ||
+        runtime.controller.signal.aborted ||
+        completion.task?.status === TaskStatus.CANCELLED
+      ) {
+        throw new Error(PPT_OUTLINE_CANCELLED_ERROR);
+      }
+
+      const imageUrl = getTaskResultImageUrl(completion.task);
       if (!completion.success || !imageUrl) {
         setFramePPTMeta(board, frameInfo.frame.id, {
           slideImageStatus: 'failed',
@@ -2003,6 +2354,62 @@ export const FramePanel: React.FC<FramePanelProps> = ({
     },
     [board, commonPromptDraft, outlineImageModel, outlineImageModelRef]
   );
+
+  const resetStoppedOutlineFrames = useCallback(
+    (frameIds: string[]) => {
+      if (!board) return;
+      const uniqueFrameIds = Array.from(new Set(frameIds));
+      uniqueFrameIds.forEach((frameId) => {
+        const frameInfo = orderedPPTFrames.find(
+          (info) => info.frame.id === frameId
+        );
+        const currentSlideImage = findPPTSlideImage(board, frameId);
+        const hasSlideImage = Boolean(
+          currentSlideImage?.url ||
+            frameInfo?.slideImageUrl ||
+            frameInfo?.pptMeta?.slideImageUrl
+        );
+        const nextStatus = hasSlideImage ? 'generated' : 'placeholder';
+        setFramePPTMeta(board, frameId, {
+          slideImageStatus: nextStatus,
+          imageStatus: nextStatus,
+        });
+      });
+    },
+    [board, orderedPPTFrames]
+  );
+
+  const handleStopOutlineGeneration = useCallback(() => {
+    if (!activeOutlineGeneration) {
+      return;
+    }
+
+    const runtimeCancelResult = requestCancelPPTOutlineRuntime(
+      activeOutlineGeneration.batchId
+    );
+    const taskIds = Array.from(
+      new Set([
+        ...activeOutlineGeneration.activeTaskIds,
+        ...activeOutlineGeneration.taskIds,
+        ...runtimeCancelResult.taskIds,
+      ])
+    );
+    const frameIds = Array.from(
+      new Set([
+        ...activeOutlineGeneration.frameIds,
+        ...runtimeCancelResult.frameIds,
+      ])
+    );
+    const cancelledCount =
+      runtimeCancelResult.cancelledCount + cancelActivePPTOutlineTasks(taskIds);
+
+    resetStoppedOutlineFrames(frameIds);
+    MessagePlugin.success(
+      cancelledCount > 0
+        ? `已停止 ${cancelledCount} 个 PPT 生图任务`
+        : '已停止 PPT 生图流程'
+    );
+  }, [activeOutlineGeneration, resetStoppedOutlineFrames]);
 
   const handleGenerateOutlineSlides = useCallback(async () => {
     if (!board || isOutlineGenerating) return;
@@ -2027,45 +2434,73 @@ export const FramePanel: React.FC<FramePanelProps> = ({
       return;
     }
 
-    persistOutlineDrafts();
-    setIsOutlineGenerating(true);
-    setOutlineGenerationStatus(`准备生成 0/${selectedFrames.length}`);
-
-    let successCount = 0;
-    let failedCount = 0;
-    const generatedUrls = new Map<string, string>();
-    const selectedTotal = selectedFrames.length;
-    const updateProgress = () => {
-      setOutlineGenerationStatus(
-        `已完成 ${successCount + failedCount}/${selectedTotal}`
-      );
+    const runtime: PPTOutlineGenerationRuntime = {
+      batchId: `${PPT_OUTLINE_BATCH_PREFIX}${Date.now()}`,
+      frameIds: selectedFrames.map((info) => info.frame.id),
+      submittedTaskIds: new Set(),
+      activeTaskIds: new Set(),
+      controller: new AbortController(),
+      total: selectedFrames.length,
+      successCount: 0,
+      failedCount: 0,
+      status: `准备生成 0/${selectedFrames.length}`,
+      cancelRequested: false,
     };
+    activePPTOutlineRuntime = runtime;
+    emitPPTOutlineRuntimeChange();
+
+    persistOutlineDrafts();
+    const generatedUrls = new Map<string, string>();
+    const generatedTaskSizes = new Map<string, string>();
 
     const generateFrame = async (
       frameInfo: FrameInfo,
-      referenceImages?: string[]
+      selectedIndex: number,
+      referenceImages?: string[],
+      referenceSize?: string
     ) => {
+      throwIfPPTOutlineCancelled(runtime.controller.signal);
       const prompt =
         slidePromptDrafts[frameInfo.frame.id] ?? frameInfo.slidePrompt ?? '';
       try {
         const imageUrl = await generateOneOutlineSlide(
           frameInfo,
           prompt,
-          referenceImages
+          runtime,
+          selectedIndex + 1,
+          referenceImages,
+          referenceSize
         );
         generatedUrls.set(frameInfo.frame.id, imageUrl);
-        successCount++;
+        generatedTaskSizes.set(
+          frameInfo.frame.id,
+          referenceImages?.length && referenceSize
+            ? referenceSize
+            : PPT_DEFAULT_IMAGE_PIXEL_SIZE
+        );
+        runtime.successCount++;
       } catch (error) {
+        if (isPPTOutlineCancelledError(error)) {
+          runtime.cancelRequested = true;
+          runtime.controller.abort();
+          throw error;
+        }
         console.error('[FramePanel] PPT outline slide generation failed:', error);
-        failedCount++;
+        runtime.failedCount++;
       } finally {
-        updateProgress();
+        updatePPTOutlineRuntimeStatus(runtime);
       }
     };
 
     try {
       if (outlineSerialMode) {
-        for (const frameInfo of selectedFrames) {
+        for (
+          let selectedIndex = 0;
+          selectedIndex < selectedFrames.length;
+          selectedIndex++
+        ) {
+          throwIfPPTOutlineCancelled(runtime.controller.signal);
+          const frameInfo = selectedFrames[selectedIndex];
           const frameIndex = orderedPPTFrames.findIndex(
             (info) => info.frame.id === frameInfo.frame.id
           );
@@ -2079,10 +2514,19 @@ export const FramePanel: React.FC<FramePanelProps> = ({
               previousSlideImage?.url ||
               previousFrameInfo.slideImageUrl
             : undefined;
+          const previousReferenceSize = previousFrameInfo
+            ? generatedTaskSizes.get(previousFrameInfo.frame.id) ||
+              getPPTReferenceImageTaskSize(previousSlideImage, {
+                width: previousFrameInfo.width,
+                height: previousFrameInfo.height,
+              })
+            : undefined;
 
           await generateFrame(
             frameInfo,
-            previousReferenceUrl ? [previousReferenceUrl] : undefined
+            selectedIndex,
+            previousReferenceUrl ? [previousReferenceUrl] : undefined,
+            previousReferenceUrl ? previousReferenceSize : undefined
           );
         }
       } else {
@@ -2092,25 +2536,46 @@ export const FramePanel: React.FC<FramePanelProps> = ({
           selectedFrames.length
         );
         const workers = Array.from({ length: workerCount }, async () => {
-          while (nextIndex < selectedFrames.length) {
+          while (
+            nextIndex < selectedFrames.length &&
+            !runtime.controller.signal.aborted
+          ) {
+            throwIfPPTOutlineCancelled(runtime.controller.signal);
+            const selectedIndex = nextIndex;
             const frameInfo = selectedFrames[nextIndex];
             nextIndex++;
-            await generateFrame(frameInfo);
+            await generateFrame(frameInfo, selectedIndex);
           }
         });
-        await Promise.all(workers);
+        const workerResults = await Promise.allSettled(workers);
+        if (
+          workerResults.some(
+            (result) =>
+              result.status === 'rejected' &&
+              isPPTOutlineCancelledError(result.reason)
+          )
+        ) {
+          throw new Error(PPT_OUTLINE_CANCELLED_ERROR);
+        }
       }
 
-      if (failedCount > 0) {
+      if (runtime.cancelRequested) {
+        resetStoppedOutlineFrames(runtime.frameIds);
+      } else if (runtime.failedCount > 0) {
         MessagePlugin.warning(
-          `已生成 ${successCount} 页，${failedCount} 页失败`
+          `已生成 ${runtime.successCount} 页，${runtime.failedCount} 页失败`
         );
       } else {
-        MessagePlugin.success(`已提交并完成 ${successCount} 页 PPT 生图`);
+        MessagePlugin.success(`已提交并完成 ${runtime.successCount} 页 PPT 生图`);
+      }
+    } catch (error) {
+      if (isPPTOutlineCancelledError(error)) {
+        resetStoppedOutlineFrames(runtime.frameIds);
+      } else {
+        throw error;
       }
     } finally {
-      setIsOutlineGenerating(false);
-      setOutlineGenerationStatus('');
+      finishPPTOutlineRuntime(runtime);
     }
   }, [
     board,
@@ -2120,6 +2585,7 @@ export const FramePanel: React.FC<FramePanelProps> = ({
     outlineSelectedFrameIds,
     outlineSerialMode,
     persistOutlineDrafts,
+    resetStoppedOutlineFrames,
     slidePromptDrafts,
   ]);
 
@@ -2446,14 +2912,19 @@ export const FramePanel: React.FC<FramePanelProps> = ({
                 />
                 <Button
                   className="frame-panel__outline-generate"
-                  theme="primary"
+                  theme={isOutlineGenerating ? 'danger' : 'primary'}
                   size="small"
+                  icon={isOutlineGenerating ? <StopCircleIcon /> : undefined}
                   disabled={
-                    isOutlineGenerating || selectedOutlineSlideCount === 0
+                    !isOutlineGenerating && selectedOutlineSlideCount === 0
                   }
-                  onClick={() => void handleGenerateOutlineSlides()}
+                  onClick={() =>
+                    isOutlineGenerating
+                      ? handleStopOutlineGeneration()
+                      : void handleGenerateOutlineSlides()
+                  }
                 >
-                  {isOutlineGenerating ? '生成中' : '生成'}
+                  {isOutlineGenerating ? '停止' : '生成'}
                 </Button>
               </div>
             </div>

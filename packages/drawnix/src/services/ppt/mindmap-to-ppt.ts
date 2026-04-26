@@ -26,7 +26,9 @@ import type {
 } from './ppt.types';
 import { PPT_FRAME_WIDTH, PPT_FRAME_HEIGHT } from './ppt-layout-engine';
 import {
+  buildPPTImageGenerationPrompt,
   createDefaultPPTStyleSpec,
+  formatPPTCommonPrompt,
   generateSlideImagePrompt,
 } from './ppt-prompts';
 import {
@@ -257,11 +259,13 @@ function createPPTPage(
 
   // 4. 设置 pptMeta 扩展属性
   const slidePrompt = generateSlideImagePrompt(outline, pageSpec, pageIndex);
+  const commonPrompt = formatPPTCommonPrompt(outline.styleSpec);
   const pptMeta: PPTFrameMeta = {
     layout: pageSpec.layout,
     pageIndex,
     slidePrompt,
     styleSpec: outline.styleSpec,
+    commonPrompt,
     slideImageStatus: 'loading',
     imageStatus: 'loading',
   };
@@ -283,13 +287,15 @@ function createPPTPage(
 
 async function enqueueSlideImageTask(
   frame: PlaitFrame,
-  prompt: string
+  prompt: string,
+  slidePrompt: string
 ): Promise<boolean> {
   try {
     const { createImageTask } = await import('../../mcp/tools/image-generation');
     const result = await createImageTask({
       prompt,
       size: '16x9',
+      pptSlidePrompt: slidePrompt,
       autoInsertToCanvas: true,
       targetFrameId: frame.id,
       targetFrameDimensions: {
@@ -421,7 +427,14 @@ export async function generatePPTFromMindmap(
       }
 
       if (slidePrompt) {
-        const queued = await enqueueSlideImageTask(frame, slidePrompt);
+        const queued = await enqueueSlideImageTask(
+          frame,
+          buildPPTImageGenerationPrompt(
+            formatPPTCommonPrompt(outline.styleSpec),
+            slidePrompt
+          ),
+          slidePrompt
+        );
         if (!queued) {
           setFramePPTMeta(board, frame.id, {
             slideImageStatus: 'failed',

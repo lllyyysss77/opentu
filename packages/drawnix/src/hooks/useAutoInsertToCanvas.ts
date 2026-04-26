@@ -180,6 +180,10 @@ function updatePPTSlideImageAfterInsert(
       options.replaceElementId ||
       (task.params.pptReplaceElementId as string | undefined),
     prompt: options.prompt || task.params.prompt,
+    slidePrompt:
+      typeof task.params.pptSlidePrompt === 'string'
+        ? task.params.pptSlidePrompt
+        : undefined,
     historyItems: options.historyItems,
     imageCreatedAt: options.imageCreatedAt || getTaskImageGeneratedAt(task),
   });

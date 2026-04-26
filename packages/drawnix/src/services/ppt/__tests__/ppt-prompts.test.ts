@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildPPTImageGenerationPrompt,
+  formatPPTCommonPrompt,
   generateOutlineSystemPrompt,
   generateSlideImagePrompt,
+  normalizePPTSlidePrompt,
   parseOutlineResponse,
 } from '../ppt-prompts';
 import type { PPTOutline, PPTStyleSpec } from '../ppt.types';
@@ -25,6 +28,8 @@ describe('ppt prompts style consistency', () => {
     expect(prompt).toContain('styleSpec: PPTStyleSpec');
     expect(prompt).toContain('所有页面都必须共享同一套 styleSpec');
     expect(prompt).toContain('额外要求中包含风格要求');
+    expect(prompt).toContain('除 cover 和 ending 外，每一页都必须包含非空 bullets 数组');
+    expect(prompt).toContain('禁止在 bullets 中输出“无”“暂无”“待补充”“N/A”或空字符串');
   });
 
   it('fills missing styleSpec with a default that includes user style requirements', () => {
@@ -41,7 +46,9 @@ describe('ppt prompts style consistency', () => {
 
     expect(outline.styleSpec).toBeDefined();
     expect(outline.styleSpec?.visualStyle).toContain('深色霓虹但保持商务感');
-    expect(outline.styleSpec?.colorPalette).toContain('no random palette changes');
+    expect(outline.styleSpec?.colorPalette).toContain(
+      'no random palette changes'
+    );
   });
 
   it('normalizes partial styleSpec without rejecting the outline', () => {
@@ -62,7 +69,114 @@ describe('ppt prompts style consistency', () => {
     expect(outline.styleSpec?.typography).toContain('geometric sans-serif');
   });
 
-  it('injects the same styleSpec and adjacent page context into slide prompts', () => {
+  it('parses markdown fenced outline JSON', () => {
+    const outline = parseOutlineResponse(`\`\`\`json
+{
+  "title": "产品介绍",
+  "pages": [
+    { "layout": "cover", "title": "产品介绍" },
+    { "layout": "ending", "title": "谢谢" }
+  ]
+}
+\`\`\``);
+
+    expect(outline.title).toBe('产品介绍');
+    expect(outline.pages).toHaveLength(2);
+  });
+
+  it('skips unrelated JSON snippets before the real outline', () => {
+    const outline = parseOutlineResponse(`示例：{"demo": true}
+
+请使用下面的大纲：
+{
+  "title": "市场计划",
+  "pages": [
+    { "layout": "cover", "title": "市场计划" },
+    { "layout": "ending", "title": "谢谢" }
+  ]
+}`);
+
+    expect(outline.title).toBe('市场计划');
+    expect(outline.pages[0].layout).toBe('cover');
+  });
+
+  it('normalizes common AI outline aliases from PPT generation responses', () => {
+    const outline = parseOutlineResponse(
+      JSON.stringify({
+        theme: '兔子AI是API中转站',
+        mainline: '问题-方案-能力-场景-价值',
+        pages: [
+          {
+            page: 1,
+            title: '封面｜兔子AI',
+            core_points: ['统一 API 中转', '面向 AI 能力接入'],
+          },
+          {
+            page: 2,
+            title: '方案能力',
+            key_points: ['统一模型路由', '额度与密钥管理'],
+          },
+          {
+            page: 3,
+            title: '谢谢',
+            key_points: ['欢迎体验'],
+          },
+        ],
+      })
+    );
+
+    expect(outline.title).toBe('兔子AI是API中转站');
+    expect(outline.pages[0].layout).toBe('cover');
+    expect(outline.pages[1].layout).toBe('title-body');
+    expect(outline.pages[1].bullets).toEqual([
+      '统一模型路由',
+      '额度与密钥管理',
+    ]);
+    expect(outline.pages[2].layout).toBe('ending');
+  });
+
+  it('normalizes Chinese page-point aliases and string bullet lists', () => {
+    const outline = parseOutlineResponse(
+      JSON.stringify({
+        title: 'AI 创作复盘',
+        pages: [
+          { layout: 'cover', title: 'AI 创作' },
+          {
+            layout: 'title-body',
+            title: '问题诊断',
+            页面要点: '1. 创作结果分散难复用\n2. 协作沉淀缺少统一入口\n3. 交付流程依赖人工整理',
+          },
+          {
+            layout: 'title-body',
+            title: '优化方向',
+            主要内容: ['集中呈现生成结果', '按项目沉淀关键资产', '降低重复整理成本'],
+          },
+          { layout: 'ending', title: '谢谢' },
+        ],
+      })
+    );
+
+    expect(outline.pages[1].bullets).toEqual([
+      '创作结果分散难复用',
+      '协作沉淀缺少统一入口',
+      '交付流程依赖人工整理',
+    ]);
+    expect(outline.pages[2].bullets).toEqual([
+      '集中呈现生成结果',
+      '按项目沉淀关键资产',
+      '降低重复整理成本',
+    ]);
+  });
+
+  it('keeps truncated JSON as a parse failure', () => {
+    expect(() =>
+      parseOutlineResponse(
+        '{"theme":"兔子AI是API中转站","pages":[{"title":"封面","core_points":["统一 API 中转"]}'
+      )
+    ).toThrow('Failed to parse PPT outline');
+  });
+
+  it('keeps common style out of slide prompts and merges it for generation', () => {
     const outline: PPTOutline = {
       title: 'AI 产品路线图',
       styleSpec,
@@ -77,18 +191,52 @@ describe('ppt prompts style consistency', () => {
       ],
     };
 
-    const prompt = generateSlideImagePrompt(
-      outline,
-      outline.pages[1],
-      2,
-      { language: '中文' }
+    const slidePrompt = generateSlideImagePrompt(outline, outline.pages[1], 2, {
+      language: '中文',
+    });
+    const commonPrompt = formatPPTCommonPrompt(styleSpec);
+    const generationPrompt = buildPPTImageGenerationPrompt(
+      commonPrompt,
+      slidePrompt
     );
 
-    expect(prompt).toContain('全局风格规格');
-    expect(prompt).toContain(styleSpec.visualStyle);
-    expect(prompt).toContain(styleSpec.colorPalette);
-    expect(prompt).toContain('不得为当前页另起一套画风');
-    expect(prompt).toContain('上一页：cover｜路线图');
-    expect(prompt).toContain('下一页：ending｜谢谢');
+    expect(commonPrompt).toContain('## 核心要求');
+    expect(commonPrompt).toContain('输出必须是一整页幻灯片设计');
+    expect(commonPrompt).toContain('文字语言：中文');
+    expect(slidePrompt).not.toContain('全局风格规格');
+    expect(slidePrompt).not.toContain(styleSpec.visualStyle);
+    expect(slidePrompt).not.toContain(styleSpec.colorPalette);
+    expect(slidePrompt).not.toContain('## 核心要求');
+    expect(slidePrompt).not.toContain('公共提示词');
+    expect(slidePrompt).toContain('上一页：cover｜路线图');
+    expect(slidePrompt).toContain('下一页：ending｜谢谢');
+    expect(generationPrompt).toContain(commonPrompt);
+    expect(generationPrompt).toContain(slidePrompt);
+    expect(generationPrompt).toContain(styleSpec.visualStyle);
+  });
+
+  it('normalizes legacy slide prompts by removing embedded common style blocks', () => {
+    const prompt = normalizePPTSlidePrompt(`整套 PPT 公共提示词，所有页面都必须遵守：
+- 整体视觉风格：${styleSpec.visualStyle}
+
+---
+
+请生成一张完整的 16:9 PowerPoint 幻灯片图片。
+
+## 核心要求
+- 必须严格延续“全局风格规格”，不得为当前页另起一套画风、色板、字体或组件样式。
+
+## 全局风格规格（整套 PPT 所有页面完全共用）
+- 整体视觉风格：${styleSpec.visualStyle}
+- 色板规则：${styleSpec.colorPalette}
+
+## PPT 信息
+- 页面标题：关键方向`);
+
+    expect(prompt).not.toContain('全局风格规格（整套 PPT 所有页面完全共用）');
+    expect(prompt).not.toContain(styleSpec.visualStyle);
+    expect(prompt).not.toContain('整套 PPT 公共提示词');
+    expect(prompt).not.toContain('## 核心要求');
+    expect(prompt).toContain('## PPT 信息');
   });
 });

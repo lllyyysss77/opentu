@@ -87,16 +87,21 @@ describe('generatePPTFromMindmap image-first output', () => {
       expect(frame.pptMeta.slidePrompt).toContain(
         '完整的 16:9 PowerPoint 幻灯片图片'
       );
-      expect(frame.pptMeta.slidePrompt).toContain('全局风格规格');
-      expect(frame.pptMeta.slidePrompt).toContain(
+      expect(frame.pptMeta.slidePrompt).not.toContain('全局风格规格');
+      expect(frame.pptMeta.commonPrompt).toContain('公共提示词');
+      expect(frame.pptMeta.commonPrompt).toContain(
         frame.pptMeta.styleSpec.visualStyle
       );
 
+      const taskPrompt = mocks.createImageTask.mock.calls[index][0].prompt;
+      expect(taskPrompt).toContain(frame.pptMeta.commonPrompt);
+      expect(taskPrompt).toContain(frame.pptMeta.slidePrompt);
       expect(mocks.createImageTask).toHaveBeenNthCalledWith(
         index + 1,
         expect.objectContaining({
-          prompt: frame.pptMeta.slidePrompt,
+          prompt: taskPrompt,
           size: '16x9',
+          pptSlidePrompt: frame.pptMeta.slidePrompt,
           autoInsertToCanvas: true,
           targetFrameId: frame.id,
           targetFrameDimensions: {

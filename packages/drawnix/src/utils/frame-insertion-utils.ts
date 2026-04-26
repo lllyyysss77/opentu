@@ -14,6 +14,7 @@ import type {
   PPTFrameMeta,
   PPTSlideImageHistoryItem,
 } from '../services/ppt/ppt.types';
+import { normalizePPTSlidePrompt } from '../services/ppt/ppt-prompts';
 
 const PPT_PLACEHOLDER_IMAGE_URL =
   'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=';
@@ -66,7 +67,7 @@ export function setFramePPTImageStatus(
 }
 
 export function getPPTSlidePrompt(pptMeta?: PPTFrameMeta): string {
-  return (pptMeta?.slidePrompt || pptMeta?.imagePrompt || '').trim();
+  return normalizePPTSlidePrompt(pptMeta?.slidePrompt || pptMeta?.imagePrompt);
 }
 
 function getFrameIndex(board: PlaitBoard, frameId: string): number {
@@ -357,11 +358,15 @@ export function markPPTSlideImage(
   imageUrl: string,
   prompt?: string,
   historyItems: PPTSlideImageHistoryInput[] = [],
-  imageCreatedAt?: number
+  imageCreatedAt?: number,
+  slidePrompt?: string
 ): void {
   const pptMeta = getFramePPTMeta(board, frameId);
-  const nextPrompt =
-    normalizeHistoryPrompt(prompt) || getPPTSlidePrompt(pptMeta);
+  const nextSlidePrompt =
+    normalizeHistoryPrompt(slidePrompt) ||
+    normalizeHistoryPrompt(prompt) ||
+    getPPTSlidePrompt(pptMeta);
+  const historyPrompt = normalizeHistoryPrompt(prompt) || nextSlidePrompt;
   const fallbackCreatedAt = Date.now();
   const currentImageCreatedAt =
     typeof imageCreatedAt === 'number' &&
@@ -384,9 +389,9 @@ export function markPPTSlideImage(
     );
   }
 
-  updateDefaultFrameTitleFromPrompt(board, frameId, nextPrompt);
+  updateDefaultFrameTitleFromPrompt(board, frameId, nextSlidePrompt);
   setFramePPTMeta(board, frameId, {
-    ...(nextPrompt ? { slidePrompt: nextPrompt } : {}),
+    ...(nextSlidePrompt ? { slidePrompt: nextSlidePrompt } : {}),
     slideImageElementId: elementId,
     slideImageUrl: imageUrl,
     slideImageStatus: 'generated',
@@ -396,15 +401,15 @@ export function markPPTSlideImage(
       [
         ...historyItems.map((item, index) => ({
           ...item,
-          ...(normalizeHistoryPrompt(item.prompt) || !nextPrompt
+          ...(normalizeHistoryPrompt(item.prompt) || !historyPrompt
             ? {}
-            : { prompt: nextPrompt }),
+            : { prompt: historyPrompt }),
           createdAt: item.createdAt || fallbackCreatedAt + index,
         })),
         {
           imageUrl,
           elementId,
-          prompt: nextPrompt,
+          prompt: historyPrompt,
           createdAt: currentImageCreatedAt,
         },
       ]
@@ -420,6 +425,7 @@ export function replacePPTSlideImage(
   options: {
     replaceElementId?: string;
     prompt?: string;
+    slidePrompt?: string;
     historyItems?: PPTSlideImageHistoryInput[];
     imageCreatedAt?: number;
   } = {}
@@ -440,7 +446,8 @@ export function replacePPTSlideImage(
     imageUrl,
     options.prompt,
     options.historyItems,
-    options.imageCreatedAt
+    options.imageCreatedAt,
+    options.slidePrompt
   );
 
   const replaceElementId = existingElementId;

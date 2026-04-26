@@ -13,7 +13,12 @@
 
 import type { MCPTool, MCPResult, MCPExecuteOptions } from '../types';
 import type { PlaitBoard, Point } from '@plait/core';
-import { Transforms, BoardTransforms, PlaitBoard as PlaitBoardUtils, RectangleClient } from '@plait/core';
+import {
+  Transforms,
+  BoardTransforms,
+  PlaitBoard as PlaitBoardUtils,
+  RectangleClient,
+} from '@plait/core';
 import { getBoard } from './shared';
 import { FrameTransforms } from '../../plugins/with-frame';
 import { PlaitFrame } from '../../types/frame.types';
@@ -72,8 +77,7 @@ function focusOnFrame(board: PlaitBoard, frame: PlaitFrame): void {
  */
 async function generatePPTOutline(
   topic: string,
-  options: PPTGenerationParams,
-  onChunk?: (chunk: string) => void
+  options: PPTGenerationParams
 ): Promise<PPTOutline> {
   const settings = geminiSettings.get();
   const textModel =
@@ -103,12 +107,11 @@ async function generatePPTOutline(
 
   let fullResponse = '';
 
+  // PPT 大纲是结构化 JSON，必须等待模型完整返回后再解析。
+  // 传入 onChunk 会强制走流式调用，部分供应商可能提前结束并返回半截 JSON。
   const response = await defaultGeminiClient.sendChat(
     messages,
-    (chunk) => {
-      fullResponse = chunk; // sendChat 返回累积内容
-      onChunk?.(chunk);
-    },
+    undefined,
     undefined,
     textModel
   );
@@ -202,9 +205,7 @@ async function executePPTGeneration(
     options.onChunk?.(`🎯 正在为「${topic}」生成 PPT 大纲...\n\n`);
 
     // 1. 生成大纲
-    const outline = await generatePPTOutline(topic, params, (chunk) => {
-      // 流式输出大纲生成过程
-    });
+    const outline = await generatePPTOutline(topic, params);
 
     options.onChunk?.(`\n\n✓ 大纲生成完成，共 ${outline.pages.length} 页\n\n`);
     options.onChunk?.(`📑 **PPT 结构**：\n`);
@@ -212,7 +213,9 @@ async function executePPTGeneration(
     // 显示大纲结构
     outline.pages.forEach((page, index) => {
       const hasImage = page.imagePrompt ? ' 🖼️' : '';
-      options.onChunk?.(`${index + 1}. ${page.title} (${page.layout})${hasImage}\n`);
+      options.onChunk?.(
+        `${index + 1}. ${page.title} (${page.layout})${hasImage}\n`
+      );
     });
 
     options.onChunk?.(`\n正在创建 PPT 页面并填充提示词...\n\n`);
@@ -245,7 +248,9 @@ async function executePPTGeneration(
       createdFrames[i] = frame;
 
       createdCount++;
-      options.onChunk?.(`✓ 第 ${createdCount}/${outline.pages.length} 页已创建\n`);
+      options.onChunk?.(
+        `✓ 第 ${createdCount}/${outline.pages.length} 页已创建\n`
+      );
     }
 
     // 4. 聚焦到第一个 Frame（封面页）
@@ -347,13 +352,18 @@ export const pptGenerationTool: MCPTool = {
   supportedModes: ['async'],
 
   promptGuidance: {
-    whenToUse: '当用户想要创建 PPT、演示文稿、幻灯片时使用。关键词：PPT、演示文稿、幻灯片、presentation、slides、做个汇报、生成演示。',
+    whenToUse:
+      '当用户想要创建 PPT、演示文稿、幻灯片时使用。关键词：PPT、演示文稿、幻灯片、presentation、slides、做个汇报、生成演示。',
 
     parameterGuidance: {
-      topic: '用户的 PPT 主题或内容描述。可以是一个简单的主题词，也可以是详细的内容大纲。',
-      pageCount: '根据用户需求选择：short 适合简短汇报(5-7页)，normal 适合常规演示(8-12页)，long 适合详细讲解(13-18页)。',
-      language: '根据用户语言偏好设置，默认中文。如果用户用英文交流，可以设为 English。',
-      extraRequirements: '用户的额外要求，如"简洁风格"、"重点突出数据"、"适合技术分享"等。',
+      topic:
+        '用户的 PPT 主题或内容描述。可以是一个简单的主题词，也可以是详细的内容大纲。',
+      pageCount:
+        '根据用户需求选择：short 适合简短汇报(5-7页)，normal 适合常规演示(8-12页)，long 适合详细讲解(13-18页)。',
+      language:
+        '根据用户语言偏好设置，默认中文。如果用户用英文交流，可以设为 English。',
+      extraRequirements:
+        '用户的额外要求，如"简洁风格"、"重点突出数据"、"适合技术分享"等。',
     },
 
     bestPractices: [

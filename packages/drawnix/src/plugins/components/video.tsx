@@ -52,12 +52,14 @@ export const Video: React.FC<VideoProps> = (props: VideoProps) => {
   }, [url]);
 
   const stopCanvasPropagation = (e: React.SyntheticEvent) => {
-    e.stopPropagation();
+    if (readonly) {
+      e.stopPropagation();
+    }
   };
 
   const handleVideoClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
     if (readonly) {
+      e.stopPropagation();
       // 在只读模式下，点击视频在新窗口打开
       e.preventDefault();
       window.open(url, '_blank');

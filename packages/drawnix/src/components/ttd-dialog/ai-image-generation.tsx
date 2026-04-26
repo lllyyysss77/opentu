@@ -78,6 +78,7 @@ interface AIImageGenerationProps {
   targetFrameId?: string;
   targetFrameDimensions?: { width: number; height: number };
   pptSlideImage?: boolean;
+  pptSlidePrompt?: string;
   pptReplaceElementId?: string;
   selectedModel?: string;
   selectedModelRef?: ModelRef | null;
@@ -104,6 +105,7 @@ const AIImageGeneration = ({
   targetFrameId,
   targetFrameDimensions,
   pptSlideImage,
+  pptSlidePrompt,
   pptReplaceElementId,
   selectedModel,
   selectedModelRef,
@@ -290,6 +292,7 @@ const AIImageGeneration = ({
       aspectRatio: initialAspectRatio,
       targetFrameId,
       pptSlideImage,
+      pptSlidePrompt,
       pptReplaceElementId,
     });
 
@@ -319,6 +322,7 @@ const AIImageGeneration = ({
     initialAspectRatio,
     targetFrameId,
     pptSlideImage,
+    pptSlidePrompt,
     pptReplaceElementId,
     isManualEdit,
   ]);
@@ -671,6 +675,7 @@ const AIImageGeneration = ({
             targetFrameId,
             targetFrameDimensions,
             pptSlideImage,
+            pptSlidePrompt,
             pptReplaceElementId,
             ...(extraParams ? { params: extraParams } : {}),
           };
@@ -748,6 +753,7 @@ const AIImageGeneration = ({
         targetFrameId,
         targetFrameDimensions,
         pptSlideImage,
+        pptSlidePrompt,
         pptReplaceElementId,
         ...(extraParams ? { params: extraParams } : {}),
       };

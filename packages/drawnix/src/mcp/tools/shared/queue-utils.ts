@@ -31,6 +31,7 @@ export interface BaseGenerationParams {
   targetFrameId?: string;
   targetFrameDimensions?: { width: number; height: number };
   pptSlideImage?: boolean;
+  pptSlidePrompt?: string;
   pptReplaceElementId?: string;
 }
 
