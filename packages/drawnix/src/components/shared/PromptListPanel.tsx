@@ -16,6 +16,10 @@ import {
   UnifiedMediaViewer,
   type MediaItem as UnifiedMediaItem,
 } from './media-preview';
+import {
+  analytics,
+  type PromptAnalyticsType,
+} from '../../utils/posthog-analytics';
 import './prompt-list-panel.scss';
 
 export interface PromptItem {
@@ -54,6 +58,10 @@ export interface PromptListPanelProps {
   showCount?: boolean;
   /** 自定义类名 */
   className?: string;
+  /** 埋点来源面板 */
+  analyticsSurface?: string;
+  /** 埋点提示词类型，默认使用 item.modelType */
+  analyticsPromptType?: PromptAnalyticsType;
 }
 
 export const PromptListPanel: React.FC<PromptListPanelProps> = ({
@@ -66,6 +74,8 @@ export const PromptListPanel: React.FC<PromptListPanelProps> = ({
   disabled = false,
   showCount = true,
   className = '',
+  analyticsSurface = 'prompt_list',
+  analyticsPromptType,
 }) => {
   const [previewVisible, setPreviewVisible] = useState(false);
   const [previewItems, setPreviewItems] = useState<UnifiedMediaItem[]>([]);
@@ -97,8 +107,55 @@ export const PromptListPanel: React.FC<PromptListPanelProps> = ({
       );
       setPreviewInitialIndex(initialIndex);
       setPreviewVisible(true);
+      analytics.trackPromptAction({
+        action: 'preview_example',
+        surface: analyticsSurface,
+        promptType: analyticsPromptType,
+        prompt: content,
+        itemCount: previewExamples.length,
+      });
     },
-    []
+    [analyticsPromptType, analyticsSurface]
+  );
+
+  const handleSelect = useCallback(
+    (item: PromptItem) => {
+      analytics.trackPromptAction({
+        action: 'select',
+        surface: analyticsSurface,
+        promptType: analyticsPromptType || item.modelType,
+        prompt: item.content,
+        source: item.isPreset ? 'preset' : item.pinned ? 'pinned' : 'history',
+      });
+      onSelect?.(item);
+    },
+    [analyticsPromptType, analyticsSurface, onSelect]
+  );
+
+  const handleTogglePin = useCallback(
+    (item: PromptItem) => {
+      analytics.trackPromptAction({
+        action: item.pinned ? 'unpin' : 'pin',
+        surface: analyticsSurface,
+        promptType: analyticsPromptType || item.modelType,
+        prompt: item.content,
+      });
+      onTogglePin?.(item.id);
+    },
+    [analyticsPromptType, analyticsSurface, onTogglePin]
+  );
+
+  const handleDelete = useCallback(
+    (item: PromptItem) => {
+      analytics.trackPromptAction({
+        action: 'delete',
+        surface: analyticsSurface,
+        promptType: analyticsPromptType || item.modelType,
+        prompt: item.content,
+      });
+      onDelete?.(item.id);
+    },
+    [analyticsPromptType, analyticsSurface, onDelete]
   );
 
   return (
@@ -123,15 +180,15 @@ export const PromptListPanel: React.FC<PromptListPanelProps> = ({
               modelType={item.modelType}
               scene={item.scene}
               previewExamples={item.previewExamples}
-              onClick={() => onSelect?.(item)}
+              onClick={() => handleSelect(item)}
               onTogglePin={
                 onTogglePin && !item.isPreset
-                  ? () => onTogglePin(item.id)
+                  ? () => handleTogglePin(item)
                   : undefined
               }
               onDelete={
                 onDelete && !item.isPreset
-                  ? () => onDelete(item.id)
+                  ? () => handleDelete(item)
                   : undefined
               }
               onPreviewExample={(request) =>

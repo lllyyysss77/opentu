@@ -36,6 +36,10 @@ import {
   buildPromptOptimizationRequest,
   normalizeOptimizedPromptResult,
 } from '../ttd-dialog/shared/ai-generation-utils';
+import {
+  analytics,
+  type PromptAnalyticsType,
+} from '../../utils/posthog-analytics';
 import './prompt-optimize-dialog.scss';
 
 export type PromptOptimizeMode = 'polish' | 'structured';
@@ -51,6 +55,12 @@ interface RequirementsHistoryItem {
 
 const REQUIREMENTS_HISTORY_LIMIT = 30;
 const PROMPT_HISTORY_DISPLAY_LIMIT = 60;
+
+function toPromptAnalyticsType(
+  type?: PromptType | PromptOptimizeType | 'ppt-slide'
+): PromptAnalyticsType | undefined {
+  return type as PromptAnalyticsType | undefined;
+}
 
 function readRequirementsHistory(): RequirementsHistoryItem[] {
   if (typeof window === 'undefined') {
@@ -252,9 +262,20 @@ export const PromptOptimizeDialog: React.FC<PromptOptimizeDialogProps> = ({
     }
 
     const controller = new AbortController();
+    const startTime = Date.now();
     optimizationAbortRef.current?.abort();
     optimizationAbortRef.current = controller;
     setIsOptimizing(true);
+    analytics.trackPromptAction({
+      action: 'optimize',
+      surface: 'prompt_optimize_dialog',
+      promptType: toPromptAnalyticsType(historyType || type),
+      mode,
+      status: 'start',
+      model: optimizerModel || undefined,
+      prompt: rawPrompt,
+      requirements,
+    });
 
     try {
       const optimizedPrompt = normalizeOptimizedPromptResult(
@@ -283,6 +304,27 @@ export const PromptOptimizeDialog: React.FC<PromptOptimizeDialogProps> = ({
       }
 
       setOptimizedDraft(optimizedPrompt);
+      analytics.trackPromptAction({
+        action: 'optimize',
+        surface: 'prompt_optimize_dialog',
+        promptType: toPromptAnalyticsType(historyType || type),
+        mode,
+        status: 'success',
+        model: optimizerModel || undefined,
+        prompt: rawPrompt,
+        requirements,
+        durationMs: Date.now() - startTime,
+        metadata: {
+          result_length_bucket:
+            optimizedPrompt.length <= 200
+              ? '1-200'
+              : optimizedPrompt.length <= 500
+              ? '201-500'
+              : optimizedPrompt.length <= 1000
+              ? '501-1000'
+              : '1000+',
+        },
+      });
       MessagePlugin.success(
         language === 'zh'
           ? mode === 'structured'
@@ -295,9 +337,35 @@ export const PromptOptimizeDialog: React.FC<PromptOptimizeDialogProps> = ({
       setRequirements('');
     } catch (error) {
       if (controller.signal.aborted) {
+        analytics.trackPromptAction({
+          action: 'optimize',
+          surface: 'prompt_optimize_dialog',
+          promptType: toPromptAnalyticsType(historyType || type),
+          mode,
+          status: 'cancelled',
+          model: optimizerModel || undefined,
+          prompt: rawPrompt,
+          requirements,
+          durationMs: Date.now() - startTime,
+        });
         return;
       }
       console.error('[PromptOptimizeDialog] Failed to optimize prompt:', error);
+      analytics.trackPromptAction({
+        action: 'optimize',
+        surface: 'prompt_optimize_dialog',
+        promptType: toPromptAnalyticsType(historyType || type),
+        mode,
+        status: 'failed',
+        model: optimizerModel || undefined,
+        prompt: rawPrompt,
+        requirements,
+        durationMs: Date.now() - startTime,
+        metadata: {
+          error:
+            error instanceof Error ? error.name || 'Error' : typeof error,
+        },
+      });
       MessagePlugin.error(
         language === 'zh'
           ? mode === 'structured'
@@ -330,9 +398,16 @@ export const PromptOptimizeDialog: React.FC<PromptOptimizeDialogProps> = ({
     if (!draft) {
       return;
     }
+    analytics.trackPromptAction({
+      action: 'use_draft_as_current',
+      surface: 'prompt_optimize_dialog',
+      promptType: toPromptAnalyticsType(historyType || type),
+      mode,
+      prompt: draft,
+    });
     setCurrentPrompt(draft);
     setRequirements('');
-  }, [optimizedDraft]);
+  }, [historyType, mode, optimizedDraft, type]);
 
   const handleApplyPrompt = useCallback(() => {
     const promptToApply = optimizedDraft.trim();
@@ -344,9 +419,16 @@ export const PromptOptimizeDialog: React.FC<PromptOptimizeDialogProps> = ({
       );
       return;
     }
+    analytics.trackPromptAction({
+      action: 'apply',
+      surface: 'prompt_optimize_dialog',
+      promptType: toPromptAnalyticsType(historyType || type),
+      mode,
+      prompt: promptToApply,
+    });
     onApply(promptToApply);
     handleClose();
-  }, [handleClose, language, onApply, optimizedDraft]);
+  }, [handleClose, historyType, language, mode, onApply, optimizedDraft, type]);
 
   useEffect(() => {
     if (!open) {
@@ -465,11 +547,20 @@ export const PromptOptimizeDialog: React.FC<PromptOptimizeDialogProps> = ({
       } else {
         setRequirementsHistory(readRequirementsHistory());
       }
+      analytics.trackPromptAction({
+        action: 'toggle_history',
+        surface: 'prompt_optimize_dialog',
+        promptType: toPromptAnalyticsType(
+          panel === 'current' ? historyType || type : undefined
+        ),
+        mode,
+        metadata: { panel },
+      });
       setActiveHistoryPanel((currentPanel) =>
         currentPanel === panel ? null : panel
       );
     },
-    [refreshPromptHistory]
+    [historyType, mode, refreshPromptHistory, type]
   );
 
   const handleSelectCurrentPromptHistory = useCallback((item: PromptItem) => {
@@ -481,6 +572,19 @@ export const PromptOptimizeDialog: React.FC<PromptOptimizeDialogProps> = ({
     setRequirements(item.content);
     setActiveHistoryPanel(null);
   }, []);
+
+  const handleModeChange = useCallback(
+    (nextMode: PromptOptimizeMode) => {
+      analytics.trackPromptAction({
+        action: 'mode_select',
+        surface: 'prompt_optimize_dialog',
+        promptType: toPromptAnalyticsType(historyType || type),
+        mode: nextMode,
+      });
+      setMode(nextMode);
+    },
+    [historyType, type]
+  );
 
   const renderHistoryPanel = (
     panel: OptimizeHistoryPanel,
@@ -502,6 +606,10 @@ export const PromptOptimizeDialog: React.FC<PromptOptimizeDialogProps> = ({
             items={items}
             onSelect={onSelect}
             language={language}
+            analyticsSurface={`prompt_optimize_${panel}_history`}
+            analyticsPromptType={toPromptAnalyticsType(
+              panel === 'current' ? historyType || type : undefined
+            )}
             showCount
           />
         ) : (
@@ -683,7 +791,7 @@ export const PromptOptimizeDialog: React.FC<PromptOptimizeDialogProps> = ({
                         ? 'prompt-optimize-dialog__mode-btn--active'
                         : ''
                     }`}
-                    onClick={() => setMode('polish')}
+                    onClick={() => handleModeChange('polish')}
                     disabled={isOptimizing}
                   >
                     <Sparkles size={14} />
@@ -696,7 +804,7 @@ export const PromptOptimizeDialog: React.FC<PromptOptimizeDialogProps> = ({
                         ? 'prompt-optimize-dialog__mode-btn--active'
                         : ''
                     }`}
-                    onClick={() => setMode('structured')}
+                    onClick={() => handleModeChange('structured')}
                     disabled={isOptimizing}
                   >
                     <span>
@@ -714,6 +822,13 @@ export const PromptOptimizeDialog: React.FC<PromptOptimizeDialogProps> = ({
                   )}
                   onSelect={(modelId, modelRef) => {
                     const nextModelRef = modelRef || null;
+                    analytics.trackPromptAction({
+                      action: 'model_select',
+                      surface: 'prompt_optimize_dialog',
+                      promptType: toPromptAnalyticsType(historyType || type),
+                      mode,
+                      model: modelId,
+                    });
                     setOptimizerModel(modelId);
                     setOptimizerModelRef(nextModelRef);
                     writeStoredModelSelection(
@@ -724,6 +839,13 @@ export const PromptOptimizeDialog: React.FC<PromptOptimizeDialogProps> = ({
                   }}
                   onSelectModel={(model) => {
                     const nextModelRef = getModelRefFromConfig(model);
+                    analytics.trackPromptAction({
+                      action: 'model_select',
+                      surface: 'prompt_optimize_dialog',
+                      promptType: toPromptAnalyticsType(historyType || type),
+                      mode,
+                      model: model.id,
+                    });
                     setOptimizerModel(model.id);
                     setOptimizerModelRef(nextModelRef);
                     writeStoredModelSelection(

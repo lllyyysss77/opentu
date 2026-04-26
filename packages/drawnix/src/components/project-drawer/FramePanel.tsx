@@ -130,6 +130,7 @@ import {
   resolveInvocationRoute,
   type ModelRef,
 } from '../../utils/settings-manager';
+import { analytics } from '../../utils/posthog-analytics';
 import type { ModelConfig } from '../../constants/model-config';
 import { AssetType, SelectionMode, type Asset } from '../../types/asset.types';
 import {
@@ -178,6 +179,10 @@ const PPT_LAYOUT_COLUMN_OPTIONS = Array.from(
   (_, index) => index + 1
 );
 const DEFAULT_FRAME_NAME_REGEXP = /^(?:Frame|Slide|PPT\s*页面)\s*\d+$/i;
+
+function getAnalyticsErrorName(error: unknown): string {
+  return error instanceof Error ? error.name || 'Error' : typeof error;
+}
 type PPTPageInsertPlacement = 'before' | 'after';
 
 const PPT_IMAGE_SIZE_CANDIDATES = [
@@ -939,6 +944,11 @@ export const FramePanel: React.FC<FramePanelProps> = ({
   }, [board]);
 
   const handlePPTViewModeChange = useCallback((mode: PPTEditorViewMode) => {
+    analytics.trackPPTAction({
+      action: 'view_mode_change',
+      source: 'project_drawer',
+      metadata: { mode },
+    });
     setPPTViewMode(mode);
     savePPTEditorViewMode(mode);
   }, []);
@@ -1238,6 +1248,11 @@ export const FramePanel: React.FC<FramePanelProps> = ({
 
   const handleOutlineImageModelSelect = useCallback(
     (modelId: string, modelRef?: ModelRef | null) => {
+      analytics.trackPPTAction({
+        action: 'image_model_select',
+        source: 'project_drawer_outline',
+        model: modelId,
+      });
       setOutlineImageModel(modelId);
       setOutlineImageModelRef(modelRef || null);
     },
@@ -1246,6 +1261,11 @@ export const FramePanel: React.FC<FramePanelProps> = ({
 
   const handleOutlineImageModelConfigSelect = useCallback(
     (model: ModelConfig) => {
+      analytics.trackPPTAction({
+        action: 'image_model_select',
+        source: 'project_drawer_outline',
+        model: model.id,
+      });
       setOutlineImageModel(model.id);
       setOutlineImageModelRef(getModelRefFromConfig(model));
     },
@@ -1594,6 +1614,12 @@ export const FramePanel: React.FC<FramePanelProps> = ({
         }
       });
 
+      analytics.trackPPTAction({
+        action: 'arrange_frames',
+        source: 'project_drawer',
+        frameCount: sortedFrames.length,
+        metadata: { columns: safeColumns },
+      });
       MessagePlugin.success(`已按每行 ${safeColumns} 个排列 PPT 页面`);
     },
     [board, frames, pptLayoutColumns, rootFrames]
@@ -1617,11 +1643,17 @@ export const FramePanel: React.FC<FramePanelProps> = ({
   const handlePPTLayoutMenuClick = useCallback(
     (data: { value?: unknown }) => {
       const columns = sanitizePPTFrameLayoutColumns(data.value);
+      analytics.trackPPTAction({
+        action: 'layout_columns_select',
+        source: 'project_drawer',
+        frameCount: orderedPPTFrames.length,
+        metadata: { columns },
+      });
       setPPTLayoutColumns(columns);
       savePPTFrameLayoutColumns(columns);
       handleArrangePPTFrames(columns);
     },
-    [handleArrangePPTFrames]
+    [handleArrangePPTFrames, orderedPPTFrames.length]
   );
 
   const reorderRootFramesByIds = useCallback(
@@ -1836,6 +1868,18 @@ export const FramePanel: React.FC<FramePanelProps> = ({
       setSelectedFrameIds(new Set([frame.id]));
       setLastSelectedFrameId(frame.id);
       focusFrame(board, insertedFrame);
+      analytics.trackPPTAction({
+        action: 'insert_page',
+        source: 'project_drawer_context_menu',
+        pageCount: orderedFrameIds.length,
+        prompt: buildPPTFramePrompt(
+          orderedFrames,
+          pageSpec,
+          insertIndex + 1,
+          styleSpec
+        ),
+        metadata: { placement },
+      });
       MessagePlugin.success(
         placement === 'before'
           ? '已在前面插入新 PPT 页'
@@ -1877,6 +1921,17 @@ export const FramePanel: React.FC<FramePanelProps> = ({
         ),
         slideImageStatus: 'placeholder',
       });
+      analytics.trackPPTAction({
+        action: 'add_page',
+        source: 'project_drawer_add_dialog',
+        pageCount: pageIndex,
+        prompt: buildPPTFramePrompt(
+          orderedFrames,
+          pageSpec,
+          pageIndex,
+          styleSpec
+        ),
+      });
     },
     [board, rootFrames]
   );
@@ -1905,6 +1960,19 @@ export const FramePanel: React.FC<FramePanelProps> = ({
         | 'delete',
       frameInfo: FrameInfo
     ) => {
+      analytics.trackPPTAction({
+        action: `context_${action}`,
+        source: 'project_drawer',
+        pageCount: orderedPPTFrames.length,
+        selectedCount: selectedFrameIds.size,
+        prompt: frameInfo.slidePrompt,
+        metadata: {
+          has_slide_image: Boolean(frameInfo.slideImageUrl),
+          slide_status:
+            frameInfo.pptMeta?.slideImageStatus ||
+            frameInfo.pptMeta?.imageStatus,
+        },
+      });
       if (action === 'rename') {
         setEditingKey(frameInfo.listKey);
         setEditingName(getFrameDisplayName(frameInfo.frame));
@@ -1923,7 +1991,14 @@ export const FramePanel: React.FC<FramePanelProps> = ({
       }
       closeContextMenu();
     },
-    [handleDelete, handleDuplicate, handleInsertPPTPage, closeContextMenu]
+    [
+      closeContextMenu,
+      handleDelete,
+      handleDuplicate,
+      handleInsertPPTPage,
+      orderedPPTFrames.length,
+      selectedFrameIds.size,
+    ]
   );
 
   const handleUseHistoryImage = useCallback(
@@ -1984,12 +2059,27 @@ export const FramePanel: React.FC<FramePanelProps> = ({
         }
 
         MessagePlugin.success('已切换到历史图片');
+        analytics.trackPPTAction({
+          action: 'use_history_image',
+          source: 'project_drawer_context_menu',
+          status: 'success',
+          pageCount: orderedPPTFrames.length,
+          prompt: historyItem.prompt || frameInfo.slidePrompt,
+        });
       } catch (error) {
         console.error('[FramePanel] Failed to use history image:', error);
+        analytics.trackPPTAction({
+          action: 'use_history_image',
+          source: 'project_drawer_context_menu',
+          status: 'failed',
+          pageCount: orderedPPTFrames.length,
+          prompt: historyItem.prompt || frameInfo.slidePrompt,
+          error: getAnalyticsErrorName(error),
+        });
         MessagePlugin.error('切换历史图片失败');
       }
     },
-    [board]
+    [board, orderedPPTFrames.length]
   );
 
   const handleInsertAssetIntoFrame = useCallback(
@@ -2061,6 +2151,17 @@ export const FramePanel: React.FC<FramePanelProps> = ({
           removePPTImagePlaceholder(board, targetFrame.id);
 
           MessagePlugin.success('已替换 PPT 页面图片');
+          analytics.trackPPTAction({
+            action: 'insert_asset',
+            source: 'project_drawer_media_library',
+            status: 'success',
+            pageCount: orderedPPTFrames.length,
+            prompt: asset.prompt || getPPTSlidePrompt(targetPPTMeta),
+            metadata: {
+              asset_type: asset.type,
+              replaced_existing_image: Boolean(currentSlideImage?.url),
+            },
+          });
           return;
         }
 
@@ -2125,13 +2226,30 @@ export const FramePanel: React.FC<FramePanelProps> = ({
         }
 
         MessagePlugin.success('素材已插入到 PPT 页面');
+        analytics.trackPPTAction({
+          action: 'insert_asset',
+          source: 'project_drawer_media_library',
+          status: 'success',
+          pageCount: orderedPPTFrames.length,
+          prompt: asset.prompt,
+          metadata: { asset_type: asset.type },
+        });
       } catch (error) {
         console.error('[FramePanel] Failed to insert asset into frame:', error);
+        analytics.trackPPTAction({
+          action: 'insert_asset',
+          source: 'project_drawer_media_library',
+          status: 'failed',
+          pageCount: orderedPPTFrames.length,
+          prompt: asset.prompt,
+          error: getAnalyticsErrorName(error),
+          metadata: { asset_type: asset.type },
+        });
         MessagePlugin.error('素材插入 PPT 页面失败');
         throw error;
       }
     },
-    [board]
+    [board, orderedPPTFrames.length]
   );
 
   const handleOpenFrameMediaLibrary = useCallback(
@@ -2147,6 +2265,12 @@ export const FramePanel: React.FC<FramePanelProps> = ({
       setLastSelectedFrameId(frameInfo.frame.id);
       syncCanvasSelectedFrames([frameInfo]);
       focusFrameViewport(frameInfo.frame);
+      analytics.trackPPTAction({
+        action: 'open_media_library',
+        source: 'project_drawer',
+        pageCount: orderedPPTFrames.length,
+        prompt: frameInfo.slidePrompt,
+      });
       onOpenMediaLibrary({
         mode: SelectionMode.SELECT,
         onSelect: (asset) => handleInsertAssetIntoFrame(frameInfo, asset),
@@ -2158,6 +2282,7 @@ export const FramePanel: React.FC<FramePanelProps> = ({
       focusFrameViewport,
       handleInsertAssetIntoFrame,
       onOpenMediaLibrary,
+      orderedPPTFrames.length,
       syncCanvasSelectedFrames,
     ]
   );
@@ -2256,6 +2381,17 @@ export const FramePanel: React.FC<FramePanelProps> = ({
         });
       }
 
+      analytics.trackPPTAction({
+        action: 'open_slide_regenerate',
+        source: pptViewMode === 'outline' ? 'outline_view' : 'slides_view',
+        pageCount: orderedPPTFrames.length,
+        prompt: slidePrompt,
+        metadata: {
+          has_current_image: Boolean(frameInfo.slideImageUrl),
+          has_previous_reference: Boolean(previousSlideImage?.url),
+          replace_existing_image: Boolean(frameInfo.slideImageElementId),
+        },
+      });
       openDialog(DialogType.aiImageGeneration, {
         initialPrompt: buildPPTImageGenerationPrompt(commonPrompt, slidePrompt),
         initialImages,
@@ -2273,11 +2409,17 @@ export const FramePanel: React.FC<FramePanelProps> = ({
         pptReplaceElementId: frameInfo.slideImageElementId,
       });
     },
-    [board, openDialog, orderedPPTFrames]
+    [board, openDialog, orderedPPTFrames, pptViewMode]
   );
 
   const handleToggleOutlineSelection = useCallback(
     (checked: boolean) => {
+      analytics.trackPPTAction({
+        action: checked ? 'select_all_outline_slides' : 'clear_outline_selection',
+        source: 'project_drawer_outline',
+        pageCount: orderedPPTFrames.length,
+        selectedCount: checked ? orderedPPTFrames.length : 0,
+      });
       setOutlineSelectedFrameIds(
         checked
           ? new Set(orderedPPTFrames.map((info) => info.frame.id))
@@ -2289,6 +2431,11 @@ export const FramePanel: React.FC<FramePanelProps> = ({
 
   const handleToggleOutlineSlide = useCallback(
     (frameId: string, checked: boolean) => {
+      analytics.trackPPTAction({
+        action: checked ? 'select_outline_slide' : 'deselect_outline_slide',
+        source: 'project_drawer_outline',
+        pageCount: orderedPPTFrames.length,
+      });
       setOutlineSelectedFrameIds((current) => {
         const next = new Set(current);
         if (checked) {
@@ -2299,7 +2446,7 @@ export const FramePanel: React.FC<FramePanelProps> = ({
         return next;
       });
     },
-    []
+    [orderedPPTFrames.length]
   );
 
   const handleSlidePromptDraftChange = useCallback(
@@ -2332,26 +2479,49 @@ export const FramePanel: React.FC<FramePanelProps> = ({
           commonPrompt: prompt,
         });
       });
+      analytics.trackPPTAction({
+        action: 'save_common_prompt',
+        source: 'project_drawer_outline',
+        pageCount: orderedPPTFrames.length,
+        prompt,
+      });
     },
     [board, commonPromptDraft, orderedPPTFrames, rememberCommonPromptHistory]
   );
 
   const handleToggleCommonPromptHistory = useCallback(() => {
     refreshCommonPromptHistory();
+    analytics.trackPromptAction({
+      action: 'toggle_history',
+      surface: 'ppt_common_prompt',
+      promptType: 'ppt-common',
+      itemCount: commonPromptHistory.length,
+    });
     setCommonPromptHistoryOpen((current) => !current);
-  }, [refreshCommonPromptHistory]);
+  }, [commonPromptHistory.length, refreshCommonPromptHistory]);
 
   const handleSelectCommonPromptHistory = useCallback(
     (item: PromptItem) => {
       setCommonPromptDraft(item.content);
       persistCommonPromptDraft(item.content);
       setCommonPromptHistoryOpen(false);
+      analytics.trackPPTAction({
+        action: 'select_common_prompt_history',
+        source: 'project_drawer_outline',
+        pageCount: orderedPPTFrames.length,
+        prompt: item.content,
+      });
     },
-    [persistCommonPromptDraft]
+    [orderedPPTFrames.length, persistCommonPromptDraft]
   );
 
   const handleToggleCommonPromptHistoryPin = useCallback(
     (id: string) => {
+      analytics.trackPromptAction({
+        action: 'toggle_pin',
+        surface: 'ppt_common_prompt',
+        promptType: 'ppt-common',
+      });
       togglePinCommonPromptHistory(id);
     },
     [togglePinCommonPromptHistory]
@@ -2370,6 +2540,11 @@ export const FramePanel: React.FC<FramePanelProps> = ({
         return;
       }
       removeCommonPromptHistory(id);
+      analytics.trackPromptAction({
+        action: 'delete_confirmed',
+        surface: 'ppt_common_prompt',
+        promptType: 'ppt-common',
+      });
     },
     [confirm, removeCommonPromptHistory]
   );
@@ -2380,8 +2555,14 @@ export const FramePanel: React.FC<FramePanelProps> = ({
       setFramePPTMeta(board, frameId, {
         slidePrompt: prompt,
       });
+      analytics.trackPPTAction({
+        action: 'save_slide_prompt',
+        source: 'project_drawer_outline',
+        pageCount: orderedPPTFrames.length,
+        prompt,
+      });
     },
-    [board]
+    [board, orderedPPTFrames.length]
   );
 
   const persistOutlineDrafts = useCallback(() => {
@@ -2393,6 +2574,12 @@ export const FramePanel: React.FC<FramePanelProps> = ({
       });
     });
     rememberCommonPromptHistory(commonPromptDraft);
+    analytics.trackPPTAction({
+      action: 'persist_outline_drafts',
+      source: 'project_drawer_outline',
+      pageCount: orderedPPTFrames.length,
+      prompt: commonPromptDraft,
+    });
   }, [
     board,
     commonPromptDraft,
@@ -2431,6 +2618,13 @@ export const FramePanel: React.FC<FramePanelProps> = ({
       if (outlinePromptOptimizeTarget.type === 'common') {
         setCommonPromptDraft(optimizedPrompt);
         persistCommonPromptDraft(optimizedPrompt);
+        analytics.trackPPTAction({
+          action: 'apply_optimized_prompt',
+          source: 'project_drawer_outline',
+          pageCount: orderedPPTFrames.length,
+          prompt: optimizedPrompt,
+          metadata: { prompt_scope: 'common' },
+        });
         return;
       }
 
@@ -2440,9 +2634,17 @@ export const FramePanel: React.FC<FramePanelProps> = ({
         [frameId]: optimizedPrompt,
       }));
       persistSlidePromptDraft(frameId, optimizedPrompt);
+      analytics.trackPPTAction({
+        action: 'apply_optimized_prompt',
+        source: 'project_drawer_outline',
+        pageCount: orderedPPTFrames.length,
+        prompt: optimizedPrompt,
+        metadata: { prompt_scope: 'slide' },
+      });
     },
     [
       outlinePromptOptimizeTarget,
+      orderedPPTFrames.length,
       persistCommonPromptDraft,
       persistSlidePromptDraft,
     ]
@@ -2599,12 +2801,23 @@ export const FramePanel: React.FC<FramePanelProps> = ({
       runtimeCancelResult.cancelledCount + cancelActivePPTOutlineTasks(taskIds);
 
     resetStoppedOutlineFrames(frameIds);
+    analytics.trackPPTAction({
+      action: 'stop_outline_generation',
+      source: 'project_drawer_outline',
+      status: 'cancelled',
+      pageCount: orderedPPTFrames.length,
+      selectedCount: frameIds.length,
+      metadata: {
+        cancelled_count: cancelledCount,
+        active_task_count: taskIds.length,
+      },
+    });
     MessagePlugin.success(
       cancelledCount > 0
         ? `已停止 ${cancelledCount} 个 PPT 生图任务`
         : '已停止 PPT 生图流程'
     );
-  }, [activeOutlineGeneration, resetStoppedOutlineFrames]);
+  }, [activeOutlineGeneration, orderedPPTFrames.length, resetStoppedOutlineFrames]);
 
   const handleGenerateOutlineSlides = useCallback(async () => {
     if (!board || isOutlineGenerating) return;
@@ -2629,6 +2842,7 @@ export const FramePanel: React.FC<FramePanelProps> = ({
       return;
     }
 
+    const generationStartTime = Date.now();
     const runtime: PPTOutlineGenerationRuntime = {
       batchId: `${PPT_OUTLINE_BATCH_PREFIX}${Date.now()}`,
       frameIds: selectedFrames.map((info) => info.frame.id),
@@ -2645,6 +2859,16 @@ export const FramePanel: React.FC<FramePanelProps> = ({
     emitPPTOutlineRuntimeChange();
 
     persistOutlineDrafts();
+    analytics.trackPPTAction({
+      action: 'generate_outline_slides',
+      source: 'project_drawer_outline',
+      status: 'start',
+      pageCount: orderedPPTFrames.length,
+      selectedCount: selectedFrames.length,
+      serialMode: outlineSerialMode,
+      model: outlineImageModel || undefined,
+      prompt: commonPromptDraft,
+    });
     const generatedUrls = new Map<string, string>();
     const generatedTaskSizes = new Map<string, string>();
 
@@ -2756,17 +2980,83 @@ export const FramePanel: React.FC<FramePanelProps> = ({
 
       if (runtime.cancelRequested) {
         resetStoppedOutlineFrames(runtime.frameIds);
+        analytics.trackPPTAction({
+          action: 'generate_outline_slides',
+          source: 'project_drawer_outline',
+          status: 'cancelled',
+          pageCount: orderedPPTFrames.length,
+          selectedCount: selectedFrames.length,
+          successCount: runtime.successCount,
+          failedCount: runtime.failedCount,
+          durationMs: Date.now() - generationStartTime,
+          serialMode: outlineSerialMode,
+          model: outlineImageModel || undefined,
+          prompt: commonPromptDraft,
+        });
       } else if (runtime.failedCount > 0) {
+        analytics.trackPPTAction({
+          action: 'generate_outline_slides',
+          source: 'project_drawer_outline',
+          status: 'failed',
+          pageCount: orderedPPTFrames.length,
+          selectedCount: selectedFrames.length,
+          successCount: runtime.successCount,
+          failedCount: runtime.failedCount,
+          durationMs: Date.now() - generationStartTime,
+          serialMode: outlineSerialMode,
+          model: outlineImageModel || undefined,
+          prompt: commonPromptDraft,
+        });
         MessagePlugin.warning(
           `已生成 ${runtime.successCount} 页，${runtime.failedCount} 页失败`
         );
       } else {
+        analytics.trackPPTAction({
+          action: 'generate_outline_slides',
+          source: 'project_drawer_outline',
+          status: 'success',
+          pageCount: orderedPPTFrames.length,
+          selectedCount: selectedFrames.length,
+          successCount: runtime.successCount,
+          failedCount: runtime.failedCount,
+          durationMs: Date.now() - generationStartTime,
+          serialMode: outlineSerialMode,
+          model: outlineImageModel || undefined,
+          prompt: commonPromptDraft,
+        });
         MessagePlugin.success(`已提交并完成 ${runtime.successCount} 页 PPT 生图`);
       }
     } catch (error) {
       if (isPPTOutlineCancelledError(error)) {
         resetStoppedOutlineFrames(runtime.frameIds);
+        analytics.trackPPTAction({
+          action: 'generate_outline_slides',
+          source: 'project_drawer_outline',
+          status: 'cancelled',
+          pageCount: orderedPPTFrames.length,
+          selectedCount: selectedFrames.length,
+          successCount: runtime.successCount,
+          failedCount: runtime.failedCount,
+          durationMs: Date.now() - generationStartTime,
+          serialMode: outlineSerialMode,
+          model: outlineImageModel || undefined,
+          prompt: commonPromptDraft,
+        });
       } else {
+        analytics.trackPPTAction({
+          action: 'generate_outline_slides',
+          source: 'project_drawer_outline',
+          status: 'failed',
+          pageCount: orderedPPTFrames.length,
+          selectedCount: selectedFrames.length,
+          successCount: runtime.successCount,
+          failedCount: runtime.failedCount,
+          durationMs: Date.now() - generationStartTime,
+          serialMode: outlineSerialMode,
+          model: outlineImageModel || undefined,
+          prompt: commonPromptDraft,
+          error: getAnalyticsErrorName(error),
+        });
         throw error;
       }
     } finally {
@@ -2779,9 +3069,11 @@ export const FramePanel: React.FC<FramePanelProps> = ({
     orderedPPTFrames,
     outlineSelectedFrameIds,
     outlineSerialMode,
+    outlineImageModel,
     persistOutlineDrafts,
     resetStoppedOutlineFrames,
     slidePromptDrafts,
+    commonPromptDraft,
   ]);
 
   // 导出所有 PPT 页面为一个 PPT 文件
@@ -2794,11 +3086,33 @@ export const FramePanel: React.FC<FramePanelProps> = ({
 
     if (isExportingAllPPT) return;
     setIsExportingAllPPT(true);
+    const exportStartTime = Date.now();
+    analytics.trackPPTAction({
+      action: 'export_all',
+      source: 'project_drawer',
+      status: 'start',
+      pageCount: frames.length,
+    });
     try {
       await exportAllPPTFrames(board, { fileName: 'aitu-ppt' });
+      analytics.trackPPTAction({
+        action: 'export_all',
+        source: 'project_drawer',
+        status: 'success',
+        pageCount: frames.length,
+        durationMs: Date.now() - exportStartTime,
+      });
       MessagePlugin.success(`已导出 ${frames.length} 页 PPT`);
     } catch (error) {
       console.error('[FramePanel] Export all PPT failed:', error);
+      analytics.trackPPTAction({
+        action: 'export_all',
+        source: 'project_drawer',
+        status: 'failed',
+        pageCount: frames.length,
+        durationMs: Date.now() - exportStartTime,
+        error: getAnalyticsErrorName(error),
+      });
       MessagePlugin.error('PPT 导出失败');
     } finally {
       setIsExportingAllPPT(false);
@@ -2868,7 +3182,14 @@ export const FramePanel: React.FC<FramePanelProps> = ({
               size="small"
               shape="square"
               icon={<AddIcon />}
-              onClick={() => setAddDialogVisible(true)}
+              onClick={() => {
+                analytics.trackPPTAction({
+                  action: 'open_add_page_dialog',
+                  source: 'project_drawer',
+                  pageCount: frames.length,
+                });
+                setAddDialogVisible(true);
+              }}
             />
           </HoverTip>
           <HoverTip
@@ -2880,7 +3201,14 @@ export const FramePanel: React.FC<FramePanelProps> = ({
               shape="square"
               icon={<PlayCircleIcon />}
               disabled={frames.length === 0}
-              onClick={() => setSlideshowVisible(true)}
+              onClick={() => {
+                analytics.trackPPTAction({
+                  action: 'open_slideshow',
+                  source: 'project_drawer',
+                  pageCount: frames.length,
+                });
+                setSlideshowVisible(true);
+              }}
             />
           </HoverTip>
           {frames.length > 0 && (
@@ -3000,6 +3328,8 @@ export const FramePanel: React.FC<FramePanelProps> = ({
                       onTogglePin={handleToggleCommonPromptHistoryPin}
                       onDelete={handleDeleteCommonPromptHistory}
                       language={language as 'zh' | 'en'}
+                      analyticsSurface="ppt_common_prompt"
+                      analyticsPromptType="ppt-common"
                       showCount
                     />
                   ) : (
@@ -3127,9 +3457,17 @@ export const FramePanel: React.FC<FramePanelProps> = ({
                     className="frame-panel__outline-control"
                     checked={outlineSerialMode}
                     disabled={isOutlineGenerating}
-                    onChange={(checked) =>
-                      setOutlineSerialMode(checked as boolean)
-                    }
+                    onChange={(checked) => {
+                      const nextSerialMode = checked as boolean;
+                      analytics.trackPPTAction({
+                        action: 'generation_mode_change',
+                        source: 'project_drawer_outline',
+                        serialMode: nextSerialMode,
+                        pageCount: orderedPPTFrames.length,
+                        selectedCount: selectedOutlineSlideCount,
+                      });
+                      setOutlineSerialMode(nextSerialMode);
+                    }}
                   >
                     {outlineSerialMode ? '串行' : '并行'}
                   </Checkbox>

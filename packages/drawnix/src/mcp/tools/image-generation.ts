@@ -410,10 +410,6 @@ export const imageGenerationTool: MCPTool = {
     params: Record<string, unknown>,
     options?: MCPExecuteOptions
   ): Promise<MCPResult> => {
-    console.log(
-      '[ImageGenerationTool] execute called with mode:',
-      options?.mode
-    );
     const rawParams = params as unknown as ImageGenerationParams;
     const mode = options?.mode || 'async';
 

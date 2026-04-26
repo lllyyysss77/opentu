@@ -453,9 +453,6 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
 
   useEffect(() => {
     if (launchGuardRef.current) {
-      console.debug(
-        '[Benchmark] reconcile profile/prompt: skipped (launchGuard)'
-      );
       return;
     }
     if (!availableProfiles.length) {
@@ -481,7 +478,6 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
 
   useEffect(() => {
     if (launchGuardRef.current) {
-      console.debug('[Benchmark] reconcile modelIds: skipped (launchGuard)');
       return;
     }
     const modelIds = activeProfileModels.map((model) => model.id);
@@ -492,21 +488,12 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
 
     setSelectedModelIds((current) => {
       const next = reconcileSelection(current, modelIds, { fallback: 'all' });
-      if (next !== current) {
-        console.debug('[Benchmark] reconcile modelIds: changed', {
-          from: current,
-          to: next,
-        });
-      }
       return next;
     });
   }, [activeProfileModels]);
 
   useEffect(() => {
     if (launchGuardRef.current) {
-      console.debug(
-        '[Benchmark] reconcile selectedModelId: skipped (launchGuard)'
-      );
       return;
     }
     const modelIds = crossProviderModels.map((model) => model.id);
@@ -538,7 +525,6 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
 
   useEffect(() => {
     if (launchGuardRef.current) {
-      console.debug('[Benchmark] reconcile providerIds: skipped (launchGuard)');
       return;
     }
     setSelectedProviderIds((current) =>
@@ -552,7 +538,6 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
 
   useEffect(() => {
     if (launchGuardRef.current) {
-      console.debug('[Benchmark] reconcile customKeys: skipped (launchGuard)');
       return;
     }
     setSelectedCustomKeys((current) =>
@@ -799,18 +784,13 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
 
   useEffect(() => {
     if (!initialRequest) {
-      console.debug('[Benchmark] useEffect: no initialRequest, skip');
       return;
     }
     if (!storeState.ready) {
-      console.debug('[Benchmark] useEffect: storeState not ready, waiting...');
       return;
     }
     const signature = JSON.stringify(initialRequest);
     if (launchSignatureRef.current === signature) {
-      console.debug('[Benchmark] useEffect: same signature, skip', {
-        signature,
-      });
       return;
     }
 
@@ -839,16 +819,6 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
       (requestedProfileState.status === 'idle' ||
         requestedProfileState.status === 'loading')
     ) {
-      console.debug(
-        '[Benchmark] useEffect: waiting for requested model discovery',
-        {
-          signature,
-          requestedProfileId,
-          requestedModelId,
-          status: requestedProfileState.status,
-          discoveryVersion,
-        }
-      );
       return;
     }
 
@@ -880,23 +850,8 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
       // 仅 1 个供应商有该模型时，降级为 custom，保留当前供应商 + 当前模型
       if (matchingProviderIds.length <= 1) {
         nextCompareMode = 'custom';
-        console.debug('[Benchmark] cross-provider → custom downgrade', {
-          modelId: initialRequest.modelId,
-          matchingProviderIds,
-        });
       }
     }
-
-    console.debug('[Benchmark] useEffect: applying initialRequest', {
-      nextModality,
-      nextCompareMode,
-      requestedCompareMode,
-      profileId: initialRequest.profileId,
-      modelId: initialRequest.modelId,
-      profileCount: nextProfiles.length,
-      matchingProviderIds,
-    });
-
     const defaultPreset = getDefaultPromptPreset(nextModality);
     setModality(nextModality);
     setCompareMode(nextCompareMode);
@@ -993,21 +948,12 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
       }
 
       if (!targets.length) {
-        console.debug('[Benchmark] setTimeout: no targets built, abort');
         return;
       }
-
-      console.debug('[Benchmark] setTimeout: creating session', {
-        targetCount: targets.length,
-        targets: targets.map((t) => `${t.profileName}/${t.modelId}`),
-        autoRun: initialRequest.autoRun,
-      });
-
       if (!initialRequest.autoRun) {
         requestAnimationFrame(() => {
           setTimeout(() => {
             launchGuardRef.current = false;
-            console.debug('[Benchmark] guard released without autoRun');
           }, 0);
         });
         return;
@@ -1030,7 +976,6 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
       requestAnimationFrame(() => {
         setTimeout(() => {
           launchGuardRef.current = false;
-          console.debug('[Benchmark] guard released');
         }, 0);
       });
     }, 120);

@@ -132,9 +132,7 @@ import { workflowCompletionService } from '../../services/workflow-completion-se
 import { BoardTransforms } from '@plait/core';
 import { ImageGenerationAnchorTransforms } from '../../plugins/with-image-generation-anchor';
 import { buildImageGenerationAnchorCreateOptions } from '../../utils/image-generation-anchor-submission';
-import {
-  resolveImageGenerationBatchAnchorPositions,
-} from '../../utils/image-generation-anchor-placement';
+import { resolveImageGenerationBatchAnchorPositions } from '../../utils/image-generation-anchor-placement';
 import {
   buildImageGenerationAnchorPresentationPatch,
   type ImageGenerationAnchorPresentationState,
@@ -261,10 +259,7 @@ const AI_INPUT_EXPANDED_ROWS = 4;
 const AI_INPUT_MAX_ROWS = 6;
 const AI_INPUT_LINE_HEIGHT = 1.5;
 
-function getTextareaHeightForRows(
-  textarea: HTMLTextAreaElement,
-  rows: number
-) {
+function getTextareaHeightForRows(textarea: HTMLTextAreaElement, rows: number) {
   const styles = window.getComputedStyle(textarea);
   const fontSize = Number.parseFloat(styles.fontSize) || 15;
   const lineHeight =
@@ -291,10 +286,7 @@ function resizeAIInputTextarea(
     return;
   }
 
-  const minHeight = getTextareaHeightForRows(
-    textarea,
-    AI_INPUT_EXPANDED_ROWS
-  );
+  const minHeight = getTextareaHeightForRows(textarea, AI_INPUT_EXPANDED_ROWS);
   const maxHeight = getTextareaHeightForRows(textarea, AI_INPUT_MAX_ROWS);
 
   textarea.style.height = 'auto';
@@ -653,10 +645,14 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
           ? currentAnchor.taskIds
           : [...currentAnchor.taskIds, taskId];
 
-        ImageGenerationAnchorTransforms.updateAnchor(boardInstance, currentAnchor.id, {
-          taskIds: nextTaskIds,
-          primaryTaskId: currentAnchor.primaryTaskId || taskId,
-        });
+        ImageGenerationAnchorTransforms.updateAnchor(
+          boardInstance,
+          currentAnchor.id,
+          {
+            taskIds: nextTaskIds,
+            primaryTaskId: currentAnchor.primaryTaskId || taskId,
+          }
+        );
       },
       []
     );
@@ -843,17 +839,20 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
     const [isFocused, setIsFocused] = useState(false);
     const [isCanvasEmpty, setIsCanvasEmpty] = useState<boolean | null>(null); // null=加载中, true=空, false=有内容
     // 当前选中的生成类型（图片、视频、Agent）
-    const [generationType, setGenerationType] =
-      useState<GenerationType>(initialGenerationType);
+    const [generationType, setGenerationType] = useState<GenerationType>(
+      initialGenerationType
+    );
     // 当前选中的 Skill ID（仅在 Agent 模式下有效）
-    const [selectedSkillId, setSelectedSkillId] =
-      useState<string>(initialPreferences.selectedSkillId || SKILL_AUTO_ID);
+    const [selectedSkillId, setSelectedSkillId] = useState<string>(
+      initialPreferences.selectedSkillId || SKILL_AUTO_ID
+    );
     // 当前选中的图片/视频/文本模型
     const [selectedModel, setSelectedModel] = useState(
       initialSelectedModelConfig?.id || initialSelectedModelId
     );
     const [selectedModelRef, setSelectedModelRef] = useState<ModelRef | null>(
-      getModelRefFromConfig(initialSelectedModelConfig) || initialSelectedModelRef
+      getModelRefFromConfig(initialSelectedModelConfig) ||
+        initialSelectedModelRef
     );
     const [selectedAgentImageModel, setSelectedAgentImageModel] = useState(
       initialImageModel?.id || getDefaultImageModel()
@@ -1678,10 +1677,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
 
     // 处理历史提示词选择：将提示词回填到输入框并切换生成类型
     const handleSelectHistoryPrompt = useCallback(
-      (info: {
-        content: string;
-        modelType?: PromptType;
-      }) => {
+      (info: { content: string; modelType?: PromptType }) => {
         setPrompt(info.content);
 
         // 根据 modelType 自动切换生成类型
@@ -2053,12 +2049,15 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
         setSelectedModel(model.id);
         const nextModelRef = getModelRefFromConfig(model);
         setSelectedModelRef(nextModelRef);
-        setPersistedModelSelection(nextGenerationType as PersistedGenerationType, {
-          modelId: model.id,
-          modelRef: nextModelRef,
-          providerIdHint: model.sourceProfileId || nextModelRef?.profileId,
-          vendorHint: model.vendor,
-        });
+        setPersistedModelSelection(
+          nextGenerationType as PersistedGenerationType,
+          {
+            modelId: model.id,
+            modelRef: nextModelRef,
+            providerIdHint: model.sourceProfileId || nextModelRef?.profileId,
+            vendorHint: model.vendor,
+          }
+        );
         setSelectedParams(
           nextGenerationType === 'agent'
             ? {}
@@ -2207,7 +2206,10 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
       const currentScopeKey =
         generationType === 'agent'
           ? 'agent'
-          : `${generationType}:${getSelectionKey(selectedModel, selectedModelRef)}`;
+          : `${generationType}:${getSelectionKey(
+              selectedModel,
+              selectedModelRef
+            )}`;
       const baseParams =
         generationType === 'agent'
           ? {}
@@ -2286,11 +2288,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
 
     // 处理参数选择
     const handleParamSelect = useCallback(
-      (
-        paramId: string,
-        value?: string,
-        options?: { keepOpen?: boolean }
-      ) => {
+      (paramId: string, value?: string, options?: { keepOpen?: boolean }) => {
         // 清除触发符号
         clearTriggerSymbol();
 
@@ -2354,25 +2352,12 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
           currentRouteType,
           selectedModelRef || selectedModel
         );
-        console.log('[AIInputBar][handleGenerate] API Key 检查:', {
-          hasApiKey: hasRouteCredentials,
-        });
         if (!hasRouteCredentials) {
-          console.log('[AIInputBar][handleGenerate] 弹窗获取 API Key...');
           const newApiKey = await promptForApiKey();
-          console.log('[AIInputBar][handleGenerate] API Key 输入完成:', {
-            hasNewKey: !!newApiKey,
-          });
           if (!newApiKey) {
             setIsSubmitting(false);
             return;
           }
-          console.log('[AIInputBar][handleGenerate] API Key 输入后设置状态:', {
-            hasApiKey: hasInvocationRouteCredentials(
-              currentRouteType,
-              selectedModelRef || selectedModel
-            ),
-          });
         }
 
         // 构建选中元素的分类信息（使用合并后的 allContent）
@@ -2417,9 +2402,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
           defaultModels:
             generationType === 'agent' ? agentMediaDefaultModels : undefined,
           defaultModelRefs:
-            generationType === 'agent'
-              ? agentMediaDefaultModelRefs
-              : undefined,
+            generationType === 'agent' ? agentMediaDefaultModelRefs : undefined,
         });
 
         // 收集所有参考媒体（图片 + 图形 + 视频）
@@ -2449,13 +2432,6 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
             // 尝试外部 Skill
             const externalSkill = findExternalSkillById(selectedSkillId);
             if (externalSkill) {
-              console.log(
-                `[AIInputBar] 外部 Skill: id=${externalSkill.id} name=${
-                  externalSkill.name
-                } outputType=${externalSkill.outputType} contentLen=${
-                  externalSkill.content?.length || 0
-                }`
-              );
               // 外部 Skill：使用 content（SKILL.md 文档体）走三条路径
               try {
                 workflow = await convertSkillFlowToWorkflow(
@@ -2467,10 +2443,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
                     content: externalSkill.content,
                     outputType: externalSkill.outputType,
                   },
-                  referenceImages,
-                  () => {
-                    console.log('[AIInputBar] AI 正在解析外部 Skill 工作流...');
-                  }
+                  referenceImages
                 );
               } catch (e) {
                 console.warn(
@@ -2513,11 +2486,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
                       content: userNote.content,
                       outputType: userOutputType,
                     },
-                    referenceImages,
-                    () => {
-                      // LLM 解析路径触发时，通知 UI 显示加载状态
-                      console.log('[AIInputBar] AI 正在解析工作流...');
-                    }
+                    referenceImages
                   );
                 } else {
                   workflow = convertToWorkflow(parsedParams, referenceImages);
@@ -2535,12 +2504,6 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
         } else {
           workflow = convertToWorkflow(parsedParams, referenceImages);
         }
-
-        // 在画布上创建 WorkZone 显示工作流进度
-        console.log(
-          '[AIInputBar][handleGenerate] 即将创建 WorkZone, workflow.steps:',
-          workflow.steps.length
-        );
         const board = SelectionWatcherBoardRef.current;
         if (board) {
           // WorkZone 固定尺寸
@@ -2730,38 +2693,45 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
               : null;
 
             for (let index = 0; index < requestedCount; index += 1) {
-              let anchorCreateOptions = buildImageGenerationAnchorCreateOptions({
-                workflowId: workflow.id,
-                expectedInsertPosition: [expectedInsertLeftX, expectedInsertY],
-                targetFrameId: anchorTargetFrameId,
-                targetFrameDimensions: anchorTargetFrameDimensions,
-                frameAffinityId: shouldCreateIndependentBatchAnchors
-                  ? targetFrameId
-                  : undefined,
-                frameAffinityDimensions: shouldCreateIndependentBatchAnchors
-                  ? targetFrameDimensions
-                  : undefined,
-                requestedSize: parsedParams.size,
-                requestedCount: shouldCreateIndependentBatchAnchors ? 1 : requestedCount,
-                batchId: shouldCreateIndependentBatchAnchors
-                  ? workflowBatchId
-                  : undefined,
-                batchIndex: shouldCreateIndependentBatchAnchors
-                  ? index + 1
-                  : undefined,
-                batchTotal: shouldCreateIndependentBatchAnchors
-                  ? requestedCount
-                  : undefined,
-                zoom,
-                title: workflowMessageData.name || '图片生成',
-                ...buildImageGenerationAnchorPresentationPatch('submitted'),
-              });
+              let anchorCreateOptions = buildImageGenerationAnchorCreateOptions(
+                {
+                  workflowId: workflow.id,
+                  expectedInsertPosition: [
+                    expectedInsertLeftX,
+                    expectedInsertY,
+                  ],
+                  targetFrameId: anchorTargetFrameId,
+                  targetFrameDimensions: anchorTargetFrameDimensions,
+                  frameAffinityId: shouldCreateIndependentBatchAnchors
+                    ? targetFrameId
+                    : undefined,
+                  frameAffinityDimensions: shouldCreateIndependentBatchAnchors
+                    ? targetFrameDimensions
+                    : undefined,
+                  requestedSize: parsedParams.size,
+                  requestedCount: shouldCreateIndependentBatchAnchors
+                    ? 1
+                    : requestedCount,
+                  batchId: shouldCreateIndependentBatchAnchors
+                    ? workflowBatchId
+                    : undefined,
+                  batchIndex: shouldCreateIndependentBatchAnchors
+                    ? index + 1
+                    : undefined,
+                  batchTotal: shouldCreateIndependentBatchAnchors
+                    ? requestedCount
+                    : undefined,
+                  zoom,
+                  title: workflowMessageData.name || '图片生成',
+                  ...buildImageGenerationAnchorPresentationPatch('submitted'),
+                }
+              );
 
               if (!anchorTargetFrameId) {
-                const resolvedAnchorPosition =
-                  plannedAnchorPositions
-                    ? plannedAnchorPositions[index] ?? anchorCreateOptions.position
-                    : anchorCreateOptions.position;
+                const resolvedAnchorPosition = plannedAnchorPositions
+                  ? plannedAnchorPositions[index] ??
+                    anchorCreateOptions.position
+                  : anchorCreateOptions.position;
 
                 anchorCreateOptions = {
                   ...anchorCreateOptions,
@@ -2770,10 +2740,11 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
                 };
               }
 
-              const anchorElement = ImageGenerationAnchorTransforms.insertAnchor(
-                board,
-                anchorCreateOptions
-              );
+              const anchorElement =
+                ImageGenerationAnchorTransforms.insertAnchor(
+                  board,
+                  anchorCreateOptions
+                );
               imageAnchorElements.push(anchorElement);
             }
 
@@ -2781,11 +2752,6 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
               (anchor) => anchor.id
             );
             currentWorkZoneIdRef.current = null;
-            console.log(
-              '[AIInputBar][handleGenerate] Image Generation Anchor 已创建:',
-              imageAnchorElements.map((anchor) => anchor.id)
-            );
-
             const [firstAnchor] = imageAnchorElements;
             if (firstAnchor) {
               setTimeout(() => {
@@ -2815,11 +2781,6 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
 
             currentWorkZoneIdRef.current = workzoneElement.id;
             currentImageAnchorIdsRef.current = [];
-            console.log(
-              '[AIInputBar][handleGenerate] WorkZone 已创建:',
-              workzoneElement.id
-            );
-
             setTimeout(() => {
               const workzoneCenterX = workzoneX + WORKZONE_WIDTH / 2;
               const workzoneCenterY = workzoneY + WORKZONE_HEIGHT / 2;
@@ -2873,9 +2834,6 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
         currentRetryContextRef.current = retryContext;
 
         try {
-          console.log(
-            '[AIInputBar][handleGenerate] 开始提交工作流 submitWorkflowToSW...'
-          );
           const t0 = Date.now();
           const { usedSW } = await submitWorkflowToSW(
             parsedParams,
@@ -2883,10 +2841,6 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
             retryContext,
             workflow
           );
-          console.log('[AIInputBar][handleGenerate] submitWorkflowToSW 返回:', {
-            usedSW,
-            耗时ms: Date.now() - t0,
-          });
           if (usedSW) {
             if (generationType === 'image') {
               applyCurrentImageAnchorPresentationState(board, 'accepted');
@@ -2922,14 +2876,6 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
             swError
           );
         }
-
-        // Fallback: 主线程执行（仅当 SW 不可用时）
-        console.log(
-          '[AIInputBar] Fallback: Executing workflow in main thread:',
-          workflow.steps.length,
-          'steps'
-        );
-
         if (generationType === 'image') {
           applyCurrentImageAnchorPresentationState(board, 'handoff');
         }
@@ -3105,12 +3051,6 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
 
         // 执行单个步骤的函数
         const executeStep = async (step: (typeof workflow.steps)[0]) => {
-          console.log(
-            '[AIInputBar] Executing step:',
-            step.mcp,
-            'with mode:',
-            step.options?.mode
-          );
           const stepStartTime = Date.now();
           // 记录执行前的动态步骤数量，用于判断 ai_analyze 是否触发了 onAddSteps
           const pendingStepsBeforeExec = pendingNewSteps.length;
@@ -3124,23 +3064,11 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
             const executeOptions = {
               ...step.options,
               ...createStepCallbacks(step, stepStartTime),
-            };
-
-            console.log(
-              '[AIInputBar] Calling mcpRegistry.executeTool for:',
-              step.mcp
-            );
-            // 通过 MCP Registry 执行工具
+            }; // 通过 MCP Registry 执行工具
             const result = (await mcpRegistry.executeTool(
               { name: step.mcp, arguments: step.args },
               executeOptions
             )) as MCPTaskResult;
-            console.log('[AIInputBar] Tool result:', {
-              success: result.success,
-              taskId: result.taskId,
-              error: result.error,
-            });
-
             // 根据结果更新步骤状态
             const currentStepStatus = workflowControl
               .getWorkflow()
@@ -4107,14 +4035,14 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
             {generationType !== 'agent' &&
               generationType !== 'text' &&
               generationType !== 'audio' && (
-              <CountDropdown
-                value={selectedCount}
-                onSelect={handleCountSelect}
-                disabled={isSubmitting}
-                isOpen={countDropdownOpen}
-                onOpenChange={handleCountDropdownChange}
-              />
-            )}
+                <CountDropdown
+                  value={selectedCount}
+                  onSelect={handleCountSelect}
+                  disabled={isSubmitting}
+                  isOpen={countDropdownOpen}
+                  onOpenChange={handleCountDropdownChange}
+                />
+              )}
 
             <div className="ai-input-bar__bottom-spacer" />
 
@@ -4227,7 +4155,9 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
                           language === 'zh' ? '优化提示词' : 'Optimize prompt'
                         }
                         aria-label={
-                          language === 'zh' ? '提示词优化' : 'Prompt optimization'
+                          language === 'zh'
+                            ? '提示词优化'
+                            : 'Prompt optimization'
                         }
                         data-track="ai_input_click_prompt_optimize"
                       >

@@ -482,10 +482,6 @@ if (shouldUseServiceWorker) {
     }
 
     upgradeReloadScheduled = true;
-    console.info('[Main] Scheduling reload after service worker takeover:', {
-      reason,
-    });
-
     // 延迟一点，给新 SW 留出接管后收尾时间
     setTimeout(() => {
       void safeReload();

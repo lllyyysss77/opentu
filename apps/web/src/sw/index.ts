@@ -967,7 +967,8 @@ function normalizeVersionState(value: unknown): SWVersionState {
       ? raw.pendingVersion
       : null;
   const pendingReadyAt =
-    typeof raw.pendingReadyAt === 'number' && Number.isFinite(raw.pendingReadyAt)
+    typeof raw.pendingReadyAt === 'number' &&
+    Number.isFinite(raw.pendingReadyAt)
       ? raw.pendingReadyAt
       : null;
   const upgradeState: SWUpgradeState =
@@ -1032,7 +1033,9 @@ async function readVersionState(): Promise<SWVersionState> {
   }
 }
 
-async function writeVersionState(state: SWVersionState): Promise<SWVersionState> {
+async function writeVersionState(
+  state: SWVersionState
+): Promise<SWVersionState> {
   const normalized = normalizeVersionState(state);
   try {
     const db = await openServiceWorkerDB();
@@ -1269,11 +1272,8 @@ let shouldClaimClientsOnActivate = false;
 
 function logSWDebug(message: string, detail?: unknown): void {
   if (detail === undefined) {
-    console.info(`[SWDebug] ${message}`);
     return;
   }
-
-  console.info(`[SWDebug] ${message}`, detail);
 }
 
 function getUnavailableCDNSnapshot(): Array<{
@@ -1774,11 +1774,14 @@ function scheduleIdlePrefetchSweep(
 
   if (scheduledIdlePrefetchSweepTimer !== null) {
     if (scheduledIdlePrefetchSweepAt <= targetAt) {
-      logSWDebug('scheduleIdlePrefetchSweep skipped: earlier timer already exists', {
-        reason,
-        scheduledInMs: Math.max(0, scheduledIdlePrefetchSweepAt - Date.now()),
-        requestedDelayMs: safeDelayMs,
-      });
+      logSWDebug(
+        'scheduleIdlePrefetchSweep skipped: earlier timer already exists',
+        {
+          reason,
+          scheduledInMs: Math.max(0, scheduledIdlePrefetchSweepAt - Date.now()),
+          requestedDelayMs: safeDelayMs,
+        }
+      );
       return;
     }
 
@@ -1808,7 +1811,8 @@ function shouldDeferIdlePrefetch(): boolean {
   }
 
   return (
-    Date.now() - lastObservedClientFetchAt < IDLE_PREFETCH_RECENT_FETCH_WINDOW_MS
+    Date.now() - lastObservedClientFetchAt <
+    IDLE_PREFETCH_RECENT_FETCH_WINDOW_MS
   );
 }
 
@@ -1818,7 +1822,8 @@ function waitForIdlePrefetchWindow(): Promise<void> {
   }
 
   const elapsed = Date.now() - lastObservedClientFetchAt;
-  const waitMs = Math.max(0, IDLE_PREFETCH_RECENT_FETCH_WINDOW_MS - elapsed) + 100;
+  const waitMs =
+    Math.max(0, IDLE_PREFETCH_RECENT_FETCH_WINDOW_MS - elapsed) + 100;
   logSWDebug('waitForIdlePrefetchWindow: delaying idle prefetch', {
     elapsedMs: elapsed,
     waitMs,
@@ -1829,10 +1834,7 @@ function waitForIdlePrefetchWindow(): Promise<void> {
   });
 }
 
-function shouldKickIdlePrefetchFromFetch(
-  event: FetchEvent,
-  url: URL
-): boolean {
+function shouldKickIdlePrefetchFromFetch(event: FetchEvent, url: URL): boolean {
   const scopeRelativePathname = getScopeRelativePathname(url.pathname);
   if (
     event.request.method !== 'GET' ||
@@ -2437,7 +2439,11 @@ async function prefetchIdleGroups(
     sampleUrls: queue.slice(0, 8).map(([, entry]) => entry.url),
   });
 
-  for (let index = 0; index < queue.length; index += IDLE_PREFETCH_CONCURRENCY) {
+  for (
+    let index = 0;
+    index < queue.length;
+    index += IDLE_PREFETCH_CONCURRENCY
+  ) {
     while (shouldDeferIdlePrefetch()) {
       await waitForIdlePrefetchWindow();
     }
@@ -2726,7 +2732,9 @@ async function prewarmAllIdlePrefetchGroupsForUpdateReady(): Promise<void> {
     const elapsedMs = Date.now() - startedAt;
     if (elapsedMs >= UPDATE_FULL_PREWARM_TIMEOUT_MS) {
       throw new Error(
-        `idle-prefetch incomplete after ${elapsedMs}ms: pending groups ${summary.pendingGroups.join(', ')}`
+        `idle-prefetch incomplete after ${elapsedMs}ms: pending groups ${summary.pendingGroups.join(
+          ', '
+        )}`
       );
     }
 
@@ -2736,15 +2744,18 @@ async function prewarmAllIdlePrefetchGroupsForUpdateReady(): Promise<void> {
         (summary.queuedEntries > 0 ? IDLE_PREFETCH_SWEEP_DELAY_MS : 1000)
     );
 
-    logSWDebug('prewarmAllIdlePrefetchGroupsForUpdateReady waiting next round', {
-      orderedGroups,
-      iteration,
-      pendingGroups: summary.pendingGroups,
-      coolingEntries: summary.coolingEntries,
-      queuedEntries: summary.queuedEntries,
-      waitMs,
-      elapsedMs,
-    });
+    logSWDebug(
+      'prewarmAllIdlePrefetchGroupsForUpdateReady waiting next round',
+      {
+        orderedGroups,
+        iteration,
+        pendingGroups: summary.pendingGroups,
+        coolingEntries: summary.coolingEntries,
+        queuedEntries: summary.queuedEntries,
+        waitMs,
+        elapsedMs,
+      }
+    );
 
     await new Promise((resolve) => {
       setTimeout(resolve, waitMs);
@@ -3029,12 +3040,15 @@ async function tryFetchStaticResourceFromCDN(
     );
 
     if (!cdnResult?.response.ok) {
-      console.warn('[SW CDN] Static resource unavailable from all fallback sources', {
-        requestUrl: request.url,
-        resourcePath,
-        appVersion,
-        unavailableCDNs: getUnavailableCDNSnapshot(),
-      });
+      console.warn(
+        '[SW CDN] Static resource unavailable from all fallback sources',
+        {
+          requestUrl: request.url,
+          resourcePath,
+          appVersion,
+          unavailableCDNs: getUnavailableCDNSnapshot(),
+        }
+      );
       return null;
     }
 
@@ -3076,7 +3090,8 @@ function getStaticDebugMetadata(response: Response): {
   resourceSource?: string;
   resourceFetchTarget?: string;
 } {
-  const resourceSource = response.headers.get(STATIC_SOURCE_HEADER) || undefined;
+  const resourceSource =
+    response.headers.get(STATIC_SOURCE_HEADER) || undefined;
   const resourceFetchTarget =
     response.headers.get(STATIC_FETCH_TARGET_HEADER) || undefined;
 
@@ -3225,7 +3240,9 @@ sw.addEventListener('message', (event: ExtendableMessageEvent) => {
 
   if (event.data && event.data.type === 'SW_BOOT_PROGRESS_GET') {
     const client = event.source as Client | null;
-    logSWDebug('message: SW_BOOT_PROGRESS_GET', { clientId: client?.id ?? null });
+    logSWDebug('message: SW_BOOT_PROGRESS_GET', {
+      clientId: client?.id ?? null,
+    });
     void broadcastSWBootProgress(client);
     return;
   }
@@ -3254,20 +3271,22 @@ sw.addEventListener('message', (event: ExtendableMessageEvent) => {
       : [];
     logSWDebug('message: SW_PREFETCH_GROUPS', { groups });
     event.waitUntil(
-      enqueueIdlePrefetchTask(`message:${groups.join(',') || 'empty'}`, async () => {
-        await prefetchPendingIdleGroups(
-          `message:${groups.join(',') || 'empty'}`,
-          groups
-        );
-      })
+      enqueueIdlePrefetchTask(
+        `message:${groups.join(',') || 'empty'}`,
+        async () => {
+          await prefetchPendingIdleGroups(
+            `message:${groups.join(',') || 'empty'}`,
+            groups
+          );
+        }
+      )
     );
     return;
   }
 
   if (
     event.data &&
-    (event.data.type === 'COMMIT_UPGRADE' ||
-      event.data.type === 'SKIP_WAITING')
+    (event.data.type === 'COMMIT_UPGRADE' || event.data.type === 'SKIP_WAITING')
   ) {
     const client = event.source as Client | null;
     logSWDebug('message: COMMIT_UPGRADE', { clientId: client?.id ?? null });
@@ -4489,20 +4508,19 @@ sw.addEventListener('fetch', (event: FetchEvent) => {
               duration: Date.now() - startTime,
               resourceSource: staticMetadata.resourceSource,
               resourceFetchTarget: staticMetadata.resourceFetchTarget,
-              details:
-                isNavigationRequest
-                  ? 'Navigation request'
-                  : [
-                      `Static resource (${event.request.destination})`,
-                      staticMetadata.resourceSource
-                        ? `来源: ${staticMetadata.resourceSource}`
-                        : null,
-                      staticMetadata.resourceFetchTarget
-                        ? `实际拉取: ${staticMetadata.resourceFetchTarget}`
-                        : null,
-                    ]
-                      .filter(Boolean)
-                      .join('\n'),
+              details: isNavigationRequest
+                ? 'Navigation request'
+                : [
+                    `Static resource (${event.request.destination})`,
+                    staticMetadata.resourceSource
+                      ? `来源: ${staticMetadata.resourceSource}`
+                      : null,
+                    staticMetadata.resourceFetchTarget
+                      ? `实际拉取: ${staticMetadata.resourceFetchTarget}`
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join('\n'),
             });
             return response;
           })
@@ -5485,9 +5503,7 @@ async function handleStaticRequest(request: Request): Promise<Response> {
       if (!cachedResponse && isAppShellRequest) {
         cachedResponse = await cache.match(createScopeUrl('/').href);
         if (!cachedResponse) {
-          cachedResponse = await cache.match(
-            createScopeUrl('index.html').href
-          );
+          cachedResponse = await cache.match(createScopeUrl('index.html').href);
         }
       }
 
@@ -5589,7 +5605,11 @@ async function handleStaticRequest(request: Request): Promise<Response> {
   );
   if (cachedResponse) {
     if (
-      !isSuspiciousStaticCacheResponse(request, cachedResponse, committedVersion)
+      !isSuspiciousStaticCacheResponse(
+        request,
+        cachedResponse,
+        committedVersion
+      )
     ) {
       if (matchedBy === 'normalized') {
         logSWDebug('handleStaticRequest: normalized static cache hit', {

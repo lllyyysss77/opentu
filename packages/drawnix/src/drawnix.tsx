@@ -593,11 +593,7 @@ export const Drawnix: React.FC<DrawnixProps> = ({
 
       // idle prefetch 只是优化项，不应阻塞常驻工具条显示。
       // 开发态或 manifest 缺失时，超时后直接放行显示，点击工具时再按需启完整运行时。
-      if (isLocalDevHost) {
-        console.info(
-          '[Drawnix] SW idle prefetch status unresolved in dev, enabling minimized tools bar fallback'
-        );
-      } else {
+      if (!isLocalDevHost) {
         console.warn(
           '[Drawnix] SW idle prefetch status unresolved, enabling minimized tools bar fallback'
         );
