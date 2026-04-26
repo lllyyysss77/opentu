@@ -356,12 +356,14 @@ describe('PromptHistoryPopover', () => {
 
   it('标题显示为我的提示词，点击后打开我的提示词弹窗', async () => {
     const { PromptHistoryPopover } = await import('./PromptHistoryPopover');
+    const onBeforeOpenMyPrompts = vi.fn();
 
     const view = render(
       <PromptHistoryPopover
         generationType="image"
         onSelectPrompt={vi.fn()}
         language="zh"
+        onBeforeOpenMyPrompts={onBeforeOpenMyPrompts}
       />
     );
 
@@ -371,6 +373,7 @@ describe('PromptHistoryPopover', () => {
 
     fireEvent.click(screen.getByText('我的提示词'));
 
+    expect(onBeforeOpenMyPrompts).toHaveBeenCalledTimes(1);
     expect(mockOpenTool).toHaveBeenCalledWith(
       expect.objectContaining({
         id: 'prompt-history',
