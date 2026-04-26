@@ -28,9 +28,19 @@ export {
   generateSlideImagePrompt,
   createDefaultPPTStyleSpec,
   normalizePPTStyleSpec,
+  formatPPTCommonPrompt,
   validateOutline,
   parseOutlineResponse,
 } from './ppt-prompts';
+
+export {
+  PPT_EDITOR_OPEN_EVENT,
+  PPT_EDITOR_VIEW_MODE_STORAGE_KEY,
+  loadPPTEditorViewMode,
+  savePPTEditorViewMode,
+  requestOpenPPTEditor,
+} from './ppt-ui-events';
+export type { PPTEditorOpenEventDetail, PPTEditorViewMode } from './ppt-ui-events';
 
 // 布局引擎
 export {

@@ -119,10 +119,10 @@ export const SYSTEM_SKILLS: SystemSkill[] = [
   },
   {
     id: 'generate_ppt',
-    name: '生成完整PPT',
+    name: '生成PPT大纲',
     mcpTool: 'generate_ppt',
     description:
-      '生成完整PPT\n\n生成 PPT 演示文稿大纲并自动布局。\n\n**使用方式：** 输入 PPT 主题，选择「生成完整PPT」Skill 后提交。\n\n**适用场景：** 演示文稿、课件制作、汇报材料。\n\n**工作流：**\n\n调用 generate_ppt',
+      '生成PPT大纲\n\n生成 PPT 演示文稿大纲、公共风格提示词和每页整图提示词，并自动创建可编辑的 PPT 页面占位。\n\n**使用方式：** 输入 PPT 主题，选择「生成PPT大纲」Skill 后提交。生成后会展开「PPT 编辑」并切换到大纲视图，确认提示词后再生成图片。\n\n**适用场景：** 演示文稿、课件制作、汇报材料。\n\n**工作流：**\n\n调用 generate_ppt',
     type: SKILL_TYPE_SYSTEM,
     outputType: 'ppt',
   },

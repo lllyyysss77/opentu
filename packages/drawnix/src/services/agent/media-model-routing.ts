@@ -8,7 +8,6 @@ const TOOL_MEDIA_TYPE: Record<string, MediaModelType> = {
   generate_grid_image: 'image',
   generate_photo_wall: 'image',
   generate_inspiration_board: 'image',
-  generate_ppt: 'image',
   generate_video: 'video',
   generate_long_video: 'video',
   generate_audio: 'audio',
@@ -37,6 +36,13 @@ export function applyMediaModelDefaultsToArgs(
   args: Record<string, unknown>,
   options: MediaModelRoutingOptions
 ): Record<string, unknown> {
+  if (toolName === 'generate_ppt') {
+    delete args.imageModel;
+    delete args.imageModelRef;
+    applyPPTTextModel(args, options);
+    return args;
+  }
+
   const mediaType = getMediaTypeForTool(toolName);
   if (!mediaType) {
     return args;
@@ -69,15 +75,6 @@ export function applyMediaModelDefaultsToArgs(
       delete args.modelRef;
     }
 
-    if (toolName === 'generate_ppt') {
-      args.imageModel = selectedModel;
-      if (selectedModelRef) {
-        args.imageModelRef = selectedModelRef;
-      } else {
-        delete args.imageModelRef;
-      }
-      applyPPTTextModel(args, options);
-    }
     return args;
   }
 
@@ -85,16 +82,6 @@ export function applyMediaModelDefaultsToArgs(
     args.modelRef = selectedModelRef;
   } else {
     delete args.modelRef;
-  }
-
-  if (toolName === 'generate_ppt') {
-    args.imageModel = specifiedModel;
-    if (selectedModelRef && selectedModelRef.modelId === specifiedModel) {
-      args.imageModelRef = selectedModelRef;
-    } else {
-      delete args.imageModelRef;
-    }
-    applyPPTTextModel(args, options);
   }
 
   return args;

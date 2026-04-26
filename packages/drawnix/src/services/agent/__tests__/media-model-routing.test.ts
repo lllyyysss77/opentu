@@ -29,7 +29,7 @@ describe('media-model-routing', () => {
     expect(args.model).toBe('seedance-1.5-pro');
   });
 
-  it('为 PPT 同步图片模型字段', () => {
+  it('为 PPT 只同步文本模型字段', () => {
     const imageRef = { profileId: 'profile-b', modelId: 'gpt-image-2' };
     const textRef = { profileId: 'profile-text', modelId: 'deepseek-v3.2' };
     const args = applyMediaModelDefaultsToArgs(
@@ -43,10 +43,10 @@ describe('media-model-routing', () => {
       }
     );
 
-    expect(args.model).toBe('gpt-image-2');
-    expect(args.modelRef).toEqual(imageRef);
-    expect(args.imageModel).toBe('gpt-image-2');
-    expect(args.imageModelRef).toEqual(imageRef);
+    expect(args.model).toBeUndefined();
+    expect(args.modelRef).toBeUndefined();
+    expect(args.imageModel).toBeUndefined();
+    expect(args.imageModelRef).toBeUndefined();
     expect(args.textModel).toBe('deepseek-v3.2');
     expect(args.textModelRef).toEqual(textRef);
   });

@@ -93,6 +93,8 @@ export interface PPTFrameMeta {
   slidePrompt?: string;
   /** 整套 PPT 共用的风格规格 */
   styleSpec?: PPTStyleSpec;
+  /** 整套 PPT 共用的公共提示词（轻量文本，不存图片/base64） */
+  commonPrompt?: string;
   /** 当前整页幻灯片图片 URL */
   slideImageUrl?: string;
   /** 当前整页幻灯片图片元素 ID */
@@ -145,15 +147,11 @@ export interface PPTGenerationParams {
   language?: string;
   /** 额外要求 */
   extraRequirements?: string;
-  /** PPT 页面图片生成模型 */
-  imageModel?: string;
-  /** PPT 页面图片生成模型来源 */
-  imageModelRef?: ModelRef | null;
   /** PPT 大纲生成文本模型 */
   textModel?: string;
   /** PPT 大纲生成文本模型来源 */
   textModelRef?: ModelRef | null;
-  /** 兼容 Agent 媒体模型注入的图片模型字段 */
+  /** 兼容旧版 Agent 注入的文本模型字段 */
   model?: string;
   /** 兼容 Agent 媒体模型注入的模型来源字段 */
   modelRef?: ModelRef | null;

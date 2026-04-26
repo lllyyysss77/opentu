@@ -225,7 +225,7 @@ export const AI_COLD_START_SUGGESTIONS: Record<'zh' | 'en', ColdStartSuggestion[
     },
     {
       content: '生成一份关于人工智能发展的PPT',
-      scene: '生成完整PPT',
+      scene: '生成PPT大纲',
       tips: '调用1次文本模型生成大纲 + 自动布局为多页PPT幻灯片',
       modelType: 'agent',
     }

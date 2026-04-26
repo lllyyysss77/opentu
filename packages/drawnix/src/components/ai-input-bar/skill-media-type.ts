@@ -17,10 +17,6 @@ const MEDIA_TYPE_ORDER: SkillMediaType[] = ['image', 'video', 'audio'];
 export function normalizeSkillOutputType(
   outputType?: SkillOutputType | null
 ): SkillMediaType | undefined {
-  if (outputType === 'ppt') {
-    return 'image';
-  }
-
   if (outputType === 'image' || outputType === 'video' || outputType === 'audio') {
     return outputType;
   }
@@ -77,7 +73,6 @@ function getMediaToolNames(mediaType: SkillMediaType): string[] {
         'generate_grid_image',
         'generate_photo_wall',
         'generate_inspiration_board',
-        'generate_ppt',
       ];
     case 'video':
       return ['generate_video', 'generate_long_video'];

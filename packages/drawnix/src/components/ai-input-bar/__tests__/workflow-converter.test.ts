@@ -1,5 +1,19 @@
 // @vitest-environment jsdom
 import { beforeAll, describe, it, expect, vi } from 'vitest';
+import {
+  convertDirectGenerationToWorkflow,
+  convertAgentFlowToWorkflow,
+  convertSkillFlowToWorkflow,
+  convertToWorkflow,
+  parseAIResponseToSteps,
+  updateStepStatus,
+  addStepsToWorkflow,
+  getWorkflowStatus,
+  WorkflowDefinition,
+  WorkflowStep,
+} from '../workflow-converter';
+import type { ParsedGenerationParams } from '../../../utils/ai-input-parser';
+import { initializeMCP } from '../../../mcp';
 
 vi.hoisted(() => {
   const createObjectStore = () => ({
@@ -40,20 +54,6 @@ vi.hoisted(() => {
     configurable: true,
   });
 });
-import {
-  convertDirectGenerationToWorkflow,
-  convertAgentFlowToWorkflow,
-  convertSkillFlowToWorkflow,
-  convertToWorkflow,
-  parseAIResponseToSteps,
-  updateStepStatus,
-  addStepsToWorkflow,
-  getWorkflowStatus,
-  WorkflowDefinition,
-  WorkflowStep,
-} from '../workflow-converter';
-import type { ParsedGenerationParams } from '../../../utils/ai-input-parser';
-import { initializeMCP } from '../../../mcp';
 
 // Helper to create mock ParsedGenerationParams
 const createMockParams = (overrides: Partial<ParsedGenerationParams> = {}): ParsedGenerationParams => ({
@@ -443,7 +443,7 @@ describe('workflow-converter', () => {
       expect(workflow.steps[0].args.modelRef).toEqual(imageRef);
     });
 
-    it('PPT Skill 应将图片模型透传给 generate_ppt', async () => {
+    it('PPT Skill 只将文本模型透传给 generate_ppt', async () => {
       const imageRef = { profileId: 'image-profile', modelId: 'gpt-image-2' };
       const textRef = { profileId: 'text-profile', modelId: 'deepseek-v3.2' };
       const params = createMockParams({
@@ -458,7 +458,7 @@ describe('workflow-converter', () => {
 
       const workflow = await convertSkillFlowToWorkflow(params, {
         id: 'ppt',
-        name: '生成完整PPT',
+        name: '生成PPT大纲',
         type: 'system',
         mcpTool: 'generate_ppt',
         outputType: 'ppt',
@@ -466,9 +466,10 @@ describe('workflow-converter', () => {
       });
 
       expect(workflow.steps[0].mcp).toBe('generate_ppt');
-      expect(workflow.steps[0].args.model).toBe('gpt-image-2');
-      expect(workflow.steps[0].args.imageModel).toBe('gpt-image-2');
-      expect(workflow.steps[0].args.imageModelRef).toEqual(imageRef);
+      expect(workflow.steps[0].args.model).toBeUndefined();
+      expect(workflow.steps[0].args.modelRef).toBeUndefined();
+      expect(workflow.steps[0].args.imageModel).toBeUndefined();
+      expect(workflow.steps[0].args.imageModelRef).toBeUndefined();
       expect(workflow.steps[0].args.textModel).toBe('deepseek-v3.2');
       expect(workflow.steps[0].args.textModelRef).toEqual(textRef);
     });

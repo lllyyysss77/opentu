@@ -381,7 +381,7 @@ const ProjectDrawerContent: React.FC<{
         { content: '根目录', value: 'root' },
       ];
 
-      const addFolderOptions = (nodes: TreeNode[], prefix: string = '') => {
+      const addFolderOptions = (nodes: TreeNode[], prefix = '') => {
         nodes.forEach((node) => {
           if (node.type === 'folder') {
             const folder = (node as FolderTreeNode).data;
@@ -525,7 +525,7 @@ const ProjectDrawerContent: React.FC<{
   // Render folder node
   const renderFolderNode = (
     node: FolderTreeNode,
-    level: number = 0
+    level = 0
   ): React.ReactNode => {
     const { data: folder, children } = node;
     const isExpanded = folder.isExpanded;
@@ -685,7 +685,7 @@ const ProjectDrawerContent: React.FC<{
   // Render board node
   const renderBoardNode = (
     node: BoardTreeNode,
-    level: number = 0
+    level = 0
   ): React.ReactNode => {
     const { data: board } = node;
     const isActive = board.id === currentBoard?.id;
@@ -1671,6 +1671,7 @@ export const ProjectDrawer: React.FC<ProjectDrawerProps> = ({
         footer={footerSection}
         position="toolbar-right"
         width="narrow"
+        defaultWidth={380}
         storageKey={PROJECT_DRAWER_WIDTH_KEY}
         pinStorageKey={
           activeTab === 'frames' ? undefined : DRAWER_PIN_KEYS.project

@@ -832,9 +832,7 @@ export async function convertSkillFlowToWorkflow(
   const skillOutputType = (skill as { outputType?: SkillOutputType })
     .outputType;
   const externalOutputType: 'image' | 'text' =
-    skillOutputType === 'image' || skillOutputType === 'ppt'
-      ? 'image'
-      : 'text';
+    skillOutputType === 'image' ? 'image' : 'text';
 
   // 用户 Skill 配置了 outputType 时，也需要进行内容预处理（用户复制外部 Skill 内容时，需要适配 aitu 环境）
   const needsPreprocess =
@@ -1066,7 +1064,7 @@ export interface AIResponseParseResult {
  */
 export function parseAIResponse(
   response: string,
-  existingStepCount: number = 0
+  existingStepCount = 0
 ): AIResponseParseResult {
   try {
     let parsed = parseWorkflowJson(response);
@@ -1118,7 +1116,7 @@ export function parseAIResponse(
  */
 export function parseAIResponseToSteps(
   response: string,
-  existingStepCount: number = 0
+  existingStepCount = 0
 ): WorkflowStep[] {
   return parseAIResponse(response, existingStepCount).steps;
 }

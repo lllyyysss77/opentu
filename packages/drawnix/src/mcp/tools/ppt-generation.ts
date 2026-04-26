@@ -1,14 +1,14 @@
 /**
  * PPT 生成 MCP 工具
  *
- * 功能：根据用户主题，调用 AI 生成结构化 PPT 大纲，然后自动创建多个 PPT Frame 并排队生成整页图片。
+ * 功能：根据用户主题，调用 AI 生成结构化 PPT 大纲，然后自动创建多个 PPT Frame 并填充整页图片提示词。
  *
  * 工作流程：
  * 1. 调用文本模型生成 PPT 大纲 JSON
  * 2. 逐页创建 Frame（1920x1080）并横向排列
  * 3. 将整页图片提示词存储到 Frame 的 pptMeta 扩展属性中
- * 4. 为每页创建图片任务，完成后自动回填到对应 Frame
- * 5. 聚焦视口到第一个 Frame
+ * 4. 聚焦视口到第一个 Frame
+ * 5. 展开 PPT 编辑并切换到大纲视图，等待用户确认后再批量生图
  */
 
 import type { MCPTool, MCPResult, MCPExecuteOptions } from '../types';
@@ -16,9 +16,7 @@ import type { PlaitBoard, Point } from '@plait/core';
 import { Transforms, BoardTransforms, PlaitBoard as PlaitBoardUtils, RectangleClient } from '@plait/core';
 import { getBoard } from './shared';
 import { FrameTransforms } from '../../plugins/with-frame';
-import { setFramePPTMeta } from '../../utils/frame-insertion-utils';
 import { PlaitFrame } from '../../types/frame.types';
-import { createImageTask } from './image-generation';
 import { defaultGeminiClient } from '../../utils/gemini-api';
 import { geminiSettings } from '../../utils/settings-manager';
 import type { GeminiMessage } from '../../utils/gemini-api/types';
@@ -30,12 +28,14 @@ import {
   generateOutlineSystemPrompt,
   generateOutlineUserPrompt,
   generateSlideImagePrompt,
+  formatPPTCommonPrompt,
   parseOutlineResponse,
   PPT_FRAME_WIDTH,
   PPT_FRAME_HEIGHT,
   calcPPTFrameInsertionStartPosition,
   getPPTFrameGridPositions,
   loadPPTFrameLayoutColumns,
+  requestOpenPPTEditor,
 } from '../../services/ppt';
 
 /**
@@ -76,7 +76,12 @@ async function generatePPTOutline(
   onChunk?: (chunk: string) => void
 ): Promise<PPTOutline> {
   const settings = geminiSettings.get();
-  const textModel = options.textModelRef || options.textModel || settings.textModelName;
+  const textModel =
+    options.textModelRef ||
+    options.textModel ||
+    options.modelRef ||
+    options.model ||
+    settings.textModelName;
 
   const systemPrompt = generateOutlineSystemPrompt({
     pageCount: options.pageCount,
@@ -146,8 +151,9 @@ function createPPTPage(
     pageIndex,
     slidePrompt,
     styleSpec: outline.styleSpec,
-    slideImageStatus: 'loading',
-    imageStatus: 'loading',
+    commonPrompt: formatPPTCommonPrompt(outline.styleSpec, generateOptions),
+    slideImageStatus: 'placeholder',
+    imageStatus: 'placeholder',
   };
   if (pageSpec.imagePrompt) {
     pptMeta.imagePrompt = pageSpec.imagePrompt;
@@ -163,34 +169,6 @@ function createPPTPage(
   }
 
   return { frame, slidePrompt };
-}
-
-async function enqueueSlideImageTask(
-  frame: PlaitFrame,
-  prompt: string,
-  params: PPTGenerationParams
-): Promise<boolean> {
-  try {
-    const imageModel = params.imageModel || params.model;
-    const imageModelRef = params.imageModelRef || params.modelRef || null;
-    const result = await createImageTask({
-      prompt,
-      size: '16x9',
-      model: imageModel,
-      modelRef: imageModelRef,
-      autoInsertToCanvas: true,
-      targetFrameId: frame.id,
-      targetFrameDimensions: {
-        width: PPT_FRAME_WIDTH,
-        height: PPT_FRAME_HEIGHT,
-      },
-      pptSlideImage: true,
-    });
-    return !!result.success;
-  } catch (error) {
-    console.warn('[PPT] Slide image task creation failed:', error);
-    return false;
-  }
 }
 
 /**
@@ -237,7 +215,7 @@ async function executePPTGeneration(
       options.onChunk?.(`${index + 1}. ${page.title} (${page.layout})${hasImage}\n`);
     });
 
-    options.onChunk?.(`\n正在创建 PPT 页面并排队生成整页图片...\n\n`);
+    options.onChunk?.(`\n正在创建 PPT 页面并填充提示词...\n\n`);
 
     // 2. 预计算所有 Frame 位置（按用户设置的每行数量网格排列）
     const startPosition = calcPPTFrameInsertionStartPosition(board);
@@ -256,7 +234,7 @@ async function executePPTGeneration(
       const pageIndex = i + 1;
       const framePosition = framePositions[i];
 
-      const { frame, slidePrompt } = createPPTPage(
+      const { frame } = createPPTPage(
         board,
         outline,
         pageSpec,
@@ -266,18 +244,8 @@ async function executePPTGeneration(
       );
       createdFrames[i] = frame;
 
-      if (slidePrompt) {
-        const queued = await enqueueSlideImageTask(frame, slidePrompt, params);
-        if (!queued) {
-          setFramePPTMeta(board, frame.id, {
-            slideImageStatus: 'failed',
-            imageStatus: 'failed',
-          });
-        }
-      }
-
       createdCount++;
-      options.onChunk?.(`✓ 第 ${createdCount}/${outline.pages.length} 页已创建并提交生成\n`);
+      options.onChunk?.(`✓ 第 ${createdCount}/${outline.pages.length} 页已创建\n`);
     }
 
     // 4. 聚焦到第一个 Frame（封面页）
@@ -285,20 +253,21 @@ async function executePPTGeneration(
       focusOnFrame(board, createdFrames[0]);
     }
 
-    options.onChunk?.(`\n🎉 **PPT 生成任务已提交！**\n`);
+    requestOpenPPTEditor({ viewMode: 'outline' });
+
+    options.onChunk?.(`\n🎉 **PPT 大纲已生成！**\n`);
     options.onChunk?.(`- 共创建 ${createdCount} 个 Frame\n`);
-    options.onChunk?.(`- 已为每页提交整页图片生成任务，完成后会自动回填\n`);
+    options.onChunk?.(`- 已填充公共提示词和每页 PPT 提示词\n`);
     options.onChunk?.(`\n💡 **提示**：\n`);
-    options.onChunk?.(`- 在左侧「PPT 编辑」面板查看所有页面\n`);
-    options.onChunk?.(`- 点击页面可聚焦查看\n`);
-    options.onChunk?.(`- 点击「幻灯片播放」可全屏演示\n`);
+    options.onChunk?.(`- 已切换到左侧「PPT 编辑」的大纲视图\n`);
+    options.onChunk?.(`- 确认或修改提示词后，可选择串行/并行生成图片\n`);
 
     return {
       success: true,
       data: {
         title: outline.title,
         pageCount: createdCount,
-        imageTaskCount: createdCount,
+        imageTaskCount: 0,
         outline,
       },
       type: 'text',
@@ -318,7 +287,7 @@ async function executePPTGeneration(
  */
 export const pptGenerationTool: MCPTool = {
   name: 'generate_ppt',
-  description: `生成 PPT 演示文稿工具。根据用户提供的主题或内容描述，自动生成结构化的 PPT 演示文稿。
+  description: `生成 PPT 演示文稿大纲工具。根据用户提供的主题或内容描述，自动生成结构化 PPT 大纲、公共风格提示词和每页整图提示词。
 
 使用场景：
 - 用户想要创建 PPT、演示文稿、幻灯片
@@ -328,8 +297,9 @@ export const pptGenerationTool: MCPTool = {
 工作原理：
 1. 调用 AI 生成 PPT 大纲（包含版式、标题、正文和视觉提示）
 2. 自动创建多个 Frame（1920x1080），每个 Frame 代表一页
-3. 为每页提交整页图片生成任务，生成完成后自动回填
-4. 视口自动聚焦到第一页
+3. 为每页写入整页图片提示词，并写入整套 PPT 公共风格提示词
+4. 视口自动聚焦到第一页，打开 PPT 编辑并切换到大纲视图
+5. 用户确认大纲后再从大纲视图批量生成图片
 
 支持的版式：
 - cover: 封面页
@@ -341,7 +311,8 @@ export const pptGenerationTool: MCPTool = {
 
 生成说明：
 - 每页 PPT 由一张完整图片构成，文字、背景和视觉设计都包含在图片内
-- 可在「PPT 编辑」面板预览页面，并对单页重新生成`,
+- 此工具只生成大纲和提示词，不会立即提交图片任务
+- 可在「PPT 编辑」大纲视图修改提示词并选择串行/并行生成`,
 
   inputSchema: {
     type: 'object',
@@ -369,10 +340,6 @@ export const pptGenerationTool: MCPTool = {
         type: 'string',
         description: 'PPT 大纲生成文本模型，默认使用输入栏当前文本模型',
       },
-      imageModel: {
-        type: 'string',
-        description: '整页 PPT 图片生成模型，默认使用输入栏选择的图片模型',
-      },
     },
     required: ['topic'],
   },
@@ -393,7 +360,7 @@ export const pptGenerationTool: MCPTool = {
       '将用户的描述直接作为 topic 传递，工具会自动规划内容结构',
       '如果用户提到"简短"、"快速"，使用 pageCount: "short"',
       '如果用户提到"详细"、"完整"，使用 pageCount: "long"',
-      '生成完成后提醒用户可在 PPT 编辑面板预览或重新生成单页',
+      '生成完成后提醒用户先检查大纲提示词，再在 PPT 编辑面板生成图片',
     ],
 
     examples: [
@@ -434,7 +401,7 @@ export const pptGenerationTool: MCPTool = {
 
     warnings: [
       'PPT 生成需要几秒钟时间，请耐心等待',
-      '图片任务会在后台生成并自动回填，请提醒用户等待任务完成',
+      '此工具只创建页面和提示词，不会立即生图',
       '每次生成会创建新的 Frame，不会覆盖已有内容',
     ],
   },

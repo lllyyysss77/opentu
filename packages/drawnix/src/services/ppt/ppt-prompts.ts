@@ -223,6 +223,14 @@ function formatStyleSpec(styleSpec: PPTStyleSpec): string {
 - 禁止事项：${styleSpec.avoid || '不得偏离上述全局风格规格'}`;
 }
 
+export function formatPPTCommonPrompt(
+  styleSpec: unknown,
+  options: PPTGenerateOptions = {}
+): string {
+  return `整套 PPT 公共提示词，所有页面都必须遵守：
+${formatStyleSpec(normalizePPTStyleSpec(styleSpec, options))}`;
+}
+
 function summarizePage(page?: PPTPageSpec): string {
   if (!page) return '无';
   const bullets = page.bullets?.slice(0, 3).join('；') || '无要点';

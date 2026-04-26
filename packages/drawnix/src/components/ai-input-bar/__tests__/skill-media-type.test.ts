@@ -5,9 +5,9 @@ import {
 } from '../skill-media-type';
 
 describe('skill-media-type', () => {
-  it('将 PPT 输出归类到图片模型选择', () => {
-    expect(normalizeSkillOutputType('ppt')).toBe('image');
-    expect(inferSkillMediaTypes({ outputType: 'ppt' })).toEqual(['image']);
+  it('PPT 大纲 Skill 不触发媒体模型选择', () => {
+    expect(normalizeSkillOutputType('ppt')).toBeUndefined();
+    expect(inferSkillMediaTypes({ outputType: 'ppt' })).toEqual([]);
   });
 
   it('优先使用显式输出类型', () => {

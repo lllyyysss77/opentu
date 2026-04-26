@@ -27,6 +27,7 @@ import {
   Check,
   List,
   Presentation,
+  Sparkles,
 } from 'lucide-react';
 import {
   SearchIcon,
@@ -97,6 +98,7 @@ import {
 import { useI18n } from '../../i18n';
 import { AIImageIcon, DownloadIcon, MediaLibraryIcon } from '../icons';
 import { exportAllPPTFrames } from '../../services/ppt/ppt-export-service';
+import { ModelDropdown } from '../ai-input-bar/ModelDropdown';
 import {
   ContextMenu,
   useContextMenuState,
@@ -104,7 +106,21 @@ import {
 } from '../shared';
 import { useConfirmDialog } from '../dialog/ConfirmDialog';
 import { HoverTip } from '../shared';
+import { PromptOptimizeDialog } from '../shared/PromptOptimizeDialog';
 import { useThumbnailUrl } from '../../hooks/useThumbnailUrl';
+import { useSelectableModels } from '../../hooks/use-runtime-models';
+import { getPinnedSelectableModel } from '../../utils/runtime-model-discovery';
+import {
+  findMatchingSelectableModel,
+  getModelRefFromConfig,
+  getSelectionKey,
+} from '../../utils/model-selection';
+import {
+  createModelRef,
+  resolveInvocationRoute,
+  type ModelRef,
+} from '../../utils/settings-manager';
+import type { ModelConfig } from '../../constants/model-config';
 import { AssetType, SelectionMode, type Asset } from '../../types/asset.types';
 import {
   insertAudioFromUrl,
@@ -134,6 +150,10 @@ interface FramePanelProps {
     keepProjectDrawerOpen?: boolean;
   }) => void;
 }
+
+type OutlinePromptOptimizeTarget =
+  | { type: 'common' }
+  | { type: 'slide'; frameId: string };
 
 const PPT_HISTORY_PROMPT_PREVIEW_LENGTH = 36;
 const PPT_PARALLEL_GENERATION_LIMIT = 5;
@@ -434,6 +454,11 @@ export const FramePanel: React.FC<FramePanelProps> = ({
 }) => {
   const { board, openDialog } = useDrawnix();
   const { language } = useI18n();
+  const imageModels = useSelectableModels('image');
+  const initialOutlineImageRoute = useMemo(
+    () => resolveInvocationRoute('image'),
+    []
+  );
   const { confirm, confirmDialog } = useConfirmDialog({
     container: board ? PlaitBoard.getBoardContainer(board) : null,
   });
@@ -470,6 +495,18 @@ export const FramePanel: React.FC<FramePanelProps> = ({
   const [slidePromptDrafts, setSlidePromptDrafts] = useState<
     Record<string, string>
   >({});
+  const [outlinePromptOptimizeTarget, setOutlinePromptOptimizeTarget] =
+    useState<OutlinePromptOptimizeTarget | null>(null);
+  const [outlineImageModel, setOutlineImageModel] = useState(
+    () => initialOutlineImageRoute.modelId || ''
+  );
+  const [outlineImageModelRef, setOutlineImageModelRef] =
+    useState<ModelRef | null>(() =>
+      createModelRef(
+        initialOutlineImageRoute.profileId,
+        initialOutlineImageRoute.modelId
+      )
+    );
   const outlineSelectionInitializedRef = useRef(false);
 
   // 监听画布变化，强制刷新 Frame 列表
@@ -709,6 +746,66 @@ export const FramePanel: React.FC<FramePanelProps> = ({
     setSlidePromptDrafts(nextDrafts);
   }, [outlinePromptSourceKey, orderedPPTFrames]);
 
+  useEffect(() => {
+    if (imageModels.length === 0) {
+      return;
+    }
+
+    const currentMatch = findMatchingSelectableModel(
+      imageModels,
+      outlineImageModel,
+      outlineImageModelRef
+    );
+    if (currentMatch) {
+      return;
+    }
+
+    const route = resolveInvocationRoute('image');
+    const routeRef = createModelRef(route.profileId, route.modelId);
+    const routeMatch = findMatchingSelectableModel(
+      imageModels,
+      route.modelId,
+      routeRef
+    );
+    const fallbackModel = routeMatch || imageModels[0];
+    setOutlineImageModel(fallbackModel.id);
+    setOutlineImageModelRef(getModelRefFromConfig(fallbackModel));
+  }, [imageModels, outlineImageModel, outlineImageModelRef]);
+
+  const visibleOutlineImageModels = useMemo(() => {
+    const currentMatch = findMatchingSelectableModel(
+      imageModels,
+      outlineImageModel,
+      outlineImageModelRef
+    );
+    if (currentMatch) {
+      return imageModels;
+    }
+
+    const pinnedModel = getPinnedSelectableModel(
+      'image',
+      outlineImageModel,
+      outlineImageModelRef
+    );
+    return pinnedModel ? [pinnedModel, ...imageModels] : imageModels;
+  }, [imageModels, outlineImageModel, outlineImageModelRef]);
+
+  const handleOutlineImageModelSelect = useCallback(
+    (modelId: string, modelRef?: ModelRef | null) => {
+      setOutlineImageModel(modelId);
+      setOutlineImageModelRef(modelRef || null);
+    },
+    []
+  );
+
+  const handleOutlineImageModelConfigSelect = useCallback(
+    (model: ModelConfig) => {
+      setOutlineImageModel(model.id);
+      setOutlineImageModelRef(getModelRefFromConfig(model));
+    },
+    []
+  );
+
   const focusFrameViewport = useCallback(
     (frame: PlaitFrame) => {
       if (!board) return;
@@ -719,8 +816,8 @@ export const FramePanel: React.FC<FramePanelProps> = ({
 
       // 获取画布容器尺寸
       const container = PlaitBoard.getBoardContainer(board);
-      let viewportWidth = container.clientWidth;
-      let viewportHeight = container.clientHeight;
+      const viewportWidth = container.clientWidth;
+      const viewportHeight = container.clientHeight;
 
       // 获取左侧抽屉宽度（如果存在）
       const drawer = document.querySelector('.project-drawer');
@@ -977,7 +1074,7 @@ export const FramePanel: React.FC<FramePanelProps> = ({
     enabled: !searchQuery.trim() && rootFrames.length > 1,
   });
 
-  const noop = useCallback(() => {}, []);
+  const noop = useCallback(() => undefined, []);
   const getFrameDragProps = useCallback(
     (info: FrameInfo) => {
       if (!info.isRoot) {
@@ -1793,6 +1890,53 @@ export const FramePanel: React.FC<FramePanelProps> = ({
     });
   }, [board, commonPromptDraft, orderedPPTFrames, slidePromptDrafts]);
 
+  const outlinePromptOptimizeOriginalPrompt = useMemo(() => {
+    if (!outlinePromptOptimizeTarget) {
+      return '';
+    }
+    if (outlinePromptOptimizeTarget.type === 'common') {
+      return commonPromptDraft;
+    }
+
+    const frameId = outlinePromptOptimizeTarget.frameId;
+    return (
+      slidePromptDrafts[frameId] ??
+      orderedPPTFrames.find((info) => info.frame.id === frameId)?.slidePrompt ??
+      ''
+    );
+  }, [
+    commonPromptDraft,
+    orderedPPTFrames,
+    outlinePromptOptimizeTarget,
+    slidePromptDrafts,
+  ]);
+
+  const handleApplyOptimizedOutlinePrompt = useCallback(
+    (optimizedPrompt: string) => {
+      if (!outlinePromptOptimizeTarget) {
+        return;
+      }
+
+      if (outlinePromptOptimizeTarget.type === 'common') {
+        setCommonPromptDraft(optimizedPrompt);
+        persistCommonPromptDraft(optimizedPrompt);
+        return;
+      }
+
+      const { frameId } = outlinePromptOptimizeTarget;
+      setSlidePromptDrafts((current) => ({
+        ...current,
+        [frameId]: optimizedPrompt,
+      }));
+      persistSlidePromptDraft(frameId, optimizedPrompt);
+    },
+    [
+      outlinePromptOptimizeTarget,
+      persistCommonPromptDraft,
+      persistSlidePromptDraft,
+    ]
+  );
+
   const generateOneOutlineSlide = useCallback(
     async (
       frameInfo: FrameInfo,
@@ -1818,6 +1962,8 @@ export const FramePanel: React.FC<FramePanelProps> = ({
       const result = await createImageTask({
         prompt,
         size: '16x9',
+        model: outlineImageModel || undefined,
+        modelRef: outlineImageModelRef,
         referenceImages:
           referenceImages && referenceImages.length > 0
             ? referenceImages
@@ -1855,7 +2001,7 @@ export const FramePanel: React.FC<FramePanelProps> = ({
 
       return imageUrl;
     },
-    [board, commonPromptDraft]
+    [board, commonPromptDraft, outlineImageModel, outlineImageModelRef]
   );
 
   const handleGenerateOutlineSlides = useCallback(async () => {
@@ -2006,6 +2152,9 @@ export const FramePanel: React.FC<FramePanelProps> = ({
   const selectedOutlineSlideCount = orderedPPTFrames.filter((info) =>
     outlineSelectedFrameIds.has(info.frame.id)
   ).length;
+  const outlineSelectionLabel = `${
+    allOutlineSlidesSelected ? '取消' : '全选'
+  }${selectedOutlineSlideCount}/${orderedPPTFrames.length}`;
 
   if (!board) {
     return (
@@ -2028,92 +2177,94 @@ export const FramePanel: React.FC<FramePanelProps> = ({
         />
       </div>
 
-      <div className="frame-panel__view-switch" aria-label="PPT 视图切换">
-        <HoverTip content="PPT 页面视图">
-          <Button
-            variant={pptViewMode === 'slides' ? 'base' : 'outline'}
-            size="small"
-            shape="square"
-            icon={<Presentation size={16} strokeWidth={1.8} />}
-            onClick={() => handlePPTViewModeChange('slides')}
-          />
-        </HoverTip>
-        <HoverTip content="大纲视图">
-          <Button
-            variant={pptViewMode === 'outline' ? 'base' : 'outline'}
-            size="small"
-            shape="square"
-            icon={<List size={16} strokeWidth={1.8} />}
-            onClick={() => handlePPTViewModeChange('outline')}
-          />
-        </HoverTip>
-      </div>
+      <div className="frame-panel__toolbar">
+        <div className="frame-panel__view-switch" aria-label="PPT 视图切换">
+          <HoverTip content="PPT 页面视图">
+            <Button
+              variant={pptViewMode === 'slides' ? 'base' : 'outline'}
+              size="small"
+              shape="square"
+              icon={<Presentation size={16} strokeWidth={1.8} />}
+              onClick={() => handlePPTViewModeChange('slides')}
+            />
+          </HoverTip>
+          <HoverTip content="大纲视图">
+            <Button
+              variant={pptViewMode === 'outline' ? 'base' : 'outline'}
+              size="small"
+              shape="square"
+              icon={<List size={16} strokeWidth={1.8} />}
+              onClick={() => handlePPTViewModeChange('outline')}
+            />
+          </HoverTip>
+        </div>
 
-      {/* 操作栏：icon + hover 文字 */}
-      <div className="frame-panel__actions">
-        <HoverTip content="添加 PPT 页面">
-          <Button
-            variant="outline"
-            size="small"
-            shape="square"
-            icon={<AddIcon />}
-            onClick={() => setAddDialogVisible(true)}
-          />
-        </HoverTip>
-        <HoverTip
-          content={frames.length === 0 ? '没有 PPT 页面可播放' : '播放 PPT'}
-        >
-          <Button
-            variant="outline"
-            size="small"
-            shape="square"
-            icon={<PlayCircleIcon />}
-            disabled={frames.length === 0}
-            onClick={() => setSlideshowVisible(true)}
-          />
-        </HoverTip>
-        {frames.length > 0 && (
+        {/* 操作栏：icon + hover 文字 */}
+        <div className="frame-panel__actions">
+          <HoverTip content="添加 PPT 页面">
+            <Button
+              variant="outline"
+              size="small"
+              shape="square"
+              icon={<AddIcon />}
+              onClick={() => setAddDialogVisible(true)}
+            />
+          </HoverTip>
           <HoverTip
-            content={
-              isExportingAllPPT ? '正在导出 PPT...' : '导出所有 PPT 页面'
-            }
+            content={frames.length === 0 ? '没有 PPT 页面可播放' : '播放 PPT'}
           >
             <Button
               variant="outline"
               size="small"
               shape="square"
-              icon={
-                isExportingAllPPT ? (
-                  <Loading size="small" />
-                ) : (
-                  <DownloadIcon size={16} />
-                )
-              }
-              disabled={isExportingAllPPT}
-              onClick={handleExportAllPPT}
+              icon={<PlayCircleIcon />}
+              disabled={frames.length === 0}
+              onClick={() => setSlideshowVisible(true)}
             />
           </HoverTip>
-        )}
-        {frames.length > 0 && (
-          <Dropdown
-            trigger="click"
-            options={pptLayoutMenuOptions}
-            onClick={handlePPTLayoutMenuClick}
-            minColumnWidth={120}
-          >
+          {frames.length > 0 && (
             <HoverTip
-              content={`排列 PPT 页面（当前每行 ${pptLayoutColumns} 个）`}
+              content={
+                isExportingAllPPT ? '正在导出 PPT...' : '导出所有 PPT 页面'
+              }
             >
               <Button
                 variant="outline"
                 size="small"
                 shape="square"
-                icon={<AlignHorizontalDistributeCenter size={16} />}
-                onClick={() => handleArrangePPTFrames(pptLayoutColumns)}
+                icon={
+                  isExportingAllPPT ? (
+                    <Loading size="small" />
+                  ) : (
+                    <DownloadIcon size={16} />
+                  )
+                }
+                disabled={isExportingAllPPT}
+                onClick={handleExportAllPPT}
               />
             </HoverTip>
-          </Dropdown>
-        )}
+          )}
+          {frames.length > 0 && (
+            <Dropdown
+              trigger="click"
+              options={pptLayoutMenuOptions}
+              onClick={handlePPTLayoutMenuClick}
+              minColumnWidth={120}
+            >
+              <HoverTip
+                content={`排列 PPT 页面（当前每行 ${pptLayoutColumns} 个）`}
+              >
+                <Button
+                  variant="outline"
+                  size="small"
+                  shape="square"
+                  icon={<AlignHorizontalDistributeCenter size={16} />}
+                  onClick={() => handleArrangePPTFrames(pptLayoutColumns)}
+                />
+              </HoverTip>
+            </Dropdown>
+          )}
+        </div>
       </div>
 
       {pptViewMode === 'outline' ? (
@@ -2133,7 +2284,7 @@ export const FramePanel: React.FC<FramePanelProps> = ({
                     当前画布没有 PPT 大纲
                   </p>
                   <p className="frame-panel__empty-hint">
-                    可以通过“生成完整PPT”的 SKILL 进行创建
+                    可以通过“生成PPT大纲”的 SKILL 进行创建
                   </p>
                 </>
               ) : (
@@ -2146,7 +2297,22 @@ export const FramePanel: React.FC<FramePanelProps> = ({
         ) : (
           <div className="frame-panel__outline">
             <div className="frame-panel__outline-common">
-              <span className="frame-panel__outline-label">公共提示词</span>
+              <div className="frame-panel__outline-common-header">
+                <span className="frame-panel__outline-label">公共提示词</span>
+                <HoverTip content="提示词优化" placement="top">
+                  <Button
+                    className="frame-panel__outline-optimize"
+                    variant="outline"
+                    size="small"
+                    shape="square"
+                    icon={<Sparkles size={15} />}
+                    disabled={isOutlineGenerating}
+                    onClick={() =>
+                      setOutlinePromptOptimizeTarget({ type: 'common' })
+                    }
+                  />
+                </HoverTip>
+              </div>
               <Textarea
                 value={commonPromptDraft}
                 onChange={(value) => setCommonPromptDraft(value)}
@@ -2183,12 +2349,30 @@ export const FramePanel: React.FC<FramePanelProps> = ({
                     />
                     <div className="frame-panel__outline-item-main">
                       <div className="frame-panel__outline-item-header">
-                        <span className="frame-panel__outline-page-index">
-                          {pageIndex + 1}
-                        </span>
-                        <span className="frame-panel__outline-page-title">
-                          {getFrameDisplayName(info.frame)}
-                        </span>
+                        <div className="frame-panel__outline-item-title">
+                          <span className="frame-panel__outline-page-index">
+                            {pageIndex + 1}
+                          </span>
+                          <span className="frame-panel__outline-page-title">
+                            {getFrameDisplayName(info.frame)}
+                          </span>
+                        </div>
+                        <HoverTip content="提示词优化" placement="top">
+                          <Button
+                            className="frame-panel__outline-optimize"
+                            variant="outline"
+                            size="small"
+                            shape="square"
+                            icon={<Sparkles size={15} />}
+                            disabled={isOutlineGenerating}
+                            onClick={() =>
+                              setOutlinePromptOptimizeTarget({
+                                type: 'slide',
+                                frameId: info.frame.id,
+                              })
+                            }
+                          />
+                        </HoverTip>
                       </div>
                       <Textarea
                         value={slidePrompt}
@@ -2208,43 +2392,70 @@ export const FramePanel: React.FC<FramePanelProps> = ({
             </div>
 
             <div className="frame-panel__outline-footer">
-              <Checkbox
-                checked={allOutlineSlidesSelected}
-                disabled={isOutlineGenerating || orderedPPTFrames.length === 0}
-                onChange={(checked) =>
-                  handleToggleOutlineSelection(checked as boolean)
-                }
-              >
-                {allOutlineSlidesSelected ? '取消选择' : '全选'}
-              </Checkbox>
-              <Checkbox
-                checked={outlineSerialMode}
-                disabled={isOutlineGenerating}
-                onChange={(checked) =>
-                  setOutlineSerialMode(checked as boolean)
-                }
-              >
-                {outlineSerialMode ? '串行生成' : '并行生成'}
-              </Checkbox>
-              <span className="frame-panel__outline-status">
-                {outlineGenerationStatus ||
-                  `已选 ${selectedOutlineSlideCount}/${orderedPPTFrames.length}`}
-              </span>
-              <Button
-                theme="primary"
-                size="small"
-                icon={
-                  isOutlineGenerating ? (
-                    <Loading size="small" />
-                  ) : (
-                    <AIImageIcon size={15} />
-                  )
-                }
-                disabled={isOutlineGenerating || selectedOutlineSlideCount === 0}
-                onClick={() => void handleGenerateOutlineSlides()}
-              >
-                生成
-              </Button>
+              <div className="frame-panel__outline-footer-main">
+                <div className="frame-panel__outline-footer-controls">
+                  <div className="frame-panel__outline-selection-summary">
+                    <Checkbox
+                      className="frame-panel__outline-control"
+                      checked={allOutlineSlidesSelected}
+                      disabled={
+                        isOutlineGenerating || orderedPPTFrames.length === 0
+                      }
+                      onChange={(checked) =>
+                        handleToggleOutlineSelection(checked as boolean)
+                      }
+                    >
+                      {outlineSelectionLabel}
+                    </Checkbox>
+                    {outlineGenerationStatus && (
+                      <span className="frame-panel__outline-status">
+                        {outlineGenerationStatus}
+                      </span>
+                    )}
+                  </div>
+                  <Checkbox
+                    className="frame-panel__outline-control"
+                    checked={outlineSerialMode}
+                    disabled={isOutlineGenerating}
+                    onChange={(checked) =>
+                      setOutlineSerialMode(checked as boolean)
+                    }
+                  >
+                    {outlineSerialMode ? '串行' : '并行'}
+                  </Checkbox>
+                </div>
+              </div>
+              <div className="frame-panel__outline-generate-actions">
+                <ModelDropdown
+                  selectedModel={outlineImageModel}
+                  selectedSelectionKey={getSelectionKey(
+                    outlineImageModel,
+                    outlineImageModelRef
+                  )}
+                  onSelect={handleOutlineImageModelSelect}
+                  onSelectModel={handleOutlineImageModelConfigSelect}
+                  language={language as 'zh' | 'en'}
+                  models={visibleOutlineImageModels}
+                  header={
+                    language === 'zh'
+                      ? '选择图片模型 (↑↓ Tab)'
+                      : 'Select image model (↑↓ Tab)'
+                  }
+                  disabled={isOutlineGenerating}
+                  placement="up"
+                />
+                <Button
+                  className="frame-panel__outline-generate"
+                  theme="primary"
+                  size="small"
+                  disabled={
+                    isOutlineGenerating || selectedOutlineSlideCount === 0
+                  }
+                  onClick={() => void handleGenerateOutlineSlides()}
+                >
+                  {isOutlineGenerating ? '生成中' : '生成'}
+                </Button>
+              </div>
             </div>
           </div>
         )
@@ -2264,7 +2475,7 @@ export const FramePanel: React.FC<FramePanelProps> = ({
                   当前画布没有 PPT 页面
                 </p>
                 <p className="frame-panel__empty-hint">
-                  可以通过“生成完整PPT”的 SKILL 进行创建
+                  可以通过“生成PPT大纲”的 SKILL 进行创建
                 </p>
               </>
             ) : (
@@ -2429,6 +2640,21 @@ export const FramePanel: React.FC<FramePanelProps> = ({
         board={board}
         onClose={() => setSlideshowVisible(false)}
       />
+      {outlinePromptOptimizeTarget && (
+        <PromptOptimizeDialog
+          open={true}
+          onOpenChange={(open) => {
+            if (!open) {
+              setOutlinePromptOptimizeTarget(null);
+            }
+          }}
+          originalPrompt={outlinePromptOptimizeOriginalPrompt}
+          language={language as 'zh' | 'en'}
+          type="image"
+          allowStructuredMode={true}
+          onApply={handleApplyOptimizedOutlinePrompt}
+        />
+      )}
       {confirmDialog}
     </div>
   );
