@@ -12,6 +12,15 @@ const mocks = vi.hoisted(() => ({
   success: vi.fn(),
   warning: vi.fn(),
   error: vi.fn(),
+  addPromptHistory: vi.fn(),
+  refreshPromptHistory: vi.fn(),
+  promptHistory: [] as Array<{
+    id: string;
+    content: string;
+    timestamp: number;
+    pinned?: boolean;
+    modelType?: 'image' | 'video' | 'audio' | 'text' | 'agent';
+  }>,
   textModels: [{ id: 'text-model', name: 'Text Model' }],
 }));
 
@@ -24,6 +33,10 @@ vi.mock('tdesign-react', () => ({
 }));
 
 vi.mock('lucide-react', () => ({
+  History: () => <span aria-hidden="true" />,
+  Lightbulb: () => <span aria-hidden="true" />,
+  Pin: () => <span aria-hidden="true" />,
+  PinOff: () => <span aria-hidden="true" />,
   Sparkles: () => <span aria-hidden="true" />,
   X: () => <span aria-hidden="true" />,
 }));
@@ -53,23 +66,29 @@ vi.mock('../ai-input-bar/ModelDropdown', () => ({
   ),
 }));
 
-vi.mock('../dialog/dialog', () => ({
-  Dialog: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  DialogContent: ({ children, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-    <div {...props}>{children}</div>
-  ),
-  DialogDescription: ({
+vi.mock('../winbox', () => ({
+  WinBoxWindow: ({
+    visible,
     children,
-    ...props
-  }: React.HTMLAttributes<HTMLParagraphElement>) => <p {...props}>{children}</p>,
-  DialogHeading: ({
-    children,
-    ...props
-  }: React.HTMLAttributes<HTMLHeadingElement>) => <h2 {...props}>{children}</h2>,
+  }: {
+    visible: boolean;
+    children: React.ReactNode;
+  }) => (visible ? <div data-testid="mock-winbox">{children}</div> : null),
 }));
 
 vi.mock('../../hooks/use-runtime-models', () => ({
   useSelectableModels: () => mocks.textModels,
+}));
+
+vi.mock('../../hooks/usePromptHistory', () => ({
+  usePromptHistory: () => ({
+    history: mocks.promptHistory,
+    addHistory: mocks.addPromptHistory,
+    removeHistory: vi.fn(),
+    clearHistory: vi.fn(),
+    refreshHistory: mocks.refreshPromptHistory,
+    togglePinHistory: vi.fn(),
+  }),
 }));
 
 vi.mock('../../utils/settings-manager', () => ({
@@ -199,6 +218,9 @@ describe('PromptOptimizeDialog', () => {
     mocks.success.mockReset();
     mocks.warning.mockReset();
     mocks.error.mockReset();
+    mocks.addPromptHistory.mockReset();
+    mocks.refreshPromptHistory.mockReset();
+    mocks.promptHistory = [];
     mocks.textModels = [{ id: 'text-model', name: 'Text Model' }];
     localStorage.clear();
   });
@@ -233,6 +255,19 @@ describe('PromptOptimizeDialog', () => {
     });
 
     await waitFor(() => expect(mocks.generateText).toHaveBeenCalledTimes(1));
+    expect(mocks.addPromptHistory).toHaveBeenCalledWith(
+      '手动改写后的提示词',
+      false,
+      'image'
+    );
+    expect(
+      JSON.parse(
+        localStorage.getItem(LS_KEYS.PROMPT_OPTIMIZE_REQUIREMENTS_HISTORY) ||
+          '[]'
+      )[0]
+    ).toMatchObject({
+      content: '补充电影感',
+    });
     expect(mocks.generateText.mock.calls[0][0].prompt).toContain(
       '【原始提示词】\n手动改写后的提示词'
     );

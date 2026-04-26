@@ -6,11 +6,13 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { Sparkles, X } from 'lucide-react';
+import { History, Sparkles } from 'lucide-react';
 import { MessagePlugin } from 'tdesign-react';
 import { executorFactory } from '../../services/media-executor';
 import { ModelDropdown } from '../ai-input-bar/ModelDropdown';
 import { useSelectableModels } from '../../hooks/use-runtime-models';
+import { useDeviceType } from '../../hooks/useDeviceType';
+import { usePromptHistory } from '../../hooks/usePromptHistory';
 import {
   createModelRef,
   resolveInvocationRoute,
@@ -27,12 +29,8 @@ import {
   readStoredModelSelection,
   writeStoredModelSelection,
 } from './workflow/model-selection-storage';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeading,
-} from '../dialog/dialog';
+import { WinBoxWindow } from '../winbox';
+import { PromptListPanel, type PromptItem } from './PromptListPanel';
 import {
   buildPromptOptimizationRequest,
   normalizeOptimizedPromptResult,
@@ -41,6 +39,83 @@ import './prompt-optimize-dialog.scss';
 
 export type PromptOptimizeMode = 'polish' | 'structured';
 export type PromptOptimizeType = 'image' | 'video' | 'audio' | 'text' | 'agent';
+
+type OptimizeHistoryPanel = 'current' | 'requirements';
+
+interface RequirementsHistoryItem {
+  id: string;
+  content: string;
+  timestamp: number;
+}
+
+const REQUIREMENTS_HISTORY_LIMIT = 30;
+const PROMPT_HISTORY_DISPLAY_LIMIT = 60;
+
+function readRequirementsHistory(): RequirementsHistoryItem[] {
+  if (typeof window === 'undefined') {
+    return [];
+  }
+
+  try {
+    const raw = window.localStorage.getItem(
+      LS_KEYS.PROMPT_OPTIMIZE_REQUIREMENTS_HISTORY
+    );
+    const parsed = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed
+      .filter(
+        (item): item is RequirementsHistoryItem =>
+          item &&
+          typeof item.id === 'string' &&
+          typeof item.content === 'string' &&
+          typeof item.timestamp === 'number' &&
+          item.content.trim().length > 0
+      )
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(0, REQUIREMENTS_HISTORY_LIMIT);
+  } catch {
+    return [];
+  }
+}
+
+function writeRequirementsHistory(items: RequirementsHistoryItem[]): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(
+      LS_KEYS.PROMPT_OPTIMIZE_REQUIREMENTS_HISTORY,
+      JSON.stringify(items.slice(0, REQUIREMENTS_HISTORY_LIMIT))
+    );
+  } catch {
+    // 忽略本地存储失败，避免影响优化主流程。
+  }
+}
+
+function addRequirementsHistory(content: string): RequirementsHistoryItem[] {
+  const trimmedContent = content.trim();
+  if (!trimmedContent) {
+    return readRequirementsHistory();
+  }
+
+  const nextHistory = [
+    {
+      id: `requirements-${Date.now()}`,
+      content: trimmedContent,
+      timestamp: Date.now(),
+    },
+    ...readRequirementsHistory().filter(
+      (item) => item.content !== trimmedContent
+    ),
+  ].slice(0, REQUIREMENTS_HISTORY_LIMIT);
+
+  writeRequirementsHistory(nextHistory);
+  return nextHistory;
+}
 
 interface PromptOptimizeDialogProps {
   open: boolean;
@@ -63,6 +138,7 @@ export const PromptOptimizeDialog: React.FC<PromptOptimizeDialogProps> = ({
   allowStructuredMode = false,
   defaultMode = 'polish',
 }) => {
+  const reactWindowId = useId();
   const currentPromptId = useId();
   const requirementsId = useId();
   const draftPromptId = useId();
@@ -71,7 +147,19 @@ export const PromptOptimizeDialog: React.FC<PromptOptimizeDialogProps> = ({
   const [optimizedDraft, setOptimizedDraft] = useState('');
   const [mode, setMode] = useState<PromptOptimizeMode>(defaultMode);
   const [isOptimizing, setIsOptimizing] = useState(false);
+  const [activeHistoryPanel, setActiveHistoryPanel] =
+    useState<OptimizeHistoryPanel | null>(null);
+  const [requirementsHistory, setRequirementsHistory] = useState<
+    RequirementsHistoryItem[]
+  >([]);
   const optimizationAbortRef = useRef<AbortController | null>(null);
+  const historyPopoverRef = useRef<HTMLDivElement | null>(null);
+  const { isMobile, viewportWidth, viewportHeight } = useDeviceType();
+  const {
+    history: promptHistory,
+    addHistory: addPromptHistory,
+    refreshHistory: refreshPromptHistory,
+  } = usePromptHistory({ deduplicateWithPresets: false });
 
   const textModels = useSelectableModels('text');
 
@@ -152,6 +240,11 @@ export const PromptOptimizeDialog: React.FC<PromptOptimizeDialogProps> = ({
       return;
     }
 
+    addPromptHistory(rawPrompt, false, type);
+    if (requirements.trim()) {
+      setRequirementsHistory(addRequirementsHistory(requirements));
+    }
+
     const controller = new AbortController();
     optimizationAbortRef.current?.abort();
     optimizationAbortRef.current = controller;
@@ -221,6 +314,7 @@ export const PromptOptimizeDialog: React.FC<PromptOptimizeDialogProps> = ({
     optimizerModel,
     optimizerModelRef,
     requirements,
+    addPromptHistory,
     type,
   ]);
 
@@ -255,6 +349,8 @@ export const PromptOptimizeDialog: React.FC<PromptOptimizeDialogProps> = ({
     setCurrentPrompt(originalPrompt);
     setOptimizedDraft('');
     setRequirements('');
+    setRequirementsHistory(readRequirementsHistory());
+    setActiveHistoryPanel(null);
     setMode(defaultMode);
   }, [defaultMode, open, originalPrompt, syncOptimizerModelFromStorage]);
 
@@ -265,14 +361,33 @@ export const PromptOptimizeDialog: React.FC<PromptOptimizeDialogProps> = ({
     };
   }, []);
 
-  const description =
-    language === 'zh'
-      ? mode === 'structured'
-        ? '把需求整理成可复用的 JSON 结构化提示词，结果先生成草稿，不会自动回填。'
-        : '编辑当前提示词并输入优化方向，结果先生成草稿，不会自动回填。'
-      : mode === 'structured'
-      ? 'Turn the request into a reusable JSON structured prompt. The result is drafted here and will not apply automatically.'
-      : 'Edit the current prompt and describe how to refine it. The result is drafted here and will not apply automatically.';
+  useEffect(() => {
+    if (!activeHistoryPanel) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target;
+      if (
+        target instanceof Node &&
+        historyPopoverRef.current?.contains(target)
+      ) {
+        return;
+      }
+      if (
+        target instanceof Element &&
+        target.closest('.prompt-optimize-dialog__history-btn')
+      ) {
+        return;
+      }
+      setActiveHistoryPanel(null);
+    };
+
+    document.addEventListener('mousedown', handlePointerDown, true);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown, true);
+    };
+  }, [activeHistoryPanel]);
 
   const requirementsPlaceholder =
     language === 'zh'
@@ -284,89 +399,177 @@ export const PromptOptimizeDialog: React.FC<PromptOptimizeDialogProps> = ({
       : 'For example: make it more cinematic, add camera language, reduce redundancy, emphasize subject and lighting...';
   const canOptimize = currentPrompt.trim().length > 0;
   const canApply = optimizedDraft.trim().length > 0;
+  const hasOptimizedDraft = optimizedDraft.length > 0;
+  const currentPromptHistoryItems = useMemo<PromptItem[]>(
+    () =>
+      promptHistory.slice(0, PROMPT_HISTORY_DISPLAY_LIMIT).map((item) => ({
+        id: item.id,
+        content: item.content,
+        pinned: item.pinned,
+        modelType: item.modelType,
+      })),
+    [promptHistory]
+  );
+  const requirementsHistoryItems = useMemo<PromptItem[]>(
+    () =>
+      requirementsHistory.map((item) => ({
+        id: item.id,
+        content: item.content,
+      })),
+    [requirementsHistory]
+  );
+  const windowId = useMemo(
+    () =>
+      `prompt-optimize-dialog-${reactWindowId.replace(
+        /[^a-zA-Z0-9_-]/g,
+        ''
+      )}`,
+    [reactWindowId]
+  );
+  const title =
+    language === 'zh'
+      ? mode === 'structured'
+        ? '结构化提示词'
+        : '提示词优化'
+      : mode === 'structured'
+      ? 'Structured Prompt'
+      : 'Prompt Optimization';
+  const windowSize = useMemo(() => {
+    const viewportPadding = isMobile ? 16 : 48;
+    const maxWidth = Math.max(280, viewportWidth - viewportPadding);
+    const maxHeight = Math.max(320, viewportHeight - viewportPadding);
+    const targetWidth = hasOptimizedDraft ? 1120 : 680;
+    const targetHeight = hasOptimizedDraft ? 760 : 680;
+    const width = Math.max(280, Math.min(targetWidth, maxWidth));
+    const height = Math.max(320, Math.min(targetHeight, maxHeight));
+
+    return {
+      width,
+      height,
+      minWidth: Math.min(hasOptimizedDraft ? 640 : 320, width),
+      minHeight: Math.min(420, height),
+    };
+  }, [hasOptimizedDraft, isMobile, viewportHeight, viewportWidth]);
+
+  const handleToggleHistoryPanel = useCallback(
+    (panel: OptimizeHistoryPanel) => {
+      if (panel === 'current') {
+        refreshPromptHistory();
+      } else {
+        setRequirementsHistory(readRequirementsHistory());
+      }
+      setActiveHistoryPanel((currentPanel) =>
+        currentPanel === panel ? null : panel
+      );
+    },
+    [refreshPromptHistory]
+  );
+
+  const handleSelectCurrentPromptHistory = useCallback((item: PromptItem) => {
+    setCurrentPrompt(item.content);
+    setActiveHistoryPanel(null);
+  }, []);
+
+  const handleSelectRequirementsHistory = useCallback((item: PromptItem) => {
+    setRequirements(item.content);
+    setActiveHistoryPanel(null);
+  }, []);
+
+  const renderHistoryPanel = (
+    panel: OptimizeHistoryPanel,
+    items: PromptItem[],
+    onSelect: (item: PromptItem) => void
+  ) => {
+    if (activeHistoryPanel !== panel) {
+      return null;
+    }
+
+    return (
+      <div
+        ref={historyPopoverRef}
+        className="prompt-optimize-dialog__history-panel"
+      >
+        {items.length > 0 ? (
+          <PromptListPanel
+            title={language === 'zh' ? '历史' : 'History'}
+            items={items}
+            onSelect={onSelect}
+            language={language}
+            showCount
+          />
+        ) : (
+          <div className="prompt-optimize-dialog__history-empty">
+            {language === 'zh' ? '暂无历史' : 'No history yet'}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  if (!open) {
+    return null;
+  }
 
   return (
-    <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && handleClose()}>
-      <DialogContent
-        className={`Dialog prompt-optimize-dialog ${
-          optimizedDraft ? 'prompt-optimize-dialog--split' : ''
+    <WinBoxWindow
+      id={windowId}
+      visible={open}
+      title={title}
+      icon={<Sparkles size={16} />}
+      onClose={handleClose}
+      width={windowSize.width}
+      height={windowSize.height}
+      minWidth={windowSize.minWidth}
+      minHeight={windowSize.minHeight}
+      x="center"
+      y="center"
+      maximizable={!isMobile}
+      minimizable={false}
+      resizable={!isMobile}
+      movable={!isMobile}
+      modal={false}
+      background="#ffffff"
+      className={`winbox-ai-generation winbox-prompt-optimize ${
+        hasOptimizedDraft ? 'winbox-prompt-optimize--split' : ''
+      }`}
+    >
+      <div
+        className={`prompt-optimize-dialog ${
+          hasOptimizedDraft ? 'prompt-optimize-dialog--split' : ''
         }`}
       >
-        <div className="prompt-optimize-dialog__header">
-          <div className="prompt-optimize-dialog__headline">
-            <DialogHeading className="prompt-optimize-dialog__title">
-              {language === 'zh'
-                ? mode === 'structured'
-                  ? '结构化提示词'
-                  : '提示词优化'
-                : mode === 'structured'
-                ? 'Structured Prompt'
-                : 'Prompt Optimization'}
-            </DialogHeading>
-            <DialogDescription className="prompt-optimize-dialog__description">
-              {description}
-            </DialogDescription>
-          </div>
-          <button
-            type="button"
-            className="prompt-optimize-dialog__close"
-            onClick={handleClose}
-            aria-label={language === 'zh' ? '关闭' : 'Close'}
-          >
-            <X size={16} />
-          </button>
-        </div>
-
         <div
           className={`prompt-optimize-dialog__body ${
-            optimizedDraft ? 'prompt-optimize-dialog__body--split' : ''
+            hasOptimizedDraft ? 'prompt-optimize-dialog__body--split' : ''
           }`}
         >
           <div className="prompt-optimize-dialog__form-pane">
-            {allowStructuredMode && (
-              <div className="prompt-optimize-dialog__section">
-                <span className="prompt-optimize-dialog__label">
-                  {language === 'zh' ? '输出模式' : 'Output Mode'}
-                </span>
-                <div className="prompt-optimize-dialog__mode-switch">
-                  <button
-                    type="button"
-                    className={`prompt-optimize-dialog__mode-btn ${
-                      mode === 'polish'
-                        ? 'prompt-optimize-dialog__mode-btn--active'
-                        : ''
-                    }`}
-                    onClick={() => setMode('polish')}
-                    disabled={isOptimizing}
-                  >
-                    <Sparkles size={14} />
-                    <span>{language === 'zh' ? '普通润色' : 'Polish'}</span>
-                  </button>
-                  <button
-                    type="button"
-                    className={`prompt-optimize-dialog__mode-btn ${
-                      mode === 'structured'
-                        ? 'prompt-optimize-dialog__mode-btn--active'
-                        : ''
-                    }`}
-                    onClick={() => setMode('structured')}
-                    disabled={isOptimizing}
-                  >
-                    <span>
-                      {language === 'zh' ? '结构化 JSON' : 'Structured JSON'}
-                    </span>
-                  </button>
-                </div>
+            <div className="prompt-optimize-dialog__section prompt-optimize-dialog__section--current">
+              <div className="prompt-optimize-dialog__label-row">
+                <label
+                  className="prompt-optimize-dialog__label"
+                  htmlFor={currentPromptId}
+                >
+                  {language === 'zh' ? '当前提示词' : 'Current Prompt'}
+                </label>
+                <button
+                  type="button"
+                  className="prompt-optimize-dialog__history-btn"
+                  onClick={() => handleToggleHistoryPanel('current')}
+                  aria-label={
+                    language === 'zh'
+                      ? '当前提示词历史'
+                      : 'Current prompt history'
+                  }
+                >
+                  <History size={16} />
+                </button>
+                {renderHistoryPanel(
+                  'current',
+                  currentPromptHistoryItems,
+                  handleSelectCurrentPromptHistory
+                )}
               </div>
-            )}
-
-            <div className="prompt-optimize-dialog__section">
-              <label
-                className="prompt-optimize-dialog__label"
-                htmlFor={currentPromptId}
-              >
-                {language === 'zh' ? '当前提示词' : 'Current Prompt'}
-              </label>
               <textarea
                 id={currentPromptId}
                 className="prompt-optimize-dialog__textarea prompt-optimize-dialog__textarea--current"
@@ -382,13 +585,32 @@ export const PromptOptimizeDialog: React.FC<PromptOptimizeDialogProps> = ({
               />
             </div>
 
-            <div className="prompt-optimize-dialog__section">
-              <label
-                className="prompt-optimize-dialog__label"
-                htmlFor={requirementsId}
-              >
-                {language === 'zh' ? '补充要求' : 'Additional Requirements'}
-              </label>
+            <div className="prompt-optimize-dialog__section prompt-optimize-dialog__section--requirements">
+              <div className="prompt-optimize-dialog__label-row">
+                <label
+                  className="prompt-optimize-dialog__label"
+                  htmlFor={requirementsId}
+                >
+                  {language === 'zh' ? '补充要求' : 'Additional Requirements'}
+                </label>
+                <button
+                  type="button"
+                  className="prompt-optimize-dialog__history-btn"
+                  onClick={() => handleToggleHistoryPanel('requirements')}
+                  aria-label={
+                    language === 'zh'
+                      ? '补充要求历史'
+                      : 'Additional requirements history'
+                  }
+                >
+                  <History size={16} />
+                </button>
+                {renderHistoryPanel(
+                  'requirements',
+                  requirementsHistoryItems,
+                  handleSelectRequirementsHistory
+                )}
+              </div>
               <textarea
                 id={requirementsId}
                 className="prompt-optimize-dialog__textarea"
@@ -399,54 +621,9 @@ export const PromptOptimizeDialog: React.FC<PromptOptimizeDialogProps> = ({
                 disabled={isOptimizing}
               />
             </div>
-
-            <div className="prompt-optimize-dialog__section">
-              <span className="prompt-optimize-dialog__label">
-                {language === 'zh' ? '文本模型' : 'Text Model'}
-              </span>
-              <div className="prompt-optimize-dialog__model">
-                <ModelDropdown
-                  variant="form"
-                  selectedModel={optimizerModel}
-                  selectedSelectionKey={getSelectionKey(
-                    optimizerModel,
-                    optimizerModelRef
-                  )}
-                  onSelect={(modelId, modelRef) => {
-                    const nextModelRef = modelRef || null;
-                    setOptimizerModel(modelId);
-                    setOptimizerModelRef(nextModelRef);
-                    writeStoredModelSelection(
-                      LS_KEYS.PROMPT_OPTIMIZE_TEXT_MODEL,
-                      modelId,
-                      nextModelRef
-                    );
-                  }}
-                  onSelectModel={(model) => {
-                    const nextModelRef = getModelRefFromConfig(model);
-                    setOptimizerModel(model.id);
-                    setOptimizerModelRef(nextModelRef);
-                    writeStoredModelSelection(
-                      LS_KEYS.PROMPT_OPTIMIZE_TEXT_MODEL,
-                      model.id,
-                      nextModelRef
-                    );
-                  }}
-                  language={language}
-                  models={visibleTextModels}
-                  placement="down"
-                  disabled={isOptimizing}
-                  placeholder={
-                    language === 'zh'
-                      ? '选择文本模型'
-                      : 'Select text model'
-                  }
-                />
-              </div>
-            </div>
           </div>
 
-          {optimizedDraft && (
+          {hasOptimizedDraft && (
             <div className="prompt-optimize-dialog__result-pane">
               <div className="prompt-optimize-dialog__section prompt-optimize-dialog__section--result">
                 <div className="prompt-optimize-dialog__result-header">
@@ -482,42 +659,110 @@ export const PromptOptimizeDialog: React.FC<PromptOptimizeDialogProps> = ({
 
         <div
           className={`prompt-optimize-dialog__footer ${
-            optimizedDraft ? 'prompt-optimize-dialog__footer--split' : ''
+            hasOptimizedDraft ? 'prompt-optimize-dialog__footer--split' : ''
           }`}
         >
           <div className="prompt-optimize-dialog__footer-actions prompt-optimize-dialog__footer-actions--form">
-            <button
-              type="button"
-              className="prompt-optimize-dialog__footer-btn prompt-optimize-dialog__footer-btn--secondary"
-              onClick={handleClose}
-              disabled={isOptimizing}
-            >
-              {language === 'zh' ? '取消' : 'Cancel'}
-            </button>
-            <button
-              type="button"
-              className="prompt-optimize-dialog__footer-btn prompt-optimize-dialog__footer-btn--primary"
-              onClick={() => void handleOptimizePrompt()}
-              disabled={isOptimizing || !canOptimize}
-            >
-              {language === 'zh'
-                ? isOptimizing
+            <div className="prompt-optimize-dialog__footer-controls">
+              {allowStructuredMode && (
+                <div
+                  className="prompt-optimize-dialog__mode-switch"
+                  aria-label={language === 'zh' ? '输出模式' : 'Output Mode'}
+                >
+                  <button
+                    type="button"
+                    className={`prompt-optimize-dialog__mode-btn ${
+                      mode === 'polish'
+                        ? 'prompt-optimize-dialog__mode-btn--active'
+                        : ''
+                    }`}
+                    onClick={() => setMode('polish')}
+                    disabled={isOptimizing}
+                  >
+                    <Sparkles size={14} />
+                    <span>{language === 'zh' ? '普通润色' : 'Polish'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`prompt-optimize-dialog__mode-btn ${
+                      mode === 'structured'
+                        ? 'prompt-optimize-dialog__mode-btn--active'
+                        : ''
+                    }`}
+                    onClick={() => setMode('structured')}
+                    disabled={isOptimizing}
+                  >
+                    <span>
+                      {language === 'zh' ? '结构化 JSON' : 'Structured JSON'}
+                    </span>
+                  </button>
+                </div>
+              )}
+              <div className="prompt-optimize-dialog__model">
+                <ModelDropdown
+                  selectedModel={optimizerModel}
+                  selectedSelectionKey={getSelectionKey(
+                    optimizerModel,
+                    optimizerModelRef
+                  )}
+                  onSelect={(modelId, modelRef) => {
+                    const nextModelRef = modelRef || null;
+                    setOptimizerModel(modelId);
+                    setOptimizerModelRef(nextModelRef);
+                    writeStoredModelSelection(
+                      LS_KEYS.PROMPT_OPTIMIZE_TEXT_MODEL,
+                      modelId,
+                      nextModelRef
+                    );
+                  }}
+                  onSelectModel={(model) => {
+                    const nextModelRef = getModelRefFromConfig(model);
+                    setOptimizerModel(model.id);
+                    setOptimizerModelRef(nextModelRef);
+                    writeStoredModelSelection(
+                      LS_KEYS.PROMPT_OPTIMIZE_TEXT_MODEL,
+                      model.id,
+                      nextModelRef
+                    );
+                  }}
+                  language={language}
+                  models={visibleTextModels}
+                  placement="up"
+                  header={
+                    language === 'zh'
+                      ? '选择文本模型 (↑↓ Tab)'
+                      : 'Select text model (↑↓ Tab)'
+                  }
+                  disabled={isOptimizing}
+                />
+              </div>
+            </div>
+            <div className="prompt-optimize-dialog__footer-buttons">
+              <button
+                type="button"
+                className="prompt-optimize-dialog__footer-btn prompt-optimize-dialog__footer-btn--primary"
+                onClick={() => void handleOptimizePrompt()}
+                disabled={isOptimizing || !canOptimize}
+              >
+                {language === 'zh'
+                  ? isOptimizing
+                    ? mode === 'structured'
+                      ? '生成中...'
+                      : '优化中...'
+                    : mode === 'structured'
+                    ? '生成结构化提示词'
+                    : '开始优化'
+                  : isOptimizing
                   ? mode === 'structured'
-                    ? '生成中...'
-                    : '优化中...'
+                    ? 'Generating...'
+                    : 'Optimizing...'
                   : mode === 'structured'
-                  ? '生成结构化提示词'
-                  : '开始优化'
-                : isOptimizing
-                ? mode === 'structured'
-                  ? 'Generating...'
-                  : 'Optimizing...'
-                : mode === 'structured'
-                ? 'Generate Structured Prompt'
-                : 'Optimize'}
-            </button>
+                  ? 'Generate Structured Prompt'
+                  : 'Optimize'}
+              </button>
+            </div>
           </div>
-          {optimizedDraft && (
+          {hasOptimizedDraft && (
             <div className="prompt-optimize-dialog__footer-actions prompt-optimize-dialog__footer-actions--result">
               <button
                 type="button"
@@ -530,8 +775,8 @@ export const PromptOptimizeDialog: React.FC<PromptOptimizeDialogProps> = ({
             </div>
           )}
         </div>
-      </DialogContent>
-    </Dialog>
+      </div>
+    </WinBoxWindow>
   );
 };
 
