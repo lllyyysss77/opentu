@@ -3284,6 +3284,11 @@ sw.addEventListener('message', (event: ExtendableMessageEvent) => {
     return;
   }
 
+  if (event.data && event.data.type === 'CLAIM_CLIENTS') {
+    event.waitUntil(sw.clients.claim());
+    return;
+  }
+
   if (
     event.data &&
     (event.data.type === 'COMMIT_UPGRADE' || event.data.type === 'SKIP_WAITING')

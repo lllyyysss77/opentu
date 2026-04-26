@@ -2,7 +2,7 @@ import type { ImageProps } from '@plait/common';
 import { RectangleClient } from '@plait/core';
 import { Loading, MessagePlugin } from 'tdesign-react';
 import classNames from 'classnames';
-import { useCallback } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { Video } from './video';
 import { generateImage } from '../../mcp/tools/image-generation';
 import { getImageRegion } from '../../services/ppt';
@@ -46,11 +46,85 @@ const isVideoElement = (imageItem: any): boolean => {
 };
 
 export const Image: React.FC<ImageProps> = (props: ImageProps) => {
+  const currentImageUrlRef = useRef(props.imageItem.url);
+  const cleanupSWRecoveryRef = useRef<(() => void) | null>(null);
+
+  const clearSWRecovery = useCallback(() => {
+    cleanupSWRecoveryRef.current?.();
+    cleanupSWRecoveryRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    currentImageUrlRef.current = props.imageItem.url;
+    return clearSWRecovery;
+  }, [props.imageItem.url, clearSWRecovery]);
+
+  const retryImageAfterSWClaim = useCallback(
+    (imageElement: HTMLImageElement) => {
+      if (
+        typeof navigator === 'undefined' ||
+        !('serviceWorker' in navigator) ||
+        navigator.serviceWorker.controller
+      ) {
+        return;
+      }
+
+      clearSWRecovery();
+
+      let settled = false;
+      const retry = () => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearSWRecovery();
+
+        if (
+          !imageElement.isConnected ||
+          currentImageUrlRef.current !== props.imageItem.url
+        ) {
+          return;
+        }
+
+        imageElement.src = `${props.imageItem.url}${
+          props.imageItem.url.includes('?') ? '&' : '?'
+        }_sw_ready=${Date.now()}`;
+      };
+
+      const timeoutId = window.setTimeout(() => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearSWRecovery();
+      }, 10_000);
+
+      const cleanup = () => {
+        window.clearTimeout(timeoutId);
+        navigator.serviceWorker.removeEventListener('controllerchange', retry);
+      };
+
+      cleanupSWRecoveryRef.current = cleanup;
+      navigator.serviceWorker.addEventListener('controllerchange', retry, {
+        once: true,
+      });
+      navigator.serviceWorker.ready
+        .then(() => {
+          if (navigator.serviceWorker.controller) {
+            retry();
+          }
+        })
+        .catch(() => undefined);
+    },
+    [clearSWRecovery, props.imageItem.url]
+  );
+
   // 处理图片加载失败
   const handleImageError = useCallback(
     (event: any) => {
       const imageElement = event.currentTarget as HTMLImageElement;
       imageElement.style.visibility = 'hidden';
+      retryImageAfterSWClaim(imageElement);
 
       const retry = handleVirtualUrlImageError(
         props.board,
@@ -66,18 +140,19 @@ export const Image: React.FC<ImageProps> = (props: ImageProps) => {
         }, retry.delay);
       }
     },
-    [props.board, props.element, props.imageItem.url]
+    [props.board, props.element, props.imageItem.url, retryImageAfterSWClaim]
   );
   const handleImageLoad = useCallback(
     (event: any) => {
       (event.currentTarget as HTMLImageElement).style.visibility = '';
+      clearSWRecovery();
       clearVirtualUrlImageError(
         props.board,
         props.element,
         props.imageItem.url
       );
     },
-    [props.board, props.element, props.imageItem.url]
+    [clearSWRecovery, props.board, props.element, props.imageItem.url]
   );
 
   const elementData = props.element as any;

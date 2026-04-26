@@ -405,6 +405,16 @@ if (shouldUseServiceWorker) {
     worker.postMessage({ type: 'GET_VERSION_STATE' });
   };
 
+  const claimCurrentClientIfNeeded = (
+    registration?: ServiceWorkerRegistration | null
+  ) => {
+    if (navigator.serviceWorker.controller || !registration?.active) {
+      return;
+    }
+
+    registration.active.postMessage({ type: 'CLAIM_CLIENTS' });
+  };
+
   const scheduleConfirmedUpgradeReload = (reason: string) => {
     if (!userConfirmedUpgrade || upgradeReloadScheduled) {
       return;
@@ -486,6 +496,12 @@ if (shouldUseServiceWorker) {
       }
 
       swRegistration = registration;
+      claimCurrentClientIfNeeded(registration);
+      navigator.serviceWorker.ready
+        .then(claimCurrentClientIfNeeded)
+        .catch((error) => {
+          console.warn('[Main] Service worker ready check failed:', error);
+        });
       updateBootStatus({
         tip: '启动缓存服务已连接，正在准备资源清单...',
         source: 'phase',
