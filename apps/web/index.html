@@ -1101,8 +1101,60 @@
             });
         }
 
+        function shouldEnableEarlyServiceWorkerBootstrap() {
+          var hostname = window.location.hostname;
+          var isLocalDevHost =
+            hostname === 'localhost' || hostname === '127.0.0.1';
+
+          if (!isLocalDevHost) {
+            return true;
+          }
+
+          if ('%VITE_ENABLE_SW_DEV%' === '1') {
+            return true;
+          }
+
+          try {
+            return (
+              new URLSearchParams(window.location.search).get('sw') === '1'
+            );
+          } catch {
+            return window.location.search.indexOf('sw=1') !== -1;
+          }
+        }
+
+        function cleanupEarlyDevelopmentServiceWorker() {
+          if (!('serviceWorker' in navigator)) {
+            return;
+          }
+
+          navigator.serviceWorker
+            .getRegistration()
+            .then(function (registration) {
+              if (registration) {
+                return registration.unregister();
+              }
+              return false;
+            })
+            .catch(function (error) {
+              console.warn(
+                '[Boot] Development service worker cleanup failed:',
+                error
+              );
+            });
+        }
+
         function setupEarlyServiceWorkerBootstrap() {
           if (!('serviceWorker' in navigator)) {
+            return;
+          }
+
+          if (!shouldEnableEarlyServiceWorkerBootstrap()) {
+            cleanupEarlyDevelopmentServiceWorker();
+            setProgress(52, {
+              tip: '开发模式跳过离线缓存服务，正在直接启动工作台...',
+              source: 'phase',
+            });
             return;
           }
 

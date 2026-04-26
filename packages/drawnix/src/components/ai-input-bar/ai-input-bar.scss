@@ -381,7 +381,7 @@ $ai-input-small-expanded-max-height: $ai-input-small-line-height * 6 + $ai-input
 
   // 输入区域 - 向上扩展
   &__input-area {
-    position: relative; // 用于 PromptHistoryPopover 绝对定位
+    position: relative;
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -401,6 +401,14 @@ $ai-input-small-expanded-max-height: $ai-input-small-line-height * 6 + $ai-input
     align-items: center;
     gap: 4px;
     flex-shrink: 0;
+  }
+
+  &__prompt-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 4px;
+    width: 100%;
+    min-width: 0;
   }
 
   // Generation type toggle (image/video)

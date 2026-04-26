@@ -228,6 +228,58 @@ export function sanitizeImageToolExtraParams(
   });
 }
 
+function loadAIInputImageParams(
+  modelId: string,
+  selectionKey?: string | null
+): PersistedParams | null {
+  const stored =
+    readStoredValue<Partial<AIInputPreferencesStored>>(LS_KEYS.AI_INPUT_PREFERENCES) || {};
+  const preferenceKey = getModelPreferenceKey(modelId, selectionKey);
+  const scopedParams = stored.scopedPreferences?.image?.[preferenceKey];
+  if (scopedParams) {
+    return asRecord(scopedParams);
+  }
+
+  if (stored.generationType === 'image' && stored.selectedModel === modelId) {
+    return asRecord(stored.selectedParams);
+  }
+
+  return null;
+}
+
+function saveAIInputImageParams(
+  modelId: string,
+  selectionKey: string | null | undefined,
+  extraParams: PersistedParams
+): void {
+  const stored =
+    readStoredValue<Partial<AIInputPreferencesStored>>(LS_KEYS.AI_INPUT_PREFERENCES) || {};
+  const preferenceKey = getModelPreferenceKey(modelId, selectionKey);
+  const currentParams =
+    stored.generationType === 'image' && stored.selectedModel === modelId
+      ? asRecord(stored.selectedParams)
+      : {};
+  const scopedParams = asRecord(
+    stored.scopedPreferences?.image?.[preferenceKey]
+  );
+  const mergedParams = sanitizeSelectedParams(modelId, {
+    ...currentParams,
+    ...scopedParams,
+    ...extraParams,
+  });
+
+  writeStoredValue<Partial<AIInputPreferencesStored>>(LS_KEYS.AI_INPUT_PREFERENCES, {
+    ...stored,
+    scopedPreferences: {
+      ...(stored.scopedPreferences || {}),
+      image: {
+        ...(stored.scopedPreferences?.image || {}),
+        [preferenceKey]: mergedParams,
+      },
+    },
+  });
+}
+
 function getDefaultModelForGenerationType(type: GenerationType): string {
   if (type === 'video') return getDefaultVideoModel();
   if (type === 'audio') return getDefaultAudioModel();
@@ -363,7 +415,11 @@ export function loadAIImageToolPreferences(fallbackModel: string): AIImageToolPr
   return {
     currentModel,
     currentSelectionKey,
-    extraParams: sanitizeImageToolExtraParams(currentModel, stored.extraParams),
+    extraParams: sanitizeImageToolExtraParams(
+      currentModel,
+      loadAIInputImageParams(currentModel, currentSelectionKey) ||
+        stored.extraParams
+    ),
     aspectRatio: sanitizeAspectRatio(currentModel, stored.aspectRatio),
   };
 }
@@ -389,6 +445,11 @@ export function saveAIImageToolPreferences(preferences: AIImageToolPreferences):
       },
     },
   } satisfies AIImageToolPreferencesStored);
+  saveAIInputImageParams(
+    preferences.currentModel,
+    preferences.currentSelectionKey,
+    preferences.extraParams
+  );
 }
 
 export function loadAIVideoToolPreferences(
@@ -493,11 +554,12 @@ export function loadScopedAIImageToolPreferences(
     readStoredValue<Partial<AIImageToolPreferencesStored>>(LS_KEYS.AI_IMAGE_TOOL_PREFERENCES) || {};
   const preferenceKey = getModelPreferenceKey(modelId, selectionKey);
   const scoped = stored.scopedPreferences?.[preferenceKey];
+  const inputParams = loadAIInputImageParams(modelId, selectionKey);
 
   return {
     extraParams: sanitizeImageToolExtraParams(
       modelId,
-      scoped?.extraParams ?? stored.extraParams
+      inputParams ?? scoped?.extraParams ?? stored.extraParams
     ),
     aspectRatio: sanitizeAspectRatio(modelId, scoped?.aspectRatio ?? stored.aspectRatio),
   };

@@ -202,6 +202,9 @@ const TTDDialogComponent = ({
     initialAspectRatio?: string; // 选中 Frame 时自动匹配的宽高比
     targetFrameId?: string; // 目标 Frame ID（用于将生成结果插入到 Frame 内部）
     targetFrameDimensions?: { width: number; height: number }; // Frame 尺寸
+    pptSlideImage?: boolean;
+    pptSlidePrompt?: string;
+    pptReplaceElementId?: string;
   }>({
     initialPrompt: '',
     initialImages: [],
@@ -349,6 +352,9 @@ const TTDDialogComponent = ({
             targetFrameId: imageDialogInitialData.targetFrameId,
             targetFrameDimensions:
               imageDialogInitialData.targetFrameDimensions,
+            pptSlideImage: imageDialogInitialData.pptSlideImage,
+            pptSlidePrompt: imageDialogInitialData.pptSlidePrompt,
+            pptReplaceElementId: imageDialogInitialData.pptReplaceElementId,
           });
           if (imageDialogInitialData.initialModel) {
             setSelectedImageModel(imageDialogInitialData.initialModel);
@@ -759,6 +765,9 @@ const TTDDialogComponent = ({
               initialAspectRatio={aiImageData.initialAspectRatio}
               targetFrameId={aiImageData.targetFrameId}
               targetFrameDimensions={aiImageData.targetFrameDimensions}
+              pptSlideImage={aiImageData.pptSlideImage}
+              pptSlidePrompt={aiImageData.pptSlidePrompt}
+              pptReplaceElementId={aiImageData.pptReplaceElementId}
               selectedModel={selectedImageModel}
               selectedModelRef={selectedImageModelRef}
               onModelChange={handleImageModelChange}

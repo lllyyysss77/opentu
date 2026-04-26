@@ -166,6 +166,87 @@ describe('ai-generation-preferences-service', () => {
     });
   });
 
+  it('AI 图片工具优先对齐 AI 输入栏的图片模型参数', async () => {
+    const {
+      loadScopedAIImageToolPreferences,
+      saveAIImageToolPreferences,
+      saveScopedAIInputModelParams,
+    } = await import('../ai-generation-preferences-service');
+
+    saveAIImageToolPreferences({
+      currentModel: 'gpt-image-2',
+      currentSelectionKey: 'provider-a::gpt-image-2',
+      extraParams: {
+        resolution: '1k',
+        quality: 'auto',
+      },
+      aspectRatio: '16:9',
+    });
+    saveScopedAIInputModelParams(
+      'image',
+      'gpt-image-2',
+      {
+        size: '16x9',
+        resolution: '4k',
+        quality: 'high',
+      },
+      'provider-a::gpt-image-2'
+    );
+
+    expect(
+      loadScopedAIImageToolPreferences(
+        'gpt-image-2',
+        'provider-a::gpt-image-2'
+      )
+    ).toMatchObject({
+      extraParams: {
+        resolution: '4k',
+        quality: 'high',
+      },
+      aspectRatio: '16:9',
+    });
+  });
+
+  it('AI 图片工具保存参数时同步回 AI 输入栏并保留尺寸参数', async () => {
+    const {
+      loadScopedAIInputModelParams,
+      saveAIImageToolPreferences,
+      saveScopedAIInputModelParams,
+    } = await import('../ai-generation-preferences-service');
+
+    saveScopedAIInputModelParams(
+      'image',
+      'gpt-image-2',
+      {
+        size: '3x4',
+        resolution: '1k',
+        quality: 'auto',
+      },
+      'provider-a::gpt-image-2'
+    );
+    saveAIImageToolPreferences({
+      currentModel: 'gpt-image-2',
+      currentSelectionKey: 'provider-a::gpt-image-2',
+      extraParams: {
+        resolution: '2k',
+        quality: 'medium',
+      },
+      aspectRatio: '16:9',
+    });
+
+    expect(
+      loadScopedAIInputModelParams(
+        'image',
+        'gpt-image-2',
+        'provider-a::gpt-image-2'
+      )
+    ).toMatchObject({
+      size: '3x4',
+      resolution: '2k',
+      quality: 'medium',
+    });
+  });
+
   it('保留 Gemini preview 的旧 quality 档位语义', async () => {
     localStorage.setItem(
       'aitu_ai_image_tool_preferences',
