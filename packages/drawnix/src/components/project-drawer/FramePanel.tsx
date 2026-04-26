@@ -106,6 +106,7 @@ import { exportAllPPTFrames } from '../../services/ppt/ppt-export-service';
 import { ModelDropdown } from '../ai-input-bar/ModelDropdown';
 import {
   ContextMenu,
+  HoverCard,
   useContextMenuState,
   type ContextMenuEntry,
 } from '../shared';
@@ -728,6 +729,84 @@ const PPTSlidePreview: React.FC<{
         <div className="frame-panel__slide-preview-empty">{emptyText}</div>
       )}
     </div>
+  );
+};
+
+const PPTOutlineSlideImageAction: React.FC<{
+  imageUrl?: string;
+  title: string;
+  status?: PPTFrameMeta['slideImageStatus'] | PPTFrameMeta['imageStatus'];
+  disabled?: boolean;
+  onClick: (event: React.MouseEvent<HTMLButtonElement>) => void;
+}> = ({ imageUrl, title, status, disabled = false, onClick }) => {
+  const thumbnailUrl = useThumbnailUrl(imageUrl, 'image', 'small');
+  const hasImage = Boolean(imageUrl);
+  const label = hasImage ? '重新生成 PPT 图片' : 'AI 图片生成';
+  const isLoading = status === 'loading';
+  const isFailed = status === 'failed';
+
+  const button = (
+    <button
+      type="button"
+      className={classNames('frame-panel__outline-image-action', {
+        'frame-panel__outline-image-action--with-image': hasImage,
+        'frame-panel__outline-image-action--loading': isLoading,
+        'frame-panel__outline-image-action--failed': isFailed,
+        'frame-panel__outline-image-action--disabled': disabled,
+      })}
+      aria-label={label}
+      aria-disabled={disabled || undefined}
+      tabIndex={disabled ? -1 : 0}
+      onClick={(event) => {
+        event.stopPropagation();
+        if (disabled) {
+          return;
+        }
+        onClick(event);
+      }}
+    >
+      {thumbnailUrl ? (
+        <img
+          src={thumbnailUrl}
+          alt={`${title} 当前图片`}
+          loading="lazy"
+          decoding="async"
+          className="frame-panel__outline-image-thumb"
+        />
+      ) : (
+        <AIImageIcon size={16} />
+      )}
+    </button>
+  );
+
+  if (!imageUrl) {
+    return (
+      <HoverTip content={label} placement="top">
+        {button}
+      </HoverTip>
+    );
+  }
+
+  return (
+    <HoverCard
+      content={
+        <div className="frame-panel__outline-image-preview">
+          <img
+            src={imageUrl}
+            alt={`${title} 大图预览`}
+            loading="lazy"
+            decoding="async"
+          />
+        </div>
+      }
+      placement="left"
+      sideOffset={12}
+      contentClassName="frame-panel__outline-image-preview-popover"
+      openDelay={80}
+      closeDelay={80}
+    >
+      {button}
+    </HoverCard>
   );
 };
 
@@ -2823,22 +2902,36 @@ export const FramePanel: React.FC<FramePanelProps> = ({
                             {getFrameDisplayName(info.frame)}
                           </span>
                         </div>
-                        <HoverTip content="提示词优化" placement="top">
-                          <Button
-                            className="frame-panel__outline-optimize"
-                            variant="outline"
-                            size="small"
-                            shape="square"
-                            icon={<Sparkles size={15} />}
+                        <div className="frame-panel__outline-item-actions">
+                          <PPTOutlineSlideImageAction
+                            imageUrl={info.slideImageUrl}
+                            title={getFrameDisplayName(info.frame)}
+                            status={
+                              info.pptMeta?.slideImageStatus ||
+                              info.pptMeta?.imageStatus
+                            }
                             disabled={isOutlineGenerating}
-                            onClick={() =>
-                              setOutlinePromptOptimizeTarget({
-                                type: 'slide',
-                                frameId: info.frame.id,
-                              })
+                            onClick={(event) =>
+                              handleRegenerateSlide(info, event)
                             }
                           />
-                        </HoverTip>
+                          <HoverTip content="提示词优化" placement="top">
+                            <Button
+                              className="frame-panel__outline-optimize"
+                              variant="outline"
+                              size="small"
+                              shape="square"
+                              icon={<Sparkles size={15} />}
+                              disabled={isOutlineGenerating}
+                              onClick={() =>
+                                setOutlinePromptOptimizeTarget({
+                                  type: 'slide',
+                                  frameId: info.frame.id,
+                                })
+                              }
+                            />
+                          </HoverTip>
+                        </div>
                       </div>
                       <Textarea
                         value={slidePrompt}
