@@ -12,7 +12,7 @@
  */
 
 import type { MCPTool, MCPResult, MCPExecuteOptions } from '../types';
-import type { PlaitBoard, Point } from '@plait/core';
+import type { PlaitBoard, PlaitElement, Point } from '@plait/core';
 import {
   Transforms,
   BoardTransforms,
@@ -21,7 +21,7 @@ import {
 } from '@plait/core';
 import { getBoard } from './shared';
 import { FrameTransforms } from '../../plugins/with-frame';
-import { PlaitFrame } from '../../types/frame.types';
+import { PlaitFrame, isFrameElement } from '../../types/frame.types';
 import { defaultGeminiClient } from '../../utils/gemini-api';
 import { geminiSettings } from '../../utils/settings-manager';
 import type { GeminiMessage } from '../../utils/gemini-api/types';
@@ -42,6 +42,53 @@ import {
   loadPPTFrameLayoutColumns,
   requestOpenPPTEditor,
 } from '../../services/ppt';
+
+function isPPTFrame(
+  element: PlaitElement
+): element is PlaitFrame & { pptMeta: PPTFrameMeta } {
+  return isFrameElement(element) && !!(element as { pptMeta?: unknown }).pptMeta;
+}
+
+function collectReferencedPPTElementIds(frame: PlaitFrame): string[] {
+  const pptMeta = (frame as PlaitFrame & { pptMeta?: PPTFrameMeta }).pptMeta;
+  if (!pptMeta) return [];
+
+  return [
+    pptMeta.slideImageElementId,
+    ...(pptMeta.slideImageHistory || []).map((item) => item.elementId),
+  ].filter((id): id is string => typeof id === 'string' && id.length > 0);
+}
+
+function deleteElementsById(board: PlaitBoard, elementIds: Set<string>): void {
+  for (let index = board.children.length - 1; index >= 0; index -= 1) {
+    if (elementIds.has(board.children[index].id)) {
+      Transforms.removeNode(board, [index]);
+    }
+  }
+}
+
+function replaceExistingPPTOutline(board: PlaitBoard): number {
+  const existingPPTFrames = board.children.filter(isPPTFrame);
+  if (existingPPTFrames.length === 0) {
+    return 0;
+  }
+
+  const frameIds = new Set(existingPPTFrames.map((frame) => frame.id));
+  const elementsToDelete = FrameTransforms.getFrameContents(board, frameIds);
+  const existingDeleteIds = new Set(
+    elementsToDelete.map((element) => element.id)
+  );
+
+  for (const frame of existingPPTFrames) {
+    for (const elementId of collectReferencedPPTElementIds(frame)) {
+      existingDeleteIds.add(elementId);
+    }
+  }
+
+  deleteElementsById(board, existingDeleteIds);
+
+  return existingPPTFrames.length;
+}
 
 /**
  * 聚焦视口到指定 Frame
@@ -217,6 +264,13 @@ async function executePPTGeneration(
         `${index + 1}. ${page.title} (${page.layout})${hasImage}\n`
       );
     });
+
+    const replacedFrameCount = replaceExistingPPTOutline(board);
+    if (replacedFrameCount > 0) {
+      options.onChunk?.(
+        `\n已替换画布中原有 ${replacedFrameCount} 个 PPT 页面及其内容。\n`
+      );
+    }
 
     options.onChunk?.(`\n正在创建 PPT 页面并填充提示词...\n\n`);
 
@@ -412,7 +466,7 @@ export const pptGenerationTool: MCPTool = {
     warnings: [
       'PPT 生成需要几秒钟时间，请耐心等待',
       '此工具只创建页面和提示词，不会立即生图',
-      '每次生成会创建新的 Frame，不会覆盖已有内容',
+      '一个画布只保留一套 PPT；每次生成会替换已有 PPT 页面及其内容',
     ],
   },
 

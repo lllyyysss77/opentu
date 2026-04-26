@@ -39,6 +39,20 @@ const VALID_LAYOUTS: PPTLayoutType[] = [
   'ending',
 ];
 
+const LAYOUT_GUIDANCE: Record<PPTLayoutType, string> = {
+  cover:
+    '建立整套 PPT 的主视觉基调：一个强视觉锚点、少量大字标题、充足留白，避免信息堆叠。',
+  toc: '使用清晰的章节导航结构：编号、分组线或轨道式布局，目录项节奏统一，并延续封面视觉母题。',
+  'title-body':
+    '使用稳定内容页版式：标题区、正文区、视觉锚点区明确分层，要点可转为卡片、标签或步骤块。',
+  'image-text':
+    '使用图文平衡版式：一侧承载视觉锚点，另一侧承载文字层级，两侧对齐到同一网格。',
+  comparison:
+    '使用左右或上下对比结构：两组信息尺寸、间距和组件样式对称，差异用同一强调色体系标注。',
+  ending:
+    '做收束页：回扣核心视觉母题，保留一个总结性视觉锚点和简洁行动/结束语，不新增新画风。',
+};
+
 const STYLE_FIELD_TEXT_LIMIT = 480;
 const STYLE_REQUIREMENT_TEXT_LIMIT = 280;
 const PROMPT_ONLY_LABEL_PATTERN =
@@ -93,13 +107,13 @@ export function createDefaultPPTStyleSpec(
   return {
     visualStyle,
     colorPalette:
-      'warm white or very light neutral background, deep charcoal text, one consistent accent color, muted supporting colors, no random palette changes',
+      'warm white or very light neutral background as 70% base, deep charcoal text, one consistent accent color as 10% highlight, muted supporting colors as 20% surfaces, no random palette changes',
     typography:
-      'consistent geometric sans-serif, bold concise titles, clear body hierarchy, same font mood and weight system on every slide',
+      'consistent geometric sans-serif, bold concise titles, clear body hierarchy, same font mood, size scale, and weight system on every slide',
     layout:
-      'stable 16:9 grid, generous margins, repeated header/title rhythm, reusable cards/charts/content blocks, balanced whitespace',
+      'stable 16:9 grid, generous margins, repeated header/title rhythm, reusable cards/charts/content blocks, balanced whitespace, one clear visual anchor per slide',
     decorativeElements:
-      'subtle geometric shapes, thin dividers, soft shadows, restrained icons, repeated visual motif across slides',
+      'subtle geometric shapes, thin dividers, soft shadows, restrained icons, repeated visual motif and component style across slides',
     avoid:
       'do not switch art styles, do not change color families between slides, do not use mismatched fonts, do not create busy backgrounds',
   };
@@ -182,10 +196,10 @@ interface PPTOutline {
 
 interface PPTStyleSpec {
   visualStyle: string;        // 整体视觉风格，具体且可复用
-  colorPalette: string;       // 主色、背景色、强调色、辅助色规则
+  colorPalette: string;       // 背景色、主色、辅助色、强调色、色板比例和用途
   typography: string;         // 字体气质、字号层级、字重规则
-  layout: string;             // 网格、留白、组件复用、版面节奏
-  decorativeElements: string; // 重复出现的图形、图标、纹理或视觉母题
+  layout: string;             // 网格、留白、组件复用、版面节奏、视觉锚点规则
+  decorativeElements: string; // 重复出现的图形、图标、纹理、组件样式或视觉母题
   avoid?: string;             // 禁止漂移项
 }
 
@@ -211,6 +225,15 @@ interface PPTPageSpec {
 2. styleSpec 要具体到可执行的视觉规则，不能只写 generic、modern、clean 这类泛词
 3. 若额外要求中包含风格要求，必须融合进 styleSpec
 4. 各页允许版式变化，但颜色、字体气质、组件样式、装饰母题必须一致
+
+## 设计系统生成规则
+1. styleSpec 必须是一套可复用设计系统，而不是零散风格标签；它要让后续公共提示词和每页提示词都能继承。
+2. visualStyle 写清楚主题气质、行业感、画面材质和整体表现方式，避免只写“高级”“现代”“简洁”。
+3. colorPalette 必须包含背景色、主文字色、主色、辅助色、强调色和色板比例（建议 70% 背景/20% 辅助/10% 强调），并说明各自用途。
+4. typography 必须包含标题、正文、数字/标签的字体气质、字号层级和字重规则，确保每页字体继承一致。
+5. layout 必须包含 16:9 网格、边距、标题区位置、内容区节奏、组件复用规则和每页视觉锚点规则。
+6. decorativeElements 必须定义重复视觉母题、图标/线条/卡片/图表的统一样式，不要每页随机换装饰。
+7. avoid 必须列出禁止漂移项，例如更换色板、换字体体系、混用写实照片和扁平插画、背景过密、文字低对比。
 
 ## 结构标签规则
 1. title、subtitle、bullets 只写最终应出现在幻灯片上的正文，不要写提示词字段名或结构标签
@@ -306,6 +329,17 @@ function formatStyleSpec(styleSpec: PPTStyleSpec): string {
 - 禁止事项：${styleSpec.avoid || '不得偏离上述全局风格规格'}`;
 }
 
+function formatDeckConsistencyRules(): string {
+  return `## 设计一致性规则
+- 整套 PPT 必须像同一套模板：继承同一色板、字体气质、网格、组件样式和重复视觉母题。
+- 色板比例：优先保持约 70% 背景/20% 辅助面/10% 强调色；强调色只用于关键数字、标签、连接线或当前页视觉锚点。
+- 字体继承：标题、正文、标签、数字分别沿用同一字形气质、字号层级和字重关系，不得单页换字体体系。
+- 组件复用：卡片、图表、图标、分隔线、按钮状标签、数据芯片的圆角、描边、阴影和间距保持一致。
+- 视觉母题复用：每页都可以有不同构图，但要重复使用同一类图形语言、纹理、线条或图标风格。
+- 对比度与留白：文字必须高对比、清晰可读；页面边距和元素间距稳定，避免文字贴边或拥挤。
+- 每页必须有一个视觉锚点：可以是主图形、关键数字、流程节点、对比焦点或图文主体，用于建立清晰焦点。`;
+}
+
 function formatCoreRequirements(options: PPTGenerateOptions = {}): string {
   const { language = '中文' } = options;
   return `## 核心要求
@@ -315,7 +349,22 @@ function formatCoreRequirements(options: PPTGenerateOptions = {}): string {
 - 画面比例：16:9，留白合理，层级清晰，适合正式演示。
 - 所有页面必须严格遵守公共提示词，不得为单页另起一套画风、色板、字体或组件样式。
 - 各页可以有不同版式，但必须像同一套 PPT 模板中的一页。
+- 每页必须有明确视觉锚点，并与标题信息形成主次关系。
 - 不得把提示词字段名、结构标签、引号、冒号、JSON/Markdown 标记或列表编号渲染到幻灯片画面中。`;
+}
+
+function formatSlideBoundaryRules(): string {
+  return `## 单页设计边界
+- 每页只根据单页提示词选择构图、视觉锚点和内容层级；不要复制或改写生成时拼接的全套设计规则。
+- 必须继承生成时拼接的全套设计约束，不得为任何单页创造新色板、新字体体系、新画风或新组件样式。
+- 可以根据当前版式改变信息摆放，但边距、对齐、图标/卡片/线条风格要与整套 PPT 保持一致。`;
+}
+
+function formatRenderingGuardrails(): string {
+  return `## 禁止事项
+- 不得在画面中出现“封面”“封面页”“大纲”“PPT大纲”“页面标题”“页面要点”“视觉概念”“当前页面角色”等提示词字段或结构标签，除非它们是“画面可见文字”中的真实内容。
+- 不得把任何提示词说明句、字段名、列表编号、JSON/Markdown 标记复制到幻灯片中。
+- 开场主视觉页只呈现主题、品牌名或副标题，不要出现“封面：xxx”或“xxx PPT 大纲”。`;
 }
 
 export function formatPPTCommonPrompt(
@@ -325,6 +374,12 @@ export function formatPPTCommonPrompt(
   return `整套 PPT 公共提示词，所有页面都必须遵守：
 
 ${formatCoreRequirements(options)}
+
+${formatDeckConsistencyRules()}
+
+${formatSlideBoundaryRules()}
+
+${formatRenderingGuardrails()}
 
 ## 全局风格规格
 ${formatStyleSpec(normalizePPTStyleSpec(styleSpec, options))}`;
@@ -380,6 +435,33 @@ function summarizePage(page?: PPTPageSpec): string {
     .join('｜');
 }
 
+function buildSlideVisualAnchor(page: PPTPageSpec): string {
+  if (page.imagePrompt?.trim()) {
+    return page.imagePrompt.trim();
+  }
+
+  const title = sanitizeVisiblePPTText(page.title);
+  const firstBullet = page.bullets
+    ?.map(sanitizeVisiblePPTText)
+    .find(Boolean);
+  const anchorSource = firstBullet || title || '本页核心信息';
+
+  switch (page.layout) {
+    case 'cover':
+      return `围绕“${anchorSource}”建立一个主题主视觉符号或抽象场景`;
+    case 'toc':
+      return '用章节轨道、编号节点或目录路径作为视觉锚点';
+    case 'image-text':
+      return `将“${anchorSource}”转化为主图形、产品画面或概念插画`;
+    case 'comparison':
+      return '用中轴线、双栏对比卡片或差异高亮作为视觉锚点';
+    case 'ending':
+      return `用收束性的图形符号呼应“${anchorSource}”`;
+    default:
+      return `将“${anchorSource}”转化为关键数字、图标组合或信息卡片焦点`;
+  }
+}
+
 /**
  * 生成单页整图 PPT 的图片提示词。
  */
@@ -405,6 +487,8 @@ export function generateSlideImagePrompt(
   const safePageTitle =
     sanitizeVisiblePPTText(page.title) || sanitizeVisiblePPTText(outline.title);
   const safeSubtitle = sanitizeVisiblePPTText(page.subtitle) || '无';
+  const layoutGuidance = LAYOUT_GUIDANCE[page.layout];
+  const visualAnchor = buildSlideVisualAnchor(page);
 
   return `请生成一张完整的 16:9 PowerPoint 幻灯片图片，适合直接作为 PPT 第 ${pageIndex}/${totalPages} 页使用。
 
@@ -419,18 +503,14 @@ ${formatVisibleSlideTexts(outline.title, page)}
 - 标题语义：${safePageTitle || '无'}
 - 副标题语义：${safeSubtitle}
 - 内容语义：${formatReferenceBullets(page.bullets)}
-- 视觉概念：${page.imagePrompt || '根据页面内容自行设计专业视觉元素'}
+- 本页视觉锚点：${visualAnchor}
+- 版式指导：${layoutGuidance}
 
 ## 相邻页面上下文（仅用于保持连续性，不要照抄或渲染为文字）
 - 上一页概要：${summarizePage(previousPage)}
 - 下一页概要：${summarizePage(nextPage)}
 
 ${extraRequirements ? `## 额外要求\n${extraRequirements}\n` : ''}
-## 禁止事项
-- 不得在画面中出现“封面”“封面页”“大纲”“PPT大纲”“页面标题”“页面要点”“视觉概念”“当前页面角色”等提示词字段或结构标签，除非它们是“画面可见文字”中的真实内容。
-- 不得把本提示词的任何说明句、字段名、列表编号、JSON/Markdown 标记复制到幻灯片中。
-- 开场主视觉页只呈现主题、品牌名或副标题，不要出现“封面：xxx”或“xxx PPT 大纲”。
-
 请只生成最终幻灯片画面。`;
 }
 

@@ -27,6 +27,10 @@ describe('ppt prompts style consistency', () => {
 
     expect(prompt).toContain('styleSpec: PPTStyleSpec');
     expect(prompt).toContain('所有页面都必须共享同一套 styleSpec');
+    expect(prompt).toContain('可复用设计系统');
+    expect(prompt).toContain('色板比例');
+    expect(prompt).toContain('重复视觉母题');
+    expect(prompt).toContain('视觉锚点规则');
     expect(prompt).toContain('额外要求中包含风格要求');
     expect(prompt).toContain(
       '除 cover 和 ending 外，每一页都必须包含非空 bullets 数组'
@@ -210,16 +214,33 @@ describe('ppt prompts style consistency', () => {
     );
 
     expect(commonPrompt).toContain('## 核心要求');
+    expect(commonPrompt).toContain('## 设计一致性规则');
     expect(commonPrompt).toContain('输出必须是一整页幻灯片设计');
     expect(commonPrompt).toContain('文字语言：中文');
+    expect(commonPrompt).toContain('色板比例');
+    expect(commonPrompt).toContain('组件复用');
+    expect(commonPrompt).toContain('视觉母题复用');
+    expect(commonPrompt).toContain('对比度与留白');
+    expect(commonPrompt).toContain('每页必须有一个视觉锚点');
+    expect(commonPrompt).toContain('## 单页设计边界');
+    expect(commonPrompt).toContain('不得为任何单页创造新色板');
+    expect(commonPrompt).toContain('## 禁止事项');
+    expect(commonPrompt).toContain('不得在画面中出现“封面”');
     expect(slidePrompt).not.toContain('全局风格规格');
     expect(slidePrompt).not.toContain(styleSpec.visualStyle);
     expect(slidePrompt).not.toContain(styleSpec.colorPalette);
+    expect(slidePrompt).not.toContain('色板比例');
+    expect(slidePrompt).not.toContain('## 单页设计边界');
+    expect(slidePrompt).not.toContain('## 禁止事项');
+    expect(slidePrompt).not.toContain('不得为任何单页创造新色板');
     expect(slidePrompt).not.toContain('## 核心要求');
     expect(slidePrompt).not.toContain('公共提示词');
     expect(slidePrompt).toContain('## 画面可见文字');
     expect(slidePrompt).toContain('- "关键方向"');
     expect(slidePrompt).toContain('- "模型能力升级"');
+    expect(slidePrompt).toContain('本页视觉锚点');
+    expect(slidePrompt).toContain('版式指导');
+    expect(slidePrompt).toContain('使用稳定内容页版式');
     expect(slidePrompt).toContain('上一页概要：路线图｜无要点');
     expect(slidePrompt).toContain('下一页概要：谢谢｜无要点');
     expect(generationPrompt).toContain(commonPrompt);
