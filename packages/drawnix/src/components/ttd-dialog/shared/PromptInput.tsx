@@ -6,8 +6,7 @@ import { CharacterMentionPopup } from '../../character/CharacterMentionPopup';
 import { useMention } from '../../../hooks/useMention';
 import { Z_INDEX } from '../../../constants/z-index';
 import { promptStorageService } from '../../../services/prompt-storage-service';
-import { PromptListPanel, type PromptItem } from '../../shared';
-import { MessagePlugin } from 'tdesign-react';
+import { HoverTip, PromptListPanel, type PromptItem } from '../../shared';
 import { PromptOptimizeDialog } from '../../shared/PromptOptimizeDialog';
 import './PromptInput.scss';
 
@@ -182,13 +181,6 @@ export const PromptInput: React.FC<PromptInputProps> = ({
       disabled,
     });
 
-    if (!prompt.trim()) {
-      MessagePlugin.warning(
-        language === 'zh' ? '请先输入提示词' : 'Please enter a prompt first'
-      );
-      return;
-    }
-
     setIsOptimizeDialogOpen(true);
   }, [disabled, language, prompt, type]);
 
@@ -261,16 +253,23 @@ export const PromptInput: React.FC<PromptInputProps> = ({
           rows={4}
           disabled={disabled}
         />
-        <button
-          type="button"
-          className="prompt-optimize-button"
-          onClick={handleOpenOptimizeDialog}
+        <HoverTip
+          content={language === 'zh' ? '提示词优化' : 'Prompt optimization'}
+          placement="top"
           disabled={disabled}
-          aria-label={language === 'zh' ? '优化提示词' : 'Optimize prompt'}
-          title={language === 'zh' ? '优化提示词' : 'Optimize prompt'}
         >
-          <Sparkles size={16} />
-        </button>
+          <button
+            type="button"
+            className="prompt-optimize-button"
+            onClick={handleOpenOptimizeDialog}
+            disabled={disabled}
+            aria-label={
+              language === 'zh' ? '提示词优化' : 'Prompt optimization'
+            }
+          >
+            <Sparkles size={16} />
+          </button>
+        </HoverTip>
       </div>
 
       {/* Character mention popup - rendered in portal style with fixed position */}

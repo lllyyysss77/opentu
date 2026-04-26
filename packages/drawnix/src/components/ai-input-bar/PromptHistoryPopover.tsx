@@ -30,7 +30,7 @@ interface PromptHistoryPopoverProps {
   onSelectPrompt: (info: PromptSelectInfo) => void;
   /** 语言 */
   language: 'zh' | 'en';
-  /** 附加快捷操作，显示在更多按钮下方 */
+  /** 附加快捷操作，显示在更多按钮同组区域 */
   extraActions?: React.ReactNode;
 }
 

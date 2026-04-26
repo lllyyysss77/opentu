@@ -28,6 +28,7 @@ import { MessagePlugin } from 'tdesign-react';
 import { ImageUploadIcon, MediaLibraryIcon } from '../icons';
 import { useBoard } from '@plait-board/react-board';
 import { SelectedContentPreview } from '../shared/SelectedContentPreview';
+import { HoverTip } from '../shared/hover';
 import {
   getSelectedElements,
   ATTACHED_ELEMENT_CLASS_NAME,
@@ -1685,22 +1686,8 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
     }, []);
 
     const handleOpenPromptOptimizer = useCallback(() => {
-      if (
-        generationType !== 'image' &&
-        generationType !== 'video'
-      ) {
-        return;
-      }
-
-      if (!prompt.trim()) {
-        MessagePlugin.warning(
-          language === 'zh' ? '请先输入提示词' : 'Please enter a prompt first'
-        );
-        return;
-      }
-
       setIsPromptOptimizeOpen(true);
-    }, [generationType, language, prompt]);
+    }, []);
 
     // 处理素材库选择
     const handleMediaLibrarySelect = useCallback(async (asset: Asset) => {
@@ -4095,72 +4082,78 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
               </div>
             )}
 
-            <PromptHistoryPopover
-              onSelectPrompt={handleSelectHistoryPrompt}
-              language={language}
-              extraActions={
-                shouldKeepExpanded &&
-                (generationType === 'image' || generationType === 'video') ? (
-                  <button
-                    type="button"
-                    className="prompt-history-popover__action-btn"
-                    onMouseDown={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      setIsFocused(true);
-                    }}
-                    onClick={handleOpenPromptOptimizer}
-                    title={language === 'zh' ? '优化提示词' : 'Optimize prompt'}
-                    aria-label={
-                      language === 'zh' ? '优化提示词' : 'Optimize prompt'
-                    }
-                    data-track="ai_input_click_prompt_optimize"
-                  >
-                    <Sparkles size={16} />
-                  </button>
-                ) : null
-              }
-            />
-
-            <div className="ai-input-bar__rich-input">
-              <textarea
-                ref={inputRef}
-                className={classNames('ai-input-bar__input', {
-                  'ai-input-bar__input--focused': isFocused,
-                })}
-                value={prompt}
-                onChange={handleInputChange}
-                onKeyDown={handleKeyDown}
-                onFocus={handleFocus}
-                onBlur={handleBlur}
-                placeholder={
-                  generationType === 'agent'
-                    ? language === 'zh'
-                      ? '输入指令，让 Agent 为你工作...'
-                      : 'Type instructions for Agent...'
-                    : generationType === 'text'
-                    ? language === 'zh'
-                      ? '输入你想生成的文本内容、文章、摘要或 Markdown'
-                      : 'Describe the text, article, summary, or markdown you want'
-                    : generationType === 'audio'
-                    ? hasSelectedTextContent
+            <div className="ai-input-bar__prompt-row">
+              <div className="ai-input-bar__rich-input">
+                <textarea
+                  ref={inputRef}
+                  className={classNames('ai-input-bar__input', {
+                    'ai-input-bar__input--focused': isFocused,
+                  })}
+                  value={prompt}
+                  onChange={handleInputChange}
+                  onKeyDown={handleKeyDown}
+                  onFocus={handleFocus}
+                  onBlur={handleBlur}
+                  placeholder={
+                    generationType === 'agent'
                       ? language === 'zh'
-                        ? '已有文本，无需额外提示词，直接发送'
-                        : 'Text already selected. No extra prompt needed, just send'
+                        ? '输入指令，让 Agent 为你工作...'
+                        : 'Type instructions for Agent...'
+                      : generationType === 'text'
+                      ? language === 'zh'
+                        ? '输入你想生成的文本内容、文章、摘要或 Markdown'
+                        : 'Describe the text, article, summary, or markdown you want'
+                      : generationType === 'audio'
+                      ? hasSelectedTextContent
+                        ? language === 'zh'
+                          ? '已有文本，无需额外提示词，直接发送'
+                          : 'Text already selected. No extra prompt needed, just send'
+                        : language === 'zh'
+                        ? '描述你想要生成的音乐、风格、歌词或情绪'
+                        : 'Describe the music, style, lyrics, or mood you want'
                       : language === 'zh'
-                      ? '描述你想要生成的音乐、风格、歌词或情绪'
-                      : 'Describe the music, style, lyrics, or mood you want'
-                    : language === 'zh'
-                    ? `描述你想要创建的${
-                        generationType === 'image' ? '图片' : '视频'
-                      }`
-                    : `Describe the ${
-                        generationType === 'image' ? 'image' : 'video'
-                      } you want to create`
+                      ? `描述你想要创建的${
+                          generationType === 'image' ? '图片' : '视频'
+                        }`
+                      : `Describe the ${
+                          generationType === 'image' ? 'image' : 'video'
+                        } you want to create`
+                  }
+                  rows={shouldKeepExpanded ? 4 : 1}
+                  disabled={isSubmitting}
+                  data-testid="ai-input-textarea"
+                />
+              </div>
+
+              <PromptHistoryPopover
+                onSelectPrompt={handleSelectHistoryPrompt}
+                language={language}
+                extraActions={
+                  <HoverTip
+                    content={
+                      language === 'zh' ? '提示词优化' : 'Prompt optimization'
+                    }
+                    placement="top"
+                  >
+                    <button
+                      type="button"
+                      className="prompt-history-popover__action-btn"
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setIsFocused(true);
+                      }}
+                      onClick={handleOpenPromptOptimizer}
+                      disabled={isSubmitting}
+                      aria-label={
+                        language === 'zh' ? '提示词优化' : 'Prompt optimization'
+                      }
+                      data-track="ai_input_click_prompt_optimize"
+                    >
+                      <Sparkles size={16} />
+                    </button>
+                  </HoverTip>
                 }
-                rows={shouldKeepExpanded ? 4 : 1}
-                disabled={isSubmitting}
-                data-testid="ai-input-textarea"
               />
             </div>
           </div>
@@ -4181,9 +4174,13 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
           onOpenChange={setIsPromptOptimizeOpen}
           originalPrompt={prompt}
           language={language}
-          type={generationType === 'video' ? 'video' : 'image'}
+          type={generationType}
           allowStructuredMode={true}
-          defaultMode="structured"
+          defaultMode={
+            generationType === 'image' || generationType === 'video'
+              ? 'structured'
+              : 'polish'
+          }
           onApply={(optimizedPrompt) => {
             setPrompt(optimizedPrompt);
             setIsFocused(true);
