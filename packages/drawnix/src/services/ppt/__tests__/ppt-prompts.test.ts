@@ -28,8 +28,12 @@ describe('ppt prompts style consistency', () => {
     expect(prompt).toContain('styleSpec: PPTStyleSpec');
     expect(prompt).toContain('所有页面都必须共享同一套 styleSpec');
     expect(prompt).toContain('额外要求中包含风格要求');
-    expect(prompt).toContain('除 cover 和 ending 外，每一页都必须包含非空 bullets 数组');
-    expect(prompt).toContain('禁止在 bullets 中输出“无”“暂无”“待补充”“N/A”或空字符串');
+    expect(prompt).toContain(
+      '除 cover 和 ending 外，每一页都必须包含非空 bullets 数组'
+    );
+    expect(prompt).toContain(
+      '禁止在 bullets 中输出“无”“暂无”“待补充”“N/A”或空字符串'
+    );
   });
 
   it('fills missing styleSpec with a default that includes user style requirements', () => {
@@ -144,12 +148,17 @@ describe('ppt prompts style consistency', () => {
           {
             layout: 'title-body',
             title: '问题诊断',
-            页面要点: '1. 创作结果分散难复用\n2. 协作沉淀缺少统一入口\n3. 交付流程依赖人工整理',
+            页面要点:
+              '1. 创作结果分散难复用\n2. 协作沉淀缺少统一入口\n3. 交付流程依赖人工整理',
           },
           {
             layout: 'title-body',
             title: '优化方向',
-            主要内容: ['集中呈现生成结果', '按项目沉淀关键资产', '降低重复整理成本'],
+            主要内容: [
+              '集中呈现生成结果',
+              '按项目沉淀关键资产',
+              '降低重复整理成本',
+            ],
           },
           { layout: 'ending', title: '谢谢' },
         ],
@@ -208,15 +217,45 @@ describe('ppt prompts style consistency', () => {
     expect(slidePrompt).not.toContain(styleSpec.colorPalette);
     expect(slidePrompt).not.toContain('## 核心要求');
     expect(slidePrompt).not.toContain('公共提示词');
-    expect(slidePrompt).toContain('上一页：cover｜路线图');
-    expect(slidePrompt).toContain('下一页：ending｜谢谢');
+    expect(slidePrompt).toContain('## 画面可见文字');
+    expect(slidePrompt).toContain('- "关键方向"');
+    expect(slidePrompt).toContain('- "模型能力升级"');
+    expect(slidePrompt).toContain('上一页概要：路线图｜无要点');
+    expect(slidePrompt).toContain('下一页概要：谢谢｜无要点');
     expect(generationPrompt).toContain(commonPrompt);
     expect(generationPrompt).toContain(slidePrompt);
     expect(generationPrompt).toContain(styleSpec.visualStyle);
   });
 
+  it('keeps prompt-only labels out of the visible text whitelist', () => {
+    const outline: PPTOutline = {
+      title: 'OpenTu.ai 介绍 PPT 大纲',
+      styleSpec,
+      pages: [
+        {
+          layout: 'cover',
+          title: '封面：OpenTu.ai 开源 AI 创作台',
+          subtitle: '大纲：多模态创作与高效协同',
+          bullets: ['封面', '大纲'],
+        },
+      ],
+    };
+
+    const slidePrompt = generateSlideImagePrompt(outline, outline.pages[0], 1);
+    const visibleTextBlock = slidePrompt
+      .split('## 设计参考信息')[0]
+      .replace(/[\s\S]*## 画面可见文字/, '');
+
+    expect(visibleTextBlock).toContain('- "OpenTu.ai 开源 AI 创作台"');
+    expect(visibleTextBlock).toContain('- "多模态创作与高效协同"');
+    expect(visibleTextBlock).not.toContain('封面：');
+    expect(visibleTextBlock).not.toContain('大纲：');
+    expect(visibleTextBlock).not.toContain('PPT 大纲');
+  });
+
   it('normalizes legacy slide prompts by removing embedded common style blocks', () => {
-    const prompt = normalizePPTSlidePrompt(`整套 PPT 公共提示词，所有页面都必须遵守：
+    const prompt =
+      normalizePPTSlidePrompt(`整套 PPT 公共提示词，所有页面都必须遵守：
 - 整体视觉风格：${styleSpec.visualStyle}
 
 ---

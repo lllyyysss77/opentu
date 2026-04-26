@@ -41,9 +41,36 @@ const VALID_LAYOUTS: PPTLayoutType[] = [
 
 const STYLE_FIELD_TEXT_LIMIT = 480;
 const STYLE_REQUIREMENT_TEXT_LIMIT = 280;
+const PROMPT_ONLY_LABEL_PATTERN =
+  /^(?:封面页?|目录页?|大纲|PPT\s*大纲|页面标题|标题|副标题|页面要点|要点|核心要点|视觉概念|页面描述|内容描述)$/i;
+const PROMPT_ONLY_LABEL_PREFIX_PATTERN =
+  /^\s*(?:封面页?|目录页?|大纲|PPT\s*大纲|幻灯片|第\s*[一二三四五六七八九十\d]+\s*页|页面标题|标题|副标题|页面要点|要点|核心要点|视觉概念|页面描述|内容描述)\s*[：:｜|—-]\s*/i;
+const PROMPT_ONLY_TITLE_SUFFIX_PATTERN =
+  /\s*(?:[：:｜|—-]\s*)?(?:PPT\s*大纲|演示文稿\s*大纲)$/i;
 
 function truncateText(value: string, maxLength: number): string {
   return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value;
+}
+
+function normalizeInlineText(value: string): string {
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+function sanitizeVisiblePPTText(value?: string): string {
+  let normalized = normalizeInlineText(value || '');
+  if (!normalized) return '';
+
+  for (let i = 0; i < 3; i++) {
+    const next = normalized
+      .replace(PROMPT_ONLY_LABEL_PREFIX_PATTERN, '')
+      .trim();
+    if (next === normalized) break;
+    normalized = next;
+  }
+
+  normalized = normalized.replace(PROMPT_ONLY_TITLE_SUFFIX_PATTERN, '').trim();
+
+  return PROMPT_ONLY_LABEL_PATTERN.test(normalized) ? '' : normalized;
 }
 
 /**
@@ -148,7 +175,7 @@ ${Object.entries(LAYOUT_DESCRIPTIONS)
 ## PPTOutline JSON Schema
 \`\`\`typescript
 interface PPTOutline {
-  title: string;          // PPT总标题
+  title: string;          // PPT总标题，只写演示主题，不要包含“PPT大纲/大纲”等任务标签
   styleSpec: PPTStyleSpec; // 整套PPT共用的全局风格规格
   pages: PPTPageSpec[];   // 所有页面
 }
@@ -164,7 +191,7 @@ interface PPTStyleSpec {
 
 interface PPTPageSpec {
   layout: "cover" | "toc" | "title-body" | "image-text" | "comparison" | "ending";
-  title: string;          // 页面标题（控制在10个中文字符以内，避免换行）
+  title: string;          // 页面标题（控制在10个中文字符以内，不要写“封面：”“大纲：”等结构标签）
   subtitle?: string;      // 副标题（cover/ending页使用）
   bullets?: string[];     // 页面要点：除 cover/ending 外必须提供，toc 为目录项
   imagePrompt?: string;   // 视觉概念描述（可选，英文）
@@ -184,6 +211,12 @@ interface PPTPageSpec {
 2. styleSpec 要具体到可执行的视觉规则，不能只写 generic、modern、clean 这类泛词
 3. 若额外要求中包含风格要求，必须融合进 styleSpec
 4. 各页允许版式变化，但颜色、字体气质、组件样式、装饰母题必须一致
+
+## 结构标签规则
+1. title、subtitle、bullets 只写最终应出现在幻灯片上的正文，不要写提示词字段名或结构标签
+2. PPT 总标题是演示主题，不是任务名称；禁止把“生成PPT大纲”“PPT大纲”“演示文稿大纲”作为标题或标题后缀
+3. layout 已经表达页面角色，禁止在 title 中再写“封面：”“封面页：”“大纲：”“页面标题：”等前缀
+4. imagePrompt 只写视觉概念，不要写入会被渲染到画面上的文字说明
 
 ## 页面要点硬性规则
 1. 除 cover 和 ending 外，每一页都必须包含非空 bullets 数组
@@ -233,9 +266,35 @@ export function generateOutlineUserPrompt(
   return prompt;
 }
 
-function formatBullets(bullets?: string[]): string {
-  if (!bullets || bullets.length === 0) return '无';
-  return bullets.map((bullet, index) => `${index + 1}. ${bullet}`).join('\n');
+function formatReferenceBullets(bullets?: string[]): string {
+  const items = bullets?.map(sanitizeVisiblePPTText).filter(Boolean) || [];
+  return items.length > 0 ? items.join('；') : '无';
+}
+
+function quoteVisibleText(value: string): string {
+  return `- ${JSON.stringify(value)}`;
+}
+
+function formatVisibleSlideTexts(
+  outlineTitle: string,
+  page: PPTPageSpec
+): string {
+  const title =
+    sanitizeVisiblePPTText(page.title) || sanitizeVisiblePPTText(outlineTitle);
+  const subtitle = sanitizeVisiblePPTText(page.subtitle);
+  const bullets =
+    page.bullets?.map(sanitizeVisiblePPTText).filter(Boolean) || [];
+  const texts: string[] = [];
+
+  if (title) texts.push(title);
+  if (subtitle) texts.push(subtitle);
+  if (page.layout !== 'cover') {
+    texts.push(...bullets);
+  }
+
+  return texts.length > 0
+    ? texts.map(quoteVisibleText).join('\n')
+    : '- 本页不渲染文字，只生成符合页面用途的专业视觉画面';
 }
 
 function formatStyleSpec(styleSpec: PPTStyleSpec): string {
@@ -251,11 +310,12 @@ function formatCoreRequirements(options: PPTGenerateOptions = {}): string {
   const { language = '中文' } = options;
   return `## 核心要求
 - 输出必须是一整页幻灯片设计，不要只生成插画、背景图或局部元素。
-- 幻灯片内需要直接包含清晰可读的文字，不需要额外叠加文本。
+- 幻灯片内只能直接包含单页提示词“画面可见文字”中列出的文本，不需要额外叠加文本。
 - 文字语言：${language}
 - 画面比例：16:9，留白合理，层级清晰，适合正式演示。
 - 所有页面必须严格遵守公共提示词，不得为单页另起一套画风、色板、字体或组件样式。
-- 各页可以有不同版式，但必须像同一套 PPT 模板中的一页。`;
+- 各页可以有不同版式，但必须像同一套 PPT 模板中的一页。
+- 不得把提示词字段名、结构标签、引号、冒号、JSON/Markdown 标记或列表编号渲染到幻灯片画面中。`;
 }
 
 export function formatPPTCommonPrompt(
@@ -286,16 +346,20 @@ export function normalizePPTSlidePrompt(prompt?: string): string {
   const separatorIndex = normalized.indexOf('\n---\n');
   const withoutMergedCommonPrompt =
     separatorIndex !== -1 &&
-    /公共提示词|全局风格规格|所有页面/.test(
-      normalized.slice(0, separatorIndex)
-    )
-      ? normalized.slice(separatorIndex).replace(/^\n---\n+/, '').trim()
+    /公共提示词|全局风格规格|所有页面/.test(normalized.slice(0, separatorIndex))
+      ? normalized
+          .slice(separatorIndex)
+          .replace(/^\n---\n+/, '')
+          .trim()
       : normalized;
 
   return withoutMergedCommonPrompt
-    .replace(/(^|\n)## 核心要求\n[\s\S]*?\n(?=## PPT 信息)/, '$1')
     .replace(
-      /(^|\n)## 全局风格规格（整套 PPT 所有页面完全共用）\n[\s\S]*?\n(?=## PPT 信息)/,
+      /(^|\n)## 核心要求\n[\s\S]*?\n(?=## (?:PPT 信息|画面可见文字))/,
+      '$1'
+    )
+    .replace(
+      /(^|\n)## 全局风格规格（整套 PPT 所有页面完全共用）\n[\s\S]*?\n(?=## (?:PPT 信息|画面可见文字))/,
       '$1'
     )
     .replace(
@@ -307,10 +371,13 @@ export function normalizePPTSlidePrompt(prompt?: string): string {
 
 function summarizePage(page?: PPTPageSpec): string {
   if (!page) return '无';
-  const bullets = page.bullets?.slice(0, 3).join('；') || '无要点';
-  return `${page.layout}｜${page.title}${
-    page.subtitle ? `｜${page.subtitle}` : ''
-  }｜${bullets}`;
+  const title = sanitizeVisiblePPTText(page.title) || '无标题';
+  const subtitle = sanitizeVisiblePPTText(page.subtitle);
+  const bullets =
+    page.bullets?.slice(0, 3).map(sanitizeVisiblePPTText).filter(Boolean) || [];
+  return [title, subtitle, bullets.join('；') || '无要点']
+    .filter(Boolean)
+    .join('｜');
 }
 
 /**
@@ -326,32 +393,44 @@ export function generateSlideImagePrompt(
   const totalPages = outline.pages.length;
   const pageRole =
     page.layout === 'cover'
-      ? '封面页'
+      ? '开场主视觉页'
       : page.layout === 'ending'
       ? '结束页'
       : page.layout === 'toc'
-      ? '目录页'
+      ? '章节导航页'
       : `第 ${pageIndex} 页内容页`;
   const previousPage = outline.pages[pageIndex - 2];
   const nextPage = outline.pages[pageIndex];
+  const safeOutlineTitle = sanitizeVisiblePPTText(outline.title) || '演示主题';
+  const safePageTitle =
+    sanitizeVisiblePPTText(page.title) || sanitizeVisiblePPTText(outline.title);
+  const safeSubtitle = sanitizeVisiblePPTText(page.subtitle) || '无';
 
   return `请生成一张完整的 16:9 PowerPoint 幻灯片图片，适合直接作为 PPT 第 ${pageIndex}/${totalPages} 页使用。
 
-## PPT 信息
-- PPT 总标题：${outline.title}
-- 当前页面角色：${pageRole}
-- 当前页面版式参考：${page.layout}
-- 页面标题：${page.title}
-- 副标题：${page.subtitle || '无'}
-- 页面要点：
-${formatBullets(page.bullets)}
+## 画面可见文字
+以下引号内文本是唯一允许出现在幻灯片上的文字；不要渲染引号本身、字段名、冒号或列表符号。
+${formatVisibleSlideTexts(outline.title, page)}
+
+## 设计参考信息（仅供理解，不要作为画面文字）
+- 演示主题：${safeOutlineTitle}
+- 当前页用途：${pageRole}
+- 版式参考：${page.layout}
+- 标题语义：${safePageTitle || '无'}
+- 副标题语义：${safeSubtitle}
+- 内容语义：${formatReferenceBullets(page.bullets)}
 - 视觉概念：${page.imagePrompt || '根据页面内容自行设计专业视觉元素'}
 
-## 相邻页面上下文（用于保持连续性，不要照抄内容）
-- 上一页：${summarizePage(previousPage)}
-- 下一页：${summarizePage(nextPage)}
+## 相邻页面上下文（仅用于保持连续性，不要照抄或渲染为文字）
+- 上一页概要：${summarizePage(previousPage)}
+- 下一页概要：${summarizePage(nextPage)}
 
 ${extraRequirements ? `## 额外要求\n${extraRequirements}\n` : ''}
+## 禁止事项
+- 不得在画面中出现“封面”“封面页”“大纲”“PPT大纲”“页面标题”“页面要点”“视觉概念”“当前页面角色”等提示词字段或结构标签，除非它们是“画面可见文字”中的真实内容。
+- 不得把本提示词的任何说明句、字段名、列表编号、JSON/Markdown 标记复制到幻灯片中。
+- 开场主视觉页只呈现主题、品牌名或副标题，不要出现“封面：xxx”或“xxx PPT 大纲”。
+
 请只生成最终幻灯片画面。`;
 }
 
