@@ -271,7 +271,17 @@ export const PromptListItem: React.FC<PromptListItemProps> = ({
     );
   }
 
-  return <HoverTip content={content}>{container}</HoverTip>;
+  return (
+    <HoverTip
+      content={content}
+      placement="right-top"
+      delay={80}
+      overlayClassName="prompt-list-item__text-tip-popover"
+      overlayInnerClassName="prompt-list-item__text-tip"
+    >
+      {container}
+    </HoverTip>
+  );
 };
 
 export default PromptListItem;

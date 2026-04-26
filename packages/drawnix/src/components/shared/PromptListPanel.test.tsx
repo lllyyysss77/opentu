@@ -36,7 +36,7 @@ describe('PromptListPanel', () => {
     cleanup();
   });
 
-  it('点击单张默认示例图时用对应索引打开共享预览器', async () => {
+  it('点击单张预览图时用对应索引打开共享预览器', async () => {
     const { PromptListPanel } = await import('./PromptListPanel');
 
     render(
@@ -45,11 +45,11 @@ describe('PromptListPanel', () => {
         items={[
           {
             id: 'single',
-            content: '默认图片提示词',
+            content: '用户图片提示词',
             previewExamples: [
               {
                 kind: 'image',
-                src: '/prompt-examples/image/01.png',
+                src: '/generated/image-01.png',
                 alt: 'single preview',
               },
             ],
@@ -67,10 +67,10 @@ describe('PromptListPanel', () => {
       items: [
         {
           id: 'single-preview-0',
-          url: '/prompt-examples/image/01.png',
+          url: '/generated/image-01.png',
           type: 'image',
           alt: 'single preview',
-          title: '默认图片提示词',
+          title: '用户图片提示词',
         },
       ],
     });
@@ -127,7 +127,7 @@ describe('PromptListPanel', () => {
     });
   });
 
-  it('非 image/video 类型的默认示例图也会映射到共享图片预览器', async () => {
+  it('非 image/video 类型的预览图也会映射到共享图片预览器', async () => {
     const { PromptListPanel } = await import('./PromptListPanel');
 
     render(
@@ -136,12 +136,12 @@ describe('PromptListPanel', () => {
         items={[
           {
             id: 'audio',
-            content: '默认音频提示词',
+            content: '用户音频提示词',
             modelType: 'audio',
             previewExamples: [
               {
                 kind: 'image',
-                src: '/prompt-examples/audio/01.png',
+                src: '/generated/audio-cover-01.png',
                 alt: 'audio preview',
               },
             ],
@@ -158,16 +158,16 @@ describe('PromptListPanel', () => {
       items: [
         {
           id: 'audio-preview-0',
-          url: '/prompt-examples/audio/01.png',
+          url: '/generated/audio-cover-01.png',
           type: 'image',
           alt: 'audio preview',
-          title: '默认音频提示词',
+          title: '用户音频提示词',
         },
       ],
     });
   });
 
-  it('内置默认视频样片会映射到共享视频预览器并携带封面', async () => {
+  it('视频预览会映射到共享视频预览器并携带封面', async () => {
     const { PromptListPanel } = await import('./PromptListPanel');
 
     render(
@@ -176,13 +176,13 @@ describe('PromptListPanel', () => {
         items={[
           {
             id: 'video-default',
-            content: '默认视频提示词',
+            content: '用户视频提示词',
             modelType: 'video',
             previewExamples: [
               {
                 kind: 'video',
-                src: '/prompt-examples/video/02.mp4',
-                posterSrc: '/prompt-examples/video/02.png',
+                src: '/generated/video-02.mp4',
+                posterSrc: '/generated/video-02.png',
                 playable: true,
                 alt: 'default video preview',
               },
@@ -201,11 +201,11 @@ describe('PromptListPanel', () => {
       items: [
         {
           id: 'video-default-preview-0',
-          url: '/prompt-examples/video/02.mp4',
+          url: '/generated/video-02.mp4',
           type: 'video',
-          posterUrl: '/prompt-examples/video/02.png',
+          posterUrl: '/generated/video-02.png',
           alt: 'default video preview',
-          title: '默认视频提示词',
+          title: '用户视频提示词',
         },
       ],
     });

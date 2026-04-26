@@ -96,27 +96,14 @@ describe('resolvePromptItemsByGenerationType', () => {
     expect(contents).not.toContain('AI 输入图片历史');
     expect(contents).not.toContain('AI 输入视频历史');
     expect(taskImageItem?.previewExamples?.[0]?.src).toBe('/image-task.png');
-    expect(defaultImageItem?.previewExamples?.length).toBeGreaterThan(0);
+    expect(defaultImageItem?.previewExamples).toBeUndefined();
   });
 
-  it('图片默认提示词为各自内容命中对应示例图，而不是复用同一组共享图', () => {
+  it('图片默认提示词不再绑定内置示例图', () => {
     const defaults = promptUtils.getDefaultPromptsByGenerationType('image', 'zh');
-    const portraitItem = defaults.find(
-      (item) => item.content === getImagePrompts('zh')[0]
-    );
-    const catItem = defaults.find(
-      (item) => item.content === getImagePrompts('zh')[1]
-    );
 
-    expect(portraitItem?.previewExamples?.[0]?.src).toBe(
-      '/prompt-examples/image/01.png'
-    );
-    expect(catItem?.previewExamples?.[0]?.src).toBe(
-      '/prompt-examples/image/02.png'
-    );
-    expect(catItem?.previewExamples?.[0]?.src).not.toBe(
-      portraitItem?.previewExamples?.[0]?.src
-    );
+    expect(defaults).toHaveLength(getImagePrompts('zh').length);
+    expect(defaults.every((item) => !item.previewExamples?.length)).toBe(true);
   });
 
   it('同一条图片提示词同时存在本地历史和已完成任务时，真实任务结果预览优先', () => {
@@ -159,9 +146,7 @@ describe('resolvePromptItemsByGenerationType', () => {
     );
 
     expect(defaults[0]?.content).toBe(getImagePrompts('zh')[0]);
-    expect(defaults[1]?.previewExamples?.[0]?.src).toBe(
-      '/prompt-examples/image/02.png'
-    );
+    expect(defaults[1]?.previewExamples).toBeUndefined();
   });
 
   it('视频类型只返回视频来源，不混入图片来源', () => {
@@ -227,15 +212,10 @@ describe('resolvePromptItemsByGenerationType', () => {
       posterSrc: '/video-thumb.png',
       playable: true,
     });
-    expect(defaultVideoItem?.previewExamples?.[0]).toMatchObject({
-      kind: 'video',
-      src: '/prompt-examples/video/01.mp4',
-      posterSrc: '/prompt-examples/video/01.png',
-      playable: true,
-    });
+    expect(defaultVideoItem?.previewExamples).toBeUndefined();
   });
 
-  it('默认视频提示词命中不足 8 秒的本地历史时，回退到内置 8 秒样片', () => {
+  it('默认视频提示词命中用户生成历史时，使用真实视频预览', () => {
     const duplicatedPrompt = getVideoPrompts('zh')[4];
     mockGetVideoPromptHistoryContents.mockReturnValue([duplicatedPrompt]);
 
@@ -264,13 +244,13 @@ describe('resolvePromptItemsByGenerationType', () => {
     expect(duplicatedItems).toHaveLength(1);
     expect(duplicatedItems[0]?.previewExamples?.[0]).toMatchObject({
       kind: 'video',
-      src: '/prompt-examples/video/05.mp4',
-      posterSrc: '/prompt-examples/video/05.png',
+      src: '/local-short-video.mp4',
+      posterSrc: '/local-short-video.png',
       playable: true,
     });
   });
 
-  it('默认视频提示词命中同文案的真实视频历史时，仍优先使用内置样片，避免串用任务预览', () => {
+  it('默认视频提示词命中同文案的真实视频历史时，不再优先使用内置样片', () => {
     const duplicatedPrompt = getVideoPrompts('zh')[1];
     mockGetVideoPromptHistoryContents.mockReturnValue([duplicatedPrompt]);
 
@@ -299,13 +279,13 @@ describe('resolvePromptItemsByGenerationType', () => {
     expect(duplicatedItems).toHaveLength(1);
     expect(duplicatedItems[0]?.previewExamples?.[0]).toMatchObject({
       kind: 'video',
-      src: '/prompt-examples/video/02.mp4',
-      posterSrc: '/prompt-examples/video/02.png',
+      src: '/generated/sunrise-task.mp4',
+      posterSrc: '/generated/sunrise-task.png',
       playable: true,
     });
   });
 
-  it('resolvePresetPromptItems 会为默认视频提示词生成与弹窗入口一致的内置样片预览', () => {
+  it('resolvePresetPromptItems 会为用户生成过的默认视频提示词附加真实预览', () => {
     const duplicatedPrompt = getVideoPrompts('zh')[1];
 
     const items = promptUtils.resolvePresetPromptItems({
@@ -336,13 +316,13 @@ describe('resolvePromptItemsByGenerationType', () => {
     });
     expect(items[0]?.previewExamples?.[0]).toMatchObject({
       kind: 'video',
-      src: '/prompt-examples/video/02.mp4',
-      posterSrc: '/prompt-examples/video/02.png',
+      src: '/generated/sunrise-task.mp4',
+      posterSrc: '/generated/sunrise-task.png',
       playable: true,
     });
   });
 
-  it('resolvePresetPromptItems 会为默认图片提示词生成与弹窗入口一致的静态示例图', () => {
+  it('resolvePresetPromptItems 不会为默认图片提示词附加内置静态示例图', () => {
     const prompt = getImagePrompts('zh')[1];
 
     const items = promptUtils.resolvePresetPromptItems({
@@ -359,10 +339,7 @@ describe('resolvePromptItemsByGenerationType', () => {
       modelType: 'image',
       pinned: false,
     });
-    expect(items[0]?.previewExamples?.[0]).toMatchObject({
-      kind: 'image',
-      src: '/prompt-examples/image/02.png',
-    });
+    expect(items[0]?.previewExamples).toEqual([]);
   });
 
   it('音频类型只返回音频历史与音频默认提示词', () => {
@@ -412,7 +389,7 @@ describe('resolvePromptItemsByGenerationType', () => {
     expect(contents).toContain(getDefaults('audio', 'zh')[0].content);
     expect(contents).not.toContain('文本历史提示');
     expect(contents).not.toContain('Agent 历史提示');
-    expect(defaultAudioItem?.previewExamples?.length).toBeGreaterThan(0);
+    expect(defaultAudioItem?.previewExamples).toBeUndefined();
     expect(historyAudioItem?.previewExamples).toBeUndefined();
   });
 
@@ -456,7 +433,7 @@ describe('resolvePromptItemsByGenerationType', () => {
     expect(contents).toContain('文本历史提示');
     expect(contents).toContain(getDefaults('text', 'zh')[0].content);
     expect(contents).not.toContain('音频历史提示');
-    expect(defaultTextItem?.previewExamples?.length).toBeGreaterThan(0);
+    expect(defaultTextItem?.previewExamples).toBeUndefined();
     expect(historyTextItem?.previewExamples).toBeUndefined();
   });
 
@@ -500,7 +477,7 @@ describe('resolvePromptItemsByGenerationType', () => {
     expect(contents).toContain('Agent 历史提示');
     expect(contents).toContain(getDefaults('agent', 'zh')[0].content);
     expect(contents).not.toContain('视频历史提示');
-    expect(defaultAgentItem?.previewExamples?.length).toBeGreaterThan(0);
+    expect(defaultAgentItem?.previewExamples).toBeUndefined();
     expect(historyAgentItem?.previewExamples).toBeUndefined();
   });
 

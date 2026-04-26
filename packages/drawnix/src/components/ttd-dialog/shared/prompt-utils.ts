@@ -1,6 +1,5 @@
 import {
   getDefaultPromptsByGenerationType as getDefaultPromptContentsByGenerationType,
-  getDefaultPromptPreviewExamples,
   getImagePrompts,
   getVideoPrompts,
   type Language,
@@ -24,7 +23,6 @@ import { PRESET_PROMPTS_LIMIT, USER_PROMPTS_LIMIT } from './size-constants';
 
 export type PromptType = 'image' | 'video';
 export type HistoryItem = ImageHistoryItem | VideoHistoryItem;
-const DEFAULT_VIDEO_PROMPT_MIN_DURATION_SECONDS = 8;
 export interface ResolvedPromptItem extends PromptItem {
   historyId?: string;
 }
@@ -137,9 +135,6 @@ function createDefaultPromptSeeds(
   return getDefaultPromptContentsByGenerationType(generationType, language).map(
     (content) => ({
       content,
-      previewExamples: [
-        ...getDefaultPromptPreviewExamples(generationType, language, content),
-      ],
     })
   );
 }
@@ -181,16 +176,10 @@ function createMediaPreviewExample(
 
 function createMediaHistorySeeds(
   generationType: PromptType,
-  historyItems: HistoryItem[],
-  options?: {
-    defaultPromptContents?: string[];
-  }
+  historyItems: HistoryItem[]
 ): ResolvedPromptSeed[] {
   const previewMap = new Map<string, PromptPreviewExample[]>();
   const orderedPrompts: string[] = [];
-  const defaultPromptSet = new Set(
-    options?.defaultPromptContents?.map((content) => content.trim()).filter(Boolean)
-  );
 
   historyItems.forEach((item) => {
     const content = item.prompt.trim();
@@ -205,16 +194,6 @@ function createMediaHistorySeeds(
 
     const previews = previewMap.get(content);
     if (!previews) {
-      return;
-    }
-    if (
-      generationType === 'video' &&
-      defaultPromptSet.has(content) &&
-      'duration' in item &&
-      typeof item.duration === 'number' &&
-      item.duration > 0 &&
-      item.duration < DEFAULT_VIDEO_PROMPT_MIN_DURATION_SECONDS
-    ) {
       return;
     }
     const previewSrc =
@@ -256,27 +235,14 @@ function createLocalPromptSeeds(promptContents: string[]): ResolvedPromptSeed[] 
 
 export function resolvePromptPreviewExamples({
   generationType,
-  language,
   promptContents,
   imageHistory,
   videoHistory,
 }: ResolvePromptPreviewExamplesParams): Map<string, PromptPreviewExample[]> {
-  const defaultPromptContents = getDefaultPromptContentsByGenerationType(
-    generationType,
-    language
-  );
   const promptSeedLookup = buildPromptSeedLookup(
     generationType === 'video'
-      ? [
-          ...createDefaultPromptSeeds(generationType, language),
-          ...createMediaHistorySeeds(generationType, videoHistory, {
-            defaultPromptContents: [...defaultPromptContents],
-          }),
-        ]
-      : [
-          ...createMediaHistorySeeds(generationType, imageHistory),
-          ...createDefaultPromptSeeds(generationType, language),
-        ]
+      ? createMediaHistorySeeds(generationType, videoHistory)
+      : createMediaHistorySeeds(generationType, imageHistory)
   );
 
   return promptContents.reduce<Map<string, PromptPreviewExample[]>>(
@@ -391,13 +357,10 @@ export const resolvePromptItemsByGenerationType = ({
   }
 
   if (generationType === 'video') {
-    const defaultVideoPromptContents = getVideoPrompts(language);
     const promptSeeds = [
       ...createLocalPromptSeeds(getVideoPromptHistoryContents()),
       ...createDefaultPromptSeeds('video', language),
-      ...createMediaHistorySeeds('video', videoHistory, {
-        defaultPromptContents: [...defaultVideoPromptContents],
-      }),
+      ...createMediaHistorySeeds('video', videoHistory),
     ];
 
     return createResolvedPromptItems(

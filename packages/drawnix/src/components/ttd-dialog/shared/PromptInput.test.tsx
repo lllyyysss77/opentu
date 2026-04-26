@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AI_IMAGE_PROMPTS,
@@ -130,7 +130,7 @@ describe('PromptInput', () => {
     cleanup();
   });
 
-  it('图片默认提示词在弹窗预设列表中带上对应示例图', async () => {
+  it('图片默认提示词在弹窗预设列表中不再带内置示例图', async () => {
     const { PromptInput } = await import('./PromptInput');
 
     render(
@@ -152,12 +152,10 @@ describe('PromptInput', () => {
     };
 
     expect(panelProps.items[0]?.content).toBe(AI_IMAGE_PROMPTS.zh[1]);
-    expect(panelProps.items[0]?.previewExamples?.[0]?.src).toBe(
-      '/prompt-examples/image/02.png'
-    );
+    expect(panelProps.items[0]?.previewExamples).toEqual([]);
   });
 
-  it('视频默认提示词在弹窗预设列表中优先使用内置样片，而不是同文案历史预览', async () => {
+  it('视频默认提示词命中用户生成历史时使用真实预览', async () => {
     const { PromptInput } = await import('./PromptInput');
 
     render(
@@ -188,13 +186,13 @@ describe('PromptInput', () => {
     expect(panelProps.items[0]?.content).toBe(AI_VIDEO_PROMPTS.zh[0]);
     expect(panelProps.items[0]?.previewExamples?.[0]).toMatchObject({
       kind: 'video',
-      src: '/prompt-examples/video/01.mp4',
-      posterSrc: '/prompt-examples/video/01.png',
+      src: '/generated/video-01.mp4',
+      posterSrc: '/generated/video-01.png',
       playable: true,
     });
   });
 
-  it('未命中本地历史时，视频默认提示词回退到内置 mp4 样片', async () => {
+  it('未命中用户生成历史时，视频默认提示词不再回退到内置样片', async () => {
     const { PromptInput } = await import('./PromptInput');
 
     render(
@@ -223,11 +221,6 @@ describe('PromptInput', () => {
     };
 
     expect(panelProps.items[0]?.content).toBe(AI_VIDEO_PROMPTS.zh[1]);
-    expect(panelProps.items[0]?.previewExamples?.[0]).toMatchObject({
-      kind: 'video',
-      src: '/prompt-examples/video/02.mp4',
-      posterSrc: '/prompt-examples/video/02.png',
-      playable: true,
-    });
+    expect(panelProps.items[0]?.previewExamples).toEqual([]);
   });
 });

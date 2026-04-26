@@ -170,6 +170,17 @@
   max-width: 320px;
 }
 
+.prompt-list-item__text-tip-popover {
+  max-width: min(420px, calc(100vw - 24px));
+}
+
+.prompt-list-item__text-tip {
+  max-width: inherit;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.6;
+}
+
 .prompt-list-item__hover-card {
   display: flex;
   flex-direction: column;

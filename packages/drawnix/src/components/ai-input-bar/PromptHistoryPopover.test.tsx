@@ -176,13 +176,9 @@ describe('PromptHistoryPopover', () => {
     expect(screen.queryByText('AI 输入音频历史')).toBeNull();
   });
 
-  it.each([
-    { generationType: 'audio' as const, expectedSrc: '/prompt-examples/audio/01.png' },
-    { generationType: 'text' as const, expectedSrc: '/prompt-examples/text/01.png' },
-    { generationType: 'agent' as const, expectedSrc: '/prompt-examples/agent/01.png' },
-  ])(
-    '$generationType 模式会把带示例图的默认提示词传给共享面板',
-    async ({ generationType, expectedSrc }) => {
+  it.each(['audio', 'text', 'agent'] as const)(
+    '%s 模式不会给默认提示词附加内置预览',
+    async (generationType) => {
       const { PromptHistoryPopover } = await import('./PromptHistoryPopover');
 
       const view = render(
@@ -208,11 +204,11 @@ describe('PromptHistoryPopover', () => {
           getDefaultPromptsByGenerationType(generationType, 'zh')[0]
       );
 
-      expect(defaultPromptItem?.previewExamples?.[0]?.src).toBe(expectedSrc);
+      expect(defaultPromptItem?.previewExamples).toBeUndefined();
     }
   );
 
-  it('视频模式会把默认提示词的可播放样片传给共享面板', async () => {
+  it('视频模式不会给默认提示词附加内置样片', async () => {
     const { PromptHistoryPopover } = await import('./PromptHistoryPopover');
 
     const view = render(
@@ -240,15 +236,10 @@ describe('PromptHistoryPopover', () => {
       (item) => item.content === getDefaultPromptsByGenerationType('video', 'zh')[0]
     );
 
-    expect(defaultPromptItem?.previewExamples?.[0]).toMatchObject({
-      kind: 'video',
-      src: '/prompt-examples/video/01.mp4',
-      posterSrc: '/prompt-examples/video/01.png',
-      playable: true,
-    });
+    expect(defaultPromptItem?.previewExamples).toEqual([]);
   });
 
-  it('视频模式的日出默认提示词会传入 02 号固定视频样片', async () => {
+  it('视频模式会给用户生成历史附加真实视频预览', async () => {
     const { PromptHistoryPopover } = await import('./PromptHistoryPopover');
 
     const view = render(
@@ -273,14 +264,14 @@ describe('PromptHistoryPopover', () => {
         }>
       | undefined;
 
-    const sunriseItem = items?.find(
-      (item) => item.content === getDefaultPromptsByGenerationType('video', 'zh')[1]
+    const generatedVideoItem = items?.find(
+      (item) => item.content === '任务视频历史'
     );
 
-    expect(sunriseItem?.previewExamples?.[0]).toMatchObject({
+    expect(generatedVideoItem?.previewExamples?.[0]).toMatchObject({
       kind: 'video',
-      src: '/prompt-examples/video/02.mp4',
-      posterSrc: '/prompt-examples/video/02.png',
+      src: '/task-video.mp4',
+      posterSrc: '/task-video-thumb.png',
       playable: true,
     });
   });
