@@ -680,12 +680,10 @@ export function setupErrorCapture(): void {
       return;
     }
 
-    // 过滤监控服务相关的错误（PostHog, Sentry）
+    // 过滤监控服务相关的错误（PostHog）
     if (
       errorMessage.includes('posthog.com') ||
-      errorMessage.includes('sentry.io') ||
-      errorStack.includes('posthog') ||
-      errorStack.includes('sentry')
+      errorStack.includes('posthog')
     ) {
       return; // 静默忽略监控服务的网络错误
     }

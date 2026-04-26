@@ -24,7 +24,7 @@ const virtualImageFallbacks = new Map<
   {
     src: string;
     refCount: number;
-    releaseTimer: ReturnType<typeof window.setTimeout> | null;
+    releaseTimer: number | null;
   }
 >();
 
