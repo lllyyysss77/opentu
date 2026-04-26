@@ -1,6 +1,6 @@
 {
   "version": "0.6.78",
-  "buildTime": "2026-04-26T06:35:40.057Z",
+  "buildTime": "2026-04-26T06:35:40.576Z",
   "gitCommit": "unknown",
   "changelog": [
     "align prompt preview flows and refresh default samples",
