@@ -1149,28 +1149,16 @@
         }
 
         function shouldEnableEarlyServiceWorkerBootstrap() {
-          var hostname = window.location.hostname;
-          var isLocalDevHost =
-            hostname === 'localhost' || hostname === '127.0.0.1';
-
-          if (!isLocalDevHost) {
-            return true;
-          }
-
-          if ('%VITE_ENABLE_SW_DEV%' === '1') {
-            return true;
-          }
-
           try {
             return (
-              new URLSearchParams(window.location.search).get('sw') === '1'
+              new URLSearchParams(window.location.search).get('sw') !== '0'
             );
           } catch {
-            return window.location.search.indexOf('sw=1') !== -1;
+            return window.location.search.indexOf('sw=0') === -1;
           }
         }
 
-        function cleanupEarlyDevelopmentServiceWorker() {
+        function cleanupExplicitlyDisabledServiceWorker() {
           if (!('serviceWorker' in navigator)) {
             return;
           }
@@ -1185,7 +1173,7 @@
             })
             .catch(function (error) {
               console.warn(
-                '[Boot] Development service worker cleanup failed:',
+                '[Boot] Disabled service worker cleanup failed:',
                 error
               );
             });
@@ -1197,9 +1185,9 @@
           }
 
           if (!shouldEnableEarlyServiceWorkerBootstrap()) {
-            cleanupEarlyDevelopmentServiceWorker();
+            cleanupExplicitlyDisabledServiceWorker();
             setProgress(52, {
-              tip: '开发模式跳过离线缓存服务，正在直接启动工作台...',
+              tip: '已按 URL 参数跳过离线缓存服务，正在直接启动工作台...',
               source: 'phase',
             });
             return;

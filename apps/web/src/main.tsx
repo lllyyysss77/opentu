@@ -31,15 +31,11 @@ const swQueryParam =
   typeof window !== 'undefined'
     ? new URLSearchParams(window.location.search).get('sw')
     : null;
-const isDevServiceWorkerEnabled =
-  import.meta.env.VITE_ENABLE_SW_DEV === '1' || swQueryParam === '1';
 const isServiceWorkerExplicitlyDisabled = swQueryParam === '0';
 const hasServiceWorkerSupport =
   typeof navigator !== 'undefined' && 'serviceWorker' in navigator;
 const shouldUseServiceWorker =
-  hasServiceWorkerSupport &&
-  !isServiceWorkerExplicitlyDisabled &&
-  (!isLocalDev || isDevServiceWorkerEnabled);
+  hasServiceWorkerSupport && !isServiceWorkerExplicitlyDisabled;
 
 // ===== 控制台日志捕获（尽早初始化，确保默认 console 被改写） =====
 // 必须在其他业务代码之前执行，否则后续工具（如 rrweb）可能先改写 console 导致捕获失效
@@ -219,12 +215,12 @@ function scheduleCDNPreferenceSync(
   }
 }
 
-function cleanupDevelopmentServiceWorker(): void {
+function cleanupDisabledServiceWorker(): void {
   navigator.serviceWorker
     .getRegistration()
     .then((registration) => registration?.unregister())
     .catch((error) => {
-      console.warn('[Main] Development service worker cleanup failed:', error);
+      console.warn('[Main] Disabled service worker cleanup failed:', error);
     });
 }
 
@@ -344,8 +340,8 @@ if (typeof window !== 'undefined') {
   });
 }
 
-if (hasServiceWorkerSupport && isLocalDev && !isDevServiceWorkerEnabled) {
-  cleanupDevelopmentServiceWorker();
+if (hasServiceWorkerSupport && isServiceWorkerExplicitlyDisabled) {
+  cleanupDisabledServiceWorker();
 }
 
 // 注册Service Worker来处理CORS问题和PWA功能
