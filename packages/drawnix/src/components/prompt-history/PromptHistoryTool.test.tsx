@@ -185,6 +185,26 @@ describe('PromptHistoryTool', () => {
     });
   });
 
+  it('从提示词选择器打开时按传入分类筛选', async () => {
+    const { PromptHistoryTool } = await import('./PromptHistoryTool');
+
+    render(<PromptHistoryTool initialCategory="video" />);
+
+    await waitFor(() => {
+      expect(mockGetPromptHistoryPage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          category: 'video',
+          skillTag: 'all',
+          offset: 0,
+          limit: 30,
+        })
+      );
+    });
+    expect(
+      screen.getByRole('button', { name: '视频' }).className
+    ).toContain('is-active');
+  });
+
   it('支持多选删除和右侧置顶', async () => {
     const { PromptHistoryTool } = await import('./PromptHistoryTool');
 

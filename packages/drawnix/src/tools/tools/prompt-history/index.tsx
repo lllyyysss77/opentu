@@ -2,6 +2,7 @@ import React, { lazy, Suspense, type CSSProperties } from 'react';
 import { History } from 'lucide-react';
 import type { ToolPluginModule } from '../../registry';
 import { ToolCategory } from '../../../types/toolbox.types';
+import type { PromptHistoryCategory } from '../../../services/prompt-history-service';
 
 const PromptHistoryTool = lazy(
   () => import('../../../components/prompt-history/PromptHistoryTool')
@@ -32,10 +33,16 @@ const LoadingFallback: React.FC = () => (
   </div>
 );
 
-export const PromptHistoryToolComponent: React.FC<Record<string, unknown>> = () => (
+interface PromptHistoryToolComponentProps {
+  initialCategory?: PromptHistoryCategory;
+}
+
+export const PromptHistoryToolComponent: React.FC<PromptHistoryToolComponentProps> = ({
+  initialCategory,
+}) => (
   <div style={containerStyle}>
     <Suspense fallback={<LoadingFallback />}>
-      <PromptHistoryTool />
+      <PromptHistoryTool initialCategory={initialCategory} />
     </Suspense>
   </div>
 );

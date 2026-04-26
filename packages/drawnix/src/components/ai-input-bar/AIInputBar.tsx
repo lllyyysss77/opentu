@@ -116,7 +116,11 @@ import {
 } from '../../utils/settings-manager';
 import { promptForApiKey } from '../../utils/gemini-api/auth';
 import type { WorkflowMessageData } from '../../types/chat.types';
-import { analytics } from '../../utils/posthog-analytics';
+import type { GenerationParams } from '../../types/shared/core.types';
+import {
+  analytics,
+  type PromptAnalyticsType,
+} from '../../utils/posthog-analytics';
 import classNames from 'classnames';
 import { InspirationBoard } from '../inspiration-board';
 import { GenerationTypeDropdown } from './GenerationTypeDropdown';
@@ -156,6 +160,10 @@ import {
   setPersistedModelSelection,
   type PersistedGenerationType,
 } from '../../utils/ai-model-selection-storage';
+import {
+  AI_INPUT_FOCUS_EVENT,
+  type AIInputFocusEventDetail,
+} from '../../services/ai-input-ui-events';
 
 /**
  * 将 WorkflowDefinition 转换为 WorkflowMessageData
@@ -196,6 +204,88 @@ function toWorkflowMessageData(
     retryContext,
     postProcessingStatus,
     insertedCount,
+  };
+}
+
+function toPromptAnalyticsType(
+  type?: PromptType
+): PromptAnalyticsType | undefined {
+  return type as PromptAnalyticsType | undefined;
+}
+
+type PromptLineageMeta = NonNullable<GenerationParams['promptMeta']>;
+
+function getPromptHistoryCategoryForStep(
+  mcp: string,
+  workflow: WorkflowDefinition
+): PromptLineageMeta['category'] {
+  if (mcp === 'generate_image') return 'image';
+  if (mcp === 'generate_video' || mcp === 'generate_long_video') return 'video';
+  if (mcp === 'generate_audio') return 'audio';
+  if (mcp === 'generate_text') return 'text';
+  return workflow.scenarioType === 'skill_flow' ||
+    workflow.generationType === 'agent'
+    ? 'agent'
+    : workflow.generationType === 'image' ||
+      workflow.generationType === 'video' ||
+      workflow.generationType === 'audio' ||
+      workflow.generationType === 'text'
+    ? workflow.generationType
+    : 'agent';
+}
+
+function buildPromptLineageMeta(
+  workflow: WorkflowDefinition,
+  step: Pick<WorkflowDefinition['steps'][number], 'mcp' | 'args'>
+): PromptLineageMeta {
+  const sentPrompt =
+    typeof step.args.prompt === 'string'
+      ? step.args.prompt.trim()
+      : workflow.metadata.prompt.trim();
+  const initialPrompt = (
+    workflow.metadata.rawInput ||
+    workflow.metadata.userInstruction ||
+    workflow.metadata.prompt ||
+    sentPrompt
+  )
+    .trim()
+    .slice(0, 2000);
+  const skillName =
+    workflow.scenarioType === 'skill_flow' ? workflow.name.trim() : undefined;
+  const category = getPromptHistoryCategoryForStep(step.mcp, workflow);
+
+  return {
+    initialPrompt,
+    sentPrompt: sentPrompt.slice(0, 2000),
+    category,
+    skillId: workflow.skillId,
+    skillName,
+    tags: [category, skillName].filter(Boolean) as string[],
+  };
+}
+
+function enrichStepArgsWithPromptMeta<
+  T extends { mcp: string; args: Record<string, unknown> }
+>(workflow: WorkflowDefinition, step: T): T {
+  if (
+    step.args.promptMeta ||
+    ![
+      'generate_image',
+      'generate_video',
+      'generate_long_video',
+      'generate_audio',
+      'generate_text',
+    ].includes(step.mcp)
+  ) {
+    return step;
+  }
+
+  return {
+    ...step,
+    args: {
+      ...step.args,
+      promptMeta: buildPromptLineageMeta(workflow, step),
+    },
   };
 }
 
@@ -363,6 +453,8 @@ interface AIInputBarProps {
   className?: string;
   /** 数据是否已准备好（用于判断画布是否为空） */
   isDataReady?: boolean;
+  /** 确保工具窗口管理器已启用 */
+  onEnableToolWindows?: () => void;
 }
 
 /**
@@ -547,7 +639,7 @@ const SelectionWatcher: React.FC<{
 SelectionWatcher.displayName = 'SelectionWatcher';
 
 export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
-  ({ className, isDataReady }) => {
+  ({ className, isDataReady, onEnableToolWindows }) => {
     // console.log('[AIInputBar] Component rendering');
 
     const { language } = useI18n();
@@ -1658,6 +1750,35 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
       stopPropagation: true,
     });
 
+    useEffect(() => {
+      const handleAIInputFocus = (
+        event: Event | CustomEvent<AIInputFocusEventDetail>
+      ) => {
+        const detail = (event as CustomEvent<AIInputFocusEventDetail>).detail;
+
+        if (detail?.generationType) {
+          setGenerationType(detail.generationType);
+        }
+        if (detail?.skillId) {
+          setSelectedSkillId(detail.skillId);
+          const systemSkill = findSystemSkillById(detail.skillId);
+          if (systemSkill) {
+            setSelectedSkillMediaTypes(inferSkillMediaTypes(systemSkill));
+          }
+        }
+
+        setIsFocused(true);
+        requestAnimationFrame(() => {
+          inputRef.current?.focus();
+        });
+      };
+
+      window.addEventListener(AI_INPUT_FOCUS_EVENT, handleAIInputFocus);
+      return () => {
+        window.removeEventListener(AI_INPUT_FOCUS_EVENT, handleAIInputFocus);
+      };
+    }, []);
+
     // 处理灵感模版选择：将提示词替换到输入框并切换到 Agent 模式
     const handleSelectInspirationPrompt = useCallback(
       (info: { prompt: string; modelType: 'agent' }) => {
@@ -1723,17 +1844,49 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
     }, []);
 
     // 处理打开提示词工具（香蕉提示词）- 通过 WinBox 弹窗方式打开
-    const handleOpenPromptTool = useCallback(() => {
-      // 从内置工具列表中获取香蕉提示词工具配置
-      const tool = BUILT_IN_TOOLS.find((t) => t.id === 'banana-prompt');
-      if (!tool) {
-        console.warn('[AIInputBar] Banana prompt tool not found');
-        return;
-      }
+    const handleOpenPromptTool = useCallback(
+      (source = 'ai_input_bar') => {
+        // 从内置工具列表中获取香蕉提示词工具配置
+        const tool = BUILT_IN_TOOLS.find((t) => t.id === 'banana-prompt');
+        if (!tool) {
+          console.warn('[AIInputBar] Banana prompt tool not found');
+          analytics.trackPromptAction({
+            action: 'open_tool',
+            surface: source,
+            promptType: toPromptAnalyticsType(generationType),
+            prompt,
+            source,
+            status: 'failed',
+            metadata: {
+              tool_id: 'banana-prompt',
+              reason: 'tool_not_found',
+            },
+          });
+          return;
+        }
 
-      // 通过 toolWindowService 打开 WinBox 弹窗
-      toolWindowService.openTool(tool);
-    }, []);
+        analytics.trackPromptAction({
+          action: 'open_tool',
+          surface: source,
+          promptType: toPromptAnalyticsType(generationType),
+          prompt,
+          source,
+          status: 'success',
+          metadata: {
+            tool_id: tool.id,
+            tool_type: 'external_prompt_library',
+          },
+        });
+
+        // 通过 toolWindowService 打开 WinBox 弹窗
+        toolWindowService.openTool(tool);
+      },
+      [generationType, prompt]
+    );
+
+    const handleOpenPromptToolFromInspiration = useCallback(() => {
+      handleOpenPromptTool('inspiration_board');
+    }, [handleOpenPromptTool]);
 
     // 处理素材库选择
     const handleMediaLibrarySelect = useCallback(async (asset: Asset) => {
@@ -2937,19 +3090,21 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
             );
 
             // 为新步骤添加 queue 模式选项（尊重传入的 status，若为 completed 则保留）
-            const stepsWithOptions = newSteps.map((s, index) => ({
-              ...s,
-              status: (s.status === 'completed' ? 'completed' : 'pending') as
-                | 'pending'
-                | 'completed',
-              options: {
-                mode: 'queue' as const,
-                batchId: `agent_${Date.now()}`,
-                batchIndex: index + 1,
-                batchTotal: newSteps.length,
-                globalIndex: index + 1,
-              },
-            }));
+            const stepsWithOptions = newSteps.map((s, index) =>
+              enrichStepArgsWithPromptMeta(workflow, {
+                ...s,
+                status: (s.status === 'completed' ? 'completed' : 'pending') as
+                  | 'pending'
+                  | 'completed',
+                options: {
+                  mode: 'queue' as const,
+                  batchId: `agent_${Date.now()}`,
+                  batchIndex: index + 1,
+                  batchTotal: newSteps.length,
+                  globalIndex: index + 1,
+                },
+              })
+            );
 
             // 添加新步骤到工作流
             workflowControl.addSteps(stepsWithOptions);
@@ -3060,8 +3215,9 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
               ...step.options,
               ...createStepCallbacks(step, stepStartTime),
             }; // 通过 MCP Registry 执行工具
+            const executableStep = enrichStepArgsWithPromptMeta(workflow, step);
             const result = (await mcpRegistry.executeTool(
-              { name: step.mcp, arguments: step.args },
+              { name: executableStep.mcp, arguments: executableStep.args },
               executeOptions
             )) as MCPTaskResult;
             // 根据结果更新步骤状态
@@ -3436,19 +3592,21 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
               undefined,
               Date.now() - stepStartTime
             );
-            const stepsWithOptions = newSteps.map((s, index) => ({
-              ...s,
-              status: (s.status === 'completed' ? 'completed' : 'pending') as
-                | 'pending'
-                | 'completed',
-              options: {
-                mode: 'queue' as const,
-                batchId: `agent_${Date.now()}`,
-                batchIndex: index + 1,
-                batchTotal: newSteps.length,
-                globalIndex: index + 1,
-              },
-            }));
+            const stepsWithOptions = newSteps.map((s, index) =>
+              enrichStepArgsWithPromptMeta(workflowDefinition, {
+                ...s,
+                status: (s.status === 'completed' ? 'completed' : 'pending') as
+                  | 'pending'
+                  | 'completed',
+                options: {
+                  mode: 'queue' as const,
+                  batchId: `agent_${Date.now()}`,
+                  batchIndex: index + 1,
+                  batchTotal: newSteps.length,
+                  globalIndex: index + 1,
+                },
+              })
+            );
             workflowControl.addSteps(stepsWithOptions);
             pendingNewStepsForRetry.push(...stepsWithOptions);
             newSteps.forEach((s) => {
@@ -3530,8 +3688,12 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
               // 如果有原始任务 ID，传递给 MCP 工具以复用任务
               ...(retryTaskId ? { retryTaskId } : {}),
             };
+            const executableStep = enrichStepArgsWithPromptMeta(
+              workflowDefinition,
+              step
+            );
             const result = (await mcpRegistry.executeTool(
-              { name: step.mcp, arguments: step.args },
+              { name: executableStep.mcp, arguments: executableStep.args },
               executeOptions
             )) as MCPTaskResult;
 
@@ -3854,7 +4016,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
         <InspirationBoard
           isCanvasEmpty={showInspirationBoard}
           onSelectPrompt={handleSelectInspirationPrompt}
-          onOpenPromptTool={handleOpenPromptTool}
+          onOpenPromptTool={handleOpenPromptToolFromInspiration}
         />
 
         <div
@@ -4127,6 +4289,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
                 generationType={generationType}
                 onSelectPrompt={handleSelectHistoryPrompt}
                 language={language}
+                onBeforeOpenMyPrompts={onEnableToolWindows}
                 extraActions={
                   shouldKeepExpanded ? (
                     <PromptOptimizeButton

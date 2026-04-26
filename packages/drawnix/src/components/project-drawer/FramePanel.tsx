@@ -137,6 +137,7 @@ import {
   insertAudioFromUrl,
   resolveAudioCardDimensions,
 } from '../../data/audio';
+import { requestAIInputFocus } from '../../services/ai-input-ui-events';
 
 interface FrameInfo {
   frame: PlaitFrame;
@@ -1070,6 +1071,18 @@ export const FramePanel: React.FC<FramePanelProps> = ({
     return result;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [board, refreshKey]);
+
+  const handleCreatePPTOutlineClick = useCallback(() => {
+    analytics.trackPPTAction({
+      action: 'focus_generate_outline_skill',
+      source: 'project_drawer_empty',
+      pageCount: frames.length,
+    });
+    requestAIInputFocus({
+      generationType: 'agent',
+      skillId: 'generate_ppt',
+    });
+  }, [frames.length]);
 
   // 过滤 PPT 页面
   const filteredFrames = useMemo(() => {
@@ -3275,6 +3288,15 @@ export const FramePanel: React.FC<FramePanelProps> = ({
                   <p className="frame-panel__empty-hint">
                     可以通过“生成PPT大纲”的 SKILL 进行创建
                   </p>
+                  <Button
+                    className="frame-panel__empty-action"
+                    theme="primary"
+                    size="small"
+                    icon={<Sparkles size={14} strokeWidth={1.9} />}
+                    onClick={handleCreatePPTOutlineClick}
+                  >
+                    生成 PPT 大纲
+                  </Button>
                 </>
               ) : (
                 <p className="frame-panel__empty-title">
@@ -3530,6 +3552,15 @@ export const FramePanel: React.FC<FramePanelProps> = ({
                 <p className="frame-panel__empty-hint">
                   可以通过“生成PPT大纲”的 SKILL 进行创建
                 </p>
+                <Button
+                  className="frame-panel__empty-action"
+                  theme="primary"
+                  size="small"
+                  icon={<Sparkles size={14} strokeWidth={1.9} />}
+                  onClick={handleCreatePPTOutlineClick}
+                >
+                  生成 PPT 大纲
+                </Button>
               </>
             ) : (
               <p className="frame-panel__empty-title">未找到匹配的 PPT 页面</p>

@@ -72,6 +72,8 @@ export interface PromptListPanelProps {
   disabled?: boolean;
   /** 是否显示数量 */
   showCount?: boolean;
+  /** 点击标题 */
+  onTitleClick?: () => void;
   /** 自定义类名 */
   className?: string;
   /** 埋点来源面板 */
@@ -89,6 +91,7 @@ export const PromptListPanel: React.FC<PromptListPanelProps> = ({
   language = 'zh',
   disabled = false,
   showCount = true,
+  onTitleClick,
   className = '',
   analyticsSurface = 'prompt_list',
   analyticsPromptType,
@@ -179,7 +182,17 @@ export const PromptListPanel: React.FC<PromptListPanelProps> = ({
       <div className={`prompt-list-panel ${className}`}>
       {/* 头部 */}
         <div className="prompt-list-panel__header">
-          <span className="prompt-list-panel__title">{title}</span>
+          {onTitleClick ? (
+            <button
+              type="button"
+              className="prompt-list-panel__title prompt-list-panel__title-button"
+              onClick={onTitleClick}
+            >
+              {title}
+            </button>
+          ) : (
+            <span className="prompt-list-panel__title">{title}</span>
+          )}
           {showCount && (
             <span className="prompt-list-panel__count">{items.length}</span>
           )}

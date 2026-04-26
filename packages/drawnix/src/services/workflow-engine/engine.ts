@@ -371,6 +371,9 @@ export class WorkflowEngine {
             | undefined,
           outputCompression: step.args.outputCompression as number | undefined,
           count: step.args.count as number | undefined,
+          promptMeta: step.args.promptMeta as
+            | import('../../types/shared/core.types').GenerationParams['promptMeta']
+            | undefined,
           params: step.args.params as Record<string, unknown> | undefined,
           forceMainThread: this.options.forceFallbackExecutor,
           signal,
@@ -402,6 +405,9 @@ export class WorkflowEngine {
             | undefined,
           size: step.args.size as string | undefined,
           referenceImages: step.args.referenceImages as string[] | undefined,
+          promptMeta: step.args.promptMeta as
+            | import('../../types/shared/core.types').GenerationParams['promptMeta']
+            | undefined,
           params: step.args.params as Record<string, unknown> | undefined,
           forceMainThread: this.options.forceFallbackExecutor,
           signal,

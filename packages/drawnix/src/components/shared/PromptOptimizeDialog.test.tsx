@@ -21,7 +21,14 @@ const mocks = vi.hoisted(() => ({
     content: string;
     timestamp: number;
     pinned?: boolean;
-    modelType?: 'image' | 'video' | 'audio' | 'text' | 'agent' | 'ppt-common';
+    modelType?:
+      | 'image'
+      | 'video'
+      | 'audio'
+      | 'text'
+      | 'agent'
+      | 'ppt-common'
+      | 'ppt-slide';
   }>,
   textModels: [{ id: 'text-model', name: 'Text Model' }],
 }));

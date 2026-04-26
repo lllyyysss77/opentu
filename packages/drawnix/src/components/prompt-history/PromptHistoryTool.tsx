@@ -171,10 +171,16 @@ function canEditSentPrompt(record?: PromptHistoryRecord): boolean {
   return Boolean(record && record.resultCount === 0);
 }
 
-export const PromptHistoryTool: React.FC = () => {
+interface PromptHistoryToolProps {
+  initialCategory?: PromptHistoryCategory;
+}
+
+export const PromptHistoryTool: React.FC<PromptHistoryToolProps> = ({
+  initialCategory,
+}) => {
   const [records, setRecords] = useState<PromptHistoryRecord[]>([]);
   const [category, setCategory] = useState<PromptHistoryCategory | 'all'>(
-    'all'
+    initialCategory || 'all'
   );
   const [skillTag, setSkillTag] = useState<string>('all');
   const [search, setSearch] = useState('');
@@ -207,6 +213,15 @@ export const PromptHistoryTool: React.FC = () => {
       },
     });
   }, []);
+
+  useEffect(() => {
+    if (!initialCategory) {
+      return;
+    }
+    setCategory(initialCategory);
+    setSkillTag('all');
+    setSearch('');
+  }, [initialCategory]);
 
   const loadPage = useCallback(
     async (mode: 'reset' | 'more' = 'reset', offset = 0) => {

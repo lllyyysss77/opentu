@@ -5,6 +5,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { getDefaultPromptsByGenerationType } from '../../constants/prompts';
 
 const mockPromptListPanel = vi.fn();
+const mockOpenTool = vi.hoisted(() => vi.fn());
 const promptStorageMockState = vi.hoisted(() => ({
   imagePrompts: ['本地图片历史'],
   videoPrompts: ['本地视频历史'],
@@ -70,6 +71,7 @@ vi.mock('../shared', () => ({
   PromptListPanel: ({
     title,
     items,
+    onTitleClick,
   }: {
     title: string;
     items: Array<{
@@ -77,16 +79,36 @@ vi.mock('../shared', () => ({
       content: string;
       previewExamples?: Array<{ src: string; alt: string }>;
     }>;
+    onTitleClick?: () => void;
   }) => {
-    mockPromptListPanel({ title, items });
+    mockPromptListPanel({ title, items, onTitleClick });
     return (
       <div data-testid="prompt-list-panel">
-        <div>{title}</div>
+        <button type="button" onClick={onTitleClick}>
+          {title}
+        </button>
         {items.map((item) => (
           <div key={item.id}>{item.content}</div>
         ))}
       </div>
     );
+  },
+}));
+
+vi.mock('../../constants/built-in-tools', () => ({
+  BUILT_IN_TOOLS: [
+    {
+      id: 'prompt-history',
+      name: '我的提示词',
+      component: 'prompt-history',
+    },
+  ],
+}));
+
+vi.mock('../../services/tool-window-service', () => ({
+  toolWindowService: {
+    openTool: mockOpenTool,
+    getToolState: vi.fn(),
   },
 }));
 
@@ -129,6 +151,7 @@ describe('PromptHistoryPopover', () => {
     promptStorageMockState.imagePrompts = ['本地图片历史'];
     promptStorageMockState.videoPrompts = ['本地视频历史'];
     promptStorageMockState.listeners.clear();
+    mockOpenTool.mockClear();
   });
 
   afterEach(() => {
@@ -329,5 +352,35 @@ describe('PromptHistoryPopover', () => {
     );
     expect(screen.getByText('广播后的本地图片历史')).toBeTruthy();
     expect(screen.queryByText('本地图片历史')).toBeNull();
+  });
+
+  it('标题显示为我的提示词，点击后打开我的提示词弹窗', async () => {
+    const { PromptHistoryPopover } = await import('./PromptHistoryPopover');
+
+    const view = render(
+      <PromptHistoryPopover
+        generationType="image"
+        onSelectPrompt={vi.fn()}
+        language="zh"
+      />
+    );
+
+    await openPopover(view.container);
+
+    expect(screen.getByText('我的提示词')).toBeTruthy();
+
+    fireEvent.click(screen.getByText('我的提示词'));
+
+    expect(mockOpenTool).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'prompt-history',
+        name: '我的提示词',
+      }),
+      {
+        componentProps: {
+          initialCategory: 'image',
+        },
+      }
+    );
   });
 });

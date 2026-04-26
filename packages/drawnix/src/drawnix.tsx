@@ -1573,7 +1573,11 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
           )}
           <CleanConfirm container={containerRef.current}></CleanConfirm>
           <Suspense fallback={null}>
-            <DeferredAIInputBar isDataReady={isDataReady} activationKey={0} />
+            <DeferredAIInputBar
+              isDataReady={isDataReady}
+              activationKey={0}
+              onEnableToolWindows={enableToolWindows}
+            />
           </Suspense>
           {/* Quick Creation Toolbar - 双击空白区域显示的快捷工具栏 */}
           <QuickCreationToolbar

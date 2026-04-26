@@ -28,6 +28,7 @@ import {
   validatePrompt,
   wrapApiError,
   toUploadedImages,
+  type PromptLineageMeta,
 } from './shared/queue-utils';
 
 /**
@@ -89,6 +90,8 @@ export interface VideoGenerationParams {
   batchTotal?: number;
   /** 全局索引 */
   globalIndex?: number;
+  /** 提示词历史轻量元数据 */
+  promptMeta?: PromptLineageMeta;
 }
 
 /**
@@ -191,6 +194,7 @@ function getVideoQueueConfig(params: VideoGenerationParams) {
           ? params.referenceImages
           : undefined,
       params: params.params,
+      promptMeta: params.promptMeta,
     }),
     buildResultData: () => ({
       size: params.size || '16x9',
