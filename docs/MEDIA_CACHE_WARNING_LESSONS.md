@@ -7,22 +7,27 @@
 ## 经验
 
 1. 判断应以缓存结果为准，而不是以模型、供应商或域名为准。
+
    - 同一类缓存失败可能发生在任意供应商。
    - 按模型名硬编码会误报，也会漏掉未来新增模型。
 
 2. “可预览”不等于“已离线保存”。
+
    - `<img>` / `<video>` 能展示远程 URL，不代表 Cache Storage 或 IndexedDB 有可恢复副本。
    - UI 需要把“仍依赖原始链接”显性化。
 
 3. 列表渲染阶段不能批量跨域探测。
+
    - 素材库和任务队列可能有大量媒体。
    - hover 提示和角标应基于已有缓存状态、缓存失败元数据或本地 Cache API 查询，不应为每个资源额外发起网络请求。
 
 4. 缓存元数据和实际缓存体要分开判断。
+
    - IndexedDB 中存在任务元数据，不代表 Cache API 中存在响应体。
    - `isCached` 应同时确认元数据和实际缓存体，否则会给用户错误安全感。
 
 5. 失败原因要短、稳定、可展示。
+
    - 用枚举记录机器可判断的原因，如 `cors_opaque`、`network_error`、`http_error`、`storage_error`、`cache_missing`。
    - 文案面向用户：资源未能缓存到浏览器，原始链接可能过期，请尽快下载保存。
 
@@ -55,8 +60,9 @@
 
 这类问题不要只按“缓存丢失”判断。实际可能是：
 
-- Cache Storage 里有实际 blob，但当前页面没有被新版 Service Worker 接管
-- Service Worker 查询缓存 key 失败或响应时序不稳定
+- 图片写入了 IndexedDB 元数据，但 Cache Storage 没有实际响应体
+- 当前页面没有被新版 Service Worker 接管，`/asset-library/...` 请求落到服务器并 404
+- Service Worker 查询缓存 key 与页面写入 key 不一致
 - DOM `<img>` 请求 `/asset-library/...` 失败，但应用代码直接 `getCachedBlob(url)` 能成功
 
 如果图片组件在第一次 `onError` 时直接删除元素，就会把“可恢复的展示问题”误处理成“资源不存在”。
@@ -64,22 +70,26 @@
 ### 修复原则
 
 1. 虚拟 URL 首次加载失败不能立即删除画布元素。
+
    - 先重试，最后再确认 Cache Storage 中是否确实没有 blob。
    - 只有确认资源不存在时，才允许删除元素。
 
-2. Cache 有 blob 时，页面侧要能绕过 Service Worker 展示。
-   - 从 Cache Storage 读取 blob。
-   - 转成临时 `objectURL` 作为 `<img>` 的 fallback `src`。
-   - 这样即使 `/asset-library/...` 这条虚拟路径失效，画布也能显示图片。
+2. 画布元素必须保存和渲染稳定虚拟 URL。
 
-3. fallback 必须防止重试循环。
-   - 一旦 `objectURL` 接管展示，之前排队的 `_retry` 定时器不能再把 `<img src>` 改回虚拟 URL。
-   - 组件重挂载时要能复用已知 fallback，避免反复触发原始虚拟 URL 失败。
+   - 本地图片粘贴后应写入 `/asset-library/content-...`。
+   - 降级路径可以使用 `/__aitu_cache__/image/content-...`。
+   - 不要把长期展示 `src` 改成 `blob:`，否则刷新、协作、恢复和清理逻辑都会失去稳定引用。
 
-4. `objectURL` 必须可回收。
-   - 按原始虚拟 URL 做模块级复用。
-   - 使用引用计数，组件卸载后延迟释放。
-   - 防止高并发画布元素反复挂载导致 object URL 泄漏。
+3. 修复点应落在 Cache Storage 与 Service Worker 的一致性上。
+
+   - 写入缓存前统一规范化虚拟 URL key，剥离 `_retry`、`bypass_sw`、`thumbnail` 等控制参数。
+   - SW 读取时同时兼容 pathname、去控制参数后的完整 URL、当前请求 URL。
+   - 页面侧 `getCachedBlob` 也要按同一规则查询。
+
+4. `objectURL` 只能用于临时读尺寸或预览。
+
+   - 使用后要立刻 `URL.revokeObjectURL`。
+   - 不要作为画布图片元素的最终 URL。
 
 5. 调试日志要及时撤掉。
    - 定位时可以临时记录 URL、元素 ID、blob size。
@@ -91,4 +101,4 @@
 - “DOM 加载失败”不等于“缓存不存在”。
 - “Cache 元数据存在”也不等于“Cache 响应体存在”。
 - 画布素材展示要以“可恢复”为优先，避免误删用户内容。
-- 所有 blob/object URL fallback 都必须有生命周期管理。
+- 虚拟 URL 链路坏了要修 SW/Cache key，不要用 `blob:` 掩盖主链路问题。

@@ -27,11 +27,6 @@ interface VirtualImageRetry {
   delay: number;
 }
 
-interface VirtualImageErrorOptions {
-  onCachedBlob?: (blob: Blob) => void;
-  verifyCacheImmediately?: boolean;
-}
-
 export function clearVirtualUrlImageError(
   board: PlaitBoard,
   element: PlaitElement,
@@ -49,8 +44,7 @@ function verifyVirtualImageCache(
   key: string,
   board: PlaitBoard,
   element: PlaitElement,
-  imageUrl: string,
-  options?: VirtualImageErrorOptions
+  imageUrl: string
 ): void {
   void import('../services/unified-cache-service')
     .then(({ unifiedCacheService }) =>
@@ -59,22 +53,13 @@ function verifyVirtualImageCache(
     .then((blob) => {
       if (blob) {
         virtualImageErrorAttempts.delete(key);
-        options?.onCachedBlob?.(blob);
-        return;
-      }
-
-      if (options?.verifyCacheImmediately) {
         return;
       }
 
       virtualImageErrorAttempts.delete(key);
       removeElementFromBoard(board, element);
     })
-    .catch((error) => {
-      if (options?.verifyCacheImmediately) {
-        return;
-      }
-
+    .catch(() => {
       virtualImageErrorAttempts.delete(key);
     });
 }
@@ -164,8 +149,7 @@ export function removeElementFromBoard(
 export function handleVirtualUrlImageError(
   board: PlaitBoard,
   element: PlaitElement,
-  imageUrl: string,
-  options?: VirtualImageErrorOptions
+  imageUrl: string
 ): VirtualImageRetry | undefined {
   if (!isVirtualUrl(imageUrl)) {
     return undefined; // 只处理虚拟URL
@@ -178,10 +162,6 @@ export function handleVirtualUrlImageError(
   if (delay !== undefined) {
     virtualImageErrorAttempts.set(key, attempt + 1);
 
-    if (options?.verifyCacheImmediately && attempt === 0) {
-      verifyVirtualImageCache(key, board, element, imageUrl, options);
-    }
-
     return {
       retryUrl: `${imageUrl}${
         imageUrl.includes('?') ? '&' : '?'
@@ -190,7 +170,7 @@ export function handleVirtualUrlImageError(
     };
   }
 
-  verifyVirtualImageCache(key, board, element, imageUrl, options);
+  verifyVirtualImageCache(key, board, element, imageUrl);
 
   return undefined;
 }

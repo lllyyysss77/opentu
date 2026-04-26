@@ -4748,6 +4748,17 @@ async function fetchQuick(
   return fetch(request, fetchOptions);
 }
 
+function getVirtualMediaCacheKeys(request: Request, url: URL): string[] {
+  const canonicalUrl = new URL(request.url);
+  for (const param of ['thumbnail', 'bypass_sw', 'direct_fetch', '_retry']) {
+    canonicalUrl.searchParams.delete(param);
+  }
+
+  return Array.from(
+    new Set([url.pathname, canonicalUrl.toString(), request.url])
+  );
+}
+
 // 处理缓存 URL 请求 (/__aitu_cache__/{type}/{taskId}.{ext})
 // 从 Cache API 获取合并媒体并返回，视频支持 Range 请求
 async function handleCacheUrlRequest(request: Request): Promise<Response> {
@@ -4804,12 +4815,12 @@ async function handleCacheUrlRequest(request: Request): Promise<Response> {
     // 从 Cache API 获取
     const cache = await caches.open(IMAGE_CACHE_NAME);
 
-    // 优先使用完整 URL 匹配，没找到再用 pathname 匹配
-    // 兼容两种缓存 key 格式（完整 URL 和相对路径）
-    let cachedResponse = await cache.match(request.url);
-
-    if (!cachedResponse) {
-      cachedResponse = await cache.match(url.pathname);
+    let cachedResponse: Response | undefined;
+    for (const cacheKey of getVirtualMediaCacheKeys(request, url)) {
+      cachedResponse = await cache.match(cacheKey);
+      if (cachedResponse) {
+        break;
+      }
     }
 
     if (cachedResponse) {
@@ -4845,11 +4856,7 @@ async function handleCacheUrlRequest(request: Request): Promise<Response> {
       });
     }
 
-    // 如果 Cache API 没有，返回 404
-    console.error(`Service Worker: Media not found in cache:`, {
-      fullUrl: request.url,
-      pathname: url.pathname,
-    });
+    // 如果 Cache API 没有，返回 404。fetch 调试面板会记录状态，避免正常 miss 刷控制台。
     return new Response('Media not found', {
       status: 404,
       statusText: 'Not Found',
@@ -4916,7 +4923,13 @@ async function handleAssetLibraryRequest(request: Request): Promise<Response> {
   try {
     // 从 Cache API 获取
     const cache = await caches.open(IMAGE_CACHE_NAME);
-    const cachedResponse = await cache.match(cacheKey);
+    let cachedResponse: Response | undefined;
+    for (const candidateKey of getVirtualMediaCacheKeys(request, url)) {
+      cachedResponse = await cache.match(candidateKey);
+      if (cachedResponse) {
+        break;
+      }
+    }
 
     if (cachedResponse) {
       // console.log(`Service Worker [Asset-${requestId}]: Found cached asset:`, cacheKey);
@@ -4957,11 +4970,7 @@ async function handleAssetLibraryRequest(request: Request): Promise<Response> {
       });
     }
 
-    // 如果 Cache API 没有，返回 404
-    console.error(
-      `Service Worker [Asset-${requestId}]: Asset not found in cache:`,
-      cacheKey
-    );
+    // 如果 Cache API 没有，返回 404。fetch 调试面板会记录状态，避免正常 miss 刷控制台。
     return new Response('Asset not found', {
       status: 404,
       statusText: 'Not Found',

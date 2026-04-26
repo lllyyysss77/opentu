@@ -2,7 +2,7 @@ import type { ImageProps } from '@plait/common';
 import { RectangleClient } from '@plait/core';
 import { Loading, MessagePlugin } from 'tdesign-react';
 import classNames from 'classnames';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback } from 'react';
 import { Video } from './video';
 import { generateImage } from '../../mcp/tools/image-generation';
 import { getImageRegion } from '../../services/ppt';
@@ -16,74 +16,6 @@ import {
   clearVirtualUrlImageError,
   handleVirtualUrlImageError,
 } from '../../utils/asset-cleanup';
-
-const FALLBACK_OBJECT_URL_RELEASE_DELAY = 60_000;
-
-const virtualImageFallbacks = new Map<
-  string,
-  {
-    src: string;
-    refCount: number;
-    releaseTimer: number | null;
-  }
->();
-
-function acquireVirtualImageFallback(imageUrl: string): string | null {
-  const entry = virtualImageFallbacks.get(imageUrl);
-  if (!entry) {
-    return null;
-  }
-
-  entry.refCount++;
-  if (entry.releaseTimer) {
-    window.clearTimeout(entry.releaseTimer);
-    entry.releaseTimer = null;
-  }
-  return entry.src;
-}
-
-function createOrAcquireVirtualImageFallback(
-  imageUrl: string,
-  blob: Blob
-): string {
-  const existing = acquireVirtualImageFallback(imageUrl);
-  if (existing) {
-    return existing;
-  }
-
-  const src = URL.createObjectURL(blob);
-  virtualImageFallbacks.set(imageUrl, {
-    src,
-    refCount: 1,
-    releaseTimer: null,
-  });
-  return src;
-}
-
-function releaseVirtualImageFallback(imageUrl: string | null): void {
-  if (!imageUrl) {
-    return;
-  }
-
-  const entry = virtualImageFallbacks.get(imageUrl);
-  if (!entry) {
-    return;
-  }
-
-  entry.refCount = Math.max(0, entry.refCount - 1);
-  if (entry.refCount > 0 || entry.releaseTimer) {
-    return;
-  }
-
-  entry.releaseTimer = window.setTimeout(() => {
-    const latest = virtualImageFallbacks.get(imageUrl);
-    if (!latest || latest.refCount > 0) {
-      return;
-    }
-    URL.revokeObjectURL(latest.src);
-    virtualImageFallbacks.delete(imageUrl);
-  }, FALLBACK_OBJECT_URL_RELEASE_DELAY);
-}
 
 // 检查是否为视频元素（通过URL标识、扩展名或元数据）
 const isVideoElement = (imageItem: any): boolean => {
@@ -114,92 +46,39 @@ const isVideoElement = (imageItem: any): boolean => {
 };
 
 export const Image: React.FC<ImageProps> = (props: ImageProps) => {
-  const [fallbackSrc, setFallbackSrc] = useState<string | null>(() =>
-    acquireVirtualImageFallback(props.imageItem.url)
-  );
-  const acquiredFallbackUrlRef = useRef<string | null>(
-    fallbackSrc ? props.imageItem.url : null
-  );
-  const imgElementRef = useRef<HTMLImageElement | null>(null);
-  const isMountedRef = useRef(true);
-  const currentImageUrlRef = useRef(props.imageItem.url);
-
-  const releaseAcquiredFallback = useCallback(() => {
-    releaseVirtualImageFallback(acquiredFallbackUrlRef.current);
-    acquiredFallbackUrlRef.current = null;
-  }, []);
-
-  useEffect(() => {
-    isMountedRef.current = true;
-    currentImageUrlRef.current = props.imageItem.url;
-
-    releaseAcquiredFallback();
-    const existingFallback = acquireVirtualImageFallback(props.imageItem.url);
-    acquiredFallbackUrlRef.current = existingFallback ? props.imageItem.url : null;
-    setFallbackSrc(existingFallback);
-
-    return () => {
-      isMountedRef.current = false;
-      releaseAcquiredFallback();
-    };
-  }, [props.imageItem.url, releaseAcquiredFallback]);
-
-  const applyCachedFallback = useCallback((blob: Blob) => {
-    if (
-      !isMountedRef.current ||
-      currentImageUrlRef.current !== props.imageItem.url
-    ) {
-      return;
-    }
-
-    if (acquiredFallbackUrlRef.current !== props.imageItem.url) {
-      releaseAcquiredFallback();
-      acquiredFallbackUrlRef.current = props.imageItem.url;
-      setFallbackSrc(
-        createOrAcquireVirtualImageFallback(props.imageItem.url, blob)
-      );
-    }
-
-  }, [props.element.id, props.imageItem.url, releaseAcquiredFallback]);
-
   // 处理图片加载失败
-  const handleImageError = useCallback((event: any) => {
-    if (fallbackSrc && event.currentTarget?.src === fallbackSrc) {
-      return;
-    }
+  const handleImageError = useCallback(
+    (event: any) => {
+      const imageElement = event.currentTarget as HTMLImageElement;
+      imageElement.style.visibility = 'hidden';
 
-    const imageElement = event.currentTarget as HTMLImageElement;
-    imgElementRef.current = imageElement;
-    imageElement.style.visibility = 'hidden';
-
-    const retry = handleVirtualUrlImageError(
-      props.board,
-      props.element,
-      props.imageItem.url,
-      {
-        verifyCacheImmediately: true,
-        onCachedBlob: applyCachedFallback,
+      const retry = handleVirtualUrlImageError(
+        props.board,
+        props.element,
+        props.imageItem.url
+      );
+      if (retry) {
+        window.setTimeout(() => {
+          if (!imageElement.isConnected) {
+            return;
+          }
+          imageElement.src = retry.retryUrl;
+        }, retry.delay);
       }
-    );
-    if (retry) {
-      window.setTimeout(() => {
-        if (acquiredFallbackUrlRef.current === props.imageItem.url) {
-          return;
-        }
-        imageElement.src = retry.retryUrl;
-      }, retry.delay);
-    }
-  }, [
-    fallbackSrc,
-    props.board,
-    props.element,
-    props.imageItem.url,
-    applyCachedFallback,
-  ]);
-  const handleImageLoad = useCallback((event: any) => {
-    (event.currentTarget as HTMLImageElement).style.visibility = '';
-    clearVirtualUrlImageError(props.board, props.element, props.imageItem.url);
-  }, [props.board, props.element, props.imageItem.url]);
+    },
+    [props.board, props.element, props.imageItem.url]
+  );
+  const handleImageLoad = useCallback(
+    (event: any) => {
+      (event.currentTarget as HTMLImageElement).style.visibility = '';
+      clearVirtualUrlImageError(
+        props.board,
+        props.element,
+        props.imageItem.url
+      );
+    },
+    [props.board, props.element, props.imageItem.url]
+  );
 
   const elementData = props.element as any;
   const pptStatus = elementData?.pptImageStatus as
@@ -320,7 +199,7 @@ export const Image: React.FC<ImageProps> = (props: ImageProps) => {
 
   // 否则使用原来的图片渲染
   const imgProps = {
-    src: fallbackSrc || props.imageItem.url,
+    src: props.imageItem.url,
     draggable: false,
     ...(shouldContainFrameImage
       ? {
