@@ -154,11 +154,11 @@ const DEFAULT_SETTINGS: AppSettings = {
   gemini: {
     apiKey: '',
     baseUrl: TUZI_PROVIDER_DEFAULT_BASE_URL,
-    chatModel: 'gpt-5.5',
+    chatModel: getDefaultTextModel(),
     audioModelName: 'suno_music',
     imageModelName: 'gpt-image-2-vip',
     videoModelName: 'seedance-1.5-pro',
-    textModelName: 'gpt-5.5',
+    textModelName: getDefaultTextModel(),
   },
   tts: {
     selectedVoice: '',
