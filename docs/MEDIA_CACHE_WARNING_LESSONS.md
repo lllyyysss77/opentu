@@ -36,3 +36,59 @@
 - 在任务结果和素材对象中透传 `cacheWarning`。
 - 素材库和任务队列只读取本地缓存状态与警告元数据展示角标。
 - hover 只展示原因和下载建议，不做实时网络检测。
+
+## 画布虚拟图片 URL 兜底经验
+
+更新日期：2026-04-26
+
+### 现象
+
+复制图片粘贴到画布后，图片元素会短暂出现，然后变成加载失败状态，严重时还会被自动删除。
+
+控制台现象通常是：
+
+- `/asset-library/content-xxx.png` 的 `<img>` 加载失败
+- 但通过页面侧 Cache API 可以读到对应 blob
+- 说明资源并非没有缓存，而是虚拟 URL 的响应链路没有喂给 DOM 图片
+
+### 根因
+
+这类问题不要只按“缓存丢失”判断。实际可能是：
+
+- Cache Storage 里有实际 blob，但当前页面没有被新版 Service Worker 接管
+- Service Worker 查询缓存 key 失败或响应时序不稳定
+- DOM `<img>` 请求 `/asset-library/...` 失败，但应用代码直接 `getCachedBlob(url)` 能成功
+
+如果图片组件在第一次 `onError` 时直接删除元素，就会把“可恢复的展示问题”误处理成“资源不存在”。
+
+### 修复原则
+
+1. 虚拟 URL 首次加载失败不能立即删除画布元素。
+   - 先重试，最后再确认 Cache Storage 中是否确实没有 blob。
+   - 只有确认资源不存在时，才允许删除元素。
+
+2. Cache 有 blob 时，页面侧要能绕过 Service Worker 展示。
+   - 从 Cache Storage 读取 blob。
+   - 转成临时 `objectURL` 作为 `<img>` 的 fallback `src`。
+   - 这样即使 `/asset-library/...` 这条虚拟路径失效，画布也能显示图片。
+
+3. fallback 必须防止重试循环。
+   - 一旦 `objectURL` 接管展示，之前排队的 `_retry` 定时器不能再把 `<img src>` 改回虚拟 URL。
+   - 组件重挂载时要能复用已知 fallback，避免反复触发原始虚拟 URL 失败。
+
+4. `objectURL` 必须可回收。
+   - 按原始虚拟 URL 做模块级复用。
+   - 使用引用计数，组件卸载后延迟释放。
+   - 防止高并发画布元素反复挂载导致 object URL 泄漏。
+
+5. 调试日志要及时撤掉。
+   - 定位时可以临时记录 URL、元素 ID、blob size。
+   - 修复完成后，正常恢复路径不应刷 `warn` 或 `info`。
+   - 只保留真正不可恢复或会影响用户数据的异常日志。
+
+### 经验规则
+
+- “DOM 加载失败”不等于“缓存不存在”。
+- “Cache 元数据存在”也不等于“Cache 响应体存在”。
+- 画布素材展示要以“可恢复”为优先，避免误删用户内容。
+- 所有 blob/object URL fallback 都必须有生命周期管理。
