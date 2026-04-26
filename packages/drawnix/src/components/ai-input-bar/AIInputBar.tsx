@@ -4133,13 +4133,12 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
                 onSelectPrompt={handleSelectHistoryPrompt}
                 language={language}
                 extraActions={
-                  shouldKeepExpanded &&
-                  (generationType === 'image' || generationType === 'video') ? (
+                  shouldKeepExpanded ? (
                     <HoverTip
                       content={
                         language === 'zh' ? '提示词优化' : 'Prompt optimization'
                       }
-                      placement="top"
+                      placement="right"
                     >
                       <button
                         type="button"
