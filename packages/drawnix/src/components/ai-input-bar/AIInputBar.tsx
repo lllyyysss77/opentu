@@ -24,12 +24,12 @@ import React, {
   useRef,
   useMemo,
 } from 'react';
-import { Send, Sparkles } from 'lucide-react';
+import { Send } from 'lucide-react';
 import { MessagePlugin } from 'tdesign-react';
 import { ImageUploadIcon, MediaLibraryIcon } from '../icons';
 import { useBoard } from '@plait-board/react-board';
 import { SelectedContentPreview } from '../shared/SelectedContentPreview';
-import { HoverTip } from '../shared/hover';
+import { PromptOptimizeButton } from '../shared/PromptOptimizeButton';
 import {
   getSelectedElements,
   ATTACHED_ELEMENT_CLASS_NAME,
@@ -121,7 +121,6 @@ import classNames from 'classnames';
 import { InspirationBoard } from '../inspiration-board';
 import { GenerationTypeDropdown } from './GenerationTypeDropdown';
 import { CountDropdown } from './CountDropdown';
-import { PromptOptimizeDialog } from '../shared/PromptOptimizeDialog';
 import './ai-input-bar.scss';
 
 import type {
@@ -1734,10 +1733,6 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
 
       // 通过 toolWindowService 打开 WinBox 弹窗
       toolWindowService.openTool(tool);
-    }, []);
-
-    const handleOpenPromptOptimizer = useCallback(() => {
-      setIsPromptOptimizeOpen(true);
     }, []);
 
     // 处理素材库选择
@@ -4134,35 +4129,27 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
                 language={language}
                 extraActions={
                   shouldKeepExpanded ? (
-                    <HoverTip
-                      content={
-                        language === 'zh' ? '提示词优化' : 'Prompt optimization'
-                      }
-                      placement="right"
-                    >
-                      <button
-                        type="button"
-                        className="prompt-history-popover__action-btn"
-                        onMouseDown={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          setIsFocused(true);
-                        }}
-                        onClick={handleOpenPromptOptimizer}
-                        disabled={isSubmitting}
-                        title={
-                          language === 'zh' ? '优化提示词' : 'Optimize prompt'
-                        }
-                        aria-label={
-                          language === 'zh'
-                            ? '提示词优化'
-                            : 'Prompt optimization'
-                        }
-                        data-track="ai_input_click_prompt_optimize"
-                      >
-                        <Sparkles size={16} />
-                      </button>
-                    </HoverTip>
+                    <PromptOptimizeButton
+                      className="prompt-history-popover__action-btn"
+                      originalPrompt={prompt}
+                      language={language}
+                      scenarioId={`ai-input.${generationType}` as const}
+                      disabled={isSubmitting}
+                      allowStructuredMode={true}
+                      onOpenChange={setIsPromptOptimizeOpen}
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setIsFocused(true);
+                      }}
+                      onApply={(optimizedPrompt) => {
+                        setPrompt(optimizedPrompt);
+                        setIsFocused(true);
+                        requestAnimationFrame(() => {
+                          inputRef.current?.focus();
+                        });
+                      }}
+                    />
                   ) : null
                 }
               />
@@ -4179,27 +4166,6 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
             onSelect={handleMediaLibrarySelect}
           />
         )}
-
-        <PromptOptimizeDialog
-          open={isPromptOptimizeOpen}
-          onOpenChange={setIsPromptOptimizeOpen}
-          originalPrompt={prompt}
-          language={language}
-          type={generationType}
-          allowStructuredMode={true}
-          defaultMode={
-            generationType === 'image' || generationType === 'video'
-              ? 'structured'
-              : 'polish'
-          }
-          onApply={(optimizedPrompt) => {
-            setPrompt(optimizedPrompt);
-            setIsFocused(true);
-            requestAnimationFrame(() => {
-              inputRef.current?.focus();
-            });
-          }}
-        />
       </div>
     );
   }

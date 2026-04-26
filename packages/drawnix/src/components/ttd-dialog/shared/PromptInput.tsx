@@ -6,15 +6,18 @@ import React, {
   useMemo,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { Lightbulb, Sparkles } from 'lucide-react';
+import { Lightbulb } from 'lucide-react';
 import { getPromptExample } from './ai-generation-utils';
 import { CharacterMentionPopup } from '../../character/CharacterMentionPopup';
 import { useMention } from '../../../hooks/useMention';
 import { useGenerationHistory } from '../../../hooks/useGenerationHistory';
 import { Z_INDEX } from '../../../constants/z-index';
 import { promptStorageService } from '../../../services/prompt-storage-service';
-import { HoverTip, PromptListPanel, type PromptItem } from '../../shared';
-import { PromptOptimizeDialog } from '../../shared/PromptOptimizeDialog';
+import {
+  PromptListPanel,
+  PromptOptimizeButton,
+  type PromptItem,
+} from '../../shared';
 import { resolvePresetPromptItems } from './prompt-utils';
 import './PromptInput.scss';
 
@@ -44,7 +47,6 @@ export const PromptInput: React.FC<PromptInputProps> = ({
   videoProvider,
 }) => {
   const [isPresetOpen, setIsPresetOpen] = useState(false);
-  const [isOptimizeDialogOpen, setIsOptimizeDialogOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const [tooltipPosition, setTooltipPosition] = useState<{
@@ -217,10 +219,6 @@ export const PromptInput: React.FC<PromptInputProps> = ({
     }
   }, [type, closeMentionPopup]);
 
-  const handleOpenOptimizeDialog = useCallback(() => {
-    setIsOptimizeDialogOpen(true);
-  }, [disabled, language, prompt, type]);
-
   // 渲染 tooltip 内容
   const renderTooltipContent = () => {
     if (!isPresetOpen || !tooltipPosition) return null;
@@ -295,23 +293,19 @@ export const PromptInput: React.FC<PromptInputProps> = ({
           rows={4}
           disabled={disabled}
         />
-        <HoverTip
-          content={language === 'zh' ? '提示词优化' : 'Prompt optimization'}
-          placement="top"
+        <PromptOptimizeButton
+          className="prompt-optimize-button"
+          originalPrompt={prompt}
+          language={language}
+          scenarioId={type === 'image' ? 'tool.image' : 'tool.video'}
           disabled={disabled}
-        >
-          <button
-            type="button"
-            className="prompt-optimize-button"
-            onClick={handleOpenOptimizeDialog}
-            disabled={disabled}
-            aria-label={
-              language === 'zh' ? '提示词优化' : 'Prompt optimization'
-            }
-          >
-            <Sparkles size={16} />
-          </button>
-        </HoverTip>
+          tooltipPlacement="top"
+          allowStructuredMode={true}
+          onApply={(optimizedPrompt) => {
+            onPromptChange(optimizedPrompt);
+            onError?.(null);
+          }}
+        />
       </div>
 
       {/* Character mention popup - rendered in portal style with fixed position */}
@@ -326,19 +320,6 @@ export const PromptInput: React.FC<PromptInputProps> = ({
           onClose={closeMentionPopup}
         />
       )}
-
-      <PromptOptimizeDialog
-        open={isOptimizeDialogOpen}
-        onOpenChange={setIsOptimizeDialogOpen}
-        originalPrompt={prompt}
-        language={language}
-        type={type}
-        allowStructuredMode={true}
-        onApply={(optimizedPrompt) => {
-          onPromptChange(optimizedPrompt);
-          onError?.(null);
-        }}
-      />
     </div>
   );
 };

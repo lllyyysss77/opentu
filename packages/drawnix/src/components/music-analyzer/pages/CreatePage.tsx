@@ -1,11 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Sparkles } from 'lucide-react';
 import { generateUUID } from '../../../utils/runtime-helpers';
 import type { CreationMode, MusicAnalysisRecord } from '../types';
 import { formatMusicAnalysisMarkdown } from '../types';
 import { ModelDropdown } from '../../ai-input-bar/ModelDropdown';
-import { HoverTip } from '../../shared';
-import { PromptOptimizeDialog } from '../../shared/PromptOptimizeDialog';
+import { PromptOptimizeButton } from '../../shared';
 import { useSelectableModels } from '../../../hooks/use-runtime-models';
 import { getSelectionKey } from '../../../utils/model-selection';
 import type { ModelRef } from '../../../utils/settings-manager';
@@ -86,7 +84,6 @@ export const CreatePage: React.FC<CreatePageProps> = ({
   const [creationPrompt, setCreationPrompt] = useState(
     () => existingRecord?.creationPrompt || readSessionPrompt()
   );
-  const [isPromptOptimizeOpen, setIsPromptOptimizeOpen] = useState(false);
   const [pendingLyricsGenTaskId, setPendingLyricsGenTaskId] = useState<string | null>(
     () => existingRecord?.pendingLyricsGenTaskId || null
   );
@@ -526,16 +523,13 @@ export const CreatePage: React.FC<CreatePageProps> = ({
           <div className="ma-card">
             <div className="ma-card-header">
               <span>描述你想创作的歌曲</span>
-              <HoverTip content="提示词优化" placement="right">
-                <button
-                  type="button"
-                  className="ma-icon-btn"
-                  onClick={() => setIsPromptOptimizeOpen(true)}
-                  aria-label="提示词优化"
-                >
-                  <Sparkles size={16} />
-                </button>
-              </HoverTip>
+              <PromptOptimizeButton
+                className="ma-icon-btn"
+                originalPrompt={creationPrompt}
+                language="zh"
+                scenarioId="music.create-song"
+                onApply={setCreationPrompt}
+              />
             </div>
             <textarea
               className="ma-textarea"
@@ -719,17 +713,6 @@ export const CreatePage: React.FC<CreatePageProps> = ({
         )}
       </div>
       </div>
-      <PromptOptimizeDialog
-        open={isPromptOptimizeOpen}
-        onOpenChange={setIsPromptOptimizeOpen}
-        originalPrompt={creationPrompt}
-        language="zh"
-        type="audio"
-        historyType="audio"
-        allowStructuredMode={true}
-        defaultMode="polish"
-        onApply={setCreationPrompt}
-      />
     </div>
   );
 };

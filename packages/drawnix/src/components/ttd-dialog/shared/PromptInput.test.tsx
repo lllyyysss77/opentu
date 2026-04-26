@@ -1,13 +1,17 @@
 // @vitest-environment jsdom
-import React from 'react';
-import { cleanup, fireEvent, render } from '@testing-library/react';
+import React, { act } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AI_IMAGE_PROMPTS,
   AI_VIDEO_PROMPTS,
 } from '../../../constants/prompts';
 
+(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean })
+  .IS_REACT_ACT_ENVIRONMENT = true;
+
 const mockPromptListPanel = vi.fn();
+let roots: Root[] = [];
 
 vi.mock('../../../services/prompt-storage-service', () => ({
   promptStorageService: {
@@ -17,6 +21,10 @@ vi.mock('../../../services/prompt-storage-service', () => ({
     unpinPrompt: vi.fn(),
     deletePrompt: vi.fn(),
   },
+}));
+
+vi.mock('lucide-react', () => ({
+  Lightbulb: () => React.createElement('span', { 'aria-hidden': 'true' }),
 }));
 
 vi.mock('../../../hooks/useMention', () => ({
@@ -102,7 +110,7 @@ vi.mock('../../dialog/dialog', () => ({
   }: {
     children: React.ReactNode;
     open?: boolean;
-  }) => <>{open ? children : null}</>,
+  }) => (open ? <div>{children}</div> : null),
   DialogContent: ({ children }: { children: React.ReactNode }) => (
     <div>{children}</div>
   ),
@@ -115,6 +123,9 @@ vi.mock('../../dialog/dialog', () => ({
 }));
 
 vi.mock('../../shared', () => ({
+  PromptOptimizeButton: () => (
+    <button type="button" data-testid="prompt-optimize-button" />
+  ),
   PromptListPanel: (props: Record<string, unknown>) => {
     mockPromptListPanel(props);
     return <div data-testid="prompt-list-panel" />;
@@ -127,25 +138,50 @@ describe('PromptInput', () => {
   });
 
   afterEach(() => {
-    cleanup();
+    roots.forEach((root) => {
+      act(() => root.unmount());
+    });
+    roots = [];
+    document.body.innerHTML = '';
   });
 
-  it('图片默认提示词在弹窗预设列表中不再带内置示例图', async () => {
+  const renderPromptInput = async (
+    props: Partial<
+      React.ComponentProps<typeof import('./PromptInput').PromptInput>
+    >
+  ) => {
     const { PromptInput } = await import('./PromptInput');
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    roots.push(root);
 
-    render(
-      <PromptInput
-        prompt=""
-        onPromptChange={vi.fn()}
-        presetPrompts={[AI_IMAGE_PROMPTS.zh[1]]}
-        language="zh"
-        type="image"
-      />
-    );
+    act(() => {
+      root.render(
+        <PromptInput
+          prompt=""
+          onPromptChange={vi.fn()}
+          language="zh"
+          type="image"
+          {...props}
+        />
+      );
+    });
+  };
 
-    fireEvent.click(
-      document.querySelector('.preset-icon-button') as HTMLButtonElement
-    );
+  const openPresetPanel = () => {
+    act(() => {
+      document.querySelector<HTMLButtonElement>('.preset-icon-button')?.click();
+    });
+  };
+
+  it('图片默认提示词在弹窗预设列表中不再带内置示例图', async () => {
+    await renderPromptInput({
+      presetPrompts: [AI_IMAGE_PROMPTS.zh[1]],
+      type: 'image',
+    });
+
+    openPresetPanel();
 
     const panelProps = mockPromptListPanel.mock.calls.at(-1)?.[0] as {
       items: Array<{ content: string; previewExamples?: Array<{ src: string }> }>;
@@ -156,21 +192,12 @@ describe('PromptInput', () => {
   });
 
   it('视频默认提示词命中用户生成历史时使用真实预览', async () => {
-    const { PromptInput } = await import('./PromptInput');
+    await renderPromptInput({
+      presetPrompts: [AI_VIDEO_PROMPTS.zh[0]],
+      type: 'video',
+    });
 
-    render(
-      <PromptInput
-        prompt=""
-        onPromptChange={vi.fn()}
-        presetPrompts={[AI_VIDEO_PROMPTS.zh[0]]}
-        language="zh"
-        type="video"
-      />
-    );
-
-    fireEvent.click(
-      document.querySelector('.preset-icon-button') as HTMLButtonElement
-    );
+    openPresetPanel();
 
     const panelProps = mockPromptListPanel.mock.calls.at(-1)?.[0] as {
       items: Array<{
@@ -193,21 +220,12 @@ describe('PromptInput', () => {
   });
 
   it('未命中用户生成历史时，视频默认提示词不再回退到内置样片', async () => {
-    const { PromptInput } = await import('./PromptInput');
+    await renderPromptInput({
+      presetPrompts: [AI_VIDEO_PROMPTS.zh[1]],
+      type: 'video',
+    });
 
-    render(
-      <PromptInput
-        prompt=""
-        onPromptChange={vi.fn()}
-        presetPrompts={[AI_VIDEO_PROMPTS.zh[1]]}
-        language="zh"
-        type="video"
-      />
-    );
-
-    fireEvent.click(
-      document.querySelector('.preset-icon-button') as HTMLButtonElement
-    );
+    openPresetPanel();
 
     const panelProps = mockPromptListPanel.mock.calls.at(-1)?.[0] as {
       items: Array<{

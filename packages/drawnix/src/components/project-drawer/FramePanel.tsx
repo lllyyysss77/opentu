@@ -3703,7 +3703,11 @@ export const FramePanel: React.FC<FramePanelProps> = ({
           }}
           originalPrompt={outlinePromptOptimizeOriginalPrompt}
           language={language as 'zh' | 'en'}
-          type="image"
+          scenarioId={
+            outlinePromptOptimizeTarget.type === 'common'
+              ? 'ppt.common'
+              : 'ppt.slide'
+          }
           historyType={
             outlinePromptOptimizeTarget.type === 'common'
               ? 'ppt-common'
