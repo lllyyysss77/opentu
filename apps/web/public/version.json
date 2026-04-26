@@ -1,6 +1,6 @@
 {
   "version": "0.6.79",
-  "buildTime": "2026-04-26T17:09:17.046Z",
+  "buildTime": "2026-04-26T17:09:17.700Z",
   "gitCommit": "unknown",
   "changelog": [
     "本地开发默认启用 Service Worker",
