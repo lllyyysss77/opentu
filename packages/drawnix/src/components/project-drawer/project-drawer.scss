@@ -784,6 +784,7 @@
   }
 
   &__outline-common {
+    position: relative;
     display: flex;
     flex-direction: column;
     gap: 6px;
@@ -804,6 +805,37 @@
     justify-content: space-between;
     min-width: 0;
     gap: 8px;
+  }
+
+  &__outline-common-actions {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 6px;
+  }
+
+  &__outline-history-panel {
+    position: absolute;
+    top: 38px;
+    right: 8px;
+    z-index: 20;
+
+    .prompt-list-panel {
+      --panel-max-height: min(320px, 52vh);
+      width: min(360px, calc(100vw - 40px));
+    }
+  }
+
+  &__outline-history-empty {
+    width: 220px;
+    padding: 14px 16px;
+    border: 1px solid var(--frame-panel-outline-border);
+    border-radius: 8px;
+    background: var(--td-bg-color-container, #fff);
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.14);
+    color: var(--td-text-color-secondary);
+    font-size: 13px;
+    text-align: center;
   }
 
   &__outline-label {

@@ -30,7 +30,7 @@ import './prompt-history-popover.scss';
 /** 选择提示词回调的参数类型 */
 export interface PromptSelectInfo {
   content: string;
-  /** 生成类型：image/video/audio/text/agent */
+  /** 生成类型：image/video/audio/text/agent/ppt-common */
   modelType?: PromptType;
   scene?: string;
 }

@@ -349,7 +349,8 @@ export type PromptGenerationType =
   | 'video'
   | 'audio'
   | 'text'
-  | 'agent';
+  | 'agent'
+  | 'ppt-common';
 export type PromptPreviewExample =
   | {
       kind: 'image';
@@ -455,6 +456,7 @@ export const DEFAULT_PROMPT_PREVIEW_EXAMPLE_SETS: Record<
     'Creative ideation board preview',
     'Problem analysis dashboard preview',
   ]),
+  'ppt-common': [],
 } as const;
 
 // 获取图片提示词的辅助函数
@@ -498,6 +500,8 @@ export const getDefaultPromptsByGenerationType = (
       return getTextPrompts(language);
     case 'agent':
       return getAgentPrompts(language);
+    case 'ppt-common':
+      return [];
     default:
       return [];
   }

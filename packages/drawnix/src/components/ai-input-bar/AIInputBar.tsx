@@ -63,6 +63,7 @@ import { usePromptHistory } from '../../hooks/usePromptHistory';
 import {
   addImagePromptHistory,
   addVideoPromptHistory,
+  type PromptType,
 } from '../../services/prompt-storage-service';
 import { useSelectableModels } from '../../hooks/use-runtime-models';
 import { getPinnedSelectableModel } from '../../utils/runtime-model-discovery';
@@ -1679,7 +1680,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
     const handleSelectHistoryPrompt = useCallback(
       (info: {
         content: string;
-        modelType?: 'image' | 'video' | 'audio' | 'text' | 'agent';
+        modelType?: PromptType;
       }) => {
         setPrompt(info.content);
 

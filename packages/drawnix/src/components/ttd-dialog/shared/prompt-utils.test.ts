@@ -503,4 +503,37 @@ describe('resolvePromptItemsByGenerationType', () => {
     expect(defaultAgentItem?.previewExamples?.length).toBeGreaterThan(0);
     expect(historyAgentItem?.previewExamples).toBeUndefined();
   });
+
+  it('PPT 公共提示词类型只返回公共提示词历史且无默认预设', () => {
+    const resolver = promptUtils.resolvePromptItemsByGenerationType;
+    const getDefaults = promptUtils.getDefaultPromptsByGenerationType;
+
+    const items = resolver({
+      generationType: 'ppt-common',
+      language: 'zh',
+      aiInputHistory: [
+        {
+          id: 'ppt-common-1',
+          content: 'PPT 公共风格历史',
+          timestamp: 100,
+          modelType: 'ppt-common',
+        },
+        {
+          id: 'agent-1',
+          content: 'Agent 历史提示',
+          timestamp: 200,
+          modelType: 'agent',
+        },
+      ],
+      imageHistory: [],
+      videoHistory: [],
+    });
+
+    const contents = items.map((item: { content: string }) => item.content);
+
+    expect(contents).toEqual(['PPT 公共风格历史']);
+    expect(contents).not.toContain('Agent 历史提示');
+    expect(getDefaults('ppt-common', 'zh')).toEqual([]);
+    expect(items[0]?.previewExamples).toBeUndefined();
+  });
 });

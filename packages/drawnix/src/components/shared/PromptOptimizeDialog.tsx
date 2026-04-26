@@ -13,6 +13,7 @@ import { ModelDropdown } from '../ai-input-bar/ModelDropdown';
 import { useSelectableModels } from '../../hooks/use-runtime-models';
 import { useDeviceType } from '../../hooks/useDeviceType';
 import { usePromptHistory } from '../../hooks/usePromptHistory';
+import type { PromptType } from '../../services/prompt-storage-service';
 import {
   createModelRef,
   resolveInvocationRoute,
@@ -124,6 +125,7 @@ interface PromptOptimizeDialogProps {
   language: 'zh' | 'en';
   type: PromptOptimizeType;
   onApply: (prompt: string) => void;
+  historyType?: PromptType;
   allowStructuredMode?: boolean;
   defaultMode?: PromptOptimizeMode;
 }
@@ -135,6 +137,7 @@ export const PromptOptimizeDialog: React.FC<PromptOptimizeDialogProps> = ({
   language,
   type,
   onApply,
+  historyType,
   allowStructuredMode = false,
   defaultMode = 'polish',
 }) => {
@@ -159,7 +162,10 @@ export const PromptOptimizeDialog: React.FC<PromptOptimizeDialogProps> = ({
     history: promptHistory,
     addHistory: addPromptHistory,
     refreshHistory: refreshPromptHistory,
-  } = usePromptHistory({ deduplicateWithPresets: false });
+  } = usePromptHistory({
+    deduplicateWithPresets: false,
+    modelTypeFilter: historyType,
+  });
 
   const textModels = useSelectableModels('text');
 
@@ -240,7 +246,7 @@ export const PromptOptimizeDialog: React.FC<PromptOptimizeDialogProps> = ({
       return;
     }
 
-    addPromptHistory(rawPrompt, false, type);
+    addPromptHistory(rawPrompt, false, historyType || type);
     if (requirements.trim()) {
       setRequirementsHistory(addRequirementsHistory(requirements));
     }
@@ -315,6 +321,7 @@ export const PromptOptimizeDialog: React.FC<PromptOptimizeDialogProps> = ({
     optimizerModelRef,
     requirements,
     addPromptHistory,
+    historyType,
     type,
   ]);
 

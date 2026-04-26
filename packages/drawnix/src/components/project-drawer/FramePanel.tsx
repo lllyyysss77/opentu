@@ -25,6 +25,7 @@ import {
 import {
   AlignHorizontalDistributeCenter,
   Check,
+  History,
   List,
   Presentation,
   Sparkles,
@@ -94,6 +95,7 @@ import { createImageTask } from '../../mcp/tools/image-generation';
 import { waitForTaskCompletion } from '../../services/media-executor';
 import { taskQueueService } from '../../services/task-queue';
 import { useSharedTaskState } from '../../hooks/useTaskQueue';
+import { usePromptHistory } from '../../hooks/usePromptHistory';
 import { TaskStatus, TaskType, type Task } from '../../types/task.types';
 import { duplicateFrame, focusFrame } from '../../utils/frame-duplicate';
 import {
@@ -107,11 +109,13 @@ import { ModelDropdown } from '../ai-input-bar/ModelDropdown';
 import {
   ContextMenu,
   HoverCard,
+  HoverTip,
+  PromptListPanel,
   useContextMenuState,
   type ContextMenuEntry,
+  type PromptItem,
 } from '../shared';
 import { useConfirmDialog } from '../dialog/ConfirmDialog';
-import { HoverTip } from '../shared';
 import { PromptOptimizeDialog } from '../shared/PromptOptimizeDialog';
 import { useThumbnailUrl } from '../../hooks/useThumbnailUrl';
 import { useSelectableModels } from '../../hooks/use-runtime-models';
@@ -162,6 +166,7 @@ type OutlinePromptOptimizeTarget =
   | { type: 'slide'; frameId: string };
 
 const PPT_HISTORY_PROMPT_PREVIEW_LENGTH = 36;
+const PPT_COMMON_PROMPT_HISTORY_DISPLAY_LIMIT = 60;
 const PPT_PARALLEL_GENERATION_LIMIT = 5;
 const PPT_TASK_WAIT_TIMEOUT_MS = 10 * 60 * 1000;
 const PPT_OUTLINE_BATCH_PREFIX = 'ppt_outline_';
@@ -816,6 +821,16 @@ export const FramePanel: React.FC<FramePanelProps> = ({
   const { board, openDialog } = useDrawnix();
   const { language } = useI18n();
   const { tasks } = useSharedTaskState();
+  const {
+    history: commonPromptHistory,
+    addHistory: addCommonPromptHistory,
+    removeHistory: removeCommonPromptHistory,
+    refreshHistory: refreshCommonPromptHistory,
+    togglePinHistory: togglePinCommonPromptHistory,
+  } = usePromptHistory({
+    deduplicateWithPresets: false,
+    modelTypeFilter: 'ppt-common',
+  });
   const imageModels = useSelectableModels('image');
   const initialOutlineImageRoute = useMemo(
     () => resolveInvocationRoute('image'),
@@ -869,12 +884,43 @@ export const FramePanel: React.FC<FramePanelProps> = ({
       )
     );
   const outlineSelectionInitializedRef = useRef(false);
+  const [commonPromptHistoryOpen, setCommonPromptHistoryOpen] =
+    useState(false);
+  const commonPromptHistoryPanelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     return subscribePPTOutlineRuntime(() => {
       setOutlineRuntimeVersion((version) => version + 1);
     });
   }, []);
+
+  useEffect(() => {
+    if (!commonPromptHistoryOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target;
+      if (
+        target instanceof Node &&
+        commonPromptHistoryPanelRef.current?.contains(target)
+      ) {
+        return;
+      }
+      if (
+        target instanceof Element &&
+        target.closest('.frame-panel__outline-history-trigger')
+      ) {
+        return;
+      }
+      setCommonPromptHistoryOpen(false);
+    };
+
+    document.addEventListener('mousedown', handlePointerDown, true);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown, true);
+    };
+  }, [commonPromptHistoryOpen]);
 
   // 监听画布变化，强制刷新 Frame 列表
   // FramePanel 在 BoardContext（Wrapper）外部渲染，无法通过 BoardContext 的 v 版本号触发重渲染
@@ -1080,6 +1126,19 @@ export const FramePanel: React.FC<FramePanelProps> = ({
     outlineRuntimeSnapshot || recoveredOutlineSnapshot;
   const isOutlineGenerating = Boolean(activeOutlineGeneration);
   const outlineGenerationStatus = activeOutlineGeneration?.status || '';
+  const commonPromptHistoryItems = useMemo<PromptItem[]>(
+    () =>
+      commonPromptHistory
+        .slice(0, PPT_COMMON_PROMPT_HISTORY_DISPLAY_LIMIT)
+        .map((item) => ({
+          id: item.id,
+          content: item.content,
+          pinned: item.pinned,
+          modelType: item.modelType,
+          scene: language === 'zh' ? '记住历史' : 'History',
+        })),
+    [commonPromptHistory, language]
+  );
 
   const outlinePromptSourceKey = useMemo(
     () =>
@@ -2253,16 +2312,66 @@ export const FramePanel: React.FC<FramePanelProps> = ({
     []
   );
 
+  const rememberCommonPromptHistory = useCallback(
+    (prompt: string) => {
+      const trimmedPrompt = prompt.trim();
+      if (!trimmedPrompt) {
+        return;
+      }
+      addCommonPromptHistory(trimmedPrompt, false, 'ppt-common');
+    },
+    [addCommonPromptHistory]
+  );
+
   const persistCommonPromptDraft = useCallback(
     (prompt = commonPromptDraft) => {
       if (!board) return;
+      rememberCommonPromptHistory(prompt);
       orderedPPTFrames.forEach((info) => {
         setFramePPTMeta(board, info.frame.id, {
           commonPrompt: prompt,
         });
       });
     },
-    [board, commonPromptDraft, orderedPPTFrames]
+    [board, commonPromptDraft, orderedPPTFrames, rememberCommonPromptHistory]
+  );
+
+  const handleToggleCommonPromptHistory = useCallback(() => {
+    refreshCommonPromptHistory();
+    setCommonPromptHistoryOpen((current) => !current);
+  }, [refreshCommonPromptHistory]);
+
+  const handleSelectCommonPromptHistory = useCallback(
+    (item: PromptItem) => {
+      setCommonPromptDraft(item.content);
+      persistCommonPromptDraft(item.content);
+      setCommonPromptHistoryOpen(false);
+    },
+    [persistCommonPromptDraft]
+  );
+
+  const handleToggleCommonPromptHistoryPin = useCallback(
+    (id: string) => {
+      togglePinCommonPromptHistory(id);
+    },
+    [togglePinCommonPromptHistory]
+  );
+
+  const handleDeleteCommonPromptHistory = useCallback(
+    async (id: string) => {
+      const confirmed = await confirm({
+        title: '确认删除公共提示词历史',
+        description: '确定要删除这条公共提示词历史吗？此操作不可撤销。',
+        confirmText: '删除',
+        cancelText: '取消',
+        danger: true,
+      });
+      if (!confirmed) {
+        return;
+      }
+      removeCommonPromptHistory(id);
+    },
+    [confirm, removeCommonPromptHistory]
   );
 
   const persistSlidePromptDraft = useCallback(
@@ -2283,7 +2392,14 @@ export const FramePanel: React.FC<FramePanelProps> = ({
         slidePrompt: slidePromptDrafts[info.frame.id] ?? info.slidePrompt ?? '',
       });
     });
-  }, [board, commonPromptDraft, orderedPPTFrames, slidePromptDrafts]);
+    rememberCommonPromptHistory(commonPromptDraft);
+  }, [
+    board,
+    commonPromptDraft,
+    orderedPPTFrames,
+    rememberCommonPromptHistory,
+    slidePromptDrafts,
+  ]);
 
   const outlinePromptOptimizeOriginalPrompt = useMemo(() => {
     if (!outlinePromptOptimizeTarget) {
@@ -2844,20 +2960,55 @@ export const FramePanel: React.FC<FramePanelProps> = ({
             <div className="frame-panel__outline-common">
               <div className="frame-panel__outline-common-header">
                 <span className="frame-panel__outline-label">公共提示词</span>
-                <HoverTip content="提示词优化" placement="top">
-                  <Button
-                    className="frame-panel__outline-optimize"
-                    variant="outline"
-                    size="small"
-                    shape="square"
-                    icon={<Sparkles size={15} />}
-                    disabled={isOutlineGenerating}
-                    onClick={() =>
-                      setOutlinePromptOptimizeTarget({ type: 'common' })
-                    }
-                  />
-                </HoverTip>
+                <div className="frame-panel__outline-common-actions">
+                  <HoverTip content="公共提示词历史" placement="top">
+                    <Button
+                      className="frame-panel__outline-history-trigger"
+                      variant="outline"
+                      size="small"
+                      shape="square"
+                      icon={<History size={15} />}
+                      disabled={isOutlineGenerating}
+                      onClick={handleToggleCommonPromptHistory}
+                    />
+                  </HoverTip>
+                  <HoverTip content="提示词优化" placement="top">
+                    <Button
+                      className="frame-panel__outline-optimize"
+                      variant="outline"
+                      size="small"
+                      shape="square"
+                      icon={<Sparkles size={15} />}
+                      disabled={isOutlineGenerating}
+                      onClick={() =>
+                        setOutlinePromptOptimizeTarget({ type: 'common' })
+                      }
+                    />
+                  </HoverTip>
+                </div>
               </div>
+              {commonPromptHistoryOpen && (
+                <div
+                  ref={commonPromptHistoryPanelRef}
+                  className="frame-panel__outline-history-panel"
+                >
+                  {commonPromptHistoryItems.length > 0 ? (
+                    <PromptListPanel
+                      title="公共提示词历史"
+                      items={commonPromptHistoryItems}
+                      onSelect={handleSelectCommonPromptHistory}
+                      onTogglePin={handleToggleCommonPromptHistoryPin}
+                      onDelete={handleDeleteCommonPromptHistory}
+                      language={language as 'zh' | 'en'}
+                      showCount
+                    />
+                  ) : (
+                    <div className="frame-panel__outline-history-empty">
+                      暂无公共提示词历史
+                    </div>
+                  )}
+                </div>
+              )}
               <Textarea
                 value={commonPromptDraft}
                 onChange={(value) => setCommonPromptDraft(value)}
@@ -3215,6 +3366,11 @@ export const FramePanel: React.FC<FramePanelProps> = ({
           originalPrompt={outlinePromptOptimizeOriginalPrompt}
           language={language as 'zh' | 'en'}
           type="image"
+          historyType={
+            outlinePromptOptimizeTarget.type === 'common'
+              ? 'ppt-common'
+              : 'image'
+          }
           allowStructuredMode={true}
           onApply={handleApplyOptimizedOutlinePrompt}
         />

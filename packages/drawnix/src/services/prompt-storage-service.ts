@@ -26,6 +26,7 @@ export const PROMPT_TYPES = [
   'audio',
   'text',
   'agent',
+  'ppt-common',
 ] as const;
 export type PromptType = (typeof PROMPT_TYPES)[number];
 
@@ -37,7 +38,7 @@ export interface PromptHistoryItem {
   hasSelection?: boolean;
   /** 是否置顶 */
   pinned?: boolean;
-  /** 生成类型：image/video/audio/text/agent */
+  /** 生成类型：image/video/audio/text/agent/ppt-common */
   modelType?: PromptType;
 }
 
@@ -54,6 +55,7 @@ interface PresetStorageData {
   audio: PresetPromptSettings;
   text: PresetPromptSettings;
   agent: PresetPromptSettings;
+  'ppt-common': PresetPromptSettings;
 }
 
 function createDefaultPresetSettings(): PresetPromptSettings {
@@ -70,6 +72,7 @@ function createEmptyPresetStorageData(): PresetStorageData {
     audio: createDefaultPresetSettings(),
     text: createDefaultPresetSettings(),
     agent: createDefaultPresetSettings(),
+    'ppt-common': createDefaultPresetSettings(),
   };
 }
 

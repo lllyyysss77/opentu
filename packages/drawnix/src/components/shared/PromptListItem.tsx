@@ -27,8 +27,8 @@ export interface PromptListItemProps {
   pinned?: boolean;
   /** 是否是预设提示词 */
   isPreset?: boolean;
-  /** 生成类型：image/video/audio/text/agent */
-  modelType?: 'image' | 'video' | 'audio' | 'text' | 'agent';
+  /** 生成类型：image/video/audio/text/agent/ppt-common */
+  modelType?: 'image' | 'video' | 'audio' | 'text' | 'agent' | 'ppt-common';
   /** 场景描述（用于显示标签） */
   scene?: string;
   /** 悬浮预览示例图 */
@@ -54,6 +54,7 @@ const MODEL_TYPE_STYLES: Record<string, string> = {
   audio: 'prompt-list-item__tag--audio',
   text: 'prompt-list-item__tag--text',
   agent: 'prompt-list-item__tag--agent',
+  'ppt-common': 'prompt-list-item__tag--ppt-common',
 };
 
 export const PromptListItem: React.FC<PromptListItemProps> = ({
