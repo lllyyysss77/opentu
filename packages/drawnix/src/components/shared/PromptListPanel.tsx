@@ -11,6 +11,7 @@ import type { PromptPreviewExample } from '../../constants/prompts';
 import {
   PromptListItem,
   type PromptPreviewRequest,
+  type PromptListResultPreview,
 } from './PromptListItem';
 import {
   UnifiedMediaViewer,
@@ -27,12 +28,27 @@ export interface PromptItem {
   id: string;
   /** 提示词内容 */
   content: string;
+  /** 列表展示标题，不影响点击回填的 content */
+  title?: string;
+  /** 实际发送给生成工具的提示词 */
+  sentPrompt?: string;
+  /** 轻量标签 */
+  tags?: string[];
+  /** 生成结果预览 */
+  resultPreview?: PromptListResultPreview;
   /** 是否已置顶 */
   pinned?: boolean;
   /** 是否是预设提示词（预设不允许删除和置顶） */
   isPreset?: boolean;
-  /** 生成类型：image/video/audio/text/agent/ppt-common */
-  modelType?: 'image' | 'video' | 'audio' | 'text' | 'agent' | 'ppt-common';
+  /** 生成类型：image/video/audio/text/agent/ppt-common/ppt-slide */
+  modelType?:
+    | 'image'
+    | 'video'
+    | 'audio'
+    | 'text'
+    | 'agent'
+    | 'ppt-common'
+    | 'ppt-slide';
   /** 场景描述（用于显示标签） */
   scene?: string;
   /** 悬浮预览示例图 */
@@ -175,6 +191,10 @@ export const PromptListPanel: React.FC<PromptListPanelProps> = ({
             <PromptListItem
               key={item.id}
               content={item.content}
+              title={item.title}
+              sentPrompt={item.sentPrompt}
+              tags={item.tags}
+              resultPreview={item.resultPreview}
               pinned={item.pinned}
               isPreset={item.isPreset}
               modelType={item.modelType}

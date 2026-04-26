@@ -11,15 +11,29 @@ import {
   .IS_REACT_ACT_ENVIRONMENT = true;
 
 const mockPromptListPanel = vi.fn();
+const promptStorageMockState = vi.hoisted(() => ({
+  reverseSort: false,
+  listeners: new Set<(event: { version: number; types: string[] }) => void>(),
+}));
 let roots: Root[] = [];
 
 vi.mock('../../../services/prompt-storage-service', () => ({
   promptStorageService: {
-    sortPrompts: (_type: string, prompts: string[]) => prompts,
+    sortPrompts: (_type: string, prompts: string[]) =>
+      promptStorageMockState.reverseSort ? [...prompts].reverse() : prompts,
     isPinned: () => false,
+    resolveContent: (content: string) => content.trim(),
     pinPrompt: vi.fn(),
     unpinPrompt: vi.fn(),
     deletePrompt: vi.fn(),
+    subscribeChanges: vi.fn(
+      (listener: (event: { version: number; types: string[] }) => void) => {
+        promptStorageMockState.listeners.add(listener);
+        return () => {
+          promptStorageMockState.listeners.delete(listener);
+        };
+      }
+    ),
   },
 }));
 
@@ -135,6 +149,8 @@ vi.mock('../../shared', () => ({
 describe('PromptInput', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    promptStorageMockState.reverseSort = false;
+    promptStorageMockState.listeners.clear();
   });
 
   afterEach(() => {
@@ -172,6 +188,14 @@ describe('PromptInput', () => {
   const openPresetPanel = () => {
     act(() => {
       document.querySelector<HTMLButtonElement>('.preset-icon-button')?.click();
+    });
+  };
+
+  const triggerPromptStorageChange = () => {
+    act(() => {
+      promptStorageMockState.listeners.forEach((listener) => {
+        listener({ version: 1, types: ['pin'] });
+      });
     });
   };
 
@@ -240,5 +264,39 @@ describe('PromptInput', () => {
 
     expect(panelProps.items[0]?.content).toBe(AI_VIDEO_PROMPTS.zh[1]);
     expect(panelProps.items[0]?.previewExamples).toEqual([]);
+  });
+
+  it('提示词存储广播后重新计算并刷新预设列表', async () => {
+    await renderPromptInput({
+      presetPrompts: ['广播前提示词', '广播后提示词'],
+      type: 'image',
+    });
+
+    openPresetPanel();
+
+    const initialPanelProps = mockPromptListPanel.mock.calls.at(-1)?.[0] as {
+      items: Array<{ content: string }>;
+    };
+    const initialCallCount = mockPromptListPanel.mock.calls.length;
+
+    expect(initialPanelProps.items.map((item) => item.content)).toEqual([
+      '广播前提示词',
+      '广播后提示词',
+    ]);
+
+    promptStorageMockState.reverseSort = true;
+    triggerPromptStorageChange();
+
+    const updatedPanelProps = mockPromptListPanel.mock.calls.at(-1)?.[0] as {
+      items: Array<{ content: string }>;
+    };
+
+    expect(mockPromptListPanel.mock.calls.length).toBeGreaterThan(
+      initialCallCount
+    );
+    expect(updatedPanelProps.items.map((item) => item.content)).toEqual([
+      '广播后提示词',
+      '广播前提示词',
+    ]);
   });
 });

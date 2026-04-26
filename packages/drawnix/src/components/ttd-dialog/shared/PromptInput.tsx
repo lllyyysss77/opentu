@@ -57,6 +57,16 @@ export const PromptInput: React.FC<PromptInputProps> = ({
   const [updateTrigger, setUpdateTrigger] = useState(0); // 用于触发重新渲染
   const { imageHistory, videoHistory } = useGenerationHistory();
 
+  useEffect(() => {
+    if (typeof promptStorageService.subscribeChanges !== 'function') {
+      return undefined;
+    }
+
+    return promptStorageService.subscribeChanges(() => {
+      setUpdateTrigger((prev) => prev + 1);
+    });
+  }, []);
+
   // 处理后的提示词列表（排序和过滤，转换为 PromptItem 格式）
   const promptItems: PromptItem[] = useMemo(() => {
     return resolvePresetPromptItems({

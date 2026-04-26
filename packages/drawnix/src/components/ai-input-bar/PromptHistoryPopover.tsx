@@ -25,12 +25,13 @@ import {
   resolvePromptItemsByGenerationType,
   type ResolvedPromptItem,
 } from '../ttd-dialog/shared/prompt-utils';
+import { analytics } from '../../utils/posthog-analytics';
 import './prompt-history-popover.scss';
 
 /** 选择提示词回调的参数类型 */
 export interface PromptSelectInfo {
   content: string;
-  /** 生成类型：image/video/audio/text/agent/ppt-common */
+  /** 生成类型：image/video/audio/text/agent/ppt-common/ppt-slide */
   modelType?: PromptType;
   scene?: string;
 }
@@ -88,6 +89,13 @@ export const PromptHistoryPopover: React.FC<PromptHistoryPopoverProps> = ({
           videoHistory,
         });
 
+  useEffect(() => {
+    return promptStorageService.subscribeChanges(() => {
+      refreshHistory();
+      setRenderVersion((prev) => prev + 1);
+    });
+  }, [refreshHistory]);
+
   // 清理定时器
   useEffect(() => {
     return () => {
@@ -108,9 +116,17 @@ export const PromptHistoryPopover: React.FC<PromptHistoryPopoverProps> = ({
       // 打开前刷新历史记录，确保显示最新数据
       refreshHistory();
       setRenderVersion((prev) => prev + 1);
+      if (!isOpen) {
+        analytics.trackPromptAction({
+          action: 'open_panel',
+          surface: 'ai_input_prompt_popover',
+          promptType: generationType,
+          itemCount: promptItems.length,
+        });
+      }
       setIsOpen(true);
     }, 150);
-  }, [refreshHistory]);
+  }, [generationType, isOpen, promptItems.length, refreshHistory]);
 
   // 处理鼠标离开
   const handleMouseLeave = useCallback(() => {
@@ -220,6 +236,8 @@ export const PromptHistoryPopover: React.FC<PromptHistoryPopoverProps> = ({
             onDelete={handleDelete}
             language={language}
             showCount={true}
+            analyticsSurface="ai_input_prompt_popover"
+            analyticsPromptType={generationType}
           />
         </div>
       )}

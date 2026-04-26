@@ -1,10 +1,15 @@
 // @vitest-environment jsdom
-import React from 'react';
+import React, { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { getDefaultPromptsByGenerationType } from '../../constants/prompts';
 
 const mockPromptListPanel = vi.fn();
+const promptStorageMockState = vi.hoisted(() => ({
+  imagePrompts: ['本地图片历史'],
+  videoPrompts: ['本地视频历史'],
+  listeners: new Set<(event: { version: number; types: string[] }) => void>(),
+}));
 
 const historyRecords = [
   { id: 'image-1', content: 'AI 输入图片历史', timestamp: 100, modelType: 'image' },
@@ -86,28 +91,44 @@ vi.mock('../shared', () => ({
 }));
 
 vi.mock('../../services/prompt-storage-service', () => ({
-  getImagePromptHistoryContents: () => ['本地图片历史'],
-  getVideoPromptHistoryContents: () => ['本地视频历史'],
+  getImagePromptHistoryContents: () => promptStorageMockState.imagePrompts,
+  getVideoPromptHistoryContents: () => promptStorageMockState.videoPrompts,
   promptStorageService: {
     sortPrompts: (_type: string, prompts: string[]) => prompts,
     isPinned: () => false,
+    resolveContent: (content: string) => content.trim(),
     pinPrompt: vi.fn(),
     unpinPrompt: vi.fn(),
     deletePrompt: vi.fn(),
+    subscribeChanges: vi.fn(
+      (listener: (event: { version: number; types: string[] }) => void) => {
+        promptStorageMockState.listeners.add(listener);
+        return () => {
+          promptStorageMockState.listeners.delete(listener);
+        };
+      }
+    ),
   },
 }));
 
 describe('PromptHistoryPopover', () => {
   const openPopover = async (container: HTMLElement) => {
-    fireEvent.mouseEnter(
-      container.querySelector('.prompt-history-popover__trigger') as HTMLElement
-    );
-    await vi.advanceTimersByTimeAsync(200);
+    await act(async () => {
+      fireEvent.mouseEnter(
+        container.querySelector(
+          '.prompt-history-popover__trigger'
+        ) as HTMLElement
+      );
+      await vi.advanceTimersByTimeAsync(200);
+    });
   };
 
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
+    promptStorageMockState.imagePrompts = ['本地图片历史'];
+    promptStorageMockState.videoPrompts = ['本地视频历史'];
+    promptStorageMockState.listeners.clear();
   });
 
   afterEach(() => {
@@ -115,6 +136,14 @@ describe('PromptHistoryPopover', () => {
     vi.useRealTimers();
     cleanup();
   });
+
+  const triggerPromptStorageChange = () => {
+    act(() => {
+      promptStorageMockState.listeners.forEach((listener) => {
+        listener({ version: 1, types: ['history'] });
+      });
+    });
+  };
 
   it('图片模式只显示图片提示词来源', async () => {
     const { PromptHistoryPopover } = await import('./PromptHistoryPopover');
@@ -274,5 +303,31 @@ describe('PromptHistoryPopover', () => {
       posterSrc: '/task-video-thumb.png',
       playable: true,
     });
+  });
+
+  it('提示词存储广播后重新计算并刷新列表', async () => {
+    const { PromptHistoryPopover } = await import('./PromptHistoryPopover');
+
+    const view = render(
+      <PromptHistoryPopover
+        generationType="image"
+        onSelectPrompt={vi.fn()}
+        language="zh"
+      />
+    );
+
+    await openPopover(view.container);
+
+    const initialCallCount = mockPromptListPanel.mock.calls.length;
+    expect(screen.getByText('本地图片历史')).toBeTruthy();
+
+    promptStorageMockState.imagePrompts = ['广播后的本地图片历史'];
+    triggerPromptStorageChange();
+
+    expect(mockPromptListPanel.mock.calls.length).toBeGreaterThan(
+      initialCallCount
+    );
+    expect(screen.getByText('广播后的本地图片历史')).toBeTruthy();
+    expect(screen.queryByText('本地图片历史')).toBeNull();
   });
 });
