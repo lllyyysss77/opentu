@@ -66,8 +66,8 @@ export const AssetItem = memo<AssetItemProps>(
       asset.type === 'IMAGE' || asset.type === 'VIDEO' ? asset.url : undefined
     );
     const cacheWarning =
-      asset.type === 'IMAGE' || asset.type === 'VIDEO'
-        ? asset.cacheWarning || (!isCached ? detectedCacheWarning : undefined)
+      (asset.type === 'IMAGE' || asset.type === 'VIDEO') && !isCached
+        ? detectedCacheWarning || asset.cacheWarning
         : undefined;
     const cacheWarningTip = cacheWarning
       ? `${cacheWarning.message}${cacheWarning.expiresHint ? `\n${cacheWarning.expiresHint}` : ''}`
