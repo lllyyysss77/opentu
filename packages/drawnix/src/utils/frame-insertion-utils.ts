@@ -6,7 +6,12 @@
  */
 
 import type { PlaitBoard, Point } from '@plait/core';
-import { RectangleClient, Transforms, idCreator } from '@plait/core';
+import {
+  RectangleClient,
+  Transforms,
+  getSelectedElements,
+  idCreator,
+} from '@plait/core';
 import { isFrameElement, type PlaitFrame } from '../types/frame.types';
 import { FrameTransforms } from '../plugins/with-frame';
 import { getImageRegion } from '../services/ppt/ppt-layout-engine';
@@ -23,6 +28,14 @@ type PPTImageStatus = 'placeholder' | 'loading' | 'generated' | 'failed';
 const PPT_SLIDE_IMAGE_HISTORY_LIMIT = 20;
 const DEFAULT_FRAME_NAME_REGEXP = /^(Frame|Slide|PPT\s*页面)\s*\d+$/i;
 const PPT_FRAME_TITLE_PROMPT_LENGTH = 10;
+
+export type FrameMediaInsertionResult =
+  | {
+      point: Point;
+      size: { width: number; height: number };
+      elementId?: string;
+    }
+  | undefined;
 
 export interface PPTSlideImageInfo {
   element?: any;
@@ -518,6 +531,49 @@ export function insertPPTImagePlaceholder(
   Transforms.insertNode(board, placeholderElement, [board.children.length]);
 }
 
+export function getSelectedInsertionFrame(board: PlaitBoard): PlaitFrame | null {
+  const selectedElements = getSelectedElements(board);
+  if (selectedElements.length > 0) {
+    const selectedElement = selectedElements[0];
+    return selectedElements.length === 1 && isFrameElement(selectedElement)
+      ? selectedElement
+      : null;
+  }
+
+  const savedElementIds = (board as any).appState?.lastSelectedElementIds;
+  if (!Array.isArray(savedElementIds) || savedElementIds.length !== 1) {
+    return null;
+  }
+
+  const savedElement = board.children.find(
+    (element) => element.id === savedElementIds[0]
+  );
+  return savedElement && isFrameElement(savedElement) ? savedElement : null;
+}
+
+export async function insertMediaIntoSelectedFrame(
+  board: PlaitBoard,
+  mediaUrl: string,
+  mediaType: 'image' | 'video',
+  mediaDimensions?: { width: number; height: number },
+  options?: { fit?: 'contain' | 'stretch' }
+): Promise<FrameMediaInsertionResult> {
+  const frame = getSelectedInsertionFrame(board);
+  if (!frame) return undefined;
+
+  const frameRect = RectangleClient.getRectangleByPoints(frame.points);
+  return insertMediaIntoFrame(
+    board,
+    mediaUrl,
+    mediaType,
+    frame.id,
+    { width: frameRect.width, height: frameRect.height },
+    mediaDimensions,
+    undefined,
+    options
+  );
+}
+
 /**
  * 将图片/视频插入到指定 Frame 内部
  *
@@ -544,14 +600,7 @@ export async function insertMediaIntoFrame(
   mediaDimensions?: { width: number; height: number },
   targetRegion?: { x: number; y: number; width: number; height: number },
   options?: { fit?: 'contain' | 'stretch' }
-): Promise<
-  | {
-      point: Point;
-      size: { width: number; height: number };
-      elementId?: string;
-    }
-  | undefined
-> {
+): Promise<FrameMediaInsertionResult> {
   // 查找目标 Frame
   const frameElement = board.children.find(
     (el) => el.id === frameId && isFrameElement(el)
@@ -609,6 +658,17 @@ export async function insertMediaIntoFrame(
       mediaHeight = regionDimensions.height;
       mediaWidth = regionDimensions.height * mediaAspect;
     }
+  } else if (mediaType === 'video') {
+    const mediaAspect = 16 / 9;
+    const regionAspect = regionDimensions.width / regionDimensions.height;
+
+    if (mediaAspect > regionAspect) {
+      mediaWidth = regionDimensions.width;
+      mediaHeight = regionDimensions.width / mediaAspect;
+    } else {
+      mediaHeight = regionDimensions.height;
+      mediaWidth = regionDimensions.height * mediaAspect;
+    }
   } else {
     mediaWidth = regionDimensions.width;
     mediaHeight = regionDimensions.height;
@@ -631,7 +691,8 @@ export async function insertMediaIntoFrame(
       false,
       { width: mediaWidth, height: mediaHeight },
       true, // skipScroll
-      true // skipCentering（insertionPoint 已经是左上角坐标）
+      true, // skipCentering（insertionPoint 已经是左上角坐标）
+      true // lockReferenceDimensions（尺寸已按 Frame 计算完成）
     );
   } else {
     const { insertImageFromUrl } = await import('../data/image');

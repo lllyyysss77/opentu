@@ -404,6 +404,18 @@ export const insertImageFromUrl = async (
       resolvedUrl = cachedUrl;
     }
   }
+
+  if (!startPoint && !isDrop && !referenceDimensions) {
+    const { insertMediaIntoSelectedFrame } = await import(
+      '../utils/frame-insertion-utils'
+    );
+    const inserted = await insertMediaIntoSelectedFrame(
+      board,
+      resolvedUrl,
+      'image'
+    );
+    if (inserted) return;
+  }
   // console.log(`[insertImageFromUrl] Called with:`, {
   //   imageUrl: imageUrl?.substring(0, 80),
   //   startPoint,

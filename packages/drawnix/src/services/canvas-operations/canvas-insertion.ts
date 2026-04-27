@@ -20,6 +20,7 @@ import { parseMarkdownToCards } from '../../utils/markdown-to-cards';
 import { insertCardsToCanvas } from '../../utils/insert-cards';
 import type { MCPResult } from '../../mcp/types';
 import { parseSizeToPixels } from '../../utils/size-ratio';
+import { insertMediaIntoSelectedFrame } from '../../utils/frame-insertion-utils';
 
 export { parseSizeToPixels };
 
@@ -410,6 +411,38 @@ export async function executeCanvasInsertion(params: CanvasInsertionParams): Pro
   }
 
   try {
+    if (!params.startPoint && items.length === 1) {
+      const item = items[0];
+      if (item.type === 'image' || item.type === 'video') {
+        const inserted = await insertMediaIntoSelectedFrame(
+          board,
+          item.content,
+          item.type,
+          item.dimensions
+        );
+        if (inserted) {
+          return {
+            success: true,
+            data: {
+              insertedCount: 1,
+              items: [
+                {
+                  type: item.type,
+                  point: inserted.point,
+                  elementId: inserted.elementId,
+                  size: inserted.size,
+                },
+              ],
+              firstElementId: inserted.elementId,
+              firstElementPosition: inserted.point,
+              firstElementSize: inserted.size,
+            },
+            type: 'text',
+          };
+        }
+      }
+    }
+
     let startPoint = params.startPoint;
     if (!startPoint) {
       startPoint = getStartPointFromSelection(board);

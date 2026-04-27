@@ -1,13 +1,31 @@
 import { createTestingBoard } from '@plait/core';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   findPreviousPPTSlideImage,
   findPPTSlideImage,
   getPPTSlidePrompt,
+  insertMediaIntoSelectedFrame,
   markPPTSlideImage,
   replacePPTSlideImage,
   setFramePPTMeta,
 } from '../frame-insertion-utils';
+
+vi.mock('@plait/draw', () => ({
+  DrawTransforms: {
+    insertImage: (board: any, imageItem: any, point: [number, number]) => {
+      board.children.push({
+        id: `mock-image-${board.children.length}`,
+        type: 'image',
+        ...imageItem,
+        points: [
+          point,
+          [point[0] + imageItem.width, point[1] + imageItem.height],
+        ],
+        children: [],
+      });
+    },
+  },
+}));
 
 function createBoard(children: any[] = []) {
   return createTestingBoard([], children) as any;
@@ -523,6 +541,32 @@ describe('frame-insertion-utils PPT helpers', () => {
       slideImageUrl: 'https://example.com/old.png',
       slideImageStatus: 'failed',
       imageStatus: 'failed',
+    });
+  });
+
+  it('inserts media into the saved selected frame and fits it to the PPT page', async () => {
+    const board = createBoard([createFrame()]);
+    board.appState = { lastSelectedElementIds: ['frame-1'] };
+
+    const result = await insertMediaIntoSelectedFrame(
+      board,
+      'https://example.com/video.mp4',
+      'video',
+      { width: 800, height: 600 }
+    );
+
+    expect(result).toMatchObject({
+      point: [240, 0],
+      size: { width: 1440, height: 1080 },
+    });
+    expect(board.children[1]).toMatchObject({
+      type: 'image',
+      frameId: 'frame-1',
+      isVideo: true,
+      points: [
+        [240, 0],
+        [1680, 1080],
+      ],
     });
   });
 });
