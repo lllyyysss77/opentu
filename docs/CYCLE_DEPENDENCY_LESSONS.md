@@ -90,6 +90,27 @@ TypeScript 的 type-only import 不会直接进入运行时代码，但它会暴
 
 经验：服务单例之间需要互相调用时，优先抽一个无副作用 bridge；插件的纯 transform/API 不要和 React 渲染组件放在同一个依赖入口。
 
+## 防回归规则
+
+新增或调整 import 前，先按下面规则判断方向是否正确：
+
+| 场景 | 推荐方向 | 避免方向 |
+| --- | --- | --- |
+| 类型共享 | 业务模块 -> `types` / 纯类型模块 | `types` -> service / UI / registry |
+| 元数据读取 | 常量模块 -> manifests / 纯数据 | constants -> registry / 组件加载器 |
+| 通用 UI 兜底能力 | UI -> 窄 helper | UI -> 全量业务服务 barrel |
+| 插件能力复用 | service -> transform-only 模块 | service -> plugin React 入口 |
+| 服务单例互访 | service -> runtime bridge | service A -> service B -> service A |
+| 组件间复用 | 叶子组件直连叶子组件 | 叶子组件 -> `shared/index` 大桶 |
+
+提交前重点检查三类高风险信号：
+
+1. 一个 `index.ts` 同时 re-export 类型、服务单例、组件和注册副作用。
+2. 一个通用组件为了小功能 import 了完整业务 service。
+3. 一个“纯数据/纯类型”文件 import 了 React、registry、storage 或网络请求模块。
+
+如果确实需要跨层调用，先抽窄接口：`*-types`、`*-transforms`、`*-bridge`、`*-ref`、`*-helper`。这些模块必须保持无 UI、无存储副作用、无注册副作用。
+
 ## 验证清单
 
 基础检查：

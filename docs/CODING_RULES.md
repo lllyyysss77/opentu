@@ -25,6 +25,28 @@
 
 ## 架构与重构规范
 
+### 循环依赖防回归
+
+**场景**: 新增共享类型、服务单例、插件 transform、通用 UI、工具 registry 或 barrel export 时
+
+**核心原则**:
+- 类型、常量、元数据只能依赖更底层的纯模块
+- 通用 UI 不直接 import 全量业务服务，优先接收回调或使用窄 helper
+- service 之间需要互访时，优先用 runtime bridge，而不是静态双向 import
+- 插件的纯 transforms/API 与 React 渲染组件分离
+- 从 barrel import 前先确认 barrel 没有注册副作用或重组件 re-export
+
+提交前至少跑：
+
+```bash
+NPM_TOKEN=${NPM_TOKEN:-dummy} pnpm check:cycles
+NPM_TOKEN=${NPM_TOKEN:-dummy} pnpm check:cycles:types
+```
+
+详细经验见 `docs/CYCLE_DEPENDENCY_LESSONS.md`。
+
+---
+
 ### 避免过度设计和不必要的抽象层
 
 **场景**: 在重构或添加新功能时，避免引入不必要的架构模式
