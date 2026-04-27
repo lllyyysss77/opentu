@@ -12,7 +12,7 @@ import {
 } from '@plait/core';
 import { isFrameElement, PlaitFrame } from '../types/frame.types';
 
-/** 左侧工具栏右边界兜底值：默认贴边 + 58px 工具栏 */
+/** 工具栏右边界兜底值：默认贴边 + 58px 工具栏 */
 const DEFAULT_TOOLBAR_RIGHT_EDGE = 58;
 /** 底部 AI 输入栏高度 */
 const BOTTOM_BAR_HEIGHT = 80;
@@ -21,16 +21,44 @@ const TOP_BAR_HEIGHT = 50;
 /** 四周留白 */
 const FIT_PADDING = 40;
 
-function getToolbarRightEdge(): number {
+function getToolbarOcclusion(totalWidth: number): {
+  left: number;
+  right: number;
+} {
   const toolbarEl = document.querySelector(
     '.unified-toolbar'
   ) as HTMLElement | null;
-  if (!toolbarEl) {
-    return DEFAULT_TOOLBAR_RIGHT_EDGE;
+  const leftDrawerEl = document.querySelector(
+    '.side-drawer--open.side-drawer--toolbar-right'
+  ) as HTMLElement | null;
+  const isDockRight = document.documentElement.classList.contains(
+    'aitu-toolbar-dock-right'
+  );
+  let left = toolbarEl ? 0 : DEFAULT_TOOLBAR_RIGHT_EDGE;
+  let right = 0;
+
+  if (toolbarEl) {
+    const rect = toolbarEl.getBoundingClientRect();
+    if (isDockRight) {
+      right = Math.max(right, totalWidth - rect.left);
+    } else {
+      left = Math.max(left, rect.right);
+    }
   }
 
-  const rect = toolbarEl.getBoundingClientRect();
-  return Math.max(0, rect.right);
+  if (leftDrawerEl) {
+    const rect = leftDrawerEl.getBoundingClientRect();
+    if (isDockRight) {
+      right = Math.max(right, totalWidth - rect.left);
+    } else {
+      left = Math.max(left, rect.right);
+    }
+  }
+
+  return {
+    left: Math.max(0, Math.round(left)),
+    right: Math.max(0, Math.round(right)),
+  };
 }
 
 /**
@@ -68,16 +96,16 @@ export function fitFrame(board: PlaitBoard): boolean {
   const totalWidth = container.clientWidth;
   const totalHeight = container.clientHeight;
 
-  // 左侧遮挡：工具栏 + 左侧抽屉（如果打开）
-  const leftDrawerEl = document.querySelector(
-    '.side-drawer--open.side-drawer--toolbar-right'
-  ) as HTMLElement;
-  const leftOccluded =
-    getToolbarRightEdge() + (leftDrawerEl ? leftDrawerEl.offsetWidth : 0);
+  // 工具栏/抽屉遮挡：工具栏拖到右侧后，抽屉会改为向左展开
+  const toolbarOcclusion = getToolbarOcclusion(totalWidth);
+  const leftOccluded = toolbarOcclusion.left;
 
   // 右侧遮挡：ChatDrawer（如果打开）
   const chatDrawerEl = document.querySelector('.chat-drawer--open') as HTMLElement;
-  const rightOccluded = chatDrawerEl ? chatDrawerEl.offsetWidth : 0;
+  const rightOccluded = Math.max(
+    toolbarOcclusion.right,
+    chatDrawerEl ? chatDrawerEl.offsetWidth : 0
+  );
 
   // 可用视口尺寸
   const availableWidth = totalWidth - leftOccluded - rightOccluded - FIT_PADDING * 2;

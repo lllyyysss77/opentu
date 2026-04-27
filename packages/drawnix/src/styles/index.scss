@@ -18,6 +18,9 @@
   --aitu-toolbar-left: #{$toolbar-left};
   --aitu-toolbar-content-width: #{$toolbar-content-width};
   --aitu-toolbar-right-edge: #{$toolbar-width};
+  --aitu-toolbar-right-dock-width: 0px;
+  --aitu-toolbar-right-avoidance: 0px;
+  --aitu-toolbar-side-panel-max-width: calc(100vw - #{$toolbar-width});
 }
 
 .t-dialog__ctx.t-dialog__ctx--fixed {
@@ -233,9 +236,9 @@
       border: 0;
       border-radius: 20px 20px 8px 8px;
       background: transparent;
-      color: var(--color-on-surface-variant, rgba(0, 0, 0, 0.42));
+      color: var(--color-on-surface-variant, rgba(0, 0, 0, 0.28));
       cursor: grab;
-      opacity: 1;
+      opacity: 0.72;
       transition:
         background-color 0.18s ease,
         color 0.18s ease,
@@ -245,17 +248,18 @@
 
       &::before {
         content: '';
-        width: 22px;
+        width: 20px;
         height: 3px;
         border-radius: 999px;
         background: currentColor;
-        opacity: 0.38;
+        opacity: 0.34;
       }
 
       &:hover,
       &:focus-visible {
         background: rgba(0, 0, 0, 0.035);
         color: var(--color-on-surface, rgba(0, 0, 0, 0.72));
+        opacity: 1;
       }
 
       &:active {
@@ -266,6 +270,7 @@
     &--dragging .unified-toolbar__drag-handle {
       background: rgba(243, 156, 18, 0.08);
       color: var(--brand-primary, #f39c12);
+      opacity: 1;
     }
 
     &--dragging {

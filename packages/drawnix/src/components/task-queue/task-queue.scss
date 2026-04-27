@@ -44,6 +44,19 @@
   }
 }
 
+.aitu-toolbar-dock-right .task-queue-panel.side-drawer--toolbar-right {
+  --aitu-toolbar-drawer-left: max(
+    0px,
+    calc(var(--aitu-toolbar-left, 0px) - 100%)
+  );
+
+  transform: translateX(calc(var(--aitu-toolbar-drawer-left) + 10px));
+
+  &.side-drawer--open {
+    transform: translateX(var(--aitu-toolbar-drawer-left));
+  }
+}
+
 .aitu-toolbar-dragging .task-queue-panel.side-drawer--toolbar-right {
   transition: none;
 }

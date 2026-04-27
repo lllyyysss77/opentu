@@ -36,6 +36,12 @@
   }
 }
 
+.aitu-toolbar-dock-right .version-update-prompt {
+  left: auto;
+  right: calc(100vw - var(--aitu-toolbar-left, 0px) + 10px);
+  max-width: calc(var(--aitu-toolbar-left, 0px) - 20px);
+}
+
 /* 响应式调整 - 移动端调整位置避免与缩放控件重叠 */
 @media (max-width: 768px) {
   .version-update-prompt {
@@ -54,6 +60,14 @@
       font-size: 13px;
     }
   }
+
+  .aitu-toolbar-dock-right .version-update-prompt {
+    left: calc(var(--aitu-toolbar-right-edge, #{$toolbar-width}) + 8px);
+    right: auto;
+    max-width: calc(
+      100vw - var(--aitu-toolbar-right-edge, #{$toolbar-width}) - 100px
+    );
+  }
 }
 
 /* 更小屏幕 - 进一步压缩 */
@@ -69,5 +83,13 @@
     &__text {
       font-size: 12px;
     }
+  }
+
+  .aitu-toolbar-dock-right .version-update-prompt {
+    left: calc(var(--aitu-toolbar-right-edge, #{$toolbar-width}) + 6px);
+    right: auto;
+    max-width: calc(
+      100vw - var(--aitu-toolbar-right-edge, #{$toolbar-width}) - 80px
+    );
   }
 }

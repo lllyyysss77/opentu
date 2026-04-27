@@ -35,25 +35,32 @@ const AI_BUTTON_IDS = ['ai-image', 'ai-video'];
 const TOOLBAR_LEFT_STORAGE_KEY = 'aitu-toolbar-left';
 const TOOLBAR_DEFAULT_LEFT = 0;
 const TOOLBAR_MOBILE_LEFT = 8;
-const TOOLBAR_MAX_LEFT = 220;
-const TOOLBAR_VIEWPORT_GAP = 12;
+const TOOLBAR_VIEWPORT_GAP = 0;
 const TOOLBAR_CONTENT_WIDTH = 58;
+type ToolbarDockSide = 'left' | 'right';
 
 function clampToolbarLeft(left: number, toolbarWidth = TOOLBAR_CONTENT_WIDTH) {
-  const maxLeft =
-    typeof window === 'undefined'
-      ? TOOLBAR_MAX_LEFT
-      : Math.max(
-          TOOLBAR_DEFAULT_LEFT,
-          Math.min(
-            TOOLBAR_MAX_LEFT,
-            window.innerWidth - toolbarWidth - TOOLBAR_VIEWPORT_GAP
-          )
-        );
+  const viewportWidth =
+    typeof window === 'undefined' ? toolbarWidth : window.innerWidth;
+  const maxLeft = Math.max(
+    TOOLBAR_DEFAULT_LEFT,
+    viewportWidth - toolbarWidth - TOOLBAR_VIEWPORT_GAP
+  );
 
   return Math.round(
     Math.max(TOOLBAR_DEFAULT_LEFT, Math.min(left, maxLeft))
   );
+}
+
+function getToolbarDockSide(
+  left: number,
+  toolbarWidth = TOOLBAR_CONTENT_WIDTH
+): ToolbarDockSide {
+  if (typeof window === 'undefined') {
+    return 'left';
+  }
+
+  return left + toolbarWidth / 2 > window.innerWidth / 2 ? 'right' : 'left';
 }
 
 function readStoredToolbarLeft() {
@@ -98,12 +105,33 @@ function syncToolbarPositionVars(left: number, toolbarEl: HTMLElement | null) {
   const rect = toolbarEl?.getBoundingClientRect();
   const width =
     rect && rect.width > 0 ? rect.width : TOOLBAR_CONTENT_WIDTH;
+  const viewportWidth =
+    typeof window === 'undefined' ? left + width : window.innerWidth;
+  const rightEdge = Math.round(left + width);
+  const dockSide = getToolbarDockSide(left, width);
+  const rightDockWidth =
+    dockSide === 'right' ? Math.max(0, viewportWidth - left) : 0;
+  const sidePanelMaxWidth =
+    dockSide === 'right' ? left : Math.max(0, viewportWidth - rightEdge);
   const rootStyle = document.documentElement.style;
   rootStyle.setProperty('--aitu-toolbar-left', `${left}px`);
+  rootStyle.setProperty('--aitu-toolbar-right-edge', `${rightEdge}px`);
   rootStyle.setProperty(
-    '--aitu-toolbar-right-edge',
-    `${Math.round(left + width)}px`
+    '--aitu-toolbar-right-dock-width',
+    `${Math.round(rightDockWidth)}px`
   );
+  rootStyle.setProperty(
+    '--aitu-toolbar-right-avoidance',
+    `${Math.round(rightDockWidth ? rightDockWidth + 12 : 0)}px`
+  );
+  rootStyle.setProperty(
+    '--aitu-toolbar-side-panel-max-width',
+    `${Math.max(0, Math.round(sidePanelMaxWidth))}px`
+  );
+
+  const root = document.documentElement;
+  root.classList.toggle('aitu-toolbar-dock-right', dockSide === 'right');
+  root.classList.toggle('aitu-toolbar-dock-left', dockSide === 'left');
 
   toolbarEl?.style.setProperty('--aitu-toolbar-left', `${left}px`);
 }
@@ -168,6 +196,15 @@ export const UnifiedToolbar: React.FC<UnifiedToolbarProps> = React.memo(
       toolbarLeftRef.current = effectiveToolbarLeft;
       syncToolbarPositionVars(effectiveToolbarLeft, containerRef.current);
     }, [effectiveToolbarLeft]);
+
+    useEffect(() => {
+      return () => {
+        document.documentElement.classList.remove(
+          'aitu-toolbar-dock-left',
+          'aitu-toolbar-dock-right'
+        );
+      };
+    }, []);
 
     useEffect(() => {
       if (typeof document === 'undefined') {
