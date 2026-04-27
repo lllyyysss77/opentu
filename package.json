@@ -70,6 +70,8 @@
     "npm:publish": "node scripts/publish-npm.js",
     "npm:publish:dry": "node scripts/publish-npm.js --dry-run",
     "npm:publish:skip-build": "node scripts/publish-npm.js --skip-build",
+    "check:cycles": "node scripts/check-cycles.js",
+    "check:cycles:types": "node scripts/check-cycles.js --include-types",
     "verify:startup": "node scripts/validate-startup-bundle.js",
     "deploy:upload-script": "node scripts/upload-deploy-script.js",
     "deploy:upload": "node scripts/upload-and-deploy.js",
