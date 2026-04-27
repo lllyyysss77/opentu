@@ -113,7 +113,7 @@ import {
   ApiAuthErrorDetail,
   classifyApiCredentialError,
 } from './utils/api-auth-error-event';
-import { MessagePlugin } from 'tdesign-react';
+import { MessagePlugin } from './utils/message-plugin';
 import { calculateEditedImagePoints } from './utils/image';
 import { isCardElement } from './types/card.types';
 import { openCardInKnowledgeBase } from './utils/card-actions';
@@ -129,6 +129,9 @@ import {
 } from './utils/startup-prefetch';
 import { DRAWER_PIN_KEYS, getDrawerPinned } from './utils/drawer-pin';
 import { PPT_EDITOR_OPEN_EVENT } from './services/ppt/ppt-ui-events';
+import { syncEditedPPTSlideImage } from './utils/frame-insertion-utils';
+import type { MediaLibraryModalProps } from './types/asset.types';
+import { SelectionMode } from './types/asset.types';
 const DeferredAIInputBar = lazy(() =>
   import('./components/startup/DeferredAIInputBar').then((module) => ({
     default: module.DeferredAIInputBar,
@@ -139,8 +142,6 @@ const ChatDrawer = lazy(() =>
     default: module.ChatDrawer,
   }))
 );
-import type { MediaLibraryModalProps } from './types/asset.types';
-import { SelectionMode } from './types/asset.types';
 
 type MediaLibraryOpenConfig = Pick<
   MediaLibraryModalProps,
@@ -1194,6 +1195,7 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
             } as any,
             [elementIndex]
           );
+          syncEditedPPTSlideImage(board, elementId, stableUrl);
         }
       } catch (error) {
         console.error('Failed to update image:', error);

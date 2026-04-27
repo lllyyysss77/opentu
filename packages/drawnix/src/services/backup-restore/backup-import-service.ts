@@ -3,7 +3,7 @@
  * 从 ZIP 文件导入数据（增量去重），兼容 v2/v3 manifest
  */
 
-import JSZip from 'jszip';
+import type JSZip from 'jszip';
 import { workspaceStorageService } from '../workspace-storage-service';
 import { workspaceService } from '../workspace-service';
 import { kvStorageService } from '../kv-storage-service';
@@ -69,6 +69,7 @@ class BackupImportService {
 
     try {
       onProgress?.(5, '正在读取文件...');
+      const { default: JSZip } = await import('jszip');
       const zip = await JSZip.loadAsync(file);
 
       onProgress?.(10, '正在验证文件格式...');

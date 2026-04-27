@@ -1,0 +1,27 @@
+export { Avatar } from 'tdesign-react/es/avatar';
+export { Badge } from 'tdesign-react/es/badge';
+export { Button } from 'tdesign-react/es/button';
+export { Checkbox } from 'tdesign-react/es/checkbox';
+export { Dialog } from 'tdesign-react/es/dialog';
+export { Drawer } from 'tdesign-react/es/drawer';
+export { Dropdown } from 'tdesign-react/es/dropdown';
+export { Form } from 'tdesign-react/es/form';
+export { Input } from 'tdesign-react/es/input';
+export { InputNumber } from 'tdesign-react/es/input-number';
+export { Loading } from 'tdesign-react/es/loading';
+export { Popup } from 'tdesign-react/es/popup';
+export { Progress } from 'tdesign-react/es/progress';
+export { Radio } from 'tdesign-react/es/radio';
+export { Select } from 'tdesign-react/es/select';
+export { Slider } from 'tdesign-react/es/slider';
+export { Space } from 'tdesign-react/es/space';
+export { Switch } from 'tdesign-react/es/switch';
+export { Tabs } from 'tdesign-react/es/tabs';
+export { Tag } from 'tdesign-react/es/tag';
+export { Textarea } from 'tdesign-react/es/textarea';
+export { Tooltip } from 'tdesign-react/es/tooltip';
+export { Upload } from 'tdesign-react/es/upload';
+export { MessagePlugin } from './message-plugin';
+
+export type { DropdownOption } from 'tdesign-react/es/dropdown/type';
+export type { PopupPlacement } from 'tdesign-react/es/popup/type';

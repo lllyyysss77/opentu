@@ -8,6 +8,7 @@ import {
   markPPTSlideImage,
   replacePPTSlideImage,
   setFramePPTMeta,
+  syncEditedPPTSlideImage,
 } from '../frame-insertion-utils';
 
 vi.mock('@plait/draw', () => ({
@@ -133,6 +134,40 @@ describe('frame-insertion-utils PPT helpers', () => {
       ],
     });
     expect(findPPTSlideImage(board, 'frame-1')?.elementId).toBe('image-1');
+  });
+
+  it('syncs ppt meta when the current slide image is edited on canvas', () => {
+    const board = createBoard([
+      createFrame({
+        pptMeta: {
+          slidePrompt: 'existing prompt',
+          slideImageElementId: 'image-1',
+          slideImageUrl: 'https://example.com/old.png',
+          slideImageStatus: 'generated',
+        },
+      }),
+      {
+        id: 'image-1',
+        type: 'image',
+        frameId: 'frame-1',
+        pptSlideImage: true,
+        url: 'https://example.com/old.png',
+        points: [
+          [0, 0],
+          [1920, 1080],
+        ],
+      },
+    ]);
+
+    syncEditedPPTSlideImage(board, 'image-1', '/__aitu_cache__/image/new.png');
+
+    expect(board.children[0].pptMeta).toMatchObject({
+      slidePrompt: 'existing prompt',
+      slideImageElementId: 'image-1',
+      slideImageUrl: '/__aitu_cache__/image/new.png',
+      slideImageStatus: 'generated',
+    });
+    expect(board.children[1].pptSlideImage).toBe(true);
   });
 
   it('finds the previous PPT slide image by page index', () => {

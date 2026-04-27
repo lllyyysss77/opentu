@@ -1,0 +1,87 @@
+type TDesignMessagePlugin =
+  typeof import('tdesign-react/es/message')['MessagePlugin'];
+type MessageMethod = Exclude<keyof TDesignMessagePlugin, 'close'>;
+type MessageArgs = [unknown, number?];
+type MessageInstanceLike = { close?: () => void } | null | undefined;
+type LazyMessageInstance = Promise<MessageInstanceLike> & {
+  __aituLazyMessageInstance: true;
+  instancePromise: Promise<MessageInstanceLike>;
+};
+
+let messagePluginPromise: Promise<TDesignMessagePlugin> | null = null;
+
+function loadMessagePlugin(): Promise<TDesignMessagePlugin> {
+  if (!messagePluginPromise) {
+    messagePluginPromise = import('tdesign-react/es/message').then(
+      (module) => module.MessagePlugin
+    );
+  }
+  return messagePluginPromise;
+}
+
+function isLazyMessageInstance(value: unknown): value is LazyMessageInstance {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    (value as LazyMessageInstance).__aituLazyMessageInstance === true
+  );
+}
+
+function callMessage(method: MessageMethod, args: MessageArgs): void {
+  void loadMessagePlugin()
+    .then((plugin) => {
+      const handler = plugin[method] as (...handlerArgs: MessageArgs) => unknown;
+      handler(...args);
+    })
+    .catch((error) => {
+      console.warn('[MessagePlugin] failed to load tdesign-react:', error);
+    });
+}
+
+export const MessagePlugin = {
+  success(...args: MessageArgs): void {
+    callMessage('success', args);
+  },
+  error(...args: MessageArgs): void {
+    callMessage('error', args);
+  },
+  warning(...args: MessageArgs): void {
+    callMessage('warning', args);
+  },
+  info(...args: MessageArgs): void {
+    callMessage('info', args);
+  },
+  loading(...args: MessageArgs): LazyMessageInstance {
+    const instancePromise = loadMessagePlugin().then((plugin) => {
+      const loading = plugin.loading as (...handlerArgs: MessageArgs) => unknown;
+      return loading(...args) as MessageInstanceLike;
+    });
+
+    return Object.assign(instancePromise, {
+      __aituLazyMessageInstance: true,
+      instancePromise,
+    } as const);
+  },
+  close(instance?: unknown): void {
+    if (isLazyMessageInstance(instance)) {
+      void instance.instancePromise
+        .then((resolvedInstance) =>
+          loadMessagePlugin().then((plugin) => {
+            plugin.close(resolvedInstance as never);
+          })
+        )
+        .catch((error) => {
+          console.warn('[MessagePlugin] failed to close lazy message:', error);
+        });
+      return;
+    }
+
+    void loadMessagePlugin()
+      .then((plugin) => {
+        plugin.close(instance as never);
+      })
+      .catch((error) => {
+        console.warn('[MessagePlugin] failed to load tdesign-react:', error);
+      });
+  },
+};

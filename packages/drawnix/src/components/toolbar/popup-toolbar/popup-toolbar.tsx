@@ -174,6 +174,23 @@ const FrameSlideshow = lazy(() =>
   }))
 );
 
+const POPUP_TOOLBAR_POSITION_FRAMES = 2;
+
+const schedulePopupToolbarFrame = (callback: FrameRequestCallback) => {
+  if (typeof window.requestAnimationFrame === 'function') {
+    return window.requestAnimationFrame(callback);
+  }
+  return window.setTimeout(() => callback(Date.now()), 0);
+};
+
+const cancelPopupToolbarFrame = (frameId: number) => {
+  if (typeof window.cancelAnimationFrame === 'function') {
+    window.cancelAnimationFrame(frameId);
+    return;
+  }
+  window.clearTimeout(frameId);
+};
+
 export const PopupToolbar = () => {
   const board = useBoard();
   // 过滤掉 WorkZone 元素，避免点击 WorkZone 时弹出 popup-toolbar
@@ -823,50 +840,55 @@ export const PopupToolbar = () => {
     });
   }, [board, openDialog, selectedElements]);
 
-  useEffect(() => {
-    if (open) {
-      const hasSelected = selectedElements.length > 0;
-      if (!movingOrDragging && hasSelected) {
-        let referenceX, referenceY;
-
-        // 计算选中元素包围盒的顶部边缘中点（与 Figma/Excalidraw 等主流工具一致）
-        const elements = getSelectedElements(board);
-        const rectangle = getRectangleByElements(board, elements, false);
-        const [start, end] = RectangleClient.getPoints(rectangle);
-        const screenStart = toScreenPointFromHostPoint(
-          board,
-          toHostPointFromViewBoxPoint(board, start)
-        );
-        const screenEnd = toScreenPointFromHostPoint(
-          board,
-          toHostPointFromViewBoxPoint(board, end)
-        );
-
-        // 参考点：顶部边缘的水平中点
-        referenceX = screenStart[0] + (screenEnd[0] - screenStart[0]) / 2;
-        referenceY = screenStart[1]; // 使用顶部 Y 坐标，而非中心
-
-        refs.setPositionReference({
-          getBoundingClientRect() {
-            return {
-              width: 1,
-              height: 1,
-              x: referenceX,
-              y: referenceY,
-              top: referenceY,
-              left: referenceX,
-              right: referenceX + 1,
-              bottom: referenceY + 1,
-            };
-          },
-        });
-      }
+  const updatePopupToolbarPosition = useCallback(() => {
+    if (!open || movingOrDragging) {
+      return;
     }
-  }, [viewport, selection, children, movingOrDragging]);
 
-  // 更新 toolbar 和选中元素的位置信息，用于定位属性面板
-  useEffect(() => {
-    if (open && !movingOrDragging && toolbarRef.current) {
+    const elements = getSelectedElements(board);
+    if (elements.length === 0) {
+      setSelectionRect(undefined);
+      return;
+    }
+
+    const rectangle = getRectangleByElements(board, elements, false);
+    const [start, end] = RectangleClient.getPoints(rectangle);
+    const screenStart = toScreenPointFromHostPoint(
+      board,
+      toHostPointFromViewBoxPoint(board, start)
+    );
+    const screenEnd = toScreenPointFromHostPoint(
+      board,
+      toHostPointFromViewBoxPoint(board, end)
+    );
+    const referenceX = screenStart[0] + (screenEnd[0] - screenStart[0]) / 2;
+    const referenceY = screenStart[1];
+
+    refs.setPositionReference({
+      getBoundingClientRect() {
+        return {
+          width: 1,
+          height: 1,
+          x: referenceX,
+          y: referenceY,
+          top: referenceY,
+          left: referenceX,
+          right: referenceX + 1,
+          bottom: referenceY + 1,
+        };
+      },
+    });
+
+    setSelectionRect({
+      top: screenStart[1],
+      left: screenStart[0],
+      right: screenEnd[0],
+      bottom: screenEnd[1],
+      width: screenEnd[0] - screenStart[0],
+      height: screenEnd[1] - screenStart[1],
+    });
+
+    if (toolbarRef.current) {
       const rect = toolbarRef.current.getBoundingClientRect();
       setToolbarRect({
         top: rect.top,
@@ -874,32 +896,48 @@ export const PopupToolbar = () => {
         width: rect.width,
         height: rect.height,
       });
-
-      // 计算选中元素的屏幕坐标
-      const elements = getSelectedElements(board);
-      if (elements.length > 0) {
-        const rectangle = getRectangleByElements(board, elements, false);
-        const [start, end] = RectangleClient.getPoints(rectangle);
-        const screenStart = toScreenPointFromHostPoint(
-          board,
-          toHostPointFromViewBoxPoint(board, start)
-        );
-        const screenEnd = toScreenPointFromHostPoint(
-          board,
-          toHostPointFromViewBoxPoint(board, end)
-        );
-
-        setSelectionRect({
-          top: screenStart[1],
-          left: screenStart[0],
-          right: screenEnd[0],
-          bottom: screenEnd[1],
-          width: screenEnd[0] - screenStart[0],
-          height: screenEnd[1] - screenStart[1],
-        });
-      }
     }
-  }, [open, movingOrDragging, floatingStyles, board]);
+  }, [board, movingOrDragging, open, refs]);
+
+  // 等待 viewBox/scroll 在缩放后落定，再更新 toolbar 和属性面板坐标。
+  useEffect(() => {
+    if (!open || movingOrDragging) {
+      return;
+    }
+
+    let cancelled = false;
+    let frame = 0;
+    let animationFrameId: number | null = null;
+
+    const run = () => {
+      if (cancelled) {
+        return;
+      }
+      updatePopupToolbarPosition();
+      if (frame >= POPUP_TOOLBAR_POSITION_FRAMES) {
+        return;
+      }
+      frame += 1;
+      animationFrameId = schedulePopupToolbarFrame(run);
+    };
+
+    run();
+
+    return () => {
+      cancelled = true;
+      if (animationFrameId !== null) {
+        cancelPopupToolbarFrame(animationFrameId);
+      }
+    };
+  }, [
+    open,
+    movingOrDragging,
+    viewport,
+    selection,
+    children,
+    floatingStyles,
+    updatePopupToolbarPosition,
+  ]);
 
   // 同步 ref 和 state
   useEffect(() => {

@@ -9,7 +9,7 @@ const DISALLOWED_PREFIXES = [
   'external-skills-',
 ];
 const STATIC_IMPORT_RE =
-  /(?:import|export)\s*(?:[^"'`]*?\sfrom\s*)?["']\.\/([^"']+)["']/g;
+  /(?:\bimport\s*(?:[^"'`]*?\bfrom\s*)?|\bexport\s*[^"'`]*?\bfrom\s*)["']\.\/([^"']+)["']/g;
 
 function fail(message) {
   console.error(`[startup-validate] ${message}`);

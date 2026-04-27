@@ -2,7 +2,7 @@ import React, { useCallback, useMemo, useState } from 'react';
 import classNames from 'classnames';
 import type { PlaitBoard } from '@plait/core';
 import { useImageGenerationAnchorController } from '../../hooks/useImageGenerationAnchorController';
-import { ImageGenerationAnchorTransforms } from '../../plugins/with-image-generation-anchor';
+import { ImageGenerationAnchorTransforms } from './image-generation-anchor.transforms';
 import {
   IMAGE_GENERATION_ANCHOR_RETRY_EVENT,
   type ImageGenerationAnchorActionType,

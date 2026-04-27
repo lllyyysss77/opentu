@@ -27,15 +27,6 @@ import {
   KB_DEFAULT_DIRECTORIES,
 } from '../types/knowledge-base.types';
 
-import {
-  exportAllData,
-  importAllData,
-  exportNoteAsMarkdown,
-  importNoteFromMarkdown,
-  exportAsZip,
-  importFromZip,
-} from './kb-import-export-service';
-
 const { NAME, STORES } = IDB_DATABASES.KNOWLEDGE_BASE;
 
 // localforage instances
@@ -836,13 +827,54 @@ export function loadSortPreference(): KBSortOptions {
 
 // --- Import & Export (delegated to kb-import-export-service.ts) ---
 
-export {
-  exportAllData,
-  importAllData,
-  exportNoteAsMarkdown,
-  importNoteFromMarkdown,
-  exportAsZip,
-} from './kb-import-export-service';
+export async function exportAllData(): Promise<
+  import('./kb-import-export-service').KBExportData
+> {
+  const { exportAllData } = await import('./kb-import-export-service');
+  return exportAllData();
+}
+
+export async function importAllData(
+  data: import('./kb-import-export-service').KBExportData
+): Promise<{
+  dirCount: number;
+  noteCount: number;
+  tagCount: number;
+  imageCount: number;
+}> {
+  const { importAllData } = await import('./kb-import-export-service');
+  return importAllData(data);
+}
+
+export async function exportNoteAsMarkdown(noteId: string): Promise<{
+  filename: string;
+  content: string;
+} | null> {
+  const { exportNoteAsMarkdown } = await import('./kb-import-export-service');
+  return exportNoteAsMarkdown(noteId);
+}
+
+export async function importNoteFromMarkdown(
+  markdownContent: string,
+  directoryId: string,
+  filename?: string
+): Promise<KBNote | null> {
+  const { importNoteFromMarkdown } = await import('./kb-import-export-service');
+  return importNoteFromMarkdown(markdownContent, directoryId, filename);
+}
+
+export async function exportAsZip(): Promise<Blob> {
+  const { exportAsZip } = await import('./kb-import-export-service');
+  return exportAsZip();
+}
+
+export async function importFromZip(file: File): Promise<{
+  dirCount: number;
+  noteCount: number;
+}> {
+  const { importFromZip } = await import('./kb-import-export-service');
+  return importFromZip(file);
+}
 
 // --- Initialize ---
 

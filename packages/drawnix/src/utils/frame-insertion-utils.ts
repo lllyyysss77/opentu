@@ -5,7 +5,7 @@
  * 并自动绑定到 Frame（设置 frameId）。
  */
 
-import type { PlaitBoard, Point } from '@plait/core';
+import type { PlaitBoard, PlaitElement, Point } from '@plait/core';
 import {
   RectangleClient,
   Transforms,
@@ -474,6 +474,41 @@ export function replacePPTSlideImage(
   if (oldIndex !== -1) {
     Transforms.removeNode(board, [oldIndex]);
   }
+}
+
+export function syncEditedPPTSlideImage(
+  board: PlaitBoard,
+  elementId: string,
+  imageUrl: string
+): void {
+  const element = board.children.find((el: any) => el.id === elementId) as
+    | (PlaitElement & {
+        frameId?: string;
+        pptSlideImage?: boolean;
+      })
+    | undefined;
+  const frameId = element?.frameId;
+  if (!frameId) {
+    return;
+  }
+
+  const pptMeta = getFramePPTMeta(board, frameId);
+  const isCurrentPPTSlideImage =
+    element.pptSlideImage === true || pptMeta?.slideImageElementId === elementId;
+  if (!isCurrentPPTSlideImage) {
+    return;
+  }
+
+  markPPTSlideImage(
+    board,
+    frameId,
+    elementId,
+    imageUrl,
+    undefined,
+    [],
+    undefined,
+    getPPTSlidePrompt(pptMeta)
+  );
 }
 
 export function setPPTImagePlaceholderStatus(

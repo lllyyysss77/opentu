@@ -27,9 +27,12 @@ try {
 
 const IDLE_PREFETCH_GROUPS = [
   'ai-chat',
+  'shared-runtime',
   'tool-windows',
   'diagram-engines',
   'office-data',
+  'editor-engines',
+  'media-viewer',
   'external-skills',
   'runtime-static-assets',
   'offline-static-assets',
@@ -515,6 +518,84 @@ function resolveIdlePrefetchGroup(id: string): IdlePrefetchGroup | undefined {
   const normalizedId = normalizePathForChunking(id);
 
   if (
+    normalizedId.includes('/packages/utils/src/') ||
+    normalizedId.includes('/packages/drawnix/src/constants/model-config') ||
+    normalizedId.includes('/packages/drawnix/src/services/app-database') ||
+    normalizedId.includes('/packages/drawnix/src/services/model-adapters/image-request-schemas') ||
+    normalizedId.includes('/packages/drawnix/src/types/asset.types') ||
+    normalizedId.includes('/packages/drawnix/src/types/task.types') ||
+    normalizedId.includes('/packages/drawnix/src/types/shared/core.types') ||
+    normalizedId.includes('/packages/drawnix/src/utils/runtime-helpers') ||
+    normalizedId.includes('/packages/drawnix/src/utils/settings-manager') ||
+    normalizedId.includes('/packages/drawnix/src/utils/config-indexeddb-writer') ||
+    normalizedId.includes('/packages/drawnix/src/utils/model-pricing-service') ||
+    normalizedId.includes('/packages/drawnix/src/utils/model-pricing-types') ||
+    normalizedId.includes('/packages/drawnix/src/utils/download-utils') ||
+    normalizedId.includes('/packages/drawnix/src/services/provider-routing/')
+  ) {
+    return 'shared-runtime';
+  }
+
+  if (
+    normalizedId.includes('/node_modules/.pnpm/mermaid@') ||
+    normalizedId.includes('/node_modules/mermaid/') ||
+    normalizedId.includes('/node_modules/.pnpm/elkjs@') ||
+    normalizedId.includes('/node_modules/elkjs/') ||
+    normalizedId.includes('/node_modules/.pnpm/cytoscape@') ||
+    normalizedId.includes('/node_modules/cytoscape/') ||
+    normalizedId.includes('/node_modules/.pnpm/layout-base@') ||
+    normalizedId.includes('/node_modules/layout-base/') ||
+    normalizedId.includes('/node_modules/.pnpm/cose-base@') ||
+    normalizedId.includes('/node_modules/cose-base/') ||
+    normalizedId.includes('/node_modules/.pnpm/cytoscape-cose-bilkent@') ||
+    normalizedId.includes('/node_modules/cytoscape-cose-bilkent/') ||
+    normalizedId.includes('/node_modules/.pnpm/dagre-d3-es@') ||
+    normalizedId.includes('/node_modules/dagre-d3-es/') ||
+    normalizedId.includes('/node_modules/.pnpm/dompurify@') ||
+    normalizedId.includes('/node_modules/dompurify/') ||
+    normalizedId.includes('/packages/drawnix/src/components/ttd-dialog/mermaid-to-drawnix') ||
+    normalizedId.includes('/packages/drawnix/src/components/ttd-dialog/markdown-to-drawnix') ||
+    normalizedId.includes('/packages/drawnix/src/components/chat-drawer/MermaidRenderer') ||
+    normalizedId.includes('/packages/drawnix/src/mcp/tools/mermaid-tool') ||
+    normalizedId.includes('/packages/drawnix/src/mcp/tools/mindmap-tool')
+  ) {
+    return 'diagram-engines';
+  }
+
+  if (
+    normalizedId.includes('/node_modules/.pnpm/xlsx@') ||
+    normalizedId.includes('/node_modules/xlsx/') ||
+    normalizedId.includes('/node_modules/.pnpm/jszip@') ||
+    normalizedId.includes('/node_modules/jszip/') ||
+    normalizedId.includes('/node_modules/.pnpm/pptxgenjs@') ||
+    normalizedId.includes('/node_modules/pptxgenjs/')
+  ) {
+    return 'office-data';
+  }
+
+  if (
+    normalizedId.includes('/node_modules/.pnpm/@milkdown+') ||
+    normalizedId.includes('/node_modules/@milkdown/') ||
+    normalizedId.includes('/node_modules/.pnpm/@codemirror+') ||
+    normalizedId.includes('/node_modules/@codemirror/') ||
+    normalizedId.includes('/node_modules/.pnpm/@lezer+') ||
+    normalizedId.includes('/node_modules/@lezer/') ||
+    normalizedId.includes('/node_modules/.pnpm/prosemirror-') ||
+    normalizedId.includes('/node_modules/prosemirror-') ||
+    normalizedId.includes('/node_modules/.pnpm/katex@') ||
+    normalizedId.includes('/node_modules/katex/')
+  ) {
+    return 'editor-engines';
+  }
+
+  if (
+    normalizedId.includes('/node_modules/.pnpm/viewerjs@') ||
+    normalizedId.includes('/node_modules/viewerjs/')
+  ) {
+    return 'media-viewer';
+  }
+
+  if (
     normalizedId.includes('/packages/drawnix/src/components/startup/DrawnixDeferredRuntime.tsx') ||
     normalizedId.includes('/packages/drawnix/src/components/startup/DeferredMediaLibraryModal.tsx') ||
     normalizedId.includes('/packages/drawnix/src/components/startup/DeferredSyncSettings.tsx') ||
@@ -548,6 +629,22 @@ function resolveIdlePrefetchGroup(id: string): IdlePrefetchGroup | undefined {
   }
 
   return undefined;
+}
+
+function isStartupRuntimeModule(id: string): boolean {
+  const normalizedId = normalizePathForChunking(id);
+  return (
+    normalizedId.includes('vite/preload-helper') ||
+    normalizedId.includes('commonjsHelpers')
+  );
+}
+
+function resolveManualChunk(id: string): string | undefined {
+  if (isStartupRuntimeModule(id)) {
+    return 'startup-runtime';
+  }
+
+  return resolveIdlePrefetchGroup(id);
 }
 
 /**
@@ -890,6 +987,8 @@ function rewriteManifestAssetsToCDNPlugin(): Plugin {
 
 // 检测是否在 watch 模式下运行（命令行包含 --watch）
 const isWatchMode = process.argv.includes('--watch');
+const isServeMode = process.argv.includes('serve');
+const reactNodeEnv = isWatchMode || isServeMode ? 'development' : 'production';
 
 export default defineConfig({
   root: __dirname,
@@ -901,11 +1000,16 @@ export default defineConfig({
 
   define: {
     'import.meta.env.VITE_APP_VERSION': JSON.stringify(appVersion),
+    'process.env.NODE_ENV': JSON.stringify(reactNodeEnv),
     __APP_VERSION__: JSON.stringify(appVersion),
     // Vue feature flags - @milkdown/crepe 内部使用了 Vue，需要定义这些编译时标志
     __VUE_OPTIONS_API__: JSON.stringify(false),
     __VUE_PROD_DEVTOOLS__: JSON.stringify(false),
     __VUE_PROD_HYDRATION_MISMATCH_DETAILS__: JSON.stringify(false),
+  },
+
+  esbuild: {
+    jsxDev: false,
   },
 
   server: {
@@ -943,6 +1047,15 @@ export default defineConfig({
   ],
 
   resolve: {
+    alias: [
+      {
+        find: /^tdesign-react$/,
+        replacement: path.resolve(
+          __dirname,
+          '../../packages/drawnix/src/utils/tdesign.ts'
+        ),
+      },
+    ],
     dedupe: ['react', 'react-dom'],
   },
 
@@ -964,7 +1077,7 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
-          return resolveIdlePrefetchGroup(id);
+          return resolveManualChunk(id);
         },
       },
     },
