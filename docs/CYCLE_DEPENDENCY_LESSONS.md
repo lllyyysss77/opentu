@@ -4,7 +4,7 @@
 
 ## 背景
 
-本轮目标是继续收敛项目里的循环依赖：运行时静态 import 已经为 0，但 type-only import 仍形成 3 个 `static-all` SCC。动态 import 形成的大 SCC 暂不治理，避免把懒加载边界和产品模块重排混在一起。
+本轮目标是继续收敛项目里的循环依赖：先把运行时静态 import、type-only import 清到 0，再单独收敛 dynamic import 形成的懒加载 SCC。最终 `runtime-static`、`static-all`、`dynamic-inclusive` 三层扫描均为 0。
 
 ## 本轮结论
 
@@ -61,6 +61,35 @@ TypeScript 的 type-only import 不会直接进入运行时代码，但它会暴
 
 经验：检查项升级要分阶段，让默认门禁稳定，再逐步把更严格模式纳入常规流程。
 
+### 6. dynamic import 环要先找“元数据拉注册表”
+
+本轮 dynamic-inclusive 大 SCC 最初有 97 个文件，第一刀不是改组件，而是切断内置工具元数据对工具注册表的依赖：
+
+- `built-in-tools` 只读取 manifests，不读取 `toolRegistry`。
+- `ToolPluginModule` 移到纯类型文件，工具插件不再 type-import registry。
+- 模型测试启动器只读内置 manifests，不为查一个 tool manifest 拉入组件注册表。
+
+结果：97 文件大 SCC 立即拆成 `22 + 5 + 5`。经验是：如果“常量/元数据”反向 import 了“注册表/组件加载器”，懒加载图很容易被拖成大团。
+
+### 7. 通用 UI 组件不要默认回拉业务能力
+
+剩余 22 文件 SCC 的关键边是 `MediaViewport -> canvas-operations -> card -> MarkdownEditor -> media-library -> shared`。处理方式：
+
+- 媒体预览组件只依赖轻量 image/video 插入 helper，不直接 import 全量 `canvas-operations`。
+- `canvas-board-ref` 独立承载 board 引用，避免轻量插入能力为了拿 board 反向拉入文本/Card 插入链。
+- media-library 内部使用 leaf import，不从 `shared/index` 桶文件拿 `HoverTip`、`ContextMenu`。
+
+经验：通用展示组件可以提供兜底能力，但兜底能力必须是窄入口；否则一个“插入到画布”按钮就会把 Card、Markdown、素材库一起拉回预览组件。
+
+### 8. 运行时单例互访用 bridge，Transform 和组件分离
+
+两个 5 文件小 SCC 分别来自 service 互访和插件组件互访：
+
+- GitHub sync 需要刷新 workspace，但不再静态 import `workspace-service`；改为 `workspace-runtime-bridge` 注册运行时能力。
+- `sw-capabilities` 只需要 WorkZone transforms，不需要 WorkZone React 组件；将 transforms 拆到中立模块，`with-workzone` 保持 re-export 兼容。
+
+经验：服务单例之间需要互相调用时，优先抽一个无副作用 bridge；插件的纯 transform/API 不要和 React 渲染组件放在同一个依赖入口。
+
 ## 验证清单
 
 基础检查：
@@ -82,10 +111,10 @@ NPM_TOKEN=${NPM_TOKEN:-dummy} pnpm verify:startup
 
 1. 新增核心类型时，优先放到纯类型模块，不要顺手放进服务实现文件。
 2. 从 barrel import 前先确认该 barrel 是否包含运行时副作用。
-3. `dynamic import` SCC 不要和静态环一起治理，应按工具窗口、SW、媒体插入等边界拆专题。
+3. `dynamic import` SCC 不要和静态环一起治理，应按工具窗口、SW、媒体插入等边界拆专题；治理时优先切“元数据 -> 注册表”“通用 UI -> 业务服务”“服务单例互访”三类边。
 4. 保持旧导出兼容，但内部依赖逐步迁到低层入口。
 5. 每次拆环都先跑 `check:cycles:types`，再跑 `typecheck`，避免只修图不修类型。
 
 ## 一句话结论
 
-循环依赖治理最稳的方式是先分清运行时、类型层和动态懒加载，再用中立纯类型模块打断高风险边界。✅
+循环依赖治理最稳的方式是先分清运行时、类型层和动态懒加载，再用纯类型模块、窄 helper、runtime bridge 打断高风险边界。✅

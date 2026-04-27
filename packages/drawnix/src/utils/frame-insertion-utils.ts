@@ -12,6 +12,7 @@ import {
   getSelectedElements,
   idCreator,
 } from '@plait/core';
+import { DrawTransforms } from '@plait/draw';
 import { isFrameElement, type PlaitFrame } from '../types/frame.types';
 import { FrameTransforms } from '../plugins/with-frame';
 import { getImageRegion } from '../services/ppt/ppt-layout-engine';
@@ -255,6 +256,37 @@ function appendPPTSlideImageHistoryItems(
     (nextHistory, item) => appendPPTSlideImageHistory(nextHistory, item),
     history || []
   );
+}
+
+function loadFrameImageElement(imageUrl: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.crossOrigin = 'anonymous';
+    image.referrerPolicy = 'no-referrer';
+    image.onload = () => resolve(image);
+    image.onerror = reject;
+    image.src = imageUrl;
+  });
+}
+
+function fitMediaIntoRegion(
+  mediaDimensions: { width: number; height: number },
+  regionDimensions: { width: number; height: number }
+): { width: number; height: number } {
+  const mediaAspect = mediaDimensions.width / mediaDimensions.height;
+  const regionAspect = regionDimensions.width / regionDimensions.height;
+
+  if (mediaAspect > regionAspect) {
+    return {
+      width: regionDimensions.width,
+      height: regionDimensions.width / mediaAspect,
+    };
+  }
+
+  return {
+    width: regionDimensions.height * mediaAspect,
+    height: regionDimensions.height,
+  };
 }
 
 export function findPPTSlideImage(
@@ -643,17 +675,9 @@ export async function insertMediaIntoFrame(
 
   if (!frameElement) {
     console.warn(
-      '[insertMediaIntoFrame] Frame not found, falling back to normal insertion:',
+      '[insertMediaIntoFrame] Frame not found, skip frame insertion:',
       frameId
     );
-    // Frame 不存在，回退到普通插入
-    if (mediaType === 'video') {
-      const { insertVideoFromUrl } = await import('../data/video');
-      await insertVideoFromUrl(board, mediaUrl);
-    } else {
-      const { insertImageFromUrl } = await import('../data/image');
-      await insertImageFromUrl(board, mediaUrl);
-    }
     return undefined;
   }
 
@@ -694,16 +718,12 @@ export async function insertMediaIntoFrame(
       mediaWidth = regionDimensions.height * mediaAspect;
     }
   } else if (mediaType === 'video') {
-    const mediaAspect = 16 / 9;
-    const regionAspect = regionDimensions.width / regionDimensions.height;
-
-    if (mediaAspect > regionAspect) {
-      mediaWidth = regionDimensions.width;
-      mediaHeight = regionDimensions.width / mediaAspect;
-    } else {
-      mediaHeight = regionDimensions.height;
-      mediaWidth = regionDimensions.height * mediaAspect;
-    }
+    const fitted = fitMediaIntoRegion(
+      { width: 16, height: 9 },
+      regionDimensions
+    );
+    mediaWidth = fitted.width;
+    mediaHeight = fitted.height;
   } else {
     mediaWidth = regionDimensions.width;
     mediaHeight = regionDimensions.height;
@@ -718,28 +738,43 @@ export async function insertMediaIntoFrame(
   const childrenCountBefore = board.children.length;
 
   if (mediaType === 'video') {
-    const { insertVideoFromUrl } = await import('../data/video');
-    await insertVideoFromUrl(
+    const videoWithFragment = mediaUrl.includes('#')
+      ? mediaUrl
+      : `${mediaUrl}#video`;
+    DrawTransforms.insertImage(
       board,
-      mediaUrl,
-      insertionPoint,
-      false,
-      { width: mediaWidth, height: mediaHeight },
-      true, // skipScroll
-      true, // skipCentering（insertionPoint 已经是左上角坐标）
-      true // lockReferenceDimensions（尺寸已按 Frame 计算完成）
+      {
+        url: videoWithFragment,
+        width: mediaWidth,
+        height: mediaHeight,
+        isVideo: true,
+        videoType: 'video',
+      } as any,
+      insertionPoint
     );
   } else {
-    const { insertImageFromUrl } = await import('../data/image');
-    await insertImageFromUrl(
+    if (shouldLoadImageForContain) {
+      try {
+        const image = await loadFrameImageElement(mediaUrl);
+        const fitted = fitMediaIntoRegion(
+          { width: image.width, height: image.height },
+          regionDimensions
+        );
+        mediaWidth = fitted.width;
+        mediaHeight = fitted.height;
+      } catch {
+        // 图片尺寸不可读时沿用目标区域尺寸，保持插入不中断。
+      }
+    }
+
+    DrawTransforms.insertImage(
       board,
-      mediaUrl,
-      insertionPoint,
-      false,
-      { width: mediaWidth, height: mediaHeight },
-      true, // skipScroll
-      !shouldLoadImageForContain, // skipImageLoad（未知图片尺寸时先加载，确保 contain 完整展示）
-      shouldStretch // lockReferenceDimensions（显式 stretch 时保持目标尺寸）
+      {
+        url: mediaUrl,
+        width: mediaWidth,
+        height: mediaHeight,
+      },
+      insertionPoint
     );
   }
 

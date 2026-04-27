@@ -9,7 +9,7 @@ import { Button } from 'tdesign-react';
 import { JumpIcon, DeleteIcon } from 'tdesign-icons-react';
 import { InsertToCanvasIcon } from '../icons';
 import { ToolDefinition } from '../../types/toolbox.types';
-import { toolRegistry } from '../../tools/registry';
+import { isBuiltInToolId } from '../../constants/built-in-tools';
 import { HoverTip } from '../shared';
 
 export interface ToolItemProps {
@@ -45,7 +45,7 @@ export const ToolItem: React.FC<ToolItemProps> = ({
   onDelete,
 }) => {
   // 判断是否为内置工具（内置工具不能编辑/删除）
-  const isBuiltInTool = toolRegistry.isBuiltInTool(tool.id);
+  const isBuiltInTool = isBuiltInToolId(tool.id);
   const isCustomTool = !isBuiltInTool;
 
   /**

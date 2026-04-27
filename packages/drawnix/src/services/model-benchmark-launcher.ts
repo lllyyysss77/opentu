@@ -1,7 +1,7 @@
 import { atom } from 'jotai';
 import { getDefaultStore } from 'jotai/vanilla';
 import { toolWindowService } from './tool-window-service';
-import { toolRegistry } from '../tools/registry';
+import { BUILT_IN_TOOLS } from '../constants/built-in-tools';
 import { MODEL_BENCHMARK_TOOL_ID } from '../tools/tool-ids';
 import type { ToolDefinition } from '../types/toolbox.types';
 import type { ModelBenchmarkLaunchRequest } from './model-benchmark-service';
@@ -29,7 +29,8 @@ export function openModelBenchmarkTool(
   initialRequest?: ModelBenchmarkLaunchRequest
 ): boolean {
   const tool =
-    toolRegistry.getManifestById(MODEL_BENCHMARK_TOOL_ID) || createFallbackTool();
+    BUILT_IN_TOOLS.find((item) => item.id === MODEL_BENCHMARK_TOOL_ID) ||
+    createFallbackTool();
 
   // 写入全局 atom，Workbench 通过 useAtomValue 订阅
   if (initialRequest) {

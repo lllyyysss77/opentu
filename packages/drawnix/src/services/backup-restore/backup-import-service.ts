@@ -23,7 +23,7 @@ import localforage from 'localforage';
 import { ASSET_CONSTANTS } from '../../constants/ASSET_CONSTANTS';
 import { unifiedCacheService } from '../unified-cache-service';
 import { analytics } from '../../utils/posthog-analytics';
-import { knowledgeBaseService } from '../knowledge-base-service';
+import { importAllData as importKnowledgeBaseData } from '../kb-import-export-service';
 import {
   BACKUP_SIGNATURE,
   BackupManifest,
@@ -163,7 +163,7 @@ class BackupImportService {
     try {
       const content = await kbFile.async('string');
       const data = JSON.parse(content);
-      const r = await knowledgeBaseService.importAllData(data);
+      const r = await importKnowledgeBaseData(data);
       return { directories: r.dirCount, notes: r.noteCount, tags: r.tagCount, skipped: 0, errors: [] };
     } catch (error) {
       console.error('Failed to import knowledge base:', error);
