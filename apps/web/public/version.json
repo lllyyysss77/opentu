@@ -1,6 +1,6 @@
 {
   "version": "0.6.81",
-  "buildTime": "2026-04-27T15:13:23.541Z",
+  "buildTime": "2026-04-27T15:13:24.425Z",
   "gitCommit": "unknown",
   "changelog": [
     "改进API认证错误处理以区分缺失与无效凭证",
