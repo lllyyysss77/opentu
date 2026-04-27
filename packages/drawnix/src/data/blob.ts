@@ -1,6 +1,7 @@
 import { PlaitBoard } from '@plait/core';
 import { isValidDrawnixData } from './json';
 import { IMAGE_MIME_TYPES, MIME_TYPES } from '../constants';
+import { ASSET_CONSTANTS } from '../constants/ASSET_CONSTANTS';
 import { ValueOf } from '@aitu/utils';
 import { DataURL } from '../types';
 import { DrawnixExportedData, EmbeddedMediaItem } from './types';
@@ -153,7 +154,38 @@ export const isSupportedImageFile = (
 };
 
 const AUDIO_MIME_TYPES = ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/ogg', 'audio/webm', 'audio/aac', 'audio/flac'];
+const VIDEO_EXTENSION_MIME_TYPES: Record<string, string> = {
+  mp4: 'video/mp4',
+  webm: 'video/webm',
+  ogg: 'video/ogg',
+  ogv: 'video/ogg',
+  mov: 'video/quicktime',
+  qt: 'video/quicktime',
+  m4v: 'video/x-m4v',
+};
 
 export const isSupportedAudioFileType = (type: string | null | undefined) => {
   return !!type && AUDIO_MIME_TYPES.includes(type);
+};
+
+export const isSupportedVideoFileType = (type: string | null | undefined) => {
+  return !!type && ASSET_CONSTANTS.ALLOWED_VIDEO_TYPES.includes(type as any);
+};
+
+export const getSupportedVideoFileMimeType = (
+  file: File | null | undefined
+): string | null => {
+  if (!file) {
+    return null;
+  }
+
+  if (isSupportedVideoFileType(file.type)) {
+    return file.type;
+  }
+
+  const extension = file.name?.split('.').pop()?.toLowerCase();
+  const fallbackMimeType = extension
+    ? VIDEO_EXTENSION_MIME_TYPES[extension]
+    : undefined;
+  return isSupportedVideoFileType(fallbackMimeType) ? fallbackMimeType! : null;
 };
