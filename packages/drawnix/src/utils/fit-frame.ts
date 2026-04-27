@@ -12,14 +12,26 @@ import {
 } from '@plait/core';
 import { isFrameElement, PlaitFrame } from '../types/frame.types';
 
-/** 左侧工具栏宽度 */
-const TOOLBAR_WIDTH = 52;
+/** 左侧工具栏右边界兜底值：默认贴边 + 58px 工具栏 */
+const DEFAULT_TOOLBAR_RIGHT_EDGE = 58;
 /** 底部 AI 输入栏高度 */
 const BOTTOM_BAR_HEIGHT = 80;
 /** 顶部导航控件高度 */
 const TOP_BAR_HEIGHT = 50;
 /** 四周留白 */
 const FIT_PADDING = 40;
+
+function getToolbarRightEdge(): number {
+  const toolbarEl = document.querySelector(
+    '.unified-toolbar'
+  ) as HTMLElement | null;
+  if (!toolbarEl) {
+    return DEFAULT_TOOLBAR_RIGHT_EDGE;
+  }
+
+  const rect = toolbarEl.getBoundingClientRect();
+  return Math.max(0, rect.right);
+}
 
 /**
  * 将视口自适应到指定 Frame 或自动选择一个 Frame
@@ -60,7 +72,8 @@ export function fitFrame(board: PlaitBoard): boolean {
   const leftDrawerEl = document.querySelector(
     '.side-drawer--open.side-drawer--toolbar-right'
   ) as HTMLElement;
-  const leftOccluded = TOOLBAR_WIDTH + (leftDrawerEl ? leftDrawerEl.offsetWidth : 0);
+  const leftOccluded =
+    getToolbarRightEdge() + (leftDrawerEl ? leftDrawerEl.offsetWidth : 0);
 
   // 右侧遮挡：ChatDrawer（如果打开）
   const chatDrawerEl = document.querySelector('.chat-drawer--open') as HTMLElement;

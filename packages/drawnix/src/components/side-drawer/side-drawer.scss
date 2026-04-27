@@ -39,13 +39,17 @@ $drawer-width-wide: min(1024px, 50vw);
   // ========================================
 
   &--toolbar-right {
-    left: $toolbar-width;
+    left: 0;
     z-index: $z-side-drawer;
-    transform: translateX(calc(-100% - #{$toolbar-width}));
+    transform: translateX(-100%);
     box-shadow: 16px 0 48px rgba(0, 0, 0, 0.08);
 
     &.side-drawer--open {
-      transform: translateX(0);
+      transform: translateX(var(--aitu-toolbar-right-edge, #{$toolbar-width}));
+      box-shadow:
+        calc(-1 * var(--aitu-toolbar-right-edge, #{$toolbar-width})) 0 0 0
+          var(--td-bg-color-container),
+        16px 0 48px rgba(0, 0, 0, 0.08);
     }
 
     // 移动端适配：抽屉从屏幕左边缘开始
@@ -324,6 +328,10 @@ $drawer-width-wide: min(1024px, 50vw);
     opacity: 1;
     background: #F39C12;
   }
+}
+
+.aitu-toolbar-dragging .side-drawer--toolbar-right {
+  transition: none;
 }
 
 // ============================================================================

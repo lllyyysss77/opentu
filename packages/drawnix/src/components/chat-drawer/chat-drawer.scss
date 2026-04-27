@@ -26,7 +26,7 @@ $drawer-input-height: 160px;
   display: flex;
   flex-direction: column;
   width: max($drawer-min-width, 50vw);
-  max-width: calc(100vw - $toolbar-width);
+  max-width: calc(100vw - var(--aitu-toolbar-right-edge, #{$toolbar-width}));
   background: #ffffff;
   border-left: 1px solid var(--td-component-border);
   box-shadow: -4px 0 16px rgba(0, 0, 0, 0.08);
