@@ -1,3 +1,15 @@
+## 0.6.82 (2026-04-27)
+
+### 🔧 Chores
+
+- 更新应用版本号至0.6.81并同步构建时间 ([a435015f](https://github.com/ljquan/aitu/commit/a435015f))
+- docs: 补充循环依赖防回归规则 ([47adb657](https://github.com/ljquan/aitu/commit/47adb657))
+- refactor: 收敛剩余循环依赖 ([a184ecab](https://github.com/ljquan/aitu/commit/a184ecab))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+
 ## 0.6.81 (2026-04-27)
 
 ### 🩹 Fixes
