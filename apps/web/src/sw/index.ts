@@ -37,6 +37,7 @@ import {
 } from './cdn-fallback';
 import { getSafeErrorMessage } from './task-queue/utils/sanitize-utils';
 import {
+  shouldBypassAppShellCacheForLazyChunkRecovery,
   shouldUseCDNFirstPreload,
   shouldMirrorToAppShellAliases,
   shouldUseOriginFirstPreload,
@@ -3212,6 +3213,24 @@ sw.addEventListener('message', (event: ExtendableMessageEvent) => {
     return;
   }
 
+  if (event.data && event.data.type === 'RECOVER_DYNAMIC_IMPORT_FAILURE') {
+    event.waitUntil(
+      caches.keys().then((cacheNames) =>
+        Promise.all(
+          cacheNames
+            .filter((name) => name.startsWith('drawnix-static-v'))
+            .map((name) => caches.delete(name))
+        ).then(() => {
+          logSWDebug('message: RECOVER_DYNAMIC_IMPORT_FAILURE', {
+            appVersion: event.data.appVersion,
+            moduleKey: event.data.moduleKey,
+          });
+        })
+      )
+    );
+    return;
+  }
+
   if (event.data && event.data.type === 'SW_BOOT_PROGRESS_GET') {
     const client = event.source as Client | null;
     logSWDebug('message: SW_BOOT_PROGRESS_GET', {
@@ -5616,6 +5635,52 @@ async function handleStaticRequest(request: Request): Promise<Response> {
   // its own versioned cache in the background, and only switches after the
   // user explicitly confirms the upgrade.
   if (isAppShellRequest) {
+    if (shouldBypassAppShellCacheForLazyChunkRecovery(url.search)) {
+      try {
+        const response = await fetchQuick(request, {
+          cache: 'reload' as RequestCache,
+        });
+
+        if (
+          response &&
+          response.status === 200 &&
+          request.url.startsWith('http')
+        ) {
+          cache.put(request, response.clone());
+
+          const reqUrl = new URL(request.url);
+          if (
+            shouldMirrorToAppShellAliases(
+              getScopeRelativePathname(reqUrl.pathname)
+            )
+          ) {
+            const rootUrl = createScopeUrl('/').href;
+            const indexUrl = createScopeUrl('index.html').href;
+            if (request.url !== rootUrl) cache.put(rootUrl, response.clone());
+            if (request.url !== indexUrl) cache.put(indexUrl, response.clone());
+          }
+
+          logSWDebug('handleStaticRequest: refreshed app shell for recovery', {
+            requestUrl: request.url,
+            committedVersion,
+            workerVersion: APP_VERSION,
+          });
+          return response;
+        }
+
+        if (response) {
+          return response;
+        }
+      } catch (error) {
+        logSWDebug('handleStaticRequest: recovery app shell refresh failed', {
+          requestUrl: request.url,
+          committedVersion,
+          workerVersion: APP_VERSION,
+          error: getSafeErrorMessage(error),
+        });
+      }
+    }
+
     let cachedResponse = await cache.match(request);
 
     if (!cachedResponse) {

@@ -56,8 +56,7 @@ function setupLazyAssetRecoveryListeners(): void {
   window.addEventListener(
     'vite:preloadError',
     (event) => {
-      const payload = (event as Event & { payload?: unknown }).payload;
-      if (tryRecoverDynamicImportError(payload || event)) {
+      if (tryRecoverDynamicImportError(event)) {
         stopRecoveredEvent(event);
       }
     },
@@ -67,7 +66,7 @@ function setupLazyAssetRecoveryListeners(): void {
   window.addEventListener(
     'unhandledrejection',
     (event) => {
-      if (tryRecoverDynamicImportError(event.reason)) {
+      if (tryRecoverDynamicImportError(event)) {
         stopRecoveredEvent(event);
       }
     },
@@ -77,8 +76,7 @@ function setupLazyAssetRecoveryListeners(): void {
   window.addEventListener(
     'error',
     (event) => {
-      const payload = event.error || event.message;
-      if (tryRecoverDynamicImportError(payload)) {
+      if (tryRecoverDynamicImportError(event)) {
         stopRecoveredEvent(event);
       }
     },

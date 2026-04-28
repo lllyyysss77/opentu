@@ -1,8 +1,16 @@
-import { IS_APPLE, IS_MAC, PlaitBoard, toImage, ToImageOptions } from '@plait/core';
+import {
+  IS_APPLE,
+  IS_MAC,
+  PlaitBoard,
+  PlaitElement,
+  toImage,
+  ToImageOptions,
+} from '@plait/core';
 
 const TRANSPARENT_PNG_BASE64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lB5Z6wAAAABJRU5ErkJggg==';
 const IMAGE_URL_KEYS = new Set(['href', 'imageurl', 'src', 'url']);
+const DOM_IMAGE_URL_ATTRIBUTES = ['src', 'href', 'xlink:href'];
 const MAX_TO_IMAGE_URL_SCAN_DEPTH = 8;
 const noop = () => undefined;
 
@@ -84,15 +92,63 @@ function collectImageUrls(
   }
 }
 
+function addImageUrl(urls: Set<string>, url: string | null | undefined): void {
+  if (!url) {
+    return;
+  }
+
+  for (const candidate of normalizeImageUrlCandidates(url)) {
+    urls.add(candidate);
+  }
+}
+
+function collectDomImageUrlsFromElement(
+  element: PlaitElement,
+  urls: Set<string>
+): void {
+  try {
+    if (!PlaitElement.hasMounted(element)) {
+      return;
+    }
+
+    const elementG = PlaitElement.getElementG(element);
+    const imageNodes = elementG.querySelectorAll('img, image');
+
+    imageNodes.forEach((node) => {
+      DOM_IMAGE_URL_ATTRIBUTES.forEach((attribute) => {
+        addImageUrl(urls, node.getAttribute(attribute));
+      });
+
+      if (
+        typeof HTMLImageElement !== 'undefined' &&
+        node instanceof HTMLImageElement
+      ) {
+        addImageUrl(urls, node.currentSrc);
+      }
+    });
+  } catch {
+    // DOM fallback discovery is best effort; element data scanning still applies.
+  }
+}
+
+function collectMountedImageUrls(
+  elements: PlaitElement[],
+  urls: Set<string>
+): void {
+  for (const element of elements) {
+    collectDomImageUrlsFromElement(element, urls);
+  }
+}
+
 function getToImageFallbackUrls(
   board: PlaitBoard,
   options: ToImageOptions
 ): Set<string> {
   const urls = new Set<string>();
-  const elements =
-    (options as ToImageOptions & { elements?: unknown }).elements ||
-    board.children;
+  const elements = ((options as ToImageOptions & { elements?: PlaitElement[] })
+    .elements || board.children) as PlaitElement[];
   collectImageUrls(elements, urls, new WeakSet<object>());
+  collectMountedImageUrls(elements, urls);
   return urls;
 }
 
@@ -153,10 +209,15 @@ function installToImageFetchFallback(urls: Set<string>): () => void {
     originalToImageFetch = window.fetch;
     patchedToImageFetch = async function patchedFetch(input, init) {
       const fetchImpl = originalToImageFetch || window.fetch;
+      const shouldFallback = shouldFallbackToTransparentImage(input);
       try {
-        return await fetchImpl.call(window, input, init);
+        const response = await fetchImpl.call(window, input, init);
+        if (shouldFallback && !response.ok) {
+          return createTransparentPngResponse();
+        }
+        return response;
       } catch (error) {
-        if (shouldFallbackToTransparentImage(input)) {
+        if (shouldFallback) {
           return createTransparentPngResponse();
         }
         throw error;
@@ -223,15 +284,15 @@ export const boardToImage = (
  */
 export const getShortcutKey = (shortcut: string): string => {
   shortcut = shortcut
-    .replace(/\bAlt\b/i, "Alt")
-    .replace(/\bShift\b/i, "Shift")
-    .replace(/\b(Enter|Return)\b/i, "Enter");
+    .replace(/\bAlt\b/i, 'Alt')
+    .replace(/\bShift\b/i, 'Shift')
+    .replace(/\b(Enter|Return)\b/i, 'Enter');
   if (IS_APPLE || IS_MAC) {
     return shortcut
-      .replace(/\bCtrlOrCmd\b/gi, "Cmd")
-      .replace(/\bAlt\b/i, "Option");
+      .replace(/\bCtrlOrCmd\b/gi, 'Cmd')
+      .replace(/\bAlt\b/i, 'Option');
   }
-  return shortcut.replace(/\bCtrlOrCmd\b/gi, "Ctrl");
+  return shortcut.replace(/\bCtrlOrCmd\b/gi, 'Ctrl');
 };
 
 // ==================== 内存监控 ====================
@@ -240,10 +301,10 @@ export const getShortcutKey = (shortcut: string): string => {
  * 轻量级内存追踪
  * 使用全局 __memoryLog（由 crash-logger 初始化），如果可用
  * 只在内存变化超过 50MB 时才输出日志，避免干扰正常使用
- * 
+ *
  * @param label - 操作名称，如 "图片合并"、"批量导入"
  * @returns 结束函数，在操作完成后调用
- * 
+ *
  * @example
  * const end = trackMemory('图片合并');
  * await mergeImages();
