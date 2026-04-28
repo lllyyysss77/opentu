@@ -1,6 +1,22 @@
 {
   "versions": [
     {
+      "version": "0.6.88",
+      "date": "2026-04-28",
+      "changes": {
+        "features": [],
+        "fixes": [
+          "改进动态导入错误恢复机制并优化错误处理",
+          "guard toImage fetch failures"
+        ],
+        "improvements": [
+          "更新应用版本号至0.6.87并同步构建时间"
+        ]
+      },
+      "type": "patch",
+      "highlights": "改进动态导入错误恢复机制并优化错误处理"
+    },
+    {
       "version": "0.6.87",
       "date": "2026-04-28",
       "changes": {

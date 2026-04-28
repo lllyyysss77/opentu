@@ -1,8 +1,8 @@
 {
-  "version": "0.6.87",
-  "buildTime": "2026-04-28T12:46:32.295Z",
+  "version": "0.6.88",
+  "buildTime": "2026-04-28T14:36:19.150Z",
   "gitCommit": "unknown",
   "changelog": [
-    "为 API Key 输入框添加显示/隐藏切换功能"
+    "改进动态导入错误恢复机制并优化错误处理"
   ]
 }

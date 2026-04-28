@@ -1,3 +1,18 @@
+## 0.6.88 (2026-04-28)
+
+### 🩹 Fixes
+
+- 改进动态导入错误恢复机制并优化错误处理 ([3781c354](https://github.com/ljquan/aitu/commit/3781c354))
+- guard toImage fetch failures ([dff2f46a](https://github.com/ljquan/aitu/commit/dff2f46a))
+
+### 🔧 Chores
+
+- 更新应用版本号至0.6.87并同步构建时间 ([aa97f83f](https://github.com/ljquan/aitu/commit/aa97f83f))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+
 ## 0.6.87 (2026-04-28)
 
 ### 🚀 Features
