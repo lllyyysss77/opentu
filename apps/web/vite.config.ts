@@ -6,7 +6,11 @@ import type { OutputAsset, OutputBundle, OutputChunk } from 'rollup';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { createRequire } from 'module';
 import { visualizer } from 'rollup-plugin-visualizer';
+
+const require = createRequire(import.meta.url);
+const workspaceRoot = path.resolve(__dirname, '../..');
 
 // Read version from public/version.json
 const versionPath = path.resolve(__dirname, 'public/version.json');
@@ -27,7 +31,6 @@ try {
 
 const IDLE_PREFETCH_GROUPS = [
   'ai-chat',
-  'shared-runtime',
   'tool-windows',
   'diagram-engines',
   'office-data',
@@ -329,6 +332,53 @@ function normalizePathForChunking(id: string): string {
   return id.replace(/\\/g, '/');
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function findPackageRoot(entryPath: string): string {
+  let current = fs.statSync(entryPath).isDirectory()
+    ? entryPath
+    : path.dirname(entryPath);
+
+  while (current !== path.dirname(current)) {
+    if (fs.existsSync(path.join(current, 'package.json'))) {
+      return current;
+    }
+
+    current = path.dirname(current);
+  }
+
+  throw new Error(`Unable to resolve package root for ${entryPath}`);
+}
+
+function resolvePackageRoot(packageName: string, fromPaths: string[]): string {
+  return findPackageRoot(require.resolve(packageName, { paths: fromPaths }));
+}
+
+function createPackageRootAlias(packageName: string, packageRoot: string) {
+  const escapedName = escapeRegExp(packageName);
+
+  return [
+    { find: new RegExp(`^${escapedName}$`), replacement: packageRoot },
+    {
+      find: new RegExp(`^${escapedName}/(.+)$`),
+      replacement: `${packageRoot}/$1`,
+    },
+  ];
+}
+
+const mermaidToDrawnixPackageRoot = resolvePackageRoot(
+  '@plait-board/mermaid-to-drawnix',
+  [workspaceRoot]
+);
+const diagramEngineAliases = [
+  ...createPackageRootAlias(
+    'mermaid',
+    resolvePackageRoot('mermaid', [mermaidToDrawnixPackageRoot])
+  ),
+];
+
 function normalizeBundleFileName(fileName: string): string {
   return normalizePathForChunking(fileName).replace(/^\.\//, '');
 }
@@ -518,25 +568,6 @@ function resolveIdlePrefetchGroup(id: string): IdlePrefetchGroup | undefined {
   const normalizedId = normalizePathForChunking(id);
 
   if (
-    normalizedId.includes('/packages/utils/src/') ||
-    normalizedId.includes('/packages/drawnix/src/constants/model-config') ||
-    normalizedId.includes('/packages/drawnix/src/services/app-database') ||
-    normalizedId.includes('/packages/drawnix/src/services/model-adapters/image-request-schemas') ||
-    normalizedId.includes('/packages/drawnix/src/types/asset.types') ||
-    normalizedId.includes('/packages/drawnix/src/types/task.types') ||
-    normalizedId.includes('/packages/drawnix/src/types/shared/core.types') ||
-    normalizedId.includes('/packages/drawnix/src/utils/runtime-helpers') ||
-    normalizedId.includes('/packages/drawnix/src/utils/settings-manager') ||
-    normalizedId.includes('/packages/drawnix/src/utils/config-indexeddb-writer') ||
-    normalizedId.includes('/packages/drawnix/src/utils/model-pricing-service') ||
-    normalizedId.includes('/packages/drawnix/src/utils/model-pricing-types') ||
-    normalizedId.includes('/packages/drawnix/src/utils/download-utils') ||
-    normalizedId.includes('/packages/drawnix/src/services/provider-routing/')
-  ) {
-    return 'shared-runtime';
-  }
-
-  if (
     normalizedId.includes('/node_modules/.pnpm/mermaid@') ||
     normalizedId.includes('/node_modules/mermaid/') ||
     normalizedId.includes('/node_modules/.pnpm/elkjs@') ||
@@ -552,12 +583,7 @@ function resolveIdlePrefetchGroup(id: string): IdlePrefetchGroup | undefined {
     normalizedId.includes('/node_modules/.pnpm/dagre-d3-es@') ||
     normalizedId.includes('/node_modules/dagre-d3-es/') ||
     normalizedId.includes('/node_modules/.pnpm/dompurify@') ||
-    normalizedId.includes('/node_modules/dompurify/') ||
-    normalizedId.includes('/packages/drawnix/src/components/ttd-dialog/mermaid-to-drawnix') ||
-    normalizedId.includes('/packages/drawnix/src/components/ttd-dialog/markdown-to-drawnix') ||
-    normalizedId.includes('/packages/drawnix/src/components/chat-drawer/MermaidRenderer') ||
-    normalizedId.includes('/packages/drawnix/src/mcp/tools/mermaid-tool') ||
-    normalizedId.includes('/packages/drawnix/src/mcp/tools/mindmap-tool')
+    normalizedId.includes('/node_modules/dompurify/')
   ) {
     return 'diagram-engines';
   }
@@ -635,16 +661,69 @@ function isStartupRuntimeModule(id: string): boolean {
   const normalizedId = normalizePathForChunking(id);
   return (
     normalizedId.includes('vite/preload-helper') ||
+    normalizedId.includes('commonjs-dynamic-modules') ||
     normalizedId.includes('commonjsHelpers')
   );
 }
 
-function resolveManualChunk(id: string): string | undefined {
+interface ManualChunkModuleInfo {
+  importers: string[];
+}
+
+interface ManualChunkContext {
+  getModuleInfo: (id: string) => ManualChunkModuleInfo | null;
+}
+
+function isWebMainEntry(id: string): boolean {
+  const normalizedId = normalizePathForChunking(id);
+  return (
+    normalizedId.endsWith('/apps/web/src/main.tsx') ||
+    normalizedId.endsWith('/src/main.tsx')
+  );
+}
+
+function isStaticallyReachableFromWebMain(
+  id: string,
+  getModuleInfo: ManualChunkContext['getModuleInfo'],
+  visited = new Set<string>()
+): boolean {
+  if (visited.has(id)) {
+    return false;
+  }
+  visited.add(id);
+
+  if (isWebMainEntry(id)) {
+    return true;
+  }
+
+  const moduleInfo = getModuleInfo(id);
+  if (!moduleInfo) {
+    return false;
+  }
+
+  return moduleInfo.importers.some((importerId) =>
+    isStaticallyReachableFromWebMain(importerId, getModuleInfo, visited)
+  );
+}
+
+function resolveManualChunk(
+  id: string,
+  context?: ManualChunkContext
+): string | undefined {
   if (isStartupRuntimeModule(id)) {
     return 'startup-runtime';
   }
 
-  return resolveIdlePrefetchGroup(id);
+  const group = resolveIdlePrefetchGroup(id);
+  if (
+    (group === undefined || group === 'tool-windows') &&
+    context &&
+    isStaticallyReachableFromWebMain(id, context.getModuleInfo)
+  ) {
+    return 'startup-app';
+  }
+
+  return group;
 }
 
 /**
@@ -1048,6 +1127,7 @@ export default defineConfig({
 
   resolve: {
     alias: [
+      ...diagramEngineAliases,
       {
         find: /^tdesign-react$/,
         replacement: path.resolve(
@@ -1076,8 +1156,8 @@ export default defineConfig({
     },
     rollupOptions: {
       output: {
-        manualChunks(id) {
-          return resolveManualChunk(id);
+        manualChunks(id, context) {
+          return resolveManualChunk(id, context);
         },
       },
     },

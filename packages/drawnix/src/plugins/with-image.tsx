@@ -413,6 +413,11 @@ export const withImagePlugin = (board: PlaitBoard) => {
   };
 
   newBoard.pointerUp = (event: PointerEvent) => {
+    if (document.documentElement.classList.contains('slideshow-active')) {
+      pointerUp(event);
+      return;
+    }
+
     const focusMindNode = getElementOfFocusedImage(board);
     if (
       focusMindNode &&

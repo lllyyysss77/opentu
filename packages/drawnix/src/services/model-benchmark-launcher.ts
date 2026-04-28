@@ -4,13 +4,18 @@ import { toolWindowService } from './tool-window-service';
 import { BUILT_IN_TOOLS } from '../constants/built-in-tools';
 import { MODEL_BENCHMARK_TOOL_ID } from '../tools/tool-ids';
 import type { ToolDefinition } from '../types/toolbox.types';
-import type { ModelBenchmarkLaunchRequest } from './model-benchmark-service';
+import {
+  trackBenchmarkEvent,
+  type ModelBenchmarkLaunchRequest,
+} from './model-benchmark-service';
 
 /**
  * 全局 atom：从设置等外部入口传递给 ModelBenchmarkWorkbench 的启动请求。
  * 使用 jotai 绕过 componentProps → React props 的时序问题。
  */
-export const benchmarkLaunchAtom = atom<ModelBenchmarkLaunchRequest | null>(null);
+export const benchmarkLaunchAtom = atom<ModelBenchmarkLaunchRequest | null>(
+  null
+);
 
 function createFallbackTool(): ToolDefinition {
   return {
@@ -34,12 +39,24 @@ export function openModelBenchmarkTool(
 
   // 写入全局 atom，Workbench 通过 useAtomValue 订阅
   if (initialRequest) {
-    getDefaultStore().set(benchmarkLaunchAtom, {
+    const requestWithLaunchTime = {
       ...initialRequest,
       launchedAt: Date.now(),
-    });
+    };
+    getDefaultStore().set(benchmarkLaunchAtom, requestWithLaunchTime);
   }
 
-  toolWindowService.openTool(tool, { autoMaximize: true });
+  const instanceId = toolWindowService.openTool(tool, { autoMaximize: true });
+  trackBenchmarkEvent('model_benchmark_tool_opened', {
+    source: 'launcher',
+    hasInitialRequest: Boolean(initialRequest),
+    initialModality: initialRequest?.modality,
+    initialCompareMode: initialRequest?.compareMode,
+    initialProfileId: initialRequest?.profileId,
+    initialModelId: initialRequest?.modelId,
+    autoRun: Boolean(initialRequest?.autoRun),
+    autoMaximize: true,
+    instanceId,
+  });
   return true;
 }

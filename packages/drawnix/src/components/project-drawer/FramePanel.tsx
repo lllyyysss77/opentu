@@ -1115,6 +1115,17 @@ export const FramePanel: React.FC<FramePanelProps> = ({
   const outlineSelectionInitializedRef = useRef(false);
   const [commonPromptHistoryOpen, setCommonPromptHistoryOpen] = useState(false);
   const commonPromptHistoryPanelRef = useRef<HTMLDivElement>(null);
+  const frameItemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const setFrameItemRef = useCallback(
+    (frameId: string, node: HTMLDivElement | null) => {
+      if (node) {
+        frameItemRefs.current.set(frameId, node);
+      } else {
+        frameItemRefs.current.delete(frameId);
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     return subscribePPTOutlineRuntime(() => {
@@ -1314,6 +1325,10 @@ export const FramePanel: React.FC<FramePanelProps> = ({
       getFrameDisplayName(f.frame).toLowerCase().includes(query)
     );
   }, [frames, searchQuery]);
+  const filteredFrameIdsKey = useMemo(
+    () => filteredFrames.map((info) => info.frame.id).join('|'),
+    [filteredFrames]
+  );
 
   useEffect(() => {
     const existingFrameIds = new Set(frames.map((info) => info.frame.id));
@@ -1356,6 +1371,30 @@ export const FramePanel: React.FC<FramePanelProps> = ({
     previewFrameInfos,
     refreshKey
   );
+
+  useEffect(() => {
+    if (pptViewMode !== 'slides' || !lastSelectedFrameId) {
+      return;
+    }
+    if (!filteredFrameIdsKey.split('|').includes(lastSelectedFrameId)) {
+      return;
+    }
+
+    let firstAnimationFrame = 0;
+    let secondAnimationFrame = 0;
+    firstAnimationFrame = window.requestAnimationFrame(() => {
+      secondAnimationFrame = window.requestAnimationFrame(() => {
+        frameItemRefs.current
+          .get(lastSelectedFrameId)
+          ?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      });
+    });
+
+    return () => {
+      window.cancelAnimationFrame(firstAnimationFrame);
+      window.cancelAnimationFrame(secondAnimationFrame);
+    };
+  }, [filteredFrameIdsKey, lastSelectedFrameId, pptViewMode]);
 
   const orderedPPTFrameIdsKey = useMemo(
     () => orderedPPTFrames.map((info) => info.frame.id).join('|'),
@@ -3933,6 +3972,7 @@ export const FramePanel: React.FC<FramePanelProps> = ({
             return (
               <div
                 key={info.listKey}
+                ref={(node) => setFrameItemRef(info.frame.id, node)}
                 className={classNames('frame-panel__item', {
                   'frame-panel__item--active': selectedFrameIds.has(
                     info.frame.id

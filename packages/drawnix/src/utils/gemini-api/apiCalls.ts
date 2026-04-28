@@ -44,7 +44,9 @@ function buildProviderContext(config: GeminiConfig): ResolvedProviderContext {
 function buildAPIAnalyticsContext(
   config: GeminiConfig
 ): Record<string, unknown> {
-  const endpoint = getProviderEndpointAnalytics(config.baseUrl);
+  const endpoint = getProviderEndpointAnalytics(
+    config.provider?.baseUrl || config.baseUrl
+  );
   return {
     providerType:
       config.provider?.providerType || config.providerType || 'custom',
@@ -55,6 +57,24 @@ function buildAPIAnalyticsContext(
     providerProtocol: endpoint?.protocol,
     baseUrlStrategy: config.binding?.baseUrlStrategy,
   };
+}
+
+type APIAnalyticsTrackedError = {
+  __aituApiFailureTracked?: boolean;
+};
+
+function markAPIFailureTracked(error: unknown): void {
+  if (error && typeof error === 'object') {
+    (error as APIAnalyticsTrackedError).__aituApiFailureTracked = true;
+  }
+}
+
+function hasAPIFailureTracked(error: unknown): boolean {
+  return Boolean(
+    error &&
+      typeof error === 'object' &&
+      (error as APIAnalyticsTrackedError).__aituApiFailureTracked
+  );
 }
 
 function resolveBindingPath(
@@ -416,6 +436,7 @@ export async function callGoogleGenerateContentRaw(
       });
       const error = new Error(`HTTP ${response.status}: ${errorMessage}`);
       (error as any).httpStatus = response.status;
+      markAPIFailureTracked(error);
       throw error;
     }
 
@@ -518,14 +539,20 @@ export async function callGoogleGenerateContentRaw(
       normalizedError instanceof Error
         ? normalizedError.message
         : String(normalizedError);
-    analytics.trackAPICallFailure({
-      endpoint,
-      model,
-      duration,
-      error: errorMessage,
-      stream: options.stream,
-      ...buildAPIAnalyticsContext(config),
-    });
+    if (
+      !hasAPIFailureTracked(error) &&
+      !hasAPIFailureTracked(normalizedError)
+    ) {
+      analytics.trackAPICallFailure({
+        endpoint,
+        model,
+        duration,
+        error: errorMessage,
+        stream: options.stream,
+        ...buildAPIAnalyticsContext(config),
+      });
+      markAPIFailureTracked(normalizedError);
+    }
     throw normalizedError;
   } finally {
     timeoutControl.cleanup();
@@ -613,6 +640,7 @@ export async function callApiRaw(
       const error = new Error(`HTTP ${response.status}: ${errorMessage}`);
       (error as any).apiErrorBody = errorBody;
       (error as any).httpStatus = response.status;
+      markAPIFailureTracked(error);
       throw error;
     }
 
@@ -634,14 +662,17 @@ export async function callApiRaw(
     const duration = Date.now() - startTime;
     const errorMessage = error instanceof Error ? error.message : String(error);
 
-    analytics.trackAPICallFailure({
-      endpoint,
-      model,
-      duration,
-      error: errorMessage,
-      stream: false,
-      ...buildAPIAnalyticsContext(config),
-    });
+    if (!hasAPIFailureTracked(error)) {
+      analytics.trackAPICallFailure({
+        endpoint,
+        model,
+        duration,
+        error: errorMessage,
+        stream: false,
+        ...buildAPIAnalyticsContext(config),
+      });
+      markAPIFailureTracked(error);
+    }
 
     throw error;
   }
@@ -750,6 +781,7 @@ async function callApiStreamDirect(
       const error = new Error(`HTTP ${response.status}: ${errorMessage}`);
       (error as any).apiErrorBody = errorBody;
       (error as any).httpStatus = response.status;
+      markAPIFailureTracked(error);
       throw error;
     }
 
@@ -852,14 +884,17 @@ async function callApiStreamDirect(
     const duration = Date.now() - startTime;
     const errorMessage = error instanceof Error ? error.message : String(error);
 
-    analytics.trackAPICallFailure({
-      endpoint,
-      model,
-      duration,
-      error: errorMessage,
-      stream: true,
-      ...buildAPIAnalyticsContext(config),
-    });
+    if (!hasAPIFailureTracked(error)) {
+      analytics.trackAPICallFailure({
+        endpoint,
+        model,
+        duration,
+        error: errorMessage,
+        stream: true,
+        ...buildAPIAnalyticsContext(config),
+      });
+      markAPIFailureTracked(error);
+    }
 
     throw error;
   }
@@ -957,6 +992,7 @@ export async function callVideoApiStreamRaw(
       const error = new Error(`HTTP ${response.status}: ${errorMessage}`);
       (error as any).apiErrorBody = errorBody;
       (error as any).httpStatus = response.status;
+      markAPIFailureTracked(error);
       throw error;
     }
 
@@ -1026,14 +1062,17 @@ export async function callVideoApiStreamRaw(
     const duration = Date.now() - startTime;
     const errorMessage = error instanceof Error ? error.message : String(error);
 
-    analytics.trackAPICallFailure({
-      endpoint,
-      model,
-      duration,
-      error: errorMessage,
-      stream: true,
-      ...buildAPIAnalyticsContext(config),
-    });
+    if (!hasAPIFailureTracked(error)) {
+      analytics.trackAPICallFailure({
+        endpoint,
+        model,
+        duration,
+        error: errorMessage,
+        stream: true,
+        ...buildAPIAnalyticsContext(config),
+      });
+      markAPIFailureTracked(error);
+    }
 
     throw error;
   }

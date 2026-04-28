@@ -21,6 +21,8 @@ import { Z_INDEX } from '../../constants/z-index';
 import { useI18n } from '../../i18n';
 import { fitAllPPTFrames, fitFrame } from '../../utils/fit-frame';
 import { HoverTip } from '../shared/hover';
+import { isFrameElement } from '../../types/frame.types';
+import { requestOpenPPTEditor } from '../../services/ppt/ppt-ui-events';
 import './view-navigation.scss';
 
 export interface ViewNavigationProps {
@@ -101,16 +103,32 @@ export const ViewNavigation: React.FC<ViewNavigationProps> = ({
     setZoomMenuOpen(false);
   }, [board]);
 
-  // 自适应 Frame：将选中的 Frame（或第一个 Frame）缩放到可视区域完整显示
-  const handleFitFrame = useCallback(() => {
-    fitFrame(board);
-    setZoomMenuOpen(false);
+  const openPPTEditorIfNoFrame = useCallback((): boolean => {
+    const hasFrame = board.children.some(isFrameElement);
+    if (hasFrame) {
+      return false;
+    }
+
+    requestOpenPPTEditor({ viewMode: 'slides' });
+    return true;
   }, [board]);
 
-  const handleFitPPTGlobal = useCallback(() => {
-    fitAllPPTFrames(board);
+  // 自适应 Frame：将选中的 Frame（或第一个 Frame）缩放到可视区域完整显示
+  const handleFitFrame = useCallback(() => {
     setZoomMenuOpen(false);
-  }, [board]);
+    if (openPPTEditorIfNoFrame()) {
+      return;
+    }
+    fitFrame(board);
+  }, [board, openPPTEditorIfNoFrame]);
+
+  const handleFitPPTGlobal = useCallback(() => {
+    setZoomMenuOpen(false);
+    if (openPPTEditorIfNoFrame()) {
+      return;
+    }
+    fitAllPPTFrames(board);
+  }, [board, openPPTEditorIfNoFrame]);
 
   // 手动切换 minimap 展开状态
   const toggleMinimap = useCallback(() => {
