@@ -113,9 +113,10 @@ import {
   ApiAuthErrorDetail,
   classifyApiCredentialError,
 } from './utils/api-auth-error-event';
-import { MessagePlugin } from 'tdesign-react';
+import { MessagePlugin } from './utils/message-plugin';
 import { calculateEditedImagePoints } from './utils/image';
 import { isCardElement } from './types/card.types';
+import { isFrameElement } from './types/frame.types';
 import { openCardInKnowledgeBase } from './utils/card-actions';
 import { useI18n } from './i18n';
 import { safeReload } from './utils/active-tasks';
@@ -128,19 +129,23 @@ import {
   type IdlePrefetchGroup,
 } from './utils/startup-prefetch';
 import { DRAWER_PIN_KEYS, getDrawerPinned } from './utils/drawer-pin';
-import { PPT_EDITOR_OPEN_EVENT } from './services/ppt/ppt-ui-events';
+import {
+  PPT_EDITOR_OPEN_EVENT,
+  requestOpenPPTEditor,
+} from './services/ppt/ppt-ui-events';
+import { syncEditedPPTSlideImage } from './utils/frame-insertion-utils';
+import type { MediaLibraryModalProps } from './types/asset.types';
+import { SelectionMode } from './types/asset.types';
 const DeferredAIInputBar = lazy(() =>
   import('./components/startup/DeferredAIInputBar').then((module) => ({
     default: module.DeferredAIInputBar,
   }))
 );
 const ChatDrawer = lazy(() =>
-  import('./components/chat-drawer').then((module) => ({
+  import('./components/chat-drawer/ChatDrawer').then((module) => ({
     default: module.ChatDrawer,
   }))
 );
-import type { MediaLibraryModalProps } from './types/asset.types';
-import { SelectionMode } from './types/asset.types';
 
 type MediaLibraryOpenConfig = Pick<
   MediaLibraryModalProps,
@@ -774,6 +779,13 @@ export const Drawnix: React.FC<DrawnixProps> = ({
           .map((el: any) => el.id)
           .filter(Boolean);
 
+        if (
+          selectedElements.some(isFrameElement) &&
+          (!projectDrawerOpen || !isProjectDrawerInPPTEditMode())
+        ) {
+          requestOpenPPTEditor();
+        }
+
         // 更新lastSelectedElementIds（包括清空的情况）
         // console.log('Selection changed, saving element IDs:', elementIds);
         updateAppState({ lastSelectedElementIds: elementIds });
@@ -782,7 +794,7 @@ export const Drawnix: React.FC<DrawnixProps> = ({
       // 调用外部的onSelectionChange回调
       onSelectionChange && onSelectionChange(selection);
     },
-    [onSelectionChange, updateAppState]
+    [onSelectionChange, projectDrawerOpen, updateAppState]
   );
 
   // 使用 useMemo 稳定 DrawnixContext.Provider 的 value
@@ -1194,6 +1206,7 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
             } as any,
             [elementIndex]
           );
+          syncEditedPPTSlideImage(board, elementId, stableUrl);
         }
       } catch (error) {
         console.error('Failed to update image:', error);
@@ -1314,6 +1327,12 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
         target.closest('.plait-board-container');
 
       if (!isInsideCanvas) {
+        return;
+      }
+
+      if (document.documentElement.classList.contains('slideshow-active')) {
+        event.preventDefault();
+        event.stopPropagation();
         return;
       }
 

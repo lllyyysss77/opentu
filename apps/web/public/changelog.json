@@ -1,6 +1,51 @@
 {
   "versions": [
     {
+      "version": "0.6.83",
+      "date": "2026-04-28",
+      "changes": {
+        "features": [
+          "优化懒加载和构建配置，添加分析埋点"
+        ],
+        "fixes": [],
+        "improvements": []
+      },
+      "type": "patch",
+      "highlights": "优化懒加载和构建配置，添加分析埋点"
+    },
+    {
+      "version": "0.6.82",
+      "date": "2026-04-27",
+      "changes": {
+        "features": [],
+        "fixes": [],
+        "improvements": [
+          "更新应用版本号至0.6.81并同步构建时间"
+        ]
+      },
+      "type": "patch",
+      "highlights": "构建修复与稳定性改进"
+    },
+    {
+      "version": "0.6.81",
+      "date": "2026-04-27",
+      "changes": {
+        "features": [],
+        "fixes": [
+          "修复画布批量拖拽媒体定位",
+          "收敛静态循环依赖",
+          "选中PPT页面时素材插入页面内",
+          "自动重排删除后的 PPT 页面",
+          "改进API认证错误处理以区分缺失与无效凭证",
+          "修复图片骨架屏加载期间透明度计算逻辑",
+          "support right dock drawer avoidance"
+        ],
+        "improvements": []
+      },
+      "type": "patch",
+      "highlights": "修复画布批量拖拽媒体定位"
+    },
+    {
       "version": "0.6.80",
       "date": "2026-04-27",
       "changes": {

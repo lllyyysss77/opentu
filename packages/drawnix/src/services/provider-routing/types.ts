@@ -3,7 +3,7 @@ import type {
   ImageApiCompatibility,
   ModelRef,
   ProviderProfile,
-} from '../../utils/settings-manager';
+} from '../../utils/settings-types';
 
 export type ProviderOperation = ModelType;
 

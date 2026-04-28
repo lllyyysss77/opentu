@@ -159,7 +159,7 @@
       name="viewport"
       content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"
     />
-    <meta name="app-version" content="0.6.80" />
+    <meta name="app-version" content="0.6.82" />
     <style>
       :root {
         --app-boot-bg: radial-gradient(
@@ -232,6 +232,7 @@
         font-weight: 700;
         letter-spacing: 0.02em;
         white-space: nowrap;
+        text-decoration: none;
       }
 
       .app-boot-title {
@@ -518,7 +519,13 @@
       aria-label="应用正在加载"
     >
       <div class="app-boot-card">
-        <div class="app-boot-mark" aria-hidden="true">OpenTu.ai</div>
+        <a
+          class="app-boot-mark"
+          href="https://opentu.ai/"
+          data-official-site-link
+          aria-label="打开 OpenTu.ai 官网"
+          >OpenTu.ai</a
+        >
         <p class="app-boot-title" data-app-boot-title>正在唤起工作台</p>
         <p class="app-boot-tip" data-app-boot-tip>
           脚本与资源加载中，马上就好...
@@ -681,6 +688,26 @@
         window.__OPENTU_START_MAIN_ENTRY__ = new Promise(function (resolve) {
           resolveMainEntryReady = resolve;
         });
+
+        (function setupOfficialSiteLink() {
+          try {
+            var officialSiteLink = document.querySelector(
+              '[data-official-site-link]'
+            );
+            if (!officialSiteLink) {
+              return;
+            }
+
+            if (window.location.hostname.toLowerCase() === 'opentu.ai') {
+              officialSiteLink.removeAttribute('href');
+              officialSiteLink.addEventListener('click', function (event) {
+                event.preventDefault();
+              });
+            }
+          } catch (error) {
+            // 启动页兜底逻辑不能影响主应用加载。
+          }
+        })();
 
         (function initializeBootLocalRetryFlag() {
           try {

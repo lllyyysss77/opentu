@@ -1,3 +1,46 @@
+## 0.6.83 (2026-04-28)
+
+### 🚀 Features
+
+- 优化懒加载和构建配置，添加分析埋点 ([4438a44f](https://github.com/ljquan/aitu/commit/4438a44f))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+
+## 0.6.82 (2026-04-27)
+
+### 🔧 Chores
+
+- 更新应用版本号至0.6.81并同步构建时间 ([a435015f](https://github.com/ljquan/aitu/commit/a435015f))
+- docs: 补充循环依赖防回归规则 ([47adb657](https://github.com/ljquan/aitu/commit/47adb657))
+- refactor: 收敛剩余循环依赖 ([a184ecab](https://github.com/ljquan/aitu/commit/a184ecab))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+
+## 0.6.81 (2026-04-27)
+
+### 🩹 Fixes
+
+- 修复画布批量拖拽媒体定位 ([b0933fee](https://github.com/ljquan/aitu/commit/b0933fee))
+- 收敛静态循环依赖 ([556a56f1](https://github.com/ljquan/aitu/commit/556a56f1))
+- 选中PPT页面时素材插入页面内 ([1b65b885](https://github.com/ljquan/aitu/commit/1b65b885))
+- 自动重排删除后的 PPT 页面 ([05d78509](https://github.com/ljquan/aitu/commit/05d78509))
+- 改进API认证错误处理以区分缺失与无效凭证 ([89a9b83b](https://github.com/ljquan/aitu/commit/89a9b83b))
+- 修复图片骨架屏加载期间透明度计算逻辑 ([834e50c4](https://github.com/ljquan/aitu/commit/834e50c4))
+- support right dock drawer avoidance ([04ab497a](https://github.com/ljquan/aitu/commit/04ab497a))
+
+### 🔧 Chores
+
+- 更新应用版本至0.6.80并同步构建时间 ([721d9b96](https://github.com/ljquan/aitu/commit/721d9b96))
+- refactor: 延迟加载第三方库并重构模块依赖 ([cf64c911](https://github.com/ljquan/aitu/commit/cf64c911))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+
 ## 0.6.80 (2026-04-27)
 
 ### 🚀 Features

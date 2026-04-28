@@ -1,11 +1,11 @@
 import type { ModelConfig, ModelVendor } from '../../constants/model-config';
-import type { ModelRef } from '../../utils/settings-manager';
+import type { ModelRef } from '../../utils/settings-types';
 import type {
   ProviderAuthStrategy,
   ProviderModelBinding,
   ProviderProtocol,
   ResolvedProviderContext,
-} from '../provider-routing';
+} from '../provider-routing/types';
 
 export type ModelKind = 'image' | 'video' | 'audio' | 'chat';
 

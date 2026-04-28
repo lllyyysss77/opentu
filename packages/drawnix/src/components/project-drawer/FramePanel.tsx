@@ -142,6 +142,12 @@ import {
   resolveAudioCardDimensions,
 } from '../../data/audio';
 import { requestAIInputFocus } from '../../services/ai-input-ui-events';
+import {
+  createPPTFrameSnapshotDataUrl,
+  createPPTFrameSnapshotKey,
+  getPPTFrameSnapshotElements,
+  resolvePPTFramePreviewUrl,
+} from '../../utils/frame-preview-snapshot';
 
 interface FrameInfo {
   frame: PlaitFrame;
@@ -180,6 +186,8 @@ const PPT_OUTLINE_BATCH_PREFIX = 'ppt_outline_';
 const PPT_OUTLINE_CANCELLED_ERROR = 'PPT_OUTLINE_GENERATION_CANCELLED';
 const PPT_DEFAULT_IMAGE_SIZE = '16x9';
 const PPT_DEFAULT_IMAGE_PIXEL_SIZE = '1360x768';
+const PPT_FRAME_SNAPSHOT_DEBOUNCE_MS = 120;
+const INVALID_PPT_EXPORT_FILE_NAME_CHARS = /[\\/:*?"<>|]/g;
 const PPT_LAYOUT_COLUMN_OPTIONS = Array.from(
   { length: 10 },
   (_, index) => index + 1
@@ -509,9 +517,12 @@ function resolvePPTExportFileName(
   canvasTitle?: string
 ): string {
   const rawName = deckTitle.trim() || canvasTitle?.trim() || 'aitu-ppt';
+  const safeName = Array.from(rawName, (char) =>
+    char.charCodeAt(0) < 32 ? '_' : char
+  ).join('');
   return (
-    rawName
-      .replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_')
+    safeName
+      .replace(INVALID_PPT_EXPORT_FILE_NAME_CHARS, '_')
       .replace(/\s+/g, ' ')
       .trim() || 'aitu-ppt'
   );
@@ -894,6 +905,143 @@ const PPTOutlineSlideImageAction: React.FC<{
   );
 };
 
+function usePPTFramePreviewSnapshots(
+  board: PlaitBoard | null | undefined,
+  frameInfos: FrameInfo[],
+  refreshKey: number
+): Record<string, string> {
+  const [snapshotUrls, setSnapshotUrls] = useState<Record<string, string>>({});
+  const snapshotUrlsRef = useRef<Record<string, string>>({});
+  const snapshotKeysRef = useRef<Map<string, string>>(new Map());
+
+  const frameIdsKey = useMemo(
+    () => frameInfos.map((info) => info.frame.id).join('|'),
+    [frameInfos]
+  );
+
+  const updateSnapshotUrl = useCallback((frameId: string, url?: string) => {
+    setSnapshotUrls((current) => {
+      const next = { ...current };
+      if (url) {
+        if (next[frameId] === url) {
+          return current;
+        }
+        next[frameId] = url;
+      } else {
+        if (!(frameId in next)) {
+          return current;
+        }
+        delete next[frameId];
+      }
+      snapshotUrlsRef.current = next;
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    snapshotUrlsRef.current = snapshotUrls;
+  }, [snapshotUrls]);
+
+  useEffect(() => {
+    const activeFrameIds = new Set(frameInfos.map((info) => info.frame.id));
+    let changed = false;
+    snapshotKeysRef.current.forEach((_, frameId) => {
+      if (!activeFrameIds.has(frameId)) {
+        snapshotKeysRef.current.delete(frameId);
+        changed = true;
+      }
+    });
+    setSnapshotUrls((current) => {
+      const next = { ...current };
+      Object.keys(next).forEach((frameId) => {
+        if (!activeFrameIds.has(frameId)) {
+          delete next[frameId];
+          changed = true;
+        }
+      });
+      if (!changed) {
+        return current;
+      }
+      snapshotUrlsRef.current = next;
+      return next;
+    });
+  }, [frameIdsKey, frameInfos]);
+
+  useEffect(() => {
+    if (!board || frameInfos.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+    const timeoutId = window.setTimeout(() => {
+      void (async () => {
+        for (const info of frameInfos) {
+          if (cancelled || !info.pptMeta) {
+            continue;
+          }
+
+          const latestFrame = board.children.find(
+            (element) => element.id === info.frame.id && isFrameElement(element)
+          ) as PlaitFrame | undefined;
+          if (!latestFrame) {
+            snapshotKeysRef.current.delete(info.frame.id);
+            updateSnapshotUrl(info.frame.id);
+            continue;
+          }
+
+          try {
+            const snapshotElements = getPPTFrameSnapshotElements(
+              board,
+              latestFrame
+            );
+            const snapshotKey = createPPTFrameSnapshotKey(snapshotElements);
+            if (
+              snapshotKeysRef.current.get(info.frame.id) === snapshotKey &&
+              snapshotUrlsRef.current[info.frame.id]
+            ) {
+              continue;
+            }
+
+            const snapshotUrl = await createPPTFrameSnapshotDataUrl(
+              board,
+              latestFrame
+            );
+            if (cancelled) {
+              return;
+            }
+
+            if (snapshotUrl) {
+              snapshotKeysRef.current.set(info.frame.id, snapshotKey);
+              updateSnapshotUrl(info.frame.id, snapshotUrl);
+            } else {
+              snapshotKeysRef.current.delete(info.frame.id);
+              updateSnapshotUrl(info.frame.id);
+            }
+          } catch (error) {
+            console.warn('[FramePanel] Failed to render PPT frame snapshot:', {
+              frameId: info.frame.id,
+              error,
+            });
+            snapshotKeysRef.current.delete(info.frame.id);
+            updateSnapshotUrl(info.frame.id);
+          }
+
+          await new Promise<void>((resolve) => {
+            window.requestAnimationFrame(() => resolve());
+          });
+        }
+      })();
+    }, PPT_FRAME_SNAPSHOT_DEBOUNCE_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [board, frameIdsKey, frameInfos, refreshKey, updateSnapshotUrl]);
+
+  return snapshotUrls;
+}
+
 export const FramePanel: React.FC<FramePanelProps> = ({
   currentBoardName,
   onOpenMediaLibrary,
@@ -967,6 +1115,17 @@ export const FramePanel: React.FC<FramePanelProps> = ({
   const outlineSelectionInitializedRef = useRef(false);
   const [commonPromptHistoryOpen, setCommonPromptHistoryOpen] = useState(false);
   const commonPromptHistoryPanelRef = useRef<HTMLDivElement>(null);
+  const frameItemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const setFrameItemRef = useCallback(
+    (frameId: string, node: HTMLDivElement | null) => {
+      if (node) {
+        frameItemRefs.current.set(frameId, node);
+      } else {
+        frameItemRefs.current.delete(frameId);
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     return subscribePPTOutlineRuntime(() => {
@@ -1166,6 +1325,10 @@ export const FramePanel: React.FC<FramePanelProps> = ({
       getFrameDisplayName(f.frame).toLowerCase().includes(query)
     );
   }, [frames, searchQuery]);
+  const filteredFrameIdsKey = useMemo(
+    () => filteredFrames.map((info) => info.frame.id).join('|'),
+    [filteredFrames]
+  );
 
   useEffect(() => {
     const existingFrameIds = new Set(frames.map((info) => info.frame.id));
@@ -1198,6 +1361,40 @@ export const FramePanel: React.FC<FramePanelProps> = ({
       getFrameDisplayName(info.frame).toLowerCase().includes(query)
     );
   }, [orderedPPTFrames, searchQuery]);
+
+  const previewFrameInfos = useMemo(
+    () => (pptViewMode === 'outline' ? filteredOutlineFrames : filteredFrames),
+    [filteredFrames, filteredOutlineFrames, pptViewMode]
+  );
+  const frameSnapshotUrls = usePPTFramePreviewSnapshots(
+    board,
+    previewFrameInfos,
+    refreshKey
+  );
+
+  useEffect(() => {
+    if (pptViewMode !== 'slides' || !lastSelectedFrameId) {
+      return;
+    }
+    if (!filteredFrameIdsKey.split('|').includes(lastSelectedFrameId)) {
+      return;
+    }
+
+    let firstAnimationFrame = 0;
+    let secondAnimationFrame = 0;
+    firstAnimationFrame = window.requestAnimationFrame(() => {
+      secondAnimationFrame = window.requestAnimationFrame(() => {
+        frameItemRefs.current
+          .get(lastSelectedFrameId)
+          ?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      });
+    });
+
+    return () => {
+      window.cancelAnimationFrame(firstAnimationFrame);
+      window.cancelAnimationFrame(secondAnimationFrame);
+    };
+  }, [filteredFrameIdsKey, lastSelectedFrameId, pptViewMode]);
 
   const orderedPPTFrameIdsKey = useMemo(
     () => orderedPPTFrames.map((info) => info.frame.id).join('|'),
@@ -3572,6 +3769,10 @@ export const FramePanel: React.FC<FramePanelProps> = ({
                 );
                 const slidePrompt =
                   slidePromptDrafts[info.frame.id] ?? info.slidePrompt ?? '';
+                const previewImageUrl = resolvePPTFramePreviewUrl(
+                  frameSnapshotUrls[info.frame.id],
+                  info.slideImageUrl
+                );
                 return (
                   <div key={info.listKey} className="frame-panel__outline-item">
                     <Checkbox
@@ -3596,7 +3797,7 @@ export const FramePanel: React.FC<FramePanelProps> = ({
                         </div>
                         <div className="frame-panel__outline-item-actions">
                           <PPTOutlineSlideImageAction
-                            imageUrl={info.slideImageUrl}
+                            imageUrl={previewImageUrl}
                             title={getFrameDisplayName(info.frame)}
                             status={
                               info.pptMeta?.slideImageStatus ||
@@ -3764,9 +3965,14 @@ export const FramePanel: React.FC<FramePanelProps> = ({
               info.pptMeta?.transition
             );
             const hasPPTTransition = pptTransition.type !== 'none';
+            const previewImageUrl = resolvePPTFramePreviewUrl(
+              frameSnapshotUrls[info.frame.id],
+              info.slideImageUrl
+            );
             return (
               <div
                 key={info.listKey}
+                ref={(node) => setFrameItemRef(info.frame.id, node)}
                 className={classNames('frame-panel__item', {
                   'frame-panel__item--active': selectedFrameIds.has(
                     info.frame.id
@@ -3785,7 +3991,7 @@ export const FramePanel: React.FC<FramePanelProps> = ({
               >
                 {info.pptMeta ? (
                   <PPTSlidePreview
-                    imageUrl={info.slideImageUrl}
+                    imageUrl={previewImageUrl}
                     title={getFrameDisplayName(info.frame)}
                     status={
                       info.pptMeta.slideImageStatus || info.pptMeta.imageStatus

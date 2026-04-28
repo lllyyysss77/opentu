@@ -104,29 +104,51 @@ function getTaskResultCount(task: Task): number {
 }
 
 function buildTaskAnalyticsPayload(task: Task): Record<string, unknown> {
+  const model =
+    typeof task.params.model === 'string' && task.params.model.trim()
+      ? task.params.model
+      : undefined;
+  const modelRef = task.params.modelRef || null;
+  const resultCount = getTaskResultCount(task) || undefined;
+  const hasReferenceImage = Boolean(
+    task.params.referenceImages?.length ||
+      task.params.uploadedImages?.length ||
+      task.params.uploadedImage
+  );
+  const promptLength =
+    typeof task.params.prompt === 'string' ? task.params.prompt.length : 0;
+
   return {
     taskId: task.id,
+    task_id: task.id,
     taskType: task.type,
+    task_type: task.type,
     taskStatus: task.status,
-    model:
-      typeof task.params.model === 'string' && task.params.model.trim()
-        ? task.params.model
-        : undefined,
+    task_status: task.status,
+    model,
+    profileId: modelRef?.profileId || undefined,
+    profile_id: modelRef?.profileId || undefined,
+    modelRefModelId: modelRef?.modelId || undefined,
+    model_ref_model_id: modelRef?.modelId || undefined,
     executionPhase: task.executionPhase,
+    execution_phase: task.executionPhase,
     hasRemoteId: Boolean(task.remoteId),
-    resultCount: getTaskResultCount(task) || undefined,
-    hasReferenceImage: Boolean(
-      task.params.referenceImages?.length ||
-        task.params.uploadedImages?.length ||
-        task.params.uploadedImage
-    ),
-    promptLength:
-      typeof task.params.prompt === 'string' ? task.params.prompt.length : 0,
+    has_remote_id: Boolean(task.remoteId),
+    resultCount,
+    result_count: resultCount,
+    hasReferenceImage,
+    has_reference_image: hasReferenceImage,
+    promptLength,
+    prompt_length: promptLength,
     source: task.params.source,
+    taskSource: task.params.source,
+    task_source: task.params.source,
     generationMode: task.params.generationMode,
+    generation_mode: task.params.generationMode,
     size: task.params.size,
     duration: task.params.duration,
     resultKind: task.result?.resultKind,
+    result_kind: task.result?.resultKind,
   };
 }
 
@@ -137,6 +159,61 @@ function trackTaskAnalytics(
 ): void {
   analytics.track(eventName, {
     ...buildTaskAnalyticsPayload(task),
+    ...(extras || {}),
+  });
+}
+
+function isTrackedTerminalTaskStatus(
+  status: TaskStatus
+): status is
+  | TaskStatus.COMPLETED
+  | TaskStatus.FAILED
+  | TaskStatus.CANCELLED {
+  return (
+    status === TaskStatus.COMPLETED ||
+    status === TaskStatus.FAILED ||
+    status === TaskStatus.CANCELLED
+  );
+}
+
+function getTerminalTaskEventName(status: TaskStatus): string {
+  if (status === TaskStatus.COMPLETED) {
+    return 'generation_task_completed';
+  }
+  if (status === TaskStatus.FAILED) {
+    return 'generation_task_failed';
+  }
+  return 'generation_task_cancelled';
+}
+
+function getTaskDurationMs(task: Task): number | undefined {
+  if (!task.startedAt) {
+    return undefined;
+  }
+  const endedAt = task.completedAt || task.updatedAt || Date.now();
+  return Math.max(0, endedAt - task.startedAt);
+}
+
+function trackTerminalTaskAnalytics(
+  task: Task,
+  previousStatus?: TaskStatus,
+  extras?: Record<string, unknown>
+): void {
+  if (
+    !isTrackedTerminalTaskStatus(task.status) ||
+    previousStatus === task.status
+  ) {
+    return;
+  }
+
+  const durationMs = getTaskDurationMs(task);
+  trackTaskAnalytics(getTerminalTaskEventName(task.status), task, {
+    durationMs,
+    duration_ms: durationMs,
+    errorCode: task.error?.code,
+    error_code: task.error?.code,
+    errorMessage: task.error?.message,
+    error_message: task.error?.message,
     ...(extras || {}),
   });
 }
@@ -539,8 +616,9 @@ class TaskQueueService {
         }
 
         const now = Date.now();
+        const previousTask = this.tasks.get(task.id) || task;
         const completedTask: Task = {
-          ...(this.tasks.get(task.id) || task),
+          ...previousTask,
           status: TaskStatus.COMPLETED,
           progress: 100,
           result: {
@@ -565,6 +643,7 @@ class TaskQueueService {
           completedAt: now,
           updatedAt: now,
         };
+        trackTerminalTaskAnalytics(completedTask, previousTask.status);
         this.tasks.set(task.id, completedTask);
         this.persistTask(completedTask);
         this.emitEvent('taskUpdated', completedTask);
@@ -818,6 +897,7 @@ class TaskQueueService {
                 completedAt: updatedTask.completedAt,
               }),
             };
+            trackTerminalTaskAnalytics(newTask, localTask.status);
             this.tasks.set(task.id, newTask);
             this.emitEvent('taskUpdated', newTask);
           }
@@ -839,6 +919,7 @@ class TaskQueueService {
           completedAt: result.task.completedAt,
           updatedAt: Date.now(),
         };
+        trackTerminalTaskAnalytics(finalTask, localTask.status);
         this.tasks.set(task.id, finalTask);
 
         // Persist final state
@@ -865,6 +946,7 @@ class TaskQueueService {
           completedAt: now,
           progress: undefined,
         };
+        trackTerminalTaskAnalytics(failedTask, localTask.status);
         this.tasks.set(task.id, failedTask);
         this.persistTask(failedTask);
         this.emitEvent('taskUpdated', failedTask);
@@ -908,8 +990,9 @@ class TaskQueueService {
     }
 
     const now = Date.now();
+    const previousTask = this.tasks.get(task.id) || task;
     const completedTask: Task = {
-      ...(this.tasks.get(task.id) || task),
+      ...previousTask,
       status: TaskStatus.COMPLETED,
       progress: 100,
       result,
@@ -917,6 +1000,7 @@ class TaskQueueService {
       completedAt: now,
       updatedAt: now,
     };
+    trackTerminalTaskAnalytics(completedTask, previousTask.status);
     this.tasks.set(task.id, completedTask);
     this.persistTask(completedTask);
     this.emitEvent('taskUpdated', completedTask);
@@ -1622,23 +1706,10 @@ class TaskQueueService {
 
     // console.log(`[TaskQueueService] Updated task ${taskId} to ${status}`);
     const enteredTerminalStatus =
-      (status === TaskStatus.FAILED || status === TaskStatus.COMPLETED) &&
-      task.status !== status;
+      isTrackedTerminalTaskStatus(status) && task.status !== status;
     if (enteredTerminalStatus) {
-      trackTaskAnalytics(
-        status === TaskStatus.COMPLETED
-          ? 'generation_task_completed'
-          : 'generation_task_failed',
-        updatedTask,
-        {
-          durationMs:
-            updatedTask.startedAt && updatedTask.completedAt
-              ? updatedTask.completedAt - updatedTask.startedAt
-              : undefined,
-          errorCode: updatedTask.error?.code,
-          errorMessage: updatedTask.error?.message,
-        }
-      ); // 任务进入终态后检查是否需要归档旧任务
+      trackTerminalTaskAnalytics(updatedTask, task.status);
+      // 任务进入终态后检查是否需要归档旧任务
       this.enforceRetentionLimit();
     }
   }
@@ -2007,7 +2078,10 @@ class TaskQueueService {
 
     trackTaskAnalytics('generation_result_insert_canvas', task, {
       source,
+      insertSource: source,
+      insert_source: source,
       insertedToCanvas: true,
+      inserted_to_canvas: true,
     });
 
     this.updateTaskStatus(taskId, task.status, {

@@ -26,6 +26,7 @@ import {
   setDebugMode as setMessageSenderDebugMode,
   setBroadcastCallback,
 } from './task-queue/utils/message-bus';
+import { setSwRuntimeBridge } from './task-queue/sw-runtime-bridge';
 import {
   fetchFromCDNWithFallback,
   extractVersionFromCDNPath,
@@ -258,6 +259,36 @@ const STATIC_APP_VERSION_HEADER = 'x-sw-app-version';
 const STATIC_FETCH_TARGET_HEADER = 'x-sw-fetch-target';
 const SERVICE_WORKER_DB_NAME = 'ServiceWorkerDB';
 const SERVICE_WORKER_DB_VERSION = 2;
+
+setSwRuntimeBridge({
+  saveCrashSnapshot,
+  getDebugStatus,
+  addConsoleLog,
+  getDebugLogs,
+  clearDebugLogs,
+  clearConsoleLogs,
+  enableDebugMode,
+  disableDebugMode,
+  loadConsoleLogsFromDB,
+  clearAllConsoleLogs,
+  getCrashSnapshots,
+  clearCrashSnapshots,
+  getCacheStats,
+  deleteCacheByUrl,
+  getInternalFetchLogs,
+  getCDNStatusReport,
+  resetCDNStatus,
+  performHealthCheck,
+  getAppVersion: () => APP_VERSION,
+  getImageCacheName: () => IMAGE_CACHE_NAME,
+  requestVideoThumbnail: async (url, timeoutMs, maxSize) => {
+    const cm = getChannelManager();
+    if (!cm || cm.getConnectedClientCount() === 0) {
+      return null;
+    }
+    return cm.requestVideoThumbnail(url, timeoutMs, maxSize);
+  },
+});
 const FAILED_DOMAINS_STORE = 'failedDomains';
 const VERSION_STATE_STORE = 'versionState';
 const VERSION_STATE_KEY = 'app-version-state';

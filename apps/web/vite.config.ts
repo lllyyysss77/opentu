@@ -6,7 +6,11 @@ import type { OutputAsset, OutputBundle, OutputChunk } from 'rollup';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { createRequire } from 'module';
 import { visualizer } from 'rollup-plugin-visualizer';
+
+const require = createRequire(import.meta.url);
+const workspaceRoot = path.resolve(__dirname, '../..');
 
 // Read version from public/version.json
 const versionPath = path.resolve(__dirname, 'public/version.json');
@@ -30,6 +34,8 @@ const IDLE_PREFETCH_GROUPS = [
   'tool-windows',
   'diagram-engines',
   'office-data',
+  'editor-engines',
+  'media-viewer',
   'external-skills',
   'runtime-static-assets',
   'offline-static-assets',
@@ -326,6 +332,53 @@ function normalizePathForChunking(id: string): string {
   return id.replace(/\\/g, '/');
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function findPackageRoot(entryPath: string): string {
+  let current = fs.statSync(entryPath).isDirectory()
+    ? entryPath
+    : path.dirname(entryPath);
+
+  while (current !== path.dirname(current)) {
+    if (fs.existsSync(path.join(current, 'package.json'))) {
+      return current;
+    }
+
+    current = path.dirname(current);
+  }
+
+  throw new Error(`Unable to resolve package root for ${entryPath}`);
+}
+
+function resolvePackageRoot(packageName: string, fromPaths: string[]): string {
+  return findPackageRoot(require.resolve(packageName, { paths: fromPaths }));
+}
+
+function createPackageRootAlias(packageName: string, packageRoot: string) {
+  const escapedName = escapeRegExp(packageName);
+
+  return [
+    { find: new RegExp(`^${escapedName}$`), replacement: packageRoot },
+    {
+      find: new RegExp(`^${escapedName}/(.+)$`),
+      replacement: `${packageRoot}/$1`,
+    },
+  ];
+}
+
+const mermaidToDrawnixPackageRoot = resolvePackageRoot(
+  '@plait-board/mermaid-to-drawnix',
+  [workspaceRoot]
+);
+const diagramEngineAliases = [
+  ...createPackageRootAlias(
+    'mermaid',
+    resolvePackageRoot('mermaid', [mermaidToDrawnixPackageRoot])
+  ),
+];
+
 function normalizeBundleFileName(fileName: string): string {
   return normalizePathForChunking(fileName).replace(/^\.\//, '');
 }
@@ -515,6 +568,60 @@ function resolveIdlePrefetchGroup(id: string): IdlePrefetchGroup | undefined {
   const normalizedId = normalizePathForChunking(id);
 
   if (
+    normalizedId.includes('/node_modules/.pnpm/mermaid@') ||
+    normalizedId.includes('/node_modules/mermaid/') ||
+    normalizedId.includes('/node_modules/.pnpm/elkjs@') ||
+    normalizedId.includes('/node_modules/elkjs/') ||
+    normalizedId.includes('/node_modules/.pnpm/cytoscape@') ||
+    normalizedId.includes('/node_modules/cytoscape/') ||
+    normalizedId.includes('/node_modules/.pnpm/layout-base@') ||
+    normalizedId.includes('/node_modules/layout-base/') ||
+    normalizedId.includes('/node_modules/.pnpm/cose-base@') ||
+    normalizedId.includes('/node_modules/cose-base/') ||
+    normalizedId.includes('/node_modules/.pnpm/cytoscape-cose-bilkent@') ||
+    normalizedId.includes('/node_modules/cytoscape-cose-bilkent/') ||
+    normalizedId.includes('/node_modules/.pnpm/dagre-d3-es@') ||
+    normalizedId.includes('/node_modules/dagre-d3-es/') ||
+    normalizedId.includes('/node_modules/.pnpm/dompurify@') ||
+    normalizedId.includes('/node_modules/dompurify/')
+  ) {
+    return 'diagram-engines';
+  }
+
+  if (
+    normalizedId.includes('/node_modules/.pnpm/xlsx@') ||
+    normalizedId.includes('/node_modules/xlsx/') ||
+    normalizedId.includes('/node_modules/.pnpm/jszip@') ||
+    normalizedId.includes('/node_modules/jszip/') ||
+    normalizedId.includes('/node_modules/.pnpm/pptxgenjs@') ||
+    normalizedId.includes('/node_modules/pptxgenjs/')
+  ) {
+    return 'office-data';
+  }
+
+  if (
+    normalizedId.includes('/node_modules/.pnpm/@milkdown+') ||
+    normalizedId.includes('/node_modules/@milkdown/') ||
+    normalizedId.includes('/node_modules/.pnpm/@codemirror+') ||
+    normalizedId.includes('/node_modules/@codemirror/') ||
+    normalizedId.includes('/node_modules/.pnpm/@lezer+') ||
+    normalizedId.includes('/node_modules/@lezer/') ||
+    normalizedId.includes('/node_modules/.pnpm/prosemirror-') ||
+    normalizedId.includes('/node_modules/prosemirror-') ||
+    normalizedId.includes('/node_modules/.pnpm/katex@') ||
+    normalizedId.includes('/node_modules/katex/')
+  ) {
+    return 'editor-engines';
+  }
+
+  if (
+    normalizedId.includes('/node_modules/.pnpm/viewerjs@') ||
+    normalizedId.includes('/node_modules/viewerjs/')
+  ) {
+    return 'media-viewer';
+  }
+
+  if (
     normalizedId.includes('/packages/drawnix/src/components/startup/DrawnixDeferredRuntime.tsx') ||
     normalizedId.includes('/packages/drawnix/src/components/startup/DeferredMediaLibraryModal.tsx') ||
     normalizedId.includes('/packages/drawnix/src/components/startup/DeferredSyncSettings.tsx') ||
@@ -548,6 +655,75 @@ function resolveIdlePrefetchGroup(id: string): IdlePrefetchGroup | undefined {
   }
 
   return undefined;
+}
+
+function isStartupRuntimeModule(id: string): boolean {
+  const normalizedId = normalizePathForChunking(id);
+  return (
+    normalizedId.includes('vite/preload-helper') ||
+    normalizedId.includes('commonjs-dynamic-modules') ||
+    normalizedId.includes('commonjsHelpers')
+  );
+}
+
+interface ManualChunkModuleInfo {
+  importers: string[];
+}
+
+interface ManualChunkContext {
+  getModuleInfo: (id: string) => ManualChunkModuleInfo | null;
+}
+
+function isWebMainEntry(id: string): boolean {
+  const normalizedId = normalizePathForChunking(id);
+  return (
+    normalizedId.endsWith('/apps/web/src/main.tsx') ||
+    normalizedId.endsWith('/src/main.tsx')
+  );
+}
+
+function isStaticallyReachableFromWebMain(
+  id: string,
+  getModuleInfo: ManualChunkContext['getModuleInfo'],
+  visited = new Set<string>()
+): boolean {
+  if (visited.has(id)) {
+    return false;
+  }
+  visited.add(id);
+
+  if (isWebMainEntry(id)) {
+    return true;
+  }
+
+  const moduleInfo = getModuleInfo(id);
+  if (!moduleInfo) {
+    return false;
+  }
+
+  return moduleInfo.importers.some((importerId) =>
+    isStaticallyReachableFromWebMain(importerId, getModuleInfo, visited)
+  );
+}
+
+function resolveManualChunk(
+  id: string,
+  context?: ManualChunkContext
+): string | undefined {
+  if (isStartupRuntimeModule(id)) {
+    return 'startup-runtime';
+  }
+
+  const group = resolveIdlePrefetchGroup(id);
+  if (
+    (group === undefined || group === 'tool-windows') &&
+    context &&
+    isStaticallyReachableFromWebMain(id, context.getModuleInfo)
+  ) {
+    return 'startup-app';
+  }
+
+  return group;
 }
 
 /**
@@ -890,6 +1066,8 @@ function rewriteManifestAssetsToCDNPlugin(): Plugin {
 
 // 检测是否在 watch 模式下运行（命令行包含 --watch）
 const isWatchMode = process.argv.includes('--watch');
+const isServeMode = process.argv.includes('serve');
+const reactNodeEnv = isWatchMode || isServeMode ? 'development' : 'production';
 
 export default defineConfig({
   root: __dirname,
@@ -901,11 +1079,16 @@ export default defineConfig({
 
   define: {
     'import.meta.env.VITE_APP_VERSION': JSON.stringify(appVersion),
+    'process.env.NODE_ENV': JSON.stringify(reactNodeEnv),
     __APP_VERSION__: JSON.stringify(appVersion),
     // Vue feature flags - @milkdown/crepe 内部使用了 Vue，需要定义这些编译时标志
     __VUE_OPTIONS_API__: JSON.stringify(false),
     __VUE_PROD_DEVTOOLS__: JSON.stringify(false),
     __VUE_PROD_HYDRATION_MISMATCH_DETAILS__: JSON.stringify(false),
+  },
+
+  esbuild: {
+    jsxDev: false,
   },
 
   server: {
@@ -943,6 +1126,16 @@ export default defineConfig({
   ],
 
   resolve: {
+    alias: [
+      ...diagramEngineAliases,
+      {
+        find: /^tdesign-react$/,
+        replacement: path.resolve(
+          __dirname,
+          '../../packages/drawnix/src/utils/tdesign.ts'
+        ),
+      },
+    ],
     dedupe: ['react', 'react-dom'],
   },
 
@@ -963,8 +1156,8 @@ export default defineConfig({
     },
     rollupOptions: {
       output: {
-        manualChunks(id) {
-          return resolveIdlePrefetchGroup(id);
+        manualChunks(id, context) {
+          return resolveManualChunk(id, context);
         },
       },
     },

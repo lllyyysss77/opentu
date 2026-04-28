@@ -1,12 +1,8 @@
 {
-  "version": "0.6.80",
-  "buildTime": "2026-04-27T05:32:44.069Z",
+  "version": "0.6.83",
+  "buildTime": "2026-04-28T02:12:26.124Z",
   "gitCommit": "unknown",
   "changelog": [
-    "refine left floating toolbar drawer alignment",
-    "Add home SEO alternates and SW prefetch",
-    "完善 PPT 标题文件名和媒体导出",
-    "启用 GPT-5.5 模型配置",
-    "优化素材库渲染性能"
+    "优化懒加载和构建配置，添加分析埋点"
   ]
 }

@@ -4,11 +4,23 @@
  * 在对话消息中展示工作流执行过程
  */
 
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, {
+  Suspense,
+  lazy,
+  useState,
+  useMemo,
+  useRef,
+  useEffect,
+} from 'react';
 import type { WorkflowMessageData, AgentLogEntry } from '../../types/chat.types';
-import { MermaidRenderer } from './MermaidRenderer';
 import MarkdownEditor from '../MarkdownEditor';
 import './workflow-message-bubble.scss';
+
+const MermaidRenderer = lazy(() =>
+  import('./MermaidRenderer').then((module) => ({
+    default: module.MermaidRenderer,
+  }))
+);
 
 // ============ 状态图标映射 ============
 
@@ -52,11 +64,12 @@ function renderMarkdownWithMermaid(markdown: string): React.ReactNode {
     }
 
     blocks.push(
-      <MermaidRenderer
-        key={`mermaid-${blocks.length}`}
-        code={match[1].trim()}
-        className="chat-markdown__mermaid"
-      />
+      <Suspense key={`mermaid-${blocks.length}`} fallback={null}>
+        <MermaidRenderer
+          code={match[1].trim()}
+          className="chat-markdown__mermaid"
+        />
+      </Suspense>
     );
     lastIndex = mermaidFencePattern.lastIndex;
   }
