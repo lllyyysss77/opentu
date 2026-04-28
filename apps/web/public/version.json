@@ -1,8 +1,8 @@
 {
-  "version": "0.6.83",
-  "buildTime": "2026-04-28T02:12:28.649Z",
+  "version": "0.6.84",
+  "buildTime": "2026-04-28T04:39:39.622Z",
   "gitCommit": "unknown",
   "changelog": [
-    "优化懒加载和构建配置，添加分析埋点"
+    "perf: slim startup dependencies without visual regressions"
   ]
 }

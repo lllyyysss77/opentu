@@ -1,3 +1,13 @@
+## 0.6.84 (2026-04-28)
+
+### 🔧 Chores
+
+- perf: slim startup dependencies without visual regressions ([3103325d](https://github.com/ljquan/aitu/commit/3103325d))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+
 ## 0.6.83 (2026-04-28)
 
 ### 🚀 Features

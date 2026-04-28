@@ -1,6 +1,19 @@
 {
   "versions": [
     {
+      "version": "0.6.84",
+      "date": "2026-04-28",
+      "changes": {
+        "features": [],
+        "fixes": [],
+        "improvements": [
+          "perf: slim startup dependencies without visual regressions"
+        ]
+      },
+      "type": "patch",
+      "highlights": "构建修复与稳定性改进"
+    },
+    {
       "version": "0.6.83",
       "date": "2026-04-28",
       "changes": {
