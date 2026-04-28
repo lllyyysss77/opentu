@@ -14,6 +14,7 @@ import {
 } from './types';
 import { VIDEO_DEFAULT_CONFIG } from './config';
 import { analytics, getProviderEndpointAnalytics } from '../posthog-analytics';
+import { IMAGE_GENERATION_TIMEOUT_MS } from '../../constants/TASK_CONSTANTS';
 
 type GoogleInlineData = {
   mime_type?: string;
@@ -21,7 +22,7 @@ type GoogleInlineData = {
   data?: string;
 };
 
-const MIN_GENERATE_CONTENT_TIMEOUT_MS = 11 * 60 * 1000;
+const MIN_GENERATE_CONTENT_TIMEOUT_MS = IMAGE_GENERATION_TIMEOUT_MS;
 
 function isGoogleGenerateContentProtocol(config: GeminiConfig): boolean {
   return config.protocol === 'google.generateContent';

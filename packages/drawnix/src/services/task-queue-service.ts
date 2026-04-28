@@ -36,7 +36,10 @@ import {
   resolveAdapterForInvocation,
 } from './model-adapters';
 import { cacheRemoteUrl } from './media-executor/fallback-utils';
-import { STORAGE_LIMITS } from '../constants/TASK_CONSTANTS';
+import {
+  IMAGE_GENERATION_TIMEOUT_MS,
+  STORAGE_LIMITS,
+} from '../constants/TASK_CONSTANTS';
 import { sendChatWithGemini } from '../utils/gemini-api/services';
 import type { GeminiMessage } from '../utils/gemini-api/types';
 import { buildInlineDataPart } from '../utils/gemini-api/message-utils';
@@ -874,7 +877,7 @@ class TaskQueueService {
 
       // Poll for task completion (executor 已完成，此处主要是从 IndexedDB 读取最终结果)
       const result = await waitForTaskCompletion(task.id, {
-        timeout: 10 * 60 * 1000, // 10 minutes
+        timeout: IMAGE_GENERATION_TIMEOUT_MS,
         signal,
         onProgress: (updatedTask) => {
           if (this.shouldSkipExecutionWriteback(task.id)) {

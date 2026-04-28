@@ -135,6 +135,7 @@ import {
   type ModelRef,
 } from '../../utils/settings-manager';
 import { analytics } from '../../utils/posthog-analytics';
+import { IMAGE_GENERATION_TIMEOUT_MS } from '../../constants/TASK_CONSTANTS';
 import type { ModelConfig } from '../../constants/model-config';
 import { AssetType, SelectionMode, type Asset } from '../../types/asset.types';
 import {
@@ -181,7 +182,7 @@ type OutlinePromptOptimizeTarget =
 const PPT_HISTORY_PROMPT_PREVIEW_LENGTH = 36;
 const PPT_COMMON_PROMPT_HISTORY_DISPLAY_LIMIT = 60;
 const PPT_PARALLEL_GENERATION_LIMIT = 5;
-const PPT_TASK_WAIT_TIMEOUT_MS = 10 * 60 * 1000;
+const PPT_TASK_WAIT_TIMEOUT_MS = IMAGE_GENERATION_TIMEOUT_MS;
 const PPT_OUTLINE_BATCH_PREFIX = 'ppt_outline_';
 const PPT_OUTLINE_CANCELLED_ERROR = 'PPT_OUTLINE_GENERATION_CANCELLED';
 const PPT_DEFAULT_IMAGE_SIZE = '16x9';

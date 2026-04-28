@@ -32,6 +32,7 @@ import {
   type ResolvedProviderContext,
   type ProviderAuthStrategy,
 } from '../../services/provider-routing';
+import { IMAGE_GENERATION_TIMEOUT_MS } from '../../constants/TASK_CONSTANTS';
 import { validateAndEnsureConfig } from './auth';
 import {
   startLLMApiLog,
@@ -348,6 +349,7 @@ async function generateImageDirect(
         method: 'POST',
         headers,
         body: JSON.stringify(data),
+        timeoutMs: IMAGE_GENERATION_TIMEOUT_MS,
       }
     );
 

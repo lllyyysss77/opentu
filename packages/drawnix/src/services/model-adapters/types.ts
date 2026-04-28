@@ -1,4 +1,8 @@
-import type { ModelConfig, ModelVendor } from '../../constants/model-config';
+import type {
+  ModelConfig,
+  ModelType,
+  ModelVendor,
+} from '../../constants/model-config';
 import type { ModelRef } from '../../utils/settings-types';
 import type {
   ProviderAuthStrategy,
@@ -11,6 +15,7 @@ export type ModelKind = 'image' | 'video' | 'audio' | 'chat';
 
 export interface AdapterContext {
   baseUrl: string;
+  operation?: ModelType;
   apiKey?: string;
   authType?: ProviderAuthStrategy;
   extraHeaders?: Record<string, string>;
