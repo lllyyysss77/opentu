@@ -405,7 +405,6 @@ class SettingsManager {
     return (
       value === undefined ||
       value === null ||
-      value === '' ||
       value === DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY
     );
   }
