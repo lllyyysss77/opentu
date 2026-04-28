@@ -21,6 +21,8 @@ export type ImageApiCompatibility =
 
 export const DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY: ImageApiCompatibility =
   'openai-gpt-image';
+export const LEGACY_DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY: ImageApiCompatibility =
+  'tuzi-gpt-image';
 
 export interface ProviderCapabilities {
   supportsModelsEndpoint: boolean;
@@ -77,6 +79,10 @@ export interface InvocationPreset {
   audio: RouteConfig;
 }
 
+export interface SettingsMigrations {
+  legacyDefaultImageApiCompatibilityV1?: boolean;
+}
+
 export interface TtsSettings {
   selectedVoice?: string;
   rate: number;
@@ -93,6 +99,7 @@ export interface AppSettings {
   providerPricingCache: ProviderPricingCache[];
   invocationPresets: InvocationPreset[];
   activePresetId: string;
+  migrations: SettingsMigrations;
 }
 
 export interface ResolvedInvocationRoute {

@@ -12,6 +12,7 @@ import type { VideoAPIConfig } from './config-indexeddb-writer';
 import type { ProviderPricingCache } from './model-pricing-types';
 import {
   DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY,
+  LEGACY_DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY,
   type AppSettings,
   type GeminiSettings,
   type ImageApiCompatibility,
@@ -24,6 +25,7 @@ import {
   type ProviderType,
   type ResolvedInvocationRoute,
   type RouteConfig,
+  type SettingsMigrations,
   type TtsSettings,
 } from './settings-types';
 import {
@@ -38,6 +40,7 @@ import {
 
 export {
   DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY,
+  LEGACY_DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY,
   type AppSettings,
   type GeminiSettings,
   type ImageApiCompatibility,
@@ -50,6 +53,7 @@ export {
   type ProviderType,
   type ResolvedInvocationRoute,
   type RouteConfig,
+  type SettingsMigrations,
   type TtsSettings,
 } from './settings-types';
 
@@ -99,6 +103,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   providerPricingCache: [],
   invocationPresets: [],
   activePresetId: DEFAULT_INVOCATION_PRESET_ID,
+  migrations: {},
 };
 
 // 设置变更监听器类型
@@ -190,6 +195,7 @@ class SettingsManager {
   private listeners: Map<string, Set<AnySettingsListener>> = new Map();
   private cryptoAvailable = false;
   private initializationPromise: Promise<void> | null = null;
+  private shouldPersistSettingsAfterInitialization = false;
 
   private constructor() {
     this.settings = this.loadSettings();
@@ -216,8 +222,13 @@ class SettingsManager {
       // 加密功能初始化完成后，解密已加载的敏感数据
       await this.decryptSensitiveDataForLoading(this.settings);
       this.initializeFromUrl();
-      // 初始化完成后，同步配置到 IndexedDB，供 SW 读取
-      await this.syncToIndexedDB();
+      if (this.shouldPersistSettingsAfterInitialization) {
+        this.shouldPersistSettingsAfterInitialization = false;
+        await this.saveToStorage();
+      } else {
+        // 初始化完成后，同步配置到 IndexedDB，供 SW 读取
+        await this.syncToIndexedDB();
+      }
       // console.log('SettingsManager initialization completed');
     } catch (error) {
       console.error('SettingsManager initialization failed:', error);
@@ -356,13 +367,54 @@ class SettingsManager {
   }
 
   private normalizeStoredImageApiCompatibility(
-    value?: ImageApiCompatibility | string | null
+    value?: ImageApiCompatibility | string | null,
+    fallback: ImageApiCompatibility = DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY
   ): ImageApiCompatibility {
     if (value === undefined || value === null || value === '') {
-      return DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY;
+      return fallback;
     }
 
     return this.normalizeImageApiCompatibility(value);
+  }
+
+  private normalizeSettingsMigrations(value: unknown): SettingsMigrations {
+    const migrations =
+      value && typeof value === 'object'
+        ? (value as Partial<SettingsMigrations>)
+        : {};
+
+    return {
+      legacyDefaultImageApiCompatibilityV1:
+        migrations.legacyDefaultImageApiCompatibilityV1 === true,
+    };
+  }
+
+  private isTuziProviderBaseUrl(baseUrl: string): boolean {
+    return baseUrl.trim().toLowerCase().includes('api.tu-zi.com');
+  }
+
+  private shouldMigrateLegacyDefaultImageApiCompatibility(
+    profile: Partial<ProviderProfile> | undefined,
+    baseUrl: string
+  ): boolean {
+    if (!this.isTuziProviderBaseUrl(baseUrl)) {
+      return false;
+    }
+
+    const value = profile?.imageApiCompatibility;
+    return (
+      value === undefined ||
+      value === null ||
+      value === DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY
+    );
+  }
+
+  private getLegacyDefaultImageApiCompatibilityFallback(
+    baseUrl: string
+  ): ImageApiCompatibility {
+    return this.isTuziProviderBaseUrl(baseUrl)
+      ? LEGACY_DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY
+      : DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY;
   }
 
   private normalizeCapabilities(value: unknown): ProviderCapabilities {
@@ -417,7 +469,8 @@ class SettingsManager {
         profile?.authType
       ),
       imageApiCompatibility: this.normalizeStoredImageApiCompatibility(
-        profile?.imageApiCompatibility
+        profile?.imageApiCompatibility,
+        this.getLegacyDefaultImageApiCompatibilityFallback(baseUrl)
       ),
       enabled: true,
       capabilities: { ...DEFAULT_PROVIDER_CAPABILITIES },
@@ -756,6 +809,7 @@ class SettingsManager {
       providerCatalogs: this.normalizeProviderCatalogs(
         mergedSettings.providerCatalogs
       ),
+      migrations: this.normalizeSettingsMigrations(mergedSettings.migrations),
       invocationPresets: this.normalizeInvocationPresets(
         mergedSettings.invocationPresets
       ),
@@ -782,9 +836,31 @@ class SettingsManager {
     const existingTuziCodexProfile = settings.providerProfiles.find(
       (profile) => profile.id === TUZI_CODEX_PROVIDER_PROFILE_ID
     );
+    const migrations: SettingsMigrations = { ...settings.migrations };
+    const shouldRunLegacyDefaultImageMigration =
+      migrations.legacyDefaultImageApiCompatibilityV1 !== true;
+    const legacyBaseUrl =
+      settings.gemini.baseUrl || DEFAULT_SETTINGS.gemini.baseUrl;
+    const legacyProfileForBuild =
+      shouldRunLegacyDefaultImageMigration &&
+      this.shouldMigrateLegacyDefaultImageApiCompatibility(
+        existingLegacyProfile,
+        legacyBaseUrl
+      )
+        ? {
+            ...(existingLegacyProfile || {}),
+            imageApiCompatibility:
+              LEGACY_DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY,
+          }
+        : existingLegacyProfile;
+
+    if (shouldRunLegacyDefaultImageMigration) {
+      migrations.legacyDefaultImageApiCompatibilityV1 = true;
+      this.shouldPersistSettingsAfterInitialization = true;
+    }
 
     const legacyProfile = {
-      ...this.buildLegacyDefaultProfile(settings.gemini, existingLegacyProfile),
+      ...this.buildLegacyDefaultProfile(settings.gemini, legacyProfileForBuild),
       extraHeaders: this.normalizeStringRecord(
         existingLegacyProfile?.extraHeaders
       ),
@@ -796,7 +872,9 @@ class SettingsManager {
       existingTuziOriginProfile
     );
     const tuziMixProfile = this.buildTuziMixProfile(existingTuziMixProfile);
-    const tuziCodexProfile = this.buildTuziCodexProfile(existingTuziCodexProfile);
+    const tuziCodexProfile = this.buildTuziCodexProfile(
+      existingTuziCodexProfile
+    );
     const legacyPreset = this.buildLegacyDefaultPreset(settings.gemini);
 
     const providerProfiles = [
@@ -946,6 +1024,7 @@ class SettingsManager {
 
     return {
       ...settings,
+      migrations,
       providerProfiles,
       providerCatalogs,
       invocationPresets: normalizedPresets,
@@ -1000,14 +1079,20 @@ class SettingsManager {
    */
   private loadSettings(): AppSettings {
     if (typeof window === 'undefined') {
-      return this.normalizeSettings(this.createDefaultSettings());
+      const normalizedSettings = this.normalizeSettings(
+        this.createDefaultSettings()
+      );
+      this.shouldPersistSettingsAfterInitialization = false;
+      return normalizedSettings;
     }
 
     let settings = this.createDefaultSettings();
+    let hasStoredSettings = false;
 
     try {
       const storedSettings = localStorage.getItem(DRAWNIX_SETTINGS_KEY);
       if (storedSettings) {
+        hasStoredSettings = true;
         const parsedSettings = JSON.parse(storedSettings);
         settings = this.normalizeSettings(
           this.deepMerge(settings, parsedSettings)
@@ -1017,7 +1102,11 @@ class SettingsManager {
       console.warn('Failed to load settings from localStorage:', error);
     }
 
-    return this.normalizeSettings(settings);
+    const normalizedSettings = this.normalizeSettings(settings);
+    if (!hasStoredSettings) {
+      this.shouldPersistSettingsAfterInitialization = false;
+    }
+    return normalizedSettings;
   }
 
   /**
