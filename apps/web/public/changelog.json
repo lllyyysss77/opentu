@@ -1,6 +1,19 @@
 {
   "versions": [
     {
+      "version": "0.6.83",
+      "date": "2026-04-28",
+      "changes": {
+        "features": [
+          "优化懒加载和构建配置，添加分析埋点"
+        ],
+        "fixes": [],
+        "improvements": []
+      },
+      "type": "patch",
+      "highlights": "优化懒加载和构建配置，添加分析埋点"
+    },
+    {
       "version": "0.6.82",
       "date": "2026-04-27",
       "changes": {

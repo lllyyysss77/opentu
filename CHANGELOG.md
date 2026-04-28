@@ -1,3 +1,13 @@
+## 0.6.83 (2026-04-28)
+
+### 🚀 Features
+
+- 优化懒加载和构建配置，添加分析埋点 ([4438a44f](https://github.com/ljquan/aitu/commit/4438a44f))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+
 ## 0.6.82 (2026-04-27)
 
 ### 🔧 Chores

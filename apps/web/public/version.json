@@ -1,6 +1,8 @@
 {
-  "version": "0.6.82",
-  "buildTime": "2026-04-27T16:12:21.611Z",
+  "version": "0.6.83",
+  "buildTime": "2026-04-28T02:12:26.124Z",
   "gitCommit": "unknown",
-  "changelog": []
+  "changelog": [
+    "优化懒加载和构建配置，添加分析埋点"
+  ]
 }
