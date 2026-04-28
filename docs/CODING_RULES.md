@@ -4163,6 +4163,42 @@ class TaskQueueService {
 - `packages/drawnix/src/services/media-executor/factory.ts` - 执行器工厂
 - `packages/drawnix/src/services/media-executor/fallback-executor.ts` - 降级执行器
 
+### 画布生成锚点重试必须区分生成失败和后处理失败
+
+**场景**: 画布上的图片生成锚点显示“生成失败 / Failed to fetch”，用户第一次点击“重试”。
+
+❌ **错误示例**:
+```typescript
+// 错误：任务已 completed，但后处理失败；只重新插入旧结果，不会重新发生成请求
+if (task.status === TaskStatus.COMPLETED) {
+  workflowCompletionService.clearTask(task.id);
+  handleTaskCompleted(task);
+}
+```
+
+✅ **正确示例**:
+```typescript
+// 正确：后处理失败但按钮语义是“重试生成”时，显式允许 completed 任务重新生成
+const shouldRegenerateCompletedTask =
+  task.status === TaskStatus.COMPLETED &&
+  postProcessingStatus === 'failed';
+
+if (task.status === TaskStatus.FAILED || shouldRegenerateCompletedTask) {
+  workflowCompletionService.clearTask(task.id);
+  taskQueueService.retryTask(task.id, { allowCompleted: shouldRegenerateCompletedTask });
+}
+```
+
+**原因**:
+- 生成锚点的 `failed` 可能来自任务失败，也可能来自取图、显影、插入画布等后处理失败
+- “重试”按钮承诺重新触发生成时，不能只清理后处理状态或复用旧结果
+- 对 `COMPLETED` 任务开放重试必须显式传参，并清空旧 `result / insertedToCanvas / completedAt`，避免 UI 继续读取旧失败态
+
+**相关文件**:
+- `packages/drawnix/src/hooks/useAutoInsertToCanvas.ts` - 生成锚点重试事件处理
+- `packages/drawnix/src/services/task-queue-service.ts` - 任务重试状态重置与执行
+- `packages/drawnix/src/components/image-generation-anchor/ImageGenerationAnchorContent.tsx` - 生成锚点重试入口
+
 ### 创建图片/视频任务及执行时须传递 referenceImages
 
 **场景**: MCP 工具（如 `image-generation.ts`、`video-generation.ts`）通过 `taskQueueService.createTask` 创建任务，降级模式下由 `executeTask` 调用 `executor.generateImage` / `generateVideo` 发起请求

@@ -1813,19 +1813,25 @@ class TaskQueueService {
    *
    * @param taskId - The task ID to retry
    */
-  retryTask(taskId: string): void {
+  retryTask(
+    taskId: string,
+    options: { allowCompleted?: boolean } = {}
+  ): void {
     const task = this.tasks.get(taskId);
     if (!task) {
       console.warn(`[TaskQueueService] Task ${taskId} not found`);
       return;
     }
 
+    const canRetryCompleted =
+      options.allowCompleted && task.status === TaskStatus.COMPLETED;
     if (
       task.status !== TaskStatus.FAILED &&
-      task.status !== TaskStatus.CANCELLED
+      task.status !== TaskStatus.CANCELLED &&
+      !canRetryCompleted
     ) {
       console.warn(
-        `[TaskQueueService] Task ${taskId} is not failed or cancelled, cannot retry`
+        `[TaskQueueService] Task ${taskId} is not failed, cancelled, or explicitly retryable, cannot retry`
       );
       return;
     }
@@ -1840,10 +1846,12 @@ class TaskQueueService {
     this.blockedTaskIds.delete(taskId);
     this.updateTaskStatus(taskId, TaskStatus.PROCESSING, {
       error: undefined,
+      result: undefined,
       startedAt: now, // Set new start time
       completedAt: undefined, // Clear completion time
       remoteId: undefined, // Clear remote ID for fresh submission
       executionPhase: TaskExecutionPhase.SUBMITTING,
+      insertedToCanvas: false,
       progress:
         task.type === TaskType.VIDEO ||
         task.type === TaskType.AUDIO ||
