@@ -1,7 +1,10 @@
 import { StrictMode } from 'react';
 import * as ReactDOM from 'react-dom/client';
 import App from './app/app';
-import { ErrorBoundary } from './app/ErrorBoundary';
+import {
+  ErrorBoundary,
+  tryRecoverDynamicImportError,
+} from './app/ErrorBoundary';
 import { initCrashLogger } from './crash-logger';
 import './utils/permissions-policy-fix';
 import {
@@ -39,6 +42,51 @@ const shouldUseServiceWorker =
   hasServiceWorkerSupport &&
   !isServiceWorkerExplicitlyDisabled &&
   (!isLocalDev || isServiceWorkerExplicitlyEnabled);
+
+function setupLazyAssetRecoveryListeners(): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  const stopRecoveredEvent = (event: Event) => {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  };
+
+  window.addEventListener(
+    'vite:preloadError',
+    (event) => {
+      const payload = (event as Event & { payload?: unknown }).payload;
+      if (tryRecoverDynamicImportError(payload || event)) {
+        stopRecoveredEvent(event);
+      }
+    },
+    true
+  );
+
+  window.addEventListener(
+    'unhandledrejection',
+    (event) => {
+      if (tryRecoverDynamicImportError(event.reason)) {
+        stopRecoveredEvent(event);
+      }
+    },
+    true
+  );
+
+  window.addEventListener(
+    'error',
+    (event) => {
+      const payload = event.error || event.message;
+      if (tryRecoverDynamicImportError(payload)) {
+        stopRecoveredEvent(event);
+      }
+    },
+    true
+  );
+}
+
+setupLazyAssetRecoveryListeners();
 
 // ===== 控制台日志捕获（尽早初始化，确保默认 console 被改写） =====
 // 必须在其他业务代码之前执行，否则后续工具（如 rrweb）可能先改写 console 导致捕获失效

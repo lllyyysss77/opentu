@@ -19,9 +19,11 @@ const LAZY_CHUNK_RETRY_TS_PARAM = '_t';
 const DYNAMIC_IMPORT_ERROR_PATTERNS = [
   /Failed to fetch dynamically imported module/i,
   /Importing a module script failed/i,
+  /Unable to preload CSS/i,
   /Loading chunk [\w-]+ failed/i,
   /ChunkLoadError/i,
 ];
+let lazyAssetRecoveryScheduled = false;
 
 function getAppVersion(): string {
   if (typeof document === 'undefined') {
@@ -37,8 +39,9 @@ function getAppVersion(): string {
 function serializeError(error: unknown): string {
   if (error instanceof Error) {
     const parts = [error.name, error.message, error.stack];
-    if ((error as any).cause) {
-      parts.push(String((error as any).cause));
+    const errorWithCause = error as Error & { cause?: unknown };
+    if (errorWithCause.cause) {
+      parts.push(String(errorWithCause.cause));
     }
     return parts.filter(Boolean).join('\n');
   }
@@ -47,7 +50,9 @@ function serializeError(error: unknown): string {
 }
 
 function extractModuleKey(errorText: string): string {
-  const matchedUrl = errorText.match(/https?:\/\/[^\s)'"]+\.js(?:\?[^\s)'"]*)?/i);
+  const matchedUrl = errorText.match(
+    /https?:\/\/[^\s)'"]+\.(?:js|css)(?:\?[^\s)'"]*)?/i
+  );
   if (!matchedUrl) {
     return 'unknown-module';
   }
@@ -66,11 +71,18 @@ function isRecoverableDynamicImportError(error: unknown): boolean {
   );
 }
 
-function tryRecoverDynamicImportError(error: unknown): boolean {
+export function tryRecoverDynamicImportError(error: unknown): boolean {
+  if (!isRecoverableDynamicImportError(error)) {
+    return false;
+  }
+
+  if (lazyAssetRecoveryScheduled) {
+    return true;
+  }
+
   if (
     typeof window === 'undefined' ||
-    typeof sessionStorage === 'undefined' ||
-    !isRecoverableDynamicImportError(error)
+    typeof sessionStorage === 'undefined'
   ) {
     return false;
   }
@@ -90,6 +102,8 @@ function tryRecoverDynamicImportError(error: unknown): boolean {
     return false;
   }
 
+  lazyAssetRecoveryScheduled = true;
+
   const reloadUrl = new URL(window.location.href);
   reloadUrl.searchParams.set(LAZY_CHUNK_RETRY_PARAM, '1');
   reloadUrl.searchParams.set(
@@ -98,7 +112,7 @@ function tryRecoverDynamicImportError(error: unknown): boolean {
   );
 
   console.warn(
-    '[ErrorBoundary] Detected stale lazy chunk. Reloading once to recover.',
+    '[ErrorBoundary] Detected stale lazy asset. Reloading once to recover.',
     error
   );
 

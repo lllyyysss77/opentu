@@ -1,6 +1,6 @@
 {
   "version": "0.6.84",
-  "buildTime": "2026-04-28T04:39:39.622Z",
+  "buildTime": "2026-04-28T04:39:40.488Z",
   "gitCommit": "unknown",
   "changelog": [
     "perf: slim startup dependencies without visual regressions"
