@@ -14,7 +14,6 @@ import {
   toScreenPointFromHostPoint,
   duplicateElements,
   deleteFragment,
-  toImage,
   addSelectedElement,
   clearSelectedElement,
   Transforms,
@@ -38,7 +37,7 @@ import {
   MindElement,
 } from '@plait/mind';
 import './popup-toolbar.scss';
-import { trackMemory } from '../../../utils/common';
+import { safeToImage, trackMemory } from '../../../utils/common';
 import {
   getStrokeColorByElement as getStrokeColorByDrawElement,
   isClosedCustomGeometry,
@@ -1835,7 +1834,7 @@ export const PopupToolbar = () => {
                     );
 
                     // 使用 toImage 将选中元素转换为图片
-                    const imageDataUrl = await toImage(board, {
+                    const imageDataUrl = await safeToImage(board, {
                       elements: sortedElements,
                       fillStyle: 'transparent',
                       inlineStyleClassNames: '.extend,.emojis,.text',

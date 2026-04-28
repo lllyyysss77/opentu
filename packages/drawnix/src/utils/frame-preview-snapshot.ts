@@ -3,9 +3,9 @@ import {
   PlaitBoard,
   PlaitElement,
   RectangleClient,
-  toImage,
 } from '@plait/core';
 import { isFrameElement, type PlaitFrame } from '../types/frame.types';
+import { safeToImage } from './common';
 
 const DEFAULT_FRAME_SNAPSHOT_MAX_DIMENSION = 320;
 const DEFAULT_FRAME_SNAPSHOT_FILL = '#ffffff';
@@ -201,7 +201,7 @@ export async function createPPTFrameSnapshotDataUrl(
   const ratio = Math.min(1, Math.max(0.02, maxDimension / largestDimension));
   const sourceRect = getRectangleByElements(board, elements, false);
 
-  const imageUrl = await toImage(board, {
+  const imageUrl = await safeToImage(board, {
     elements,
     fillStyle: options.fillStyle ?? DEFAULT_FRAME_SNAPSHOT_FILL,
     inlineStyleClassNames:

@@ -758,8 +758,13 @@ import { generateId, sanitizeObject } from '@aitu/utils';  // ✅ 直接导入
 // 正确：只保留业务特有的函数
 import { IS_APPLE, PlaitBoard, toImage } from '@plait/core';
 
-export const boardToImage = (board: PlaitBoard) => {  // ✅ Plait 特有
-  return toImage(board, { fillStyle: 'transparent' });
+export const safeToImage = async (board: PlaitBoard, options = {}) => {
+  // ✅ Plait 导出特有兜底：临时保护内部图片 fetch 失败
+  return toImage(board, options);
+};
+
+export const boardToImage = (board: PlaitBoard) => {
+  return safeToImage(board, { fillStyle: 'transparent' });
 };
 ```
 
