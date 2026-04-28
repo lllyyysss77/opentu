@@ -1,3 +1,13 @@
+## 0.6.86 (2026-04-28)
+
+### 🔧 Chores
+
+- 更新版本号至 0.6.85 并同步构建时间 ([f1613719](https://github.com/ljquan/aitu/commit/f1613719))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+
 ## 0.6.85 (2026-04-28)
 
 ### 🚀 Features

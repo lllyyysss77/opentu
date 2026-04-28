@@ -1,6 +1,19 @@
 {
   "versions": [
     {
+      "version": "0.6.86",
+      "date": "2026-04-28",
+      "changes": {
+        "features": [],
+        "fixes": [],
+        "improvements": [
+          "更新版本号至 0.6.85 并同步构建时间"
+        ]
+      },
+      "type": "patch",
+      "highlights": "构建修复与稳定性改进"
+    },
+    {
       "version": "0.6.85",
       "date": "2026-04-28",
       "changes": {
