@@ -1,6 +1,6 @@
 {
   "version": "0.6.85",
-  "buildTime": "2026-04-28T06:55:13.343Z",
+  "buildTime": "2026-04-28T06:55:14.846Z",
   "gitCommit": "unknown",
   "changelog": [
     "调整 default 分组 GPT Image 默认路由",
