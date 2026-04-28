@@ -1,3 +1,19 @@
+## 0.6.85 (2026-04-28)
+
+### 🚀 Features
+
+- 增强懒加载资源恢复与SEO优化 ([c16b4d59](https://github.com/ljquan/aitu/commit/c16b4d59))
+
+### 🩹 Fixes
+
+- 修复 default 分组迁移类型检查 ([7f4ec5c3](https://github.com/ljquan/aitu/commit/7f4ec5c3))
+- 调整 default 分组 GPT Image 默认路由 ([c789bda1](https://github.com/ljquan/aitu/commit/c789bda1))
+
+### ❤️  Thank You
+
+- gongchengtu <1817063960@qq.com>
+- liquid <ljquan@qq.com>
+
 ## 0.6.84 (2026-04-28)
 
 ### 🔧 Chores

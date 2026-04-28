@@ -1,8 +1,10 @@
 {
-  "version": "0.6.84",
-  "buildTime": "2026-04-28T04:39:40.488Z",
+  "version": "0.6.85",
+  "buildTime": "2026-04-28T06:55:13.343Z",
   "gitCommit": "unknown",
   "changelog": [
-    "perf: slim startup dependencies without visual regressions"
+    "调整 default 分组 GPT Image 默认路由",
+    "修复 default 分组迁移类型检查",
+    "增强懒加载资源恢复与SEO优化"
   ]
 }

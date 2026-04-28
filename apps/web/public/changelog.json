@@ -1,6 +1,22 @@
 {
   "versions": [
     {
+      "version": "0.6.85",
+      "date": "2026-04-28",
+      "changes": {
+        "features": [
+          "增强懒加载资源恢复与SEO优化"
+        ],
+        "fixes": [
+          "修复 default 分组迁移类型检查",
+          "调整 default 分组 GPT Image 默认路由"
+        ],
+        "improvements": []
+      },
+      "type": "patch",
+      "highlights": "增强懒加载资源恢复与SEO优化"
+    },
+    {
       "version": "0.6.84",
       "date": "2026-04-28",
       "changes": {
