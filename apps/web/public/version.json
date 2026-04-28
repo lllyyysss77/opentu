@@ -1,6 +1,6 @@
 {
   "version": "0.6.87",
-  "buildTime": "2026-04-28T12:46:31.495Z",
+  "buildTime": "2026-04-28T12:46:32.295Z",
   "gitCommit": "unknown",
   "changelog": [
     "为 API Key 输入框添加显示/隐藏切换功能"
