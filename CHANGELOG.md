@@ -1,3 +1,18 @@
+## 0.6.87 (2026-04-28)
+
+### 🚀 Features
+
+- 为 API Key 输入框添加显示/隐藏切换功能 ([87d79796](https://github.com/ljquan/aitu/commit/87d79796))
+
+### 🩹 Fixes
+
+- stabilize GPT image generation requests ([d478c883](https://github.com/ljquan/aitu/commit/d478c883))
+- retry failed image generation anchors ([9755447a](https://github.com/ljquan/aitu/commit/9755447a))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+
 ## 0.6.86 (2026-04-28)
 
 ### 🔧 Chores

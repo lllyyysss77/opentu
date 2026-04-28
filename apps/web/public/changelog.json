@@ -1,6 +1,22 @@
 {
   "versions": [
     {
+      "version": "0.6.87",
+      "date": "2026-04-28",
+      "changes": {
+        "features": [
+          "为 API Key 输入框添加显示/隐藏切换功能"
+        ],
+        "fixes": [
+          "stabilize GPT image generation requests",
+          "retry failed image generation anchors"
+        ],
+        "improvements": []
+      },
+      "type": "patch",
+      "highlights": "为 API Key 输入框添加显示/隐藏切换功能"
+    },
+    {
       "version": "0.6.86",
       "date": "2026-04-28",
       "changes": {
