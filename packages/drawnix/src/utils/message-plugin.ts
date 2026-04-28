@@ -5,6 +5,7 @@ type TDesignMessagePlugin =
 type MessageMethod = Exclude<keyof TDesignMessagePlugin, 'close'>;
 type MessageArgs = [unknown, number?];
 type MessageInstanceLike = { close?: () => void } | null | undefined;
+type ResolvedMessageInstanceLike = NonNullable<MessageInstanceLike>;
 type LazyMessageInstance = Promise<MessageInstanceLike> & {
   __aituLazyMessageInstance: true;
   instancePromise: Promise<MessageInstanceLike>;
@@ -26,6 +27,26 @@ function isLazyMessageInstance(value: unknown): value is LazyMessageInstance {
     typeof value === 'object' &&
     value !== null &&
     (value as LazyMessageInstance).__aituLazyMessageInstance === true
+  );
+}
+
+function isPromiseLikeMessageInstance(
+  value: unknown
+): value is Promise<MessageInstanceLike> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as PromiseLike<MessageInstanceLike>).then === 'function'
+  );
+}
+
+function isResolvedMessageInstance(
+  value: unknown
+): value is ResolvedMessageInstanceLike {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as NonNullable<MessageInstanceLike>).close === 'function'
   );
 }
 
@@ -67,14 +88,21 @@ export const MessagePlugin = {
   close(instance?: unknown): void {
     if (isLazyMessageInstance(instance)) {
       void instance.instancePromise
-        .then((resolvedInstance) =>
-          loadMessagePlugin().then((plugin) => {
-            plugin.close(resolvedInstance as never);
-          })
-        )
+        .then((resolvedInstance) => {
+          resolvedInstance?.close?.();
+        })
         .catch((error) => {
           console.warn('[MessagePlugin] failed to close lazy message:', error);
         });
+      return;
+    }
+
+    if (isResolvedMessageInstance(instance)) {
+      instance.close?.();
+      return;
+    }
+
+    if (!isPromiseLikeMessageInstance(instance)) {
       return;
     }
 
