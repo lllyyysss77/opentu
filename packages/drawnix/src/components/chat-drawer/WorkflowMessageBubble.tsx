@@ -13,7 +13,7 @@ import React, {
   useEffect,
 } from 'react';
 import type { WorkflowMessageData, AgentLogEntry } from '../../types/chat.types';
-import MarkdownEditor from '../MarkdownEditor';
+import MarkdownReadonly from '../MarkdownReadonly';
 import './workflow-message-bubble.scss';
 
 const MermaidRenderer = lazy(() =>
@@ -42,53 +42,33 @@ const STATUS_LABELS: Record<StepStatus, string> = {
   skipped: '已跳过',
 };
 
-function renderMarkdownWithMermaid(markdown: string): React.ReactNode {
-  const blocks: React.ReactNode[] = [];
-  const mermaidFencePattern = /```mermaid\s*([\s\S]*?)```/gi;
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
-
-  while ((match = mermaidFencePattern.exec(markdown)) !== null) {
-    const before = markdown.slice(lastIndex, match.index);
-    if (before.trim()) {
-      blocks.push(
-        <MarkdownEditor
-          key={`md-${blocks.length}`}
-          markdown={before}
-          readOnly
-          showModeSwitch={false}
-          initialMode="wysiwyg"
-          className="chat-markdown"
-        />
-      );
-    }
-
-    blocks.push(
-      <Suspense key={`mermaid-${blocks.length}`} fallback={null}>
-        <MermaidRenderer
-          code={match[1].trim()}
-          className="chat-markdown__mermaid"
-        />
-      </Suspense>
-    );
-    lastIndex = mermaidFencePattern.lastIndex;
+function renderWorkflowCodeBlock(
+  code: string,
+  language: string,
+  key: string
+): React.ReactNode | undefined {
+  if (language !== 'mermaid') {
+    return undefined;
   }
 
-  const after = markdown.slice(lastIndex);
-  if (after.trim() || blocks.length === 0) {
-    blocks.push(
-      <MarkdownEditor
-        key={`md-${blocks.length}`}
-        markdown={after}
-        readOnly
-        showModeSwitch={false}
-        initialMode="wysiwyg"
-        className="chat-markdown"
+  return (
+    <Suspense key={key} fallback={null}>
+      <MermaidRenderer
+        code={code.trim()}
+        className="chat-markdown__mermaid"
       />
-    );
-  }
+    </Suspense>
+  );
+}
 
-  return blocks;
+function renderMarkdownWithMermaid(markdown: string): React.ReactNode {
+  return (
+    <MarkdownReadonly
+      markdown={markdown}
+      className="chat-markdown"
+      renderCodeBlock={renderWorkflowCodeBlock}
+    />
+  );
 }
 
 // ============ 单个步骤项组件 ============

@@ -1,3 +1,5 @@
+import 'tdesign-react/es/message/style/css';
+
 type TDesignMessagePlugin =
   typeof import('tdesign-react/es/message')['MessagePlugin'];
 type MessageMethod = Exclude<keyof TDesignMessagePlugin, 'close'>;
