@@ -11,7 +11,7 @@ import React, {
   useRef,
   useMemo,
 } from 'react';
-import { copyToClipboard, readFromClipboard } from '../../utils/runtime-helpers';
+import { copyToClipboard } from '../../utils/runtime-helpers';
 import { MessagePlugin, Dialog, Button, Checkbox } from 'tdesign-react';
 import {
   DownloadIcon,
@@ -430,6 +430,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
   const lastSelectedRowRef = useRef<number | null>(null); // 上次选择的行（单元格），用于单元格 Shift 多选
   const lastCheckedRowRef = useRef<number | null>(null); // 上次勾选的行（checkbox），用于 checkbox Shift 多选
   const uploadTargetRowRef = useRef<number | null>(null); // 正在上传图片的目标行
+  const batchRootRef = useRef<HTMLDivElement>(null);
 
   // 保存到 IndexedDB（异步）
   useEffect(() => {
@@ -625,6 +626,72 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
       });
     },
     []
+  );
+
+  const applyPastedTextToCells = useCallback(
+    (text: string, originCell: CellPosition, targetCells: CellPosition[]) => {
+      const lines = text.split(/\r?\n/).filter((line) => line.trim());
+      if (lines.length === 0) return;
+
+      const updatePastedValue = (row: number, col: string, value: string) => {
+        if (row < 0 || row >= tasks.length) return;
+
+        if (col === 'prompt') {
+          updateCellValue(row, col, value);
+        } else if (col === 'count') {
+          const num = parseInt(value, 10);
+          if (!isNaN(num) && num >= 1) {
+            updateCellValue(row, col, num);
+          }
+        } else if (col === 'size' && modelSizeOptionSet.has(value)) {
+          updateCellValue(row, col, value);
+        }
+      };
+
+      if (lines.length === 1 || targetCells.length > 1) {
+        const value = lines[0];
+        targetCells.forEach((cell) =>
+          updatePastedValue(cell.row, cell.col, value)
+        );
+        return;
+      }
+
+      lines.forEach((line, index) => {
+        updatePastedValue(originCell.row + index, originCell.col, line);
+      });
+    },
+    [modelSizeOptionSet, tasks.length, updateCellValue]
+  );
+
+  const pasteCopiedCells = useCallback(
+    (originCell: CellPosition, targetCells: CellPosition[]) => {
+      const copiedCells = (window as any).__copiedCells as
+        | Array<{ row: number; col: string; value: any }>
+        | undefined;
+
+      if (!copiedCells || copiedCells.length === 0) {
+        return false;
+      }
+
+      if (copiedCells.length === 1) {
+        const copied = copiedCells[0];
+        targetCells.forEach((cell) => {
+          if (cell.col === copied.col) {
+            updateCellValue(cell.row, cell.col, copied.value);
+          }
+        });
+        return true;
+      }
+
+      copiedCells.forEach((copied, index) => {
+        const targetRow = originCell.row + index;
+        if (targetRow < tasks.length) {
+          updateCellValue(targetRow, originCell.col, copied.value);
+        }
+      });
+      return true;
+    },
+    [tasks.length, updateCellValue]
   );
 
   // 处理单元格点击
@@ -2010,83 +2077,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
           copyToClipboard(textToCopy).then(() => {
             // 存储复制的单元格信息用于内部粘贴
             (window as any).__copiedCells = values;
-          });
-        }
-        return;
-      }
-
-      // Ctrl+V 粘贴（支持多选单元格粘贴相同值）
-      if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
-        e.preventDefault();
-
-        // 获取要粘贴的目标单元格列表
-        const targetCells =
-          selectedCells.length > 0 ? selectedCells : [{ row, col }];
-
-        // 优先使用内部复制的单元格数据
-        const copiedCells = (window as any).__copiedCells as
-          | Array<{ row: number; col: string; value: any }>
-          | undefined;
-
-        if (copiedCells && copiedCells.length > 0) {
-          // 如果只复制了一个值，粘贴到所有选中单元格
-          if (copiedCells.length === 1) {
-            const copied = copiedCells[0];
-            targetCells.forEach((cell) => {
-              if (cell.col === copied.col) {
-                updateCellValue(cell.row, cell.col, copied.value);
-              }
-            });
-          } else {
-            // 多个值按顺序粘贴
-            copiedCells.forEach((copied, index) => {
-              const targetRow = row + index;
-              if (targetRow < tasks.length) {
-                updateCellValue(targetRow, col, copied.value);
-              }
-            });
-          }
-        } else {
-          // 从系统剪贴板粘贴文本
-          readFromClipboard().then((text) => {
-            const lines = text.split('\n').filter((l) => l.trim());
-
-            // 如果只有一行或选中了多个单元格，粘贴相同值到所有选中单元格
-            if (lines.length === 1 || targetCells.length > 1) {
-              const value = lines[0];
-              targetCells.forEach((cell) => {
-                if (cell.col === 'prompt') {
-                  updateCellValue(cell.row, cell.col, value);
-                } else if (cell.col === 'count') {
-                  const num = parseInt(value);
-                  if (!isNaN(num) && num >= 1) {
-                    updateCellValue(cell.row, cell.col, num);
-                  }
-                } else if (
-                  cell.col === 'size' &&
-                  modelSizeOptionSet.has(value)
-                ) {
-                  updateCellValue(cell.row, cell.col, value);
-                }
-              });
-            } else {
-              // 多行文本按顺序粘贴
-              lines.forEach((line, index) => {
-                const targetRow = row + index;
-                if (targetRow >= tasks.length) return;
-
-                if (col === 'prompt') {
-                  updateCellValue(targetRow, col, line);
-                } else if (col === 'count') {
-                  const num = parseInt(line);
-                  if (!isNaN(num) && num >= 1) {
-                    updateCellValue(targetRow, col, num);
-                  }
-                } else if (col === 'size' && modelSizeOptionSet.has(line)) {
-                  updateCellValue(targetRow, col, line);
-                }
-              });
-            }
+            (window as any).__copiedCellsText = textToCopy;
           });
         }
         return;
@@ -2173,7 +2164,68 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
     updateCellValue,
     undo,
     redo,
-    modelSizeOptionSet,
+  ]);
+
+  // 使用 paste 事件自带数据，避免 iframe 权限策略阻止 navigator.clipboard.readText。
+  useEffect(() => {
+    const handlePaste = (event: ClipboardEvent) => {
+      if (!activeCell || editingCell) return;
+
+      const targetElement =
+        event.target instanceof Element ? event.target : null;
+      if (
+        targetElement?.closest('input, textarea, [contenteditable="true"]')
+      ) {
+        return;
+      }
+
+      const rootElement = batchRootRef.current;
+      const activeElement = document.activeElement;
+      const isWithinBatch =
+        !!rootElement &&
+        ((targetElement && rootElement.contains(targetElement)) ||
+          (activeElement instanceof Element &&
+            rootElement.contains(activeElement)));
+      const isDocumentPaste =
+        !activeElement ||
+        activeElement === document.body ||
+        activeElement === document.documentElement;
+
+      if (!isWithinBatch && !isDocumentPaste) return;
+
+      const text =
+        event.clipboardData?.getData('text/plain') ||
+        event.clipboardData?.getData('text') ||
+        '';
+      if (!text) return;
+
+      event.preventDefault();
+      const targetCells =
+        selectedCells.length > 0 ? selectedCells : [activeCell];
+
+      const copiedCellsText = (window as any).__copiedCellsText as
+        | string
+        | undefined;
+      if (
+        typeof copiedCellsText === 'string' &&
+        copiedCellsText.replace(/\r\n/g, '\n') ===
+          text.replace(/\r\n/g, '\n') &&
+        pasteCopiedCells(activeCell, targetCells)
+      ) {
+        return;
+      }
+
+      applyPastedTextToCells(text, activeCell, targetCells);
+    };
+
+    document.addEventListener('paste', handlePaste);
+    return () => document.removeEventListener('paste', handlePaste);
+  }, [
+    activeCell,
+    applyPastedTextToCells,
+    editingCell,
+    pasteCopiedCells,
+    selectedCells,
   ]);
 
   // 全局鼠标释放监听 - 确保拖拽在任何地方释放都能结束
@@ -2706,7 +2758,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
   };
 
   return (
-    <div className="batch-image-generation">
+    <div ref={batchRootRef} className="batch-image-generation">
       <div className="batch-main-content">
         {/* 工具栏 - 按用户动线排列：导入数据 → 选择操作 → 删除 → 下载 */}
         <div className="batch-toolbar">

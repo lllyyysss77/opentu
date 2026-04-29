@@ -309,9 +309,11 @@ export const UnifiedMediaViewer: React.FC<UnifiedMediaViewerProps> = ({
     if (!containerRef.current) return;
 
     if (!isFullscreen) {
-      containerRef.current.requestFullscreen?.();
+      const request = containerRef.current.requestFullscreen?.();
+      request?.catch(() => undefined);
     } else {
-      document.exitFullscreen?.();
+      const request = document.exitFullscreen?.();
+      request?.catch(() => undefined);
     }
   }, [isFullscreen]);
 

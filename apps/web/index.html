@@ -1605,6 +1605,9 @@
             'ResizeObserver loop completed with undelivered notifications'
           ) !== -1 ||
           text.indexOf('ResizeObserver loop limit exceeded') !== -1 ||
+          (text.indexOf('WebCodecs API') !== -1 &&
+            (text.indexOf('Chrome 94+') !== -1 ||
+              text.indexOf('Edge 94+') !== -1)) ||
           (text.indexOf("Failed to execute 'write' on 'Clipboard'") !== -1 &&
             text.indexOf('permissions policy') !== -1) ||
           ((text.indexOf('AbortError') !== -1 ||
