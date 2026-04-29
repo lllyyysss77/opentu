@@ -3726,163 +3726,172 @@ export const FramePanel: React.FC<FramePanelProps> = ({
           </div>
         ) : (
           <div className="frame-panel__outline">
-            <div className="frame-panel__outline-title">
-              <span className="frame-panel__outline-label">PPT 标题</span>
-              <Input
-                value={pptTitleDraft}
-                onChange={setPPTTitleDraft}
-                onBlur={() => persistPPTTitleDraft()}
-                placeholder={currentBoardName?.trim() || 'PPT 标题'}
-                size="small"
-                disabled={isOutlineGenerating}
-              />
-            </div>
-
-            <div className="frame-panel__outline-common">
-              <div className="frame-panel__outline-common-header">
-                <span className="frame-panel__outline-label">公共提示词</span>
-                <div className="frame-panel__outline-common-actions">
-                  <HoverTip content="公共提示词历史" placement="top">
-                    <Button
-                      className="frame-panel__outline-history-trigger"
-                      variant="outline"
-                      size="small"
-                      shape="square"
-                      icon={<History size={15} />}
-                      disabled={isOutlineGenerating}
-                      onClick={handleToggleCommonPromptHistory}
-                    />
-                  </HoverTip>
-                  <HoverTip content="提示词优化" placement="top">
-                    <Button
-                      className="frame-panel__outline-optimize"
-                      variant="outline"
-                      size="small"
-                      shape="square"
-                      icon={<Sparkles size={15} />}
-                      disabled={isOutlineGenerating}
-                      onClick={() =>
-                        setOutlinePromptOptimizeTarget({ type: 'common' })
-                      }
-                    />
-                  </HoverTip>
-                </div>
+            <div className="frame-panel__outline-body">
+              <div className="frame-panel__outline-title">
+                <span className="frame-panel__outline-label">PPT 标题</span>
+                <Input
+                  value={pptTitleDraft}
+                  onChange={setPPTTitleDraft}
+                  onBlur={() => persistPPTTitleDraft()}
+                  placeholder={currentBoardName?.trim() || 'PPT 标题'}
+                  size="small"
+                  disabled={isOutlineGenerating}
+                />
               </div>
-              {commonPromptHistoryOpen && (
-                <div
-                  ref={commonPromptHistoryPanelRef}
-                  className="frame-panel__outline-history-panel"
-                >
-                  {commonPromptHistoryItems.length > 0 ? (
-                    <PromptListPanel
-                      title="公共提示词历史"
-                      items={commonPromptHistoryItems}
-                      onSelect={handleSelectCommonPromptHistory}
-                      onTogglePin={handleToggleCommonPromptHistoryPin}
-                      onDelete={handleDeleteCommonPromptHistory}
-                      language={language as 'zh' | 'en'}
-                      analyticsSurface="ppt_common_prompt"
-                      analyticsPromptType="ppt-common"
-                      showCount
-                    />
-                  ) : (
-                    <div className="frame-panel__outline-history-empty">
-                      暂无公共提示词历史
-                    </div>
-                  )}
-                </div>
-              )}
-              <Textarea
-                value={commonPromptDraft}
-                onChange={(value) => setCommonPromptDraft(value)}
-                onBlur={() => persistCommonPromptDraft()}
-                autosize={{ minRows: 4, maxRows: 8 }}
-                disabled={isOutlineGenerating}
-              />
-            </div>
 
-            <div className="frame-panel__outline-list">
-              {filteredOutlineFrames.map((info) => {
-                const pageIndex = Math.max(
-                  0,
-                  orderedPPTFrames.findIndex(
-                    (item) => item.frame.id === info.frame.id
-                  )
-                );
-                const slidePrompt =
-                  slidePromptDrafts[info.frame.id] ?? info.slidePrompt ?? '';
-                const previewImageUrl = resolvePPTFramePreviewUrl(
-                  frameSnapshotUrls[info.frame.id],
-                  info.slideImageUrl
-                );
-                return (
-                  <div key={info.listKey} className="frame-panel__outline-item">
-                    <Checkbox
-                      checked={outlineSelectedFrameIds.has(info.frame.id)}
-                      disabled={isOutlineGenerating}
-                      onChange={(checked) =>
-                        handleToggleOutlineSlide(
-                          info.frame.id,
-                          checked as boolean
-                        )
-                      }
-                    />
-                    <div className="frame-panel__outline-item-main">
-                      <div className="frame-panel__outline-item-header">
-                        <div className="frame-panel__outline-item-title">
-                          <span className="frame-panel__outline-page-index">
-                            {pageIndex + 1}
-                          </span>
-                          <span className="frame-panel__outline-page-title">
-                            {getFrameDisplayName(info.frame)}
-                          </span>
-                        </div>
-                        <div className="frame-panel__outline-item-actions">
-                          <PPTOutlineSlideImageAction
-                            imageUrl={previewImageUrl}
-                            title={getFrameDisplayName(info.frame)}
-                            status={
-                              info.pptMeta?.slideImageStatus ||
-                              info.pptMeta?.imageStatus
-                            }
-                            disabled={isOutlineGenerating}
-                            onClick={(event) =>
-                              handleRegenerateSlide(info, event)
-                            }
-                          />
-                          <HoverTip content="提示词优化" placement="top">
-                            <Button
-                              className="frame-panel__outline-optimize"
-                              variant="outline"
-                              size="small"
-                              shape="square"
-                              icon={<Sparkles size={15} />}
+              <div className="frame-panel__outline-common">
+                <div className="frame-panel__outline-common-header">
+                  <span className="frame-panel__outline-label">公共提示词</span>
+                  <div className="frame-panel__outline-common-actions">
+                    <HoverTip content="公共提示词历史" placement="top">
+                      <Button
+                        className="frame-panel__outline-history-trigger"
+                        variant="outline"
+                        size="small"
+                        shape="square"
+                        icon={<History size={15} />}
+                        disabled={isOutlineGenerating}
+                        onClick={handleToggleCommonPromptHistory}
+                      />
+                    </HoverTip>
+                    <HoverTip content="提示词优化" placement="top">
+                      <Button
+                        className="frame-panel__outline-optimize"
+                        variant="outline"
+                        size="small"
+                        shape="square"
+                        icon={<Sparkles size={15} />}
+                        disabled={isOutlineGenerating}
+                        onClick={() =>
+                          setOutlinePromptOptimizeTarget({ type: 'common' })
+                        }
+                      />
+                    </HoverTip>
+                  </div>
+                </div>
+                {commonPromptHistoryOpen && (
+                  <div
+                    ref={commonPromptHistoryPanelRef}
+                    className="frame-panel__outline-history-panel"
+                  >
+                    {commonPromptHistoryItems.length > 0 ? (
+                      <PromptListPanel
+                        title="公共提示词历史"
+                        items={commonPromptHistoryItems}
+                        onSelect={handleSelectCommonPromptHistory}
+                        onTogglePin={handleToggleCommonPromptHistoryPin}
+                        onDelete={handleDeleteCommonPromptHistory}
+                        language={language as 'zh' | 'en'}
+                        analyticsSurface="ppt_common_prompt"
+                        analyticsPromptType="ppt-common"
+                        showCount
+                      />
+                    ) : (
+                      <div className="frame-panel__outline-history-empty">
+                        暂无公共提示词历史
+                      </div>
+                    )}
+                  </div>
+                )}
+                <Textarea
+                  value={commonPromptDraft}
+                  onChange={(value) => setCommonPromptDraft(value)}
+                  onBlur={() => persistCommonPromptDraft()}
+                  autosize={{ minRows: 4, maxRows: 8 }}
+                  disabled={isOutlineGenerating}
+                />
+              </div>
+
+              <div className="frame-panel__outline-list">
+                {filteredOutlineFrames.map((info) => {
+                  const pageIndex = Math.max(
+                    0,
+                    orderedPPTFrames.findIndex(
+                      (item) => item.frame.id === info.frame.id
+                    )
+                  );
+                  const slidePrompt =
+                    slidePromptDrafts[info.frame.id] ?? info.slidePrompt ?? '';
+                  const previewImageUrl = info.slideImageElementId
+                    ? resolvePPTFramePreviewUrl(
+                        frameSnapshotUrls[info.frame.id],
+                        info.slideImageUrl
+                      )
+                    : undefined;
+                  return (
+                    <div
+                      key={info.listKey}
+                      className="frame-panel__outline-item"
+                    >
+                      <div className="frame-panel__outline-item-top">
+                        <Checkbox
+                          checked={outlineSelectedFrameIds.has(info.frame.id)}
+                          disabled={isOutlineGenerating}
+                          onChange={(checked) =>
+                            handleToggleOutlineSlide(
+                              info.frame.id,
+                              checked as boolean
+                            )
+                          }
+                        />
+                        <div className="frame-panel__outline-item-header">
+                          <div className="frame-panel__outline-item-title">
+                            <span className="frame-panel__outline-page-index">
+                              {pageIndex + 1}
+                            </span>
+                            <span className="frame-panel__outline-page-title">
+                              {getFrameDisplayName(info.frame)}
+                            </span>
+                          </div>
+                          <div className="frame-panel__outline-item-actions">
+                            <PPTOutlineSlideImageAction
+                              imageUrl={previewImageUrl}
+                              title={getFrameDisplayName(info.frame)}
+                              status={
+                                info.pptMeta?.slideImageStatus ||
+                                info.pptMeta?.imageStatus
+                              }
                               disabled={isOutlineGenerating}
-                              onClick={() =>
-                                setOutlinePromptOptimizeTarget({
-                                  type: 'slide',
-                                  frameId: info.frame.id,
-                                })
+                              onClick={(event) =>
+                                handleRegenerateSlide(info, event)
                               }
                             />
-                          </HoverTip>
+                            <HoverTip content="提示词优化" placement="top">
+                              <Button
+                                className="frame-panel__outline-optimize"
+                                variant="outline"
+                                size="small"
+                                shape="square"
+                                icon={<Sparkles size={15} />}
+                                disabled={isOutlineGenerating}
+                                onClick={() =>
+                                  setOutlinePromptOptimizeTarget({
+                                    type: 'slide',
+                                    frameId: info.frame.id,
+                                  })
+                                }
+                              />
+                            </HoverTip>
+                          </div>
                         </div>
                       </div>
-                      <Textarea
-                        value={slidePrompt}
-                        onChange={(value) =>
-                          handleSlidePromptDraftChange(info.frame.id, value)
-                        }
-                        onBlur={() =>
-                          persistSlidePromptDraft(info.frame.id, slidePrompt)
-                        }
-                        autosize={{ minRows: 4, maxRows: 12 }}
-                        disabled={isOutlineGenerating}
-                      />
+                      <div className="frame-panel__outline-slide-prompt">
+                        <Textarea
+                          value={slidePrompt}
+                          onChange={(value) =>
+                            handleSlidePromptDraftChange(info.frame.id, value)
+                          }
+                          onBlur={() =>
+                            persistSlidePromptDraft(info.frame.id, slidePrompt)
+                          }
+                          autosize={{ minRows: 4, maxRows: 12 }}
+                          disabled={isOutlineGenerating}
+                        />
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
 
             <div className="frame-panel__outline-footer">
