@@ -49,6 +49,73 @@ function preparePackageRoot(sourceDir) {
   };
 }
 
+function getTagAttribute(tag, attributeName) {
+  const escapedName = attributeName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = String(tag).match(
+    new RegExp(`\\s${escapedName}\\s*=\\s*(['"])(.*?)\\1`, 'i')
+  );
+  return match ? match[2] : '';
+}
+
+function normalizeEntryAssetPath(value) {
+  let normalized = String(value || '')
+    .split(/[?#]/, 1)[0]
+    .trim();
+  if (!normalized) {
+    return '';
+  }
+
+  if (/^https?:\/\//i.test(normalized)) {
+    try {
+      normalized = new URL(normalized).pathname;
+    } catch (_error) {
+      return '';
+    }
+  }
+
+  normalized = normalized
+    .replace(/^\//, '')
+    .replace(/^\.\//, '')
+    .replace(/^npm\/aitu-app@[^/]+\//, '')
+    .replace(/^aitu-app@[^/]+\//, '');
+
+  return normalized;
+}
+
+function collectEntryAssetsFromHtml(html) {
+  const assets = new Set();
+
+  const scriptTags =
+    String(html).match(
+      /<script\b[^>]*\bsrc\s*=\s*(['"]).*?\1[^>]*><\/script>/gi
+    ) || [];
+  for (const tag of scriptTags) {
+    const asset = normalizeEntryAssetPath(
+      getTagAttribute(tag, 'data-local-src') || getTagAttribute(tag, 'src')
+    );
+    if (asset.startsWith('assets/') && asset.endsWith('.js')) {
+      assets.add(asset);
+    }
+  }
+
+  const linkTags = String(html).match(/<link\b[^>]*>/gi) || [];
+  for (const tag of linkTags) {
+    const rel = getTagAttribute(tag, 'rel').toLowerCase();
+    if (!rel.split(/\s+/).includes('stylesheet')) {
+      continue;
+    }
+
+    const asset = normalizeEntryAssetPath(
+      getTagAttribute(tag, 'data-local-href') || getTagAttribute(tag, 'href')
+    );
+    if (asset.startsWith('assets/') && asset.endsWith('.css')) {
+      assets.add(asset);
+    }
+  }
+
+  return Array.from(assets);
+}
+
 // 加载 .env 配置文件
 function loadEnvConfig() {
   const envPath = path.join(__dirname, '../.env');
