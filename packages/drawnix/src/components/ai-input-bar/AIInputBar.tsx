@@ -456,6 +456,8 @@ interface AIInputBarProps {
   isDataReady?: boolean;
   /** 确保工具窗口管理器已启用 */
   onEnableToolWindows?: () => void;
+  /** 确保生成任务后台运行时已启用 */
+  onEnableRuntime?: () => void;
 }
 
 /**
@@ -640,7 +642,7 @@ const SelectionWatcher: React.FC<{
 SelectionWatcher.displayName = 'SelectionWatcher';
 
 export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
-  ({ className, isDataReady, onEnableToolWindows }) => {
+  ({ className, isDataReady, onEnableToolWindows, onEnableRuntime }) => {
     // console.log('[AIInputBar] Component rendering');
 
     const { language } = useI18n();
@@ -2485,6 +2487,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
       if (isSubmitting) {
         return; // 仅防止快速重复点击
       }
+      onEnableRuntime?.();
 
       const submitStartTime = Date.now();
       const promptLength = trimmedPrompt.length;
@@ -3526,6 +3529,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
       bindCurrentImageAnchorTask,
       applyCurrentImageAnchorPresentationState,
       removeCurrentImageAnchor,
+      onEnableRuntime,
     ]);
 
     // 处理工作流重试（从指定步骤开始）
