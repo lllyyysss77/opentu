@@ -1,6 +1,21 @@
 {
   "versions": [
     {
+      "version": "0.6.91",
+      "date": "2026-04-29",
+      "changes": {
+        "features": [
+          "支持完整环境备份与覆盖恢复"
+        ],
+        "fixes": [
+          "改进部署包关键资源检查逻辑"
+        ],
+        "improvements": []
+      },
+      "type": "patch",
+      "highlights": "支持完整环境备份与覆盖恢复"
+    },
+    {
       "version": "0.6.90",
       "date": "2026-04-29",
       "changes": {

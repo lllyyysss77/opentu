@@ -1,3 +1,21 @@
+## 0.6.91 (2026-04-29)
+
+### 🚀 Features
+
+- 支持完整环境备份与覆盖恢复 ([9e593e94](https://github.com/ljquan/aitu/commit/9e593e94))
+
+### 🩹 Fixes
+
+- 改进部署包关键资源检查逻辑 ([1a457d02](https://github.com/ljquan/aitu/commit/1a457d02))
+
+### 🔧 Chores
+
+- 更新应用版本至0.6.90并刷新构建时间 ([2ca0b092](https://github.com/ljquan/aitu/commit/2ca0b092))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+
 ## 0.6.90 (2026-04-29)
 
 ### 🔧 Chores

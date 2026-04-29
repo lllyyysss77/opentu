@@ -1,6 +1,9 @@
 {
-  "version": "0.6.90",
-  "buildTime": "2026-04-29T02:41:55.947Z",
+  "version": "0.6.91",
+  "buildTime": "2026-04-29T05:48:59.811Z",
   "gitCommit": "unknown",
-  "changelog": []
+  "changelog": [
+    "支持完整环境备份与覆盖恢复",
+    "改进部署包关键资源检查逻辑"
+  ]
 }
