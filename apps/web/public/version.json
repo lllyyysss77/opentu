@@ -1,6 +1,6 @@
 {
   "version": "0.6.89",
-  "buildTime": "2026-04-29T02:01:56.205Z",
+  "buildTime": "2026-04-29T02:01:58.156Z",
   "gitCommit": "unknown",
   "changelog": [
     "添加PPT生成参考图片支持并修复React组件卸载问题",
