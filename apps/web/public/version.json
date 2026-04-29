@@ -1,6 +1,6 @@
 {
   "version": "0.6.91",
-  "buildTime": "2026-04-29T05:48:59.811Z",
+  "buildTime": "2026-04-29T05:49:00.404Z",
   "gitCommit": "unknown",
   "changelog": [
     "支持完整环境备份与覆盖恢复",
