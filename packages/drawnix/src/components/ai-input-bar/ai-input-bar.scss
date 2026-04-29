@@ -18,22 +18,27 @@ $vip-color: #E91E63;
 $ai-input-font-size: 15px;
 $ai-input-line-height-ratio: 1.5;
 $ai-input-line-height: $ai-input-font-size * $ai-input-line-height-ratio;
+$ai-input-collapsed-vertical-padding: 6px;
 $ai-input-vertical-padding: 12px;
+$ai-input-collapsed-min-height: $ai-input-line-height + $ai-input-collapsed-vertical-padding;
 $ai-input-expanded-min-height: $ai-input-line-height * 4 + $ai-input-vertical-padding;
 $ai-input-expanded-max-height: $ai-input-line-height * 6 + $ai-input-vertical-padding;
 $ai-input-mobile-font-size: 14px;
 $ai-input-mobile-line-height: $ai-input-mobile-font-size * $ai-input-line-height-ratio;
+$ai-input-mobile-collapsed-vertical-padding: 4px;
 $ai-input-mobile-vertical-padding: 8px;
+$ai-input-mobile-collapsed-min-height: $ai-input-mobile-line-height + $ai-input-mobile-collapsed-vertical-padding;
 $ai-input-mobile-expanded-min-height: $ai-input-mobile-line-height * 4 + $ai-input-mobile-vertical-padding;
 $ai-input-mobile-expanded-max-height: $ai-input-mobile-line-height * 6 + $ai-input-mobile-vertical-padding;
 $ai-input-small-font-size: 13px;
 $ai-input-small-line-height: $ai-input-small-font-size * $ai-input-line-height-ratio;
+$ai-input-small-collapsed-min-height: $ai-input-small-line-height + $ai-input-mobile-collapsed-vertical-padding;
 $ai-input-small-expanded-min-height: $ai-input-small-line-height * 4 + $ai-input-mobile-vertical-padding;
 $ai-input-small-expanded-max-height: $ai-input-small-line-height * 6 + $ai-input-mobile-vertical-padding;
 
 .ai-input-bar {
   position: fixed;
-  bottom: 24px;
+  bottom: 12px;
   left: 50%;
   transform: translateX(-50%);
   z-index: $z-canvas-internal;
@@ -339,7 +344,7 @@ $ai-input-small-expanded-max-height: $ai-input-small-line-height * 6 + $ai-input
     width: 100%;
     background: var(--island-bg-color, #fff);
     border-radius: 24px;
-    padding: 8px 12px;
+    padding: 6px 10px;
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
     transition: all 0.2s ease;
 
@@ -384,14 +389,16 @@ $ai-input-small-expanded-max-height: $ai-input-small-line-height * 6 + $ai-input
     position: relative;
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    margin-bottom: 8px;
+    gap: 6px;
+    margin-bottom: 4px;
     width: 100%; // 确保输入区域占满宽度
     transition: max-height 0.2s ease;
 
     // 展开状态
     &--expanded {
       max-height: 200px; // 最大高度限制
+      gap: 8px;
+      margin-bottom: 8px;
     }
   }
 
@@ -639,14 +646,14 @@ $ai-input-small-expanded-max-height: $ai-input-small-line-height * 6 + $ai-input
     color: $text-dark;
     resize: none;
     outline: none;
-    min-height: 24px;
+    min-height: $ai-input-collapsed-min-height;
     max-height: $ai-input-expanded-max-height;
     overflow-y: hidden;
-    padding: 6px 12px;
+    padding: 3px 12px;
     padding-right: 20px;
     margin: 0;
     font-family: 'PingFang SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    transition: height 0.2s ease, min-height 0.2s ease, max-height 0.2s ease;
+    transition: height 0.2s ease, min-height 0.2s ease, max-height 0.2s ease, padding 0.2s ease;
     position: relative;
     z-index: 2;
     box-sizing: border-box;
@@ -695,6 +702,8 @@ $ai-input-small-expanded-max-height: $ai-input-small-line-height * 6 + $ai-input
 
     // Focused input starts at 4 rows and grows to 6 rows via JS auto-resize.
     &--focused {
+      padding-top: 6px;
+      padding-bottom: 6px;
       min-height: $ai-input-expanded-min-height;
       max-height: $ai-input-expanded-max-height;
     }
@@ -1458,7 +1467,7 @@ $ai-input-small-expanded-max-height: $ai-input-small-line-height * 6 + $ai-input
 // 平板及以下 (max-width: 768px) - 调整布局
 @media (max-width: 768px) {
   .ai-input-bar {
-    bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
     padding: 0 12px;
     max-width: calc(100% - 80px); // 给左侧工具栏留空间
     left: calc(50% + 30px); // 稍微右偏以避开工具栏
@@ -1486,7 +1495,7 @@ $ai-input-small-expanded-max-height: $ai-input-small-line-height * 6 + $ai-input
 // 移动端竖屏 (max-width: 640px) - 全宽布局
 @media (max-width: 640px) {
   .ai-input-bar {
-    bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
     padding: 0 8px;
     padding-left: calc(env(safe-area-inset-left, 0px) + 8px);
     padding-right: calc(env(safe-area-inset-right, 0px) + 8px);
@@ -1552,10 +1561,12 @@ $ai-input-small-expanded-max-height: $ai-input-small-line-height * 6 + $ai-input
 
     &__input {
       font-size: $ai-input-mobile-font-size;
-      padding: 4px 8px;
-      min-height: 20px;
+      padding: 2px 8px;
+      min-height: $ai-input-mobile-collapsed-min-height;
 
       &--focused {
+        padding-top: 4px;
+        padding-bottom: 4px;
         min-height: $ai-input-mobile-expanded-min-height;
         max-height: $ai-input-mobile-expanded-max-height;
       }
@@ -1600,7 +1611,7 @@ $ai-input-small-expanded-max-height: $ai-input-small-line-height * 6 + $ai-input
 // 小屏移动端 (max-width: 480px) - 更紧凑
 @media (max-width: 480px) {
   .ai-input-bar {
-    bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 6px);
     padding: 0 6px;
     padding-left: calc(env(safe-area-inset-left, 0px) + 6px);
     padding-right: calc(env(safe-area-inset-right, 0px) + 6px);
@@ -1625,6 +1636,7 @@ $ai-input-small-expanded-max-height: $ai-input-small-line-height * 6 + $ai-input
 
     &__input {
       font-size: $ai-input-small-font-size;
+      min-height: $ai-input-small-collapsed-min-height;
 
       &--focused {
         min-height: $ai-input-small-expanded-min-height;
