@@ -1784,15 +1784,23 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
 
     // 处理灵感模版选择：将提示词替换到输入框并切换到 Agent 模式
     const handleSelectInspirationPrompt = useCallback(
-      (info: { prompt: string; modelType: 'agent' }) => {
+      (info: { prompt: string; modelType: 'agent'; skillId?: string }) => {
         setPrompt(info.prompt);
         setGenerationType('agent');
+        if (info.skillId) {
+          setSelectedSkillId(info.skillId);
+          const systemSkill = findSystemSkillById(info.skillId);
+          if (systemSkill) {
+            setSelectedSkillMediaTypes(inferSkillMediaTypes(systemSkill));
+          }
+        }
         inputRef.current?.focus();
 
         // 埋点：灵感模板选择（用于追踪转化率）
         analytics.track('inspiration_selected', {
           promptLength: info.prompt.length,
           modelType: info.modelType,
+          skillId: info.skillId,
         });
       },
       []

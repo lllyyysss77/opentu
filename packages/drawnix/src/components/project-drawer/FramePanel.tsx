@@ -84,6 +84,7 @@ import {
   loadPPTFrameLayoutColumns,
   loadPPTEditorViewMode,
   normalizePPTStyleSpec,
+  normalizePPTReferenceImages,
   PPT_EDITOR_OPEN_EVENT,
   PPT_TRANSITION_OPTIONS,
   getPPTSlideTransition,
@@ -188,6 +189,34 @@ const PPT_OUTLINE_CANCELLED_ERROR = 'PPT_OUTLINE_GENERATION_CANCELLED';
 const PPT_DEFAULT_IMAGE_SIZE = '16x9';
 const PPT_DEFAULT_IMAGE_PIXEL_SIZE = '1360x768';
 const PPT_FRAME_SNAPSHOT_DEBOUNCE_MS = 120;
+
+function mergePPTReferenceImages(
+  ...imageGroups: Array<Array<string | undefined> | undefined>
+): string[] | undefined {
+  const merged = normalizePPTReferenceImages(
+    imageGroups.flatMap((group) => group || []).filter(Boolean) as string[]
+  );
+
+  return merged.length > 0 ? merged : undefined;
+}
+
+function appendInitialReferenceImages(
+  initialImages: Array<{ url: string; name: string }>,
+  referenceImages?: string[],
+  namePrefix = 'deck-reference'
+): void {
+  const existingUrls = new Set(initialImages.map((image) => image.url));
+  normalizePPTReferenceImages(referenceImages).forEach((url, index) => {
+    if (existingUrls.has(url)) {
+      return;
+    }
+    existingUrls.add(url);
+    initialImages.push({
+      url,
+      name: `${namePrefix}-${index + 1}.png`,
+    });
+  });
+}
 const INVALID_PPT_EXPORT_FILE_NAME_CHARS = /[\\/:*?"<>|]/g;
 const PPT_LAYOUT_COLUMN_OPTIONS = Array.from(
   { length: 10 },
@@ -2726,6 +2755,11 @@ export const FramePanel: React.FC<FramePanelProps> = ({
           name: `${frameInfo.frame.name || 'slide'}-previous-reference.png`,
         });
       }
+      appendInitialReferenceImages(
+        initialImages,
+        frameInfo.pptMeta?.referenceImages,
+        `${frameInfo.frame.name || 'slide'}-deck-reference`
+      );
 
       analytics.trackPPTAction({
         action: 'open_slide_regenerate',
@@ -2735,6 +2769,9 @@ export const FramePanel: React.FC<FramePanelProps> = ({
         metadata: {
           has_current_image: Boolean(frameInfo.slideImageUrl),
           has_previous_reference: Boolean(previousSlideImage?.url),
+          has_deck_reference: Boolean(
+            frameInfo.pptMeta?.referenceImages?.length
+          ),
           replace_existing_image: Boolean(frameInfo.slideImageElementId),
         },
       });
@@ -3255,19 +3292,23 @@ export const FramePanel: React.FC<FramePanelProps> = ({
       throwIfPPTOutlineCancelled(runtime.controller.signal);
       const prompt =
         slidePromptDrafts[frameInfo.frame.id] ?? frameInfo.slidePrompt ?? '';
+      const finalReferenceImages = mergePPTReferenceImages(
+        referenceImages,
+        frameInfo.pptMeta?.referenceImages
+      );
       try {
         const imageUrl = await generateOneOutlineSlide(
           frameInfo,
           prompt,
           runtime,
           selectedIndex + 1,
-          referenceImages,
+          finalReferenceImages,
           referenceSize
         );
         generatedUrls.set(frameInfo.frame.id, imageUrl);
         generatedTaskSizes.set(
           frameInfo.frame.id,
-          referenceImages?.length && referenceSize
+          finalReferenceImages?.length && referenceSize
             ? referenceSize
             : PPT_DEFAULT_IMAGE_PIXEL_SIZE
         );
