@@ -1,3 +1,14 @@
+## 0.6.90 (2026-04-29)
+
+### 🔧 Chores
+
+- 更新应用版本号至0.6.89 ([9ebe98d3](https://github.com/ljquan/aitu/commit/9ebe98d3))
+- style(project-drawer): 重构PPT大纲面板样式以改进布局结构 ([c77741bb](https://github.com/ljquan/aitu/commit/c77741bb))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+
 ## 0.6.89 (2026-04-29)
 
 ### 🚀 Features
