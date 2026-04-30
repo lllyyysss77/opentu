@@ -2696,66 +2696,75 @@ const ComicCreator: React.FC = () => {
                         </button>
                       </HoverTip>
                     </div>
-                    {imageVariants.length > 0 && (
-                      <div
-                        className="comic-page-variant-strip"
-                        aria-label={`第 ${pageItem.pageNumber} 页历史图片`}
-                      >
-                        {imageVariants.map((variant, variantIndex) => {
-                          const selected = variant.url === pageItem.imageUrl;
-                          return (
-                            <HoverTip
-                              key={variant.id}
-                              content={
-                                selected
-                                  ? `当前图片 ${variantIndex + 1}`
-                                  : `设为第 ${variantIndex + 1} 张图片`
-                              }
-                              showArrow={false}
-                            >
-                              <button
-                                type="button"
-                                className={`comic-page-variant-thumb${
-                                  selected
-                                    ? ' comic-page-variant-thumb--active'
-                                    : ''
-                                }`}
-                                onClick={() =>
-                                  handleSelectPageImageVariant(
-                                    pageItem.id,
-                                    variant.id
-                                  )
-                                }
-                                disabled={generationState.running}
-                                aria-label={`选择第 ${
-                                  pageItem.pageNumber
-                                } 页第 ${variantIndex + 1} 张图片`}
-                              >
-                                <img
-                                  src={variant.url}
-                                  alt={`${pageItem.title} ${variantIndex + 1}`}
-                                  referrerPolicy="no-referrer"
-                                />
-                                <span>{variantIndex + 1}</span>
-                              </button>
-                            </HoverTip>
-                          );
-                        })}
-                      </div>
-                    )}
-                    <div className="comic-page-library-fallback">
-                      <HoverTip content="从素材库补回图片" showArrow={false}>
-                        <button
-                          type="button"
-                          className="comic-page-library-btn"
-                          onClick={() =>
-                            handleOpenPageMediaLibrary(pageItem.id)
-                          }
-                          aria-label={`从素材库补回第 ${pageItem.pageNumber} 页图片`}
+                    <div className="comic-page-assets-row">
+                      {imageVariants.length > 0 ? (
+                        <div
+                          className="comic-page-variant-strip"
+                          aria-label={`第 ${pageItem.pageNumber} 页历史图片`}
                         >
-                          <MediaLibraryIcon size={18} />
-                        </button>
-                      </HoverTip>
+                          {imageVariants.map((variant, variantIndex) => {
+                            const selected = variant.url === pageItem.imageUrl;
+                            return (
+                              <HoverTip
+                                key={variant.id}
+                                content={
+                                  selected
+                                    ? `当前图片 ${variantIndex + 1}`
+                                    : `设为第 ${variantIndex + 1} 张图片`
+                                }
+                                showArrow={false}
+                              >
+                                <button
+                                  type="button"
+                                  className={`comic-page-variant-thumb${
+                                    selected
+                                      ? ' comic-page-variant-thumb--active'
+                                      : ''
+                                  }`}
+                                  onClick={() =>
+                                    handleSelectPageImageVariant(
+                                      pageItem.id,
+                                      variant.id
+                                    )
+                                  }
+                                  disabled={generationState.running}
+                                  aria-label={`选择第 ${
+                                    pageItem.pageNumber
+                                  } 页第 ${variantIndex + 1} 张图片`}
+                                >
+                                  <img
+                                    src={variant.url}
+                                    alt={`${pageItem.title} ${
+                                      variantIndex + 1
+                                    }`}
+                                    referrerPolicy="no-referrer"
+                                  />
+                                  <span>{variantIndex + 1}</span>
+                                </button>
+                              </HoverTip>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div
+                          className="comic-page-variant-strip comic-page-variant-strip--empty"
+                          aria-hidden="true"
+                        />
+                      )}
+                      <div className="comic-page-library-fallback">
+                        <HoverTip content="从素材库补回图片" showArrow={false}>
+                          <button
+                            type="button"
+                            className="comic-page-library-btn"
+                            onClick={() =>
+                              handleOpenPageMediaLibrary(pageItem.id)
+                            }
+                            aria-label={`从素材库补回第 ${pageItem.pageNumber} 页图片`}
+                          >
+                            <MediaLibraryIcon size={18} />
+                          </button>
+                        </HoverTip>
+                      </div>
                     </div>
                   </div>
                   <div className="comic-page-editor">

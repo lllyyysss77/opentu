@@ -613,13 +613,16 @@
 
   .comic-page-card__body {
     display: grid;
-    grid-template-columns: minmax(140px, 32%) 1fr;
-    gap: 10px;
-    padding: 10px;
+    grid-template-columns: minmax(240px, 32%) minmax(0, 1fr);
+    align-items: stretch;
+    min-height: 384px;
+    gap: 14px;
+    padding: 12px;
   }
 
   .comic-page-preview-pane {
     display: flex;
+    height: 100%;
     min-width: 0;
     flex-direction: column;
     gap: 8px;
@@ -627,8 +630,8 @@
 
   .comic-page-preview {
     position: relative;
-    min-height: 120px;
-    aspect-ratio: 16 / 9;
+    flex: 1 1 280px;
+    min-height: 240px;
     border-radius: 8px;
     overflow: hidden;
     background: #f4f4f4;
@@ -692,22 +695,36 @@
     }
   }
 
+  .comic-page-assets-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
   .comic-page-variant-strip {
     display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
     gap: 6px;
     overflow-x: auto;
-    padding-bottom: 2px;
+    padding: 2px;
+  }
+
+  .comic-page-variant-strip--empty {
+    min-height: 48px;
+    padding: 0;
   }
 
   .comic-page-library-fallback {
     display: flex;
+    flex: 0 0 auto;
     justify-content: flex-end;
-    min-height: 36px;
   }
 
   .comic-page-library-btn {
-    width: 36px;
-    height: 36px;
+    width: 42px;
+    height: 42px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -737,8 +754,8 @@
 
   .comic-page-variant-thumb {
     position: relative;
-    width: 54px;
-    height: 34px;
+    width: 72px;
+    height: 48px;
     flex: 0 0 auto;
     overflow: hidden;
     padding: 0;
@@ -800,13 +817,15 @@
 
   .comic-page-editor {
     display: flex;
+    height: 100%;
     min-width: 0;
     flex-direction: column;
     gap: 8px;
   }
 
   .comic-page-unified-prompt {
-    min-height: 182px;
+    flex: 1 1 auto;
+    min-height: 320px;
     line-height: 1.55;
   }
 
@@ -1008,6 +1027,20 @@
 
     .comic-export-grid {
       grid-template-columns: 1fr;
+    }
+
+    .comic-page-card__body {
+      min-height: auto;
+    }
+
+    .comic-page-preview {
+      flex-basis: auto;
+      min-height: 180px;
+      aspect-ratio: 16 / 9;
+    }
+
+    .comic-page-unified-prompt {
+      min-height: 220px;
     }
 
     .comic-field--inline-model {
