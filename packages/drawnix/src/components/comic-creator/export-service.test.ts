@@ -182,7 +182,15 @@ describe('comic export service pure helpers', () => {
         title: '出发?',
         extension: 'jpg',
       })
-    ).toBe('images/page-01-出发.jpg');
+    ).toBe('images/page-01 出发.jpg');
+    expect(
+      buildComicPageImageFilename({
+        pageNumber: 1,
+        title: ' | 出发?',
+        extension: 'jpg',
+        variantNumber: 1,
+      })
+    ).toBe('images/page-01 出发-1.jpg');
     expect(resolveComicImageExtension({ mimeType: 'image/jpeg' })).toBe('jpg');
     expect(
       resolveComicImageExtension({ url: 'https://example.com/a.webp?x=1' })
@@ -212,7 +220,7 @@ describe('comic export service pure helpers', () => {
     });
 
     expect(manifest.exportedAt).toBe('2026-04-30T00:00:00.000Z');
-    expect(manifest.pages[0].imageFilename).toBe('images/page-01-出发.png');
+    expect(manifest.pages[0].imageFilename).toBe('images/page-01 出发.png');
     expect(JSON.stringify(manifest)).not.toContain('base64');
     expect(JSON.stringify(manifest)).not.toContain('should-not-export');
   });
@@ -255,10 +263,64 @@ describe('comic export service pure helpers', () => {
     expect(mockState.zipInstances[0].files.map((file) => file.path)).toEqual([
       'manifest.json',
       'script.md',
-      'images/page-01-出发.png',
-      'images/page-02-云上.jpg',
+      'images/page-01 出发.png',
+      'images/page-02 云上.jpg',
     ]);
     expect(mockState.downloads[0].filename).toBe('水滴-旅行-第一话.zip');
+  });
+
+  it('exports every zip image source and numbers unselected variants', async () => {
+    const fetchCalls = mockFetchImages();
+    await exportComicAsZip(record, {
+      imageSources: [
+        {
+          pageId: 'page-01',
+          url: '/page-01-selected.png',
+          mimeType: 'image/png',
+        },
+        {
+          pageId: 'page-01',
+          url: '/page-01-alt.webp',
+          mimeType: 'image/webp',
+          variantNumber: 1,
+        },
+        {
+          pageId: 'page-01',
+          url: '/page-01-alt-2.jpg',
+          mimeType: 'image/jpeg',
+          variantNumber: 2,
+        },
+        {
+          pageId: 'page-02',
+          url: '/page-02-selected.jpg',
+          mimeType: 'image/jpeg',
+        },
+        {
+          pageId: 'page-02',
+          url: '/page-02-alt.png',
+          mimeType: 'image/png',
+          variantNumber: 1,
+        },
+      ],
+    });
+
+    expect(fetchCalls).toEqual([
+      '/page-01-selected.png',
+      '/page-01-alt.webp',
+      '/page-01-alt-2.jpg',
+      '/page-02-selected.jpg',
+      '/page-02-alt.png',
+    ]);
+    expect(mockState.batchCalls).toEqual([{ count: 5, concurrency: 1 }]);
+    expect(mockState.zipInstances[0].files.map((file) => file.path)).toEqual([
+      'manifest.json',
+      'script.md',
+      'images/page-01 出发.png',
+      'images/page-01 出发-1.webp',
+      'images/page-01 出发-2.jpg',
+      'images/page-02 云上.jpg',
+      'images/page-02 云上-1.png',
+    ]);
   });
 
   it('calculates contain rectangles without stretching', () => {

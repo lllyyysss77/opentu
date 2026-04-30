@@ -116,16 +116,24 @@ export function buildComicPageImageFilename(params: {
   pageNumber: number;
   title?: string;
   extension?: string;
+  variantNumber?: number;
 }): string {
   const pageNumber = Math.max(1, Math.floor(params.pageNumber || 1));
   const pageToken = String(pageNumber).padStart(2, '0');
+  const variantNumber = Number.isFinite(params.variantNumber)
+    ? Math.max(1, Math.floor(params.variantNumber || 1))
+    : undefined;
+  const variantToken = variantNumber ? `-${variantNumber}` : '';
   const title = sanitizeComicFilenamePart(
     params.title || '',
-    `page-${pageToken}`
-  );
+    ''
+  )
+    .replace(/^[|｜]\s*/, '')
+    .trim();
+  const titleToken = title ? ` ${title}` : '';
   const extension = sanitizeComicFilenamePart(params.extension || 'png', 'png');
 
-  return `images/page-${pageToken}-${title}.${extension}`;
+  return `images/page-${pageToken}${titleToken}${variantToken}.${extension}`;
 }
 
 export function resolveComicImageExtension(source?: {
@@ -165,10 +173,16 @@ function findImageSource(
   page: ComicRecord['pages'][number],
   imageSources: ComicImageExportSource[]
 ): ComicImageExportSource | undefined {
-  return imageSources.find(
-    (source) =>
-      (!!source.pageId && source.pageId === page.id) ||
-      (!!source.pageNumber && source.pageNumber === page.pageNumber)
+  return imageSources.find((source) => isPageImageSource(page, source));
+}
+
+function isPageImageSource(
+  page: ComicRecord['pages'][number],
+  source: ComicImageExportSource
+): boolean {
+  return (
+    (!!source.pageId && source.pageId === page.id) ||
+    (!!source.pageNumber && source.pageNumber === page.pageNumber)
   );
 }
 
@@ -277,6 +291,17 @@ function getImageExportItems(
   }));
 }
 
+function getAllImageExportItems(
+  record: ComicRecord,
+  imageSources: ComicImageExportSource[]
+): PageImageExportItem[] {
+  return record.pages.flatMap((page) =>
+    imageSources
+      .filter((source) => isPageImageSource(page, source))
+      .map((source) => ({ page, source }))
+  );
+}
+
 function getRequiredImageExportItems(
   record: ComicRecord,
   imageSources: ComicImageExportSource[]
@@ -372,7 +397,7 @@ export async function exportComicAsZip(
   const manifestPageById = new Map(
     files.manifest.pages.map((page) => [page.id, page])
   );
-  const imageTasks = getImageExportItems(record, imageSources)
+  const imageTasks = getAllImageExportItems(record, imageSources)
     .map((item) => ({
       page: manifestPageById.get(item.page.id),
       source: item.source,
@@ -391,15 +416,17 @@ export async function exportComicAsZip(
     async ({ page, source }) => {
       const blob = await fetchImageBlob(source, utils);
       const filename =
-        page.imageFilename ||
-        buildComicPageImageFilename({
-          pageNumber: page.pageNumber,
-          title: page.title,
-          extension: utils.getFileExtension(
-            source.url,
-            blob.type || source.mimeType
-          ),
-        });
+        !source.variantNumber && page.imageFilename
+          ? page.imageFilename
+          : buildComicPageImageFilename({
+              pageNumber: page.pageNumber,
+              title: page.title,
+              variantNumber: source.variantNumber,
+              extension: utils.getFileExtension(
+                source.url,
+                blob.type || source.mimeType
+              ),
+            });
       zip.file(filename, blob);
     },
     Math.max(1, Math.min(3, options.imageConcurrency || 1))

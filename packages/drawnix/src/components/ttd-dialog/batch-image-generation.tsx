@@ -42,7 +42,11 @@ import {
 } from '../../utils/settings-manager';
 import { promptForApiKey } from '../../utils/gemini-api';
 import { ModelDropdown } from '../ai-input-bar/ModelDropdown';
-import { getSizeOptionsForModel } from '../../constants/model-config';
+import { ParametersDropdown } from '../ai-input-bar/ParametersDropdown';
+import {
+  getCompatibleParams,
+  type ParamConfig,
+} from '../../constants/model-config';
 import { useAssets } from '../../contexts/AssetContext';
 import { AssetType, AssetSource, SelectionMode } from '../../types/asset.types';
 import type { Asset } from '../../types/asset.types';
@@ -61,6 +65,11 @@ import type { ModelConfig } from '../../constants/model-config';
 import './batch-image-generation.scss';
 import { trackMemory } from '../../utils/common';
 import { HoverTip } from '../shared/hover';
+import {
+  loadScopedAIImageToolPreferences,
+  sanitizeImageToolExtraParams,
+} from '../../services/ai-generation-preferences-service';
+import { buildMJPromptSuffix } from '../../utils/mj-params';
 
 // 本地缓存 key
 const BATCH_IMAGE_CACHE_KEY = LS_KEYS_TO_MIGRATE.BATCH_IMAGE_CACHE;
@@ -69,7 +78,9 @@ const BATCH_IMAGE_CACHE_KEY = LS_KEYS_TO_MIGRATE.BATCH_IMAGE_CACHE;
 interface TaskRow {
   id: number;
   prompt: string;
-  size: string;
+  params: Record<string, string>;
+  /** @deprecated 兼容旧缓存/旧 Excel 的尺寸字段，加载后会迁移到 params.size */
+  size?: string;
   images: string[];
   count: number;
   // 预览相关 - 关联到任务队列的taskId
@@ -82,46 +93,211 @@ interface CellPosition {
   col: string;
 }
 
-// 尺寸选项（auto 表示自动，其余格式为 宽x高）
-const SIZE_OPTIONS = [
-  'auto',
-  '1x1',
-  '1x4',
-  '4x1',
-  '1x8',
-  '8x1',
-  '2x3',
-  '3x2',
-  '3x4',
-  '4x3',
-  '4x5',
-  '5x4',
-  '9x16',
-  '16x9',
-  '21x9',
-];
-
-// 尺寸显示名称
-const SIZE_LABELS: Record<string, string> = {
-  auto: '自动',
-  '1x1': '1:1',
-  '1x4': '1:4',
-  '4x1': '4:1',
-  '1x8': '1:8',
-  '8x1': '8:1',
-  '2x3': '2:3',
-  '3x2': '3:2',
-  '3x4': '3:4',
-  '4x3': '4:3',
-  '4x5': '4:5',
-  '5x4': '5:4',
-  '9x16': '9:16',
-  '16x9': '16:9',
-  '21x9': '21:9',
-};
-
 // 可编辑列
-const EDITABLE_COLS = ['prompt', 'size', 'images', 'count', 'preview'];
+const EDITABLE_COLS = ['prompt', 'params', 'images', 'count', 'preview'];
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    Object.values(value).every((item) => typeof item === 'string')
+  );
+}
+
+function cloneCellValue<T>(value: T): T {
+  if (Array.isArray(value)) return [...value] as T;
+  if (isStringRecord(value)) return { ...value } as T;
+  return value;
+}
+
+function areStringRecordsEqual(
+  a: Record<string, string>,
+  b: Record<string, string>
+): boolean {
+  const aKeys = Object.keys(a);
+  const bKeys = Object.keys(b);
+  return (
+    aKeys.length === bKeys.length && aKeys.every((key) => a[key] === b[key])
+  );
+}
+
+function normalizeComparableText(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[：:]/g, 'x')
+    .replace(/×/g, 'x')
+    .replace(/\s+/g, '');
+}
+
+function getParamLookupKey(value: string): string {
+  return normalizeComparableText(value).replace(/[=_-]/g, '');
+}
+
+function normalizeEnumValue(
+  param: ParamConfig,
+  value: unknown
+): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+
+  const comparable = normalizeComparableText(trimmed);
+  return param.options?.find((option) => {
+    const optionValue = normalizeComparableText(option.value);
+    const optionLabel = normalizeComparableText(option.label);
+    const compactLabel = normalizeComparableText(option.label.split('(')[0]);
+    return (
+      comparable === optionValue ||
+      comparable === optionLabel ||
+      comparable === compactLabel
+    );
+  })?.value;
+}
+
+function findParamConfigByKey(
+  compatibleParams: ParamConfig[],
+  key: string
+): ParamConfig | undefined {
+  const lookupKey = getParamLookupKey(key);
+  const aliases: Record<string, string> = {
+    参数: 'params',
+    尺寸: 'size',
+    图片尺寸: 'size',
+    宽高比: 'size',
+    分辨率: 'resolution',
+    图片分辨率: 'resolution',
+    画质: 'quality',
+    图片质量: 'quality',
+    质量: 'quality',
+  };
+  const aliasedId = aliases[key.trim()] || aliases[lookupKey];
+
+  return compatibleParams.find((param) => {
+    if (param.id === key || param.id === aliasedId) return true;
+    const candidates = [
+      param.id,
+      param.label,
+      param.shortLabel || '',
+      param.description || '',
+    ].map(getParamLookupKey);
+    return candidates.includes(lookupKey);
+  });
+}
+
+function parseParamInputValue(
+  param: ParamConfig,
+  value: unknown
+): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+
+  if (param.valueType === 'enum') {
+    return normalizeEnumValue(param, trimmed);
+  }
+
+  return trimmed;
+}
+
+function normalizeRowParamsForModel(
+  row: Partial<TaskRow>,
+  modelId: string,
+  defaultParams: Record<string, string>
+): Record<string, string> {
+  const compatibleParams = getCompatibleParams(modelId);
+  const sizeParam = compatibleParams.find((param) => param.id === 'size');
+  const rawParams = isStringRecord(row.params) ? row.params : {};
+  const normalizedParams: Record<string, string> = {
+    ...defaultParams,
+    ...rawParams,
+  };
+
+  const rawSize = rawParams.size || row.size;
+  const normalizedSize = sizeParam
+    ? parseParamInputValue(sizeParam, rawSize)
+    : undefined;
+  if (normalizedSize) {
+    normalizedParams.size = normalizedSize;
+  }
+
+  return sanitizeImageToolExtraParams(modelId, normalizedParams);
+}
+
+function parseParamsText(
+  text: string,
+  modelId: string,
+  defaultParams: Record<string, string>
+): Record<string, string> {
+  const trimmed = text.trim();
+  if (!trimmed) return { ...defaultParams };
+
+  const compatibleParams = getCompatibleParams(modelId);
+  const parsedParams: Record<string, string> = {};
+
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (isStringRecord(parsed)) {
+      return sanitizeImageToolExtraParams(modelId, {
+        ...defaultParams,
+        ...parsed,
+      });
+    }
+  } catch {
+    // 非 JSON 文本继续走宽松解析。
+  }
+
+  const sizeParam = compatibleParams.find((param) => param.id === 'size');
+  const directSize = sizeParam
+    ? parseParamInputValue(sizeParam, trimmed)
+    : undefined;
+  if (directSize) {
+    return sanitizeImageToolExtraParams(modelId, {
+      ...defaultParams,
+      size: directSize,
+    });
+  }
+
+  trimmed
+    .split(/[;\n]+/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .forEach((part) => {
+      const match = part.match(/^([^:=：=]+)[:=：]\s*(.+)$/);
+      if (!match) return;
+
+      const param = findParamConfigByKey(compatibleParams, match[1]);
+      if (!param) return;
+
+      const value = parseParamInputValue(param, match[2]);
+      if (value) {
+        parsedParams[param.id] = value;
+      }
+    });
+
+  return sanitizeImageToolExtraParams(modelId, {
+    ...defaultParams,
+    ...parsedParams,
+  });
+}
+
+function serializeParamsForExcel(params: Record<string, string>): string {
+  return Object.entries(params)
+    .filter(([, value]) => value)
+    .map(([key, value]) => `${key}=${value}`)
+    .join('\n');
+}
+
+function buildTaskAdapterParams(
+  params: Record<string, string>
+): Record<string, string> | undefined {
+  const adapterParams = { ...params };
+  if (adapterParams.size === 'auto') {
+    delete adapterParams.size;
+  }
+  return Object.keys(adapterParams).length > 0 ? adapterParams : undefined;
+}
 
 // 默认初始任务
 function getDefaultTasks(): TaskRow[] {
@@ -130,7 +306,7 @@ function getDefaultTasks(): TaskRow[] {
     initialTasks.push({
       id: i + 1,
       prompt: '',
-      size: 'auto',
+      params: { size: 'auto' },
       images: [],
       count: 1,
       taskIds: [],
@@ -213,6 +389,9 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
   const [activeCell, setActiveCell] = useState<CellPosition | null>(null);
   const [selectedCells, setSelectedCells] = useState<CellPosition[]>([]);
   const [editingCell, setEditingCell] = useState<CellPosition | null>(null);
+  const [openParamsCell, setOpenParamsCell] = useState<CellPosition | null>(
+    null
+  );
   // 独立的行选择状态（checkbox），与单元格选择分离
   const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
 
@@ -335,30 +514,46 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
     );
     return pinnedModel ? [pinnedModel, ...imageModels] : imageModels;
   }, [imageModels, selectedModel, selectedModelRef]);
-  const modelSizeOptions = useMemo(() => {
-    const options = getSizeOptionsForModel(selectedModel).map(
-      (option) => option.value
-    );
-    return options.length > 0 ? options : SIZE_OPTIONS;
-  }, [selectedModel]);
-  const modelSizeOptionSet = useMemo(
-    () => new Set(modelSizeOptions),
-    [modelSizeOptions]
+  const selectedSelectionKey = useMemo(
+    () => getSelectionKey(selectedModel, selectedModelRef),
+    [selectedModel, selectedModelRef]
   );
-  const defaultModelSize = useMemo(() => {
-    if (modelSizeOptionSet.has('auto')) return 'auto';
-    return modelSizeOptions[0] || 'auto';
-  }, [modelSizeOptionSet, modelSizeOptions]);
+  const compatibleParams = useMemo(
+    () => getCompatibleParams(selectedModel),
+    [selectedModel]
+  );
+  const defaultModelParams = useMemo(() => {
+    return loadScopedAIImageToolPreferences(selectedModel, selectedSelectionKey)
+      .extraParams;
+  }, [selectedModel, selectedSelectionKey]);
 
   useEffect(() => {
-    setTasks((prev) =>
-      prev.map((task) =>
-        modelSizeOptionSet.has(task.size)
-          ? task
-          : { ...task, size: defaultModelSize }
-      )
-    );
-  }, [defaultModelSize, modelSizeOptionSet]);
+    setTasks((prev) => {
+      let changed = false;
+      const nextTasks = prev.map((task) => {
+        const nextParams = normalizeRowParamsForModel(
+          task,
+          selectedModel,
+          defaultModelParams
+        );
+        const hasLegacySize = typeof task.size === 'string';
+        const currentParams = isStringRecord(task.params) ? task.params : {};
+        if (
+          !hasLegacySize &&
+          areStringRecordsEqual(currentParams, nextParams)
+        ) {
+          return task;
+        }
+        changed = true;
+        const { size: _legacySize, ...restTask } = task;
+        return {
+          ...restTask,
+          params: nextParams,
+        };
+      });
+      return changed ? nextTasks : prev;
+    });
+  }, [cacheLoaded, defaultModelParams, selectedModel]);
 
   useEffect(() => {
     if (visibleImageModels.length === 0) return;
@@ -566,7 +761,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
           newTasks.push({
             id: taskIdCounter + i,
             prompt: '',
-            size: defaultModelSize,
+            params: { ...defaultModelParams },
             images: [],
             count: 1,
             taskIds: [],
@@ -576,7 +771,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
       });
       setTaskIdCounter((prev) => prev + count);
     },
-    [defaultModelSize, taskIdCounter]
+    [defaultModelParams, taskIdCounter]
   );
 
   // 删除选中行（基于 checkbox 选中状态）
@@ -599,12 +794,17 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
     setActiveCell({ row, col });
     setSelectedCells([{ row, col }]);
     setEditingCell(null);
+    setOpenParamsCell(null);
   }, []);
 
   // 进入编辑模式（双击进入，追加编辑）
   const enterEditMode = useCallback(
     (row: number, col: string) => {
       selectCell(row, col);
+      if (col === 'params') {
+        setOpenParamsCell({ row, col });
+        return;
+      }
       if (EDITABLE_COLS.includes(col) && col !== 'images') {
         setEditingCell({ row, col });
       }
@@ -618,6 +818,28 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
       setTasks((prev) => {
         if (!prev[row]) return prev;
         const newTasks = [...prev];
+        if (col === 'params') {
+          newTasks[row] = {
+            ...newTasks[row],
+            params: normalizeRowParamsForModel(
+              { ...newTasks[row], params: isStringRecord(value) ? value : {} },
+              selectedModel,
+              defaultModelParams
+            ),
+          };
+          return newTasks;
+        }
+        if (col === 'size') {
+          newTasks[row] = {
+            ...newTasks[row],
+            params: normalizeRowParamsForModel(
+              { ...newTasks[row], size: String(value || '') },
+              selectedModel,
+              defaultModelParams
+            ),
+          };
+          return newTasks;
+        }
         newTasks[row] = {
           ...newTasks[row],
           [col]: value,
@@ -625,7 +847,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
         return newTasks;
       });
     },
-    []
+    [defaultModelParams, selectedModel]
   );
 
   const applyPastedTextToCells = useCallback(
@@ -643,8 +865,12 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
           if (!isNaN(num) && num >= 1) {
             updateCellValue(row, col, num);
           }
-        } else if (col === 'size' && modelSizeOptionSet.has(value)) {
-          updateCellValue(row, col, value);
+        } else if (col === 'params' || col === 'size') {
+          updateCellValue(
+            row,
+            'params',
+            parseParamsText(value, selectedModel, defaultModelParams)
+          );
         }
       };
 
@@ -660,7 +886,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
         updatePastedValue(originCell.row + index, originCell.col, line);
       });
     },
-    [modelSizeOptionSet, tasks.length, updateCellValue]
+    [defaultModelParams, selectedModel, tasks.length, updateCellValue]
   );
 
   const pasteCopiedCells = useCallback(
@@ -768,10 +994,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
       setTasks((prev) =>
         prev.map((task) => ({
           ...task,
-          [colName]:
-            colName === 'images' && Array.isArray(sourceValue)
-              ? [...sourceValue]
-              : sourceValue,
+          [colName]: cloneCellValue(sourceValue),
         }))
       );
 
@@ -877,9 +1100,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
           if (r !== startRow && newTasks[r]) {
             newTasks[r] = {
               ...newTasks[r],
-              [fillStartCell.col]: Array.isArray(sourceValue)
-                ? [...sourceValue]
-                : sourceValue,
+              [fillStartCell.col]: cloneCellValue(sourceValue),
             };
           }
         }
@@ -1252,7 +1473,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
           newTasks.push({
             id: taskIdCounter + newRowsCreated,
             prompt: '',
-            size: defaultModelSize,
+            params: { ...defaultModelParams },
             images: rowImages,
             count: 1,
             taskIds: [],
@@ -1289,7 +1510,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
     tasks.length,
     language,
     addAsset,
-    defaultModelSize,
+    defaultModelParams,
   ]);
 
   // 取消批量导入
@@ -1306,11 +1527,34 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
 
       // 预制模板数据（示例行）
       const templateData = [
-        { 提示词: '一只可爱的橘猫在阳光下睡觉', 尺寸: '1x1', 数量: 1 },
-        { 提示词: '未来城市的夜景，霓虹灯闪烁', 尺寸: '16x9', 数量: 2 },
-        { 提示词: '古风美女，水墨画风格', 尺寸: '3x4', 数量: 1 },
-        { 提示词: '', 尺寸: '1x1', 数量: 1 },
-        { 提示词: '', 尺寸: '1x1', 数量: 1 },
+        {
+          提示词: '一只可爱的橘猫在阳光下睡觉',
+          参数: serializeParamsForExcel({ ...defaultModelParams, size: '1x1' }),
+          数量: 1,
+        },
+        {
+          提示词: '未来城市的夜景，霓虹灯闪烁',
+          参数: serializeParamsForExcel({
+            ...defaultModelParams,
+            size: '16x9',
+          }),
+          数量: 2,
+        },
+        {
+          提示词: '古风美女，水墨画风格',
+          参数: serializeParamsForExcel({ ...defaultModelParams, size: '3x4' }),
+          数量: 1,
+        },
+        {
+          提示词: '',
+          参数: serializeParamsForExcel(defaultModelParams),
+          数量: 1,
+        },
+        {
+          提示词: '',
+          参数: serializeParamsForExcel(defaultModelParams),
+          数量: 1,
+        },
       ];
 
       // 创建工作簿和工作表
@@ -1320,7 +1564,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
       // 设置列宽
       ws['!cols'] = [
         { wch: 60 }, // 提示词
-        { wch: 10 }, // 尺寸
+        { wch: 24 }, // 参数
         { wch: 8 }, // 数量
       ];
 
@@ -1342,7 +1586,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
           : 'Download failed, please try again'
       );
     }
-  }, [language]);
+  }, [defaultModelParams, language]);
 
   // 导入 Excel
   const handleExcelImport = useCallback(
@@ -1383,10 +1627,25 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
                   row['prompt'] ||
                   row['Prompt'] ||
                   '') as string;
-                const size = (row['尺寸'] ||
+                const paramsText = (row['参数'] ||
+                  row['params'] ||
+                  row['Params'] ||
+                  '') as string;
+                const legacySize = (row['尺寸'] ||
                   row['size'] ||
                   row['Size'] ||
-                  defaultModelSize) as string;
+                  '') as string;
+                const params = paramsText
+                  ? parseParamsText(
+                      String(paramsText),
+                      selectedModel,
+                      defaultModelParams
+                    )
+                  : normalizeRowParamsForModel(
+                      { params: defaultModelParams, size: String(legacySize) },
+                      selectedModel,
+                      defaultModelParams
+                    );
                 const count =
                   parseInt(
                     String(row['数量'] || row['count'] || row['Count'] || '1')
@@ -1411,7 +1670,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
                 return {
                   id: taskIdCounter + index,
                   prompt: String(prompt).trim(),
-                  size: modelSizeOptionSet.has(size) ? size : defaultModelSize,
+                  params,
                   images,
                   count: Math.max(1, count),
                   taskIds: [],
@@ -1453,7 +1712,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
         excelImportInputRef.current.value = '';
       }
     },
-    [defaultModelSize, taskIdCounter, language, modelSizeOptionSet]
+    [defaultModelParams, language, selectedModel, taskIdCounter]
   );
 
   // 获取行的关联任务状态
@@ -1536,7 +1795,9 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
 
         return {
           提示词: task.prompt,
-          尺寸: task.size,
+          参数: serializeParamsForExcel(
+            normalizeRowParamsForModel(task, selectedModel, defaultModelParams)
+          ),
           参考图: processImageUrls(task.images),
           数量: task.count,
           预览图: processImageUrls(previewUrls),
@@ -1562,7 +1823,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
       // 设置列宽
       ws['!cols'] = [
         { wch: 60 }, // 提示词
-        { wch: 10 }, // 尺寸
+        { wch: 24 }, // 参数
         { wch: 80 }, // 参考图
         { wch: 8 }, // 数量
         { wch: 80 }, // 预览图
@@ -1597,7 +1858,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
           : 'Export failed, please try again'
       );
     }
-  }, [tasks, getRowTasksInfo, language]);
+  }, [defaultModelParams, getRowTasksInfo, language, selectedModel, tasks]);
 
   // 选择失败的行
   const selectFailedRows = useCallback(() => {
@@ -1809,9 +2070,28 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
       for (const { task, rowIndex } of validTasks) {
         const generateCount = task.count || 1;
         const batchId = `batch_${task.id}_${globalBatchTimestamp}`;
-        const normalizedAspectRatio = task.size || defaultModelSize;
+        const rowParams = normalizeRowParamsForModel(
+          task,
+          selectedModel,
+          defaultModelParams
+        );
+        const normalizedAspectRatio =
+          rowParams.size || defaultModelParams.size || 'auto';
         const normalizedSize =
           normalizedAspectRatio === 'auto' ? undefined : normalizedAspectRatio;
+        const currentImageModel =
+          selectedModel ||
+          resolveInvocationRoute('image').modelId ||
+          'gemini-2.5-flash-image-vip';
+        const isMJModel = currentImageModel.startsWith('mj');
+        const finalPrompt = isMJModel
+          ? [task.prompt.trim(), buildMJPromptSuffix(rowParams)]
+              .filter(Boolean)
+              .join(' ')
+          : task.prompt.trim();
+        const adapterParams = isMJModel
+          ? undefined
+          : buildTaskAdapterParams(rowParams);
 
         const uploadedImages = task.images.map((url, index) => ({
           type: 'url',
@@ -1825,13 +2105,10 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
           subTaskCounter++;
 
           const taskParams = {
-            prompt: task.prompt.trim(),
+            prompt: finalPrompt,
             aspectRatio: normalizedAspectRatio,
             size: normalizedSize,
-            model:
-              selectedModel ||
-              resolveInvocationRoute('image').modelId ||
-              'gemini-2.5-flash-image-vip',
+            model: currentImageModel,
             modelRef: selectedModelRef || null,
             uploadedImages,
             batchId,
@@ -1839,6 +2116,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
             batchTotal: generateCount,
             globalIndex: subTaskCounter,
             autoInsertToCanvas: true,
+            ...(adapterParams ? { params: adapterParams } : {}),
           };
 
           const createdTask = createTask(taskParams, TaskType.IMAGE);
@@ -1875,7 +2153,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
     },
     [
       createTask,
-      defaultModelSize,
+      defaultModelParams,
       language,
       selectedModel,
       selectedModelRef,
@@ -2001,7 +2279,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
     const handleKeyDown = (e: KeyboardEvent) => {
       // 图片预览由 MediaViewer 自己处理键盘事件，无需在此处理
 
-      if (!activeCell || editingCell) return;
+      if (!activeCell || editingCell || openParamsCell) return;
 
       const { row, col } = activeCell;
       const colIndex = EDITABLE_COLS.indexOf(col);
@@ -2015,7 +2293,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
         isPrintableKey &&
         EDITABLE_COLS.includes(col) &&
         col !== 'images' &&
-        col !== 'size'
+        col !== 'params'
       ) {
         e.preventDefault();
         // 先清空内容，再进入编辑模式
@@ -2070,6 +2348,8 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
             .map((v) =>
               v.col === 'images'
                 ? JSON.stringify(v.value)
+                : v.col === 'params' && isStringRecord(v.value)
+                ? serializeParamsForExcel(v.value)
                 : String(v.value ?? '')
             )
             .join('\n');
@@ -2142,8 +2422,8 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
               updateCellValue(cell.row, cell.col, 0);
             } else if (cell.col === 'images') {
               updateCellValue(cell.row, cell.col, []);
-            } else if (cell.col === 'size') {
-              updateCellValue(cell.row, cell.col, defaultModelSize);
+            } else if (cell.col === 'params') {
+              updateCellValue(cell.row, cell.col, defaultModelParams);
             }
           });
           break;
@@ -2155,8 +2435,9 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [
     activeCell,
-    defaultModelSize,
+    defaultModelParams,
     editingCell,
+    openParamsCell,
     tasks,
     selectedCells,
     selectCell,
@@ -2173,9 +2454,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
 
       const targetElement =
         event.target instanceof Element ? event.target : null;
-      if (
-        targetElement?.closest('input, textarea, [contenteditable="true"]')
-      ) {
+      if (targetElement?.closest('input, textarea, [contenteditable="true"]')) {
         return;
       }
 
@@ -2239,23 +2518,6 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
     document.addEventListener('mouseup', handleGlobalMouseUp);
     return () => document.removeEventListener('mouseup', handleGlobalMouseUp);
   }, [isDraggingFill, isDraggingSelect, handleTableMouseUp]);
-
-  // 尺寸下拉菜单点击外部关闭
-  useEffect(() => {
-    if (!editingCell || editingCell.col !== 'size') return;
-
-    const handleClickOutside = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      // 检查点击是否在下拉组件内部
-      if (target.closest('.custom-size-dropdown')) return;
-      // 点击在外部，关闭下拉
-      setEditingCell(null);
-    };
-
-    // 使用 mousedown 而不是 click，响应更快
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [editingCell]);
 
   // 渲染单元格内容
   const renderCellContent = (task: TaskRow, rowIndex: number, col: string) => {
@@ -2373,7 +2635,14 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
           </div>
         );
 
-      case 'size':
+      case 'params': {
+        const rowParams = normalizeRowParamsForModel(
+          task,
+          selectedModel,
+          defaultModelParams
+        );
+        const isParamsOpen =
+          openParamsCell?.row === rowIndex && openParamsCell?.col === col;
         return (
           <div
             className={cellClassName}
@@ -2381,61 +2650,60 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
               // 如果点击的是填充柄，不处理
               if ((e.target as HTMLElement).classList.contains('fill-handle'))
                 return;
+              if (
+                (e.target as HTMLElement).closest('.batch-params-cell-control')
+              )
+                return;
               if (e.button === 0 && !e.shiftKey) {
                 startSelectDrag(rowIndex, col);
               }
             }}
             onClick={(e) => handleCellClick(e, rowIndex, col)}
             onDoubleClick={() => {
-              // 双击进入编辑模式，显示下拉菜单
               selectCell(rowIndex, col);
-              setEditingCell({ row: rowIndex, col });
+              setOpenParamsCell({ row: rowIndex, col });
             }}
           >
-            {isEditing ? (
-              <div className="custom-size-dropdown">
-                <div className="dropdown-trigger">
-                  <span>{SIZE_LABELS[task.size] || task.size}</span>
-                  <svg
-                    width="12"
-                    height="12"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="3"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="m6 9 6 6 6-6" />
-                  </svg>
-                </div>
-                <div className="dropdown-menu">
-                  {modelSizeOptions.map((size) => (
-                    <div
-                      key={size}
-                      className={`dropdown-item ${
-                        task.size === size ? 'selected' : ''
-                      }`}
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        updateCellValue(rowIndex, col, size);
-                        setEditingCell(null);
-                      }}
-                    >
-                      {task.size === size && (
-                        <span className="check-icon">✓</span>
-                      )}
-                      {SIZE_LABELS[size] || size}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <span className="cell-text">
-                {SIZE_LABELS[task.size] || task.size}
-              </span>
-            )}
+            <div
+              className="batch-params-cell-control"
+              onMouseDown={(e) => {
+                setActiveCell({ row: rowIndex, col });
+                setSelectedCells([{ row: rowIndex, col }]);
+                setEditingCell(null);
+                e.stopPropagation();
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {compatibleParams.length > 0 ? (
+                <ParametersDropdown
+                  key={`${selectedModel}-${task.id}`}
+                  selectedParams={rowParams}
+                  onParamChange={(paramId, value, options) => {
+                    const nextParams = { ...rowParams };
+                    if (!value || value === 'default') {
+                      delete nextParams[paramId];
+                    } else {
+                      nextParams[paramId] = value;
+                    }
+                    updateCellValue(rowIndex, col, nextParams);
+                    if (!options?.keepOpen) {
+                      setOpenParamsCell(null);
+                    }
+                  }}
+                  compatibleParams={compatibleParams}
+                  modelId={selectedModel}
+                  language={language}
+                  disabled={isSubmitting}
+                  isOpen={isParamsOpen}
+                  onOpenChange={(open) => {
+                    setOpenParamsCell(open ? { row: rowIndex, col } : null);
+                  }}
+                  placement="auto"
+                />
+              ) : (
+                <span className="cell-text">-</span>
+              )}
+            </div>
             {isActive && (
               <div
                 className="fill-handle"
@@ -2447,6 +2715,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
             )}
           </div>
         );
+      }
 
       case 'images':
         return (
@@ -2681,7 +2950,9 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
                     {/* 完成状态：超过3张显示更多 */}
                     {!isGenerating && rowInfo.completedCount > 3 && (
                       <HoverTip
-                        content={language === 'zh' ? '查看全部图片' : 'View all images'}
+                        content={
+                          language === 'zh' ? '查看全部图片' : 'View all images'
+                        }
                         showArrow={false}
                       >
                         <span
@@ -2908,10 +3179,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
             >
               <ModelDropdown
                 selectedModel={selectedModel}
-                selectedSelectionKey={getSelectionKey(
-                  selectedModel,
-                  selectedModelRef
-                )}
+                selectedSelectionKey={selectedSelectionKey}
                 onSelect={(value) => {
                   setSelectedModel(value);
                   setSelectedModelRef(null);
@@ -3034,9 +3302,9 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
                     </HoverTip>
                   </div>
                 </th>
-                <th className="col-size">
+                <th className="col-params">
                   <div className="th-content">
-                    {language === 'zh' ? '尺寸' : 'Size'}
+                    {language === 'zh' ? '参数' : 'Params'}
                     <HoverTip
                       content={language === 'zh' ? '向下填充' : 'Fill down'}
                       theme="light"
@@ -3047,9 +3315,9 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
                         size="small"
                         icon={<ArrowDownIcon />}
                         className="column-fill-btn"
-                        onClick={() => fillColumn('size')}
+                        onClick={() => fillColumn('params')}
                         data-track="batch_fill_column_click"
-                        data-track-params={JSON.stringify({ column: 'size' })}
+                        data-track-params={JSON.stringify({ column: 'params' })}
                       />
                     </HoverTip>
                   </div>
@@ -3144,7 +3412,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
                     {rowIndex + 1}
                   </td>
                   <td>{renderCellContent(task, rowIndex, 'prompt')}</td>
-                  <td>{renderCellContent(task, rowIndex, 'size')}</td>
+                  <td>{renderCellContent(task, rowIndex, 'params')}</td>
                   <td>{renderCellContent(task, rowIndex, 'images')}</td>
                   <td>{renderCellContent(task, rowIndex, 'count')}</td>
                   <td>{renderCellContent(task, rowIndex, 'preview')}</td>

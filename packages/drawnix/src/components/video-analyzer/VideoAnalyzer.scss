@@ -364,6 +364,19 @@
     flex: 1;
     min-width: 0;
   }
+
+  .parameters-dropdown {
+    max-width: 220px;
+
+    &__trigger {
+      height: 32px;
+      max-width: 220px;
+      padding: 4px 10px;
+      border: 1px solid var(--td-border-level-1-color, #ddd);
+      background: var(--td-bg-color-container, #fff);
+      border-radius: 6px;
+    }
+  }
 }
 
 .va-model-label {

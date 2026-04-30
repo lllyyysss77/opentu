@@ -413,6 +413,43 @@ function getImageSources(record: ComicRecord): ComicImageExportSource[] {
     }));
 }
 
+function getZipImageSources(record: ComicRecord): ComicImageExportSource[] {
+  const aspectRatio = getAspectRatioFromSize(record.imageParams?.size);
+
+  return record.pages.flatMap((page) => {
+    const variants = getComicPageImageVariants(page);
+    if (variants.length === 0) return [];
+
+    const selectedIndex = page.imageUrl
+      ? variants.findIndex((variant) => variant.url === page.imageUrl)
+      : -1;
+    const selectedVariant =
+      variants[selectedIndex >= 0 ? selectedIndex : variants.length - 1];
+    let unselectedVariantNumber = 1;
+
+    return [
+      selectedVariant,
+      ...variants.filter((variant) => variant.url !== selectedVariant.url),
+    ].map((variant) => {
+      const isSelected = variant.url === selectedVariant.url;
+      const source: ComicImageExportSource = {
+        pageId: page.id,
+        pageNumber: page.pageNumber,
+        url: variant.url,
+        mimeType: variant.mimeType || page.imageMimeType,
+        aspectRatio,
+      };
+
+      if (!isSelected) {
+        source.variantNumber = unselectedVariantNumber;
+        unselectedVariantNumber += 1;
+      }
+
+      return source;
+    });
+  });
+}
+
 function getCreatedImageTaskIds(result: {
   taskId?: string;
   task?: unknown;
@@ -1836,7 +1873,8 @@ const ComicCreator: React.FC = () => {
   const handleExport = useCallback(async (kind: 'zip' | 'pptx' | 'pdf') => {
     const record = latestRecordRef.current;
     if (!record) return;
-    const imageSources = getImageSources(record);
+    const imageSources =
+      kind === 'zip' ? getZipImageSources(record) : getImageSources(record);
     if (imageSources.length === 0) {
       trackComicCreatorEvent('export', {
         status: 'failed',

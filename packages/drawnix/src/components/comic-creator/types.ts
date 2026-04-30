@@ -97,6 +97,7 @@ export interface ComicImageExportSource {
   width?: number;
   height?: number;
   aspectRatio?: number | string;
+  variantNumber?: number;
 }
 
 export interface ComicExportManifestPage {
