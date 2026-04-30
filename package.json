@@ -23,7 +23,7 @@
   ],
   "author": "ljquan",
   "scripts": {
-    "start": "nx serve web",
+    "start": "nx run web:serve-pwa",
     "build": "node scripts/update-version.js && nx run-many -t=build",
     "build:web": "node scripts/update-version.js && nx build web",
     "preview": "npx serve dist/apps/web -l 7288",

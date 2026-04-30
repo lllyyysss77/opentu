@@ -40,7 +40,11 @@ import { useSharedTaskState } from '../../../hooks/useTaskQueue';
 import { TaskStatus } from '../../../types/task.types';
 import { taskQueueService } from '../../../services/task-queue';
 import { extractFrameFromUrl } from '../../../utils/video-frame-cache';
-import { buildBatchVideoReferenceImages, waitForBatchVideoTask } from '../../../utils/batch-video-generation';
+import {
+  buildBatchVideoReferenceImages,
+  getNonRetryableBatchVideoFailureReason,
+  waitForBatchVideoTask,
+} from '../../../utils/batch-video-generation';
 import { VideoPosterPreview } from '../../shared/VideoPosterPreview';
 import { HoverTip } from '../../shared';
 import { useWorkflowAssetActions } from '../../shared/workflow';
@@ -1393,15 +1397,26 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
             break;
           }
 
-          retryCount += 1;
-          setBatchVideoState({
-            running: true,
-            stopping: false,
-            currentIndex: index,
-            retryCount,
-          });
-
           if (task?.status === TaskStatus.FAILED) {
+            const nonRetryableReason = getNonRetryableBatchVideoFailureReason(
+              task,
+              waitResult.error
+            );
+            if (nonRetryableReason) {
+              batchStopRef.current = true;
+              MessagePlugin.error(
+                `视频生成失败且不可重试，已停止：${nonRetryableReason}`
+              );
+              break;
+            }
+
+            retryCount += 1;
+            setBatchVideoState({
+              running: true,
+              stopping: false,
+              currentIndex: index,
+              retryCount,
+            });
             taskQueueService.retryTask(taskId);
             continue;
           }

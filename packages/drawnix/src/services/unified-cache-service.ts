@@ -48,6 +48,7 @@ const VOLATILE_REMOTE_CACHE_QUERY_PARAMS = new Set([
   't',
   'retry',
   '_retry',
+  '_poster_retry',
   'rand',
   '_force',
   'bypass_sw',

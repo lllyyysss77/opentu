@@ -283,7 +283,19 @@ export async function executeVideoViaAdapter(
         size: params.size,
         duration: durationNum,
         referenceImages: processedImages,
-        params: params.params,
+        params: {
+          ...params.params,
+          onProgress: (progress: number) => {
+            const safeProgress = Math.min(100, Math.max(10, progress));
+            options?.onProgress?.({
+              progress: safeProgress,
+              phase: safeProgress <= 10 ? 'submitting' : 'polling',
+            });
+          },
+          onSubmitted: (videoId: string) => {
+            void taskStorageWriter.updateRemoteId(taskId, videoId);
+          },
+        },
       }
     );
 
