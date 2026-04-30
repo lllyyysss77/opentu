@@ -1,6 +1,6 @@
 {
   "version": "0.6.95",
-  "buildTime": "2026-04-30T10:08:50.213Z",
+  "buildTime": "2026-04-30T10:08:54.442Z",
   "gitCommit": "unknown",
   "changelog": [
     "优化页面卡片布局并修复提示词回填逻辑"
