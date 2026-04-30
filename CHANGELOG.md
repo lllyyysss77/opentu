@@ -1,3 +1,17 @@
+## 0.6.95 (2026-04-30)
+
+### 🩹 Fixes
+
+- 优化页面卡片布局并修复提示词回填逻辑 ([4770cf33](https://github.com/ljquan/aitu/commit/4770cf33))
+
+### 🔧 Chores
+
+- 更新应用版本号至0.6.94并刷新构建时间 ([34659c05](https://github.com/ljquan/aitu/commit/34659c05))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+
 ## 0.6.94 (2026-04-30)
 
 ### 🩹 Fixes
