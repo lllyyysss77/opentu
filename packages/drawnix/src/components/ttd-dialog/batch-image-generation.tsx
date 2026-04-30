@@ -299,6 +299,13 @@ function buildTaskAdapterParams(
   return Object.keys(adapterParams).length > 0 ? adapterParams : undefined;
 }
 
+function isEditableElementTarget(target: EventTarget | null): boolean {
+  return (
+    target instanceof Element &&
+    !!target.closest('input, textarea, [contenteditable="true"]')
+  );
+}
+
 // 默认初始任务
 function getDefaultTasks(): TaskRow[] {
   const initialTasks: TaskRow[] = [];
@@ -627,6 +634,25 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
   const uploadTargetRowRef = useRef<number | null>(null); // 正在上传图片的目标行
   const batchRootRef = useRef<HTMLDivElement>(null);
 
+  const focusBatchKeyboardScope = useCallback(() => {
+    batchRootRef.current?.focus({ preventScroll: true });
+  }, []);
+
+  const isBatchKeyboardScopeActive = useCallback((event: Event) => {
+    const rootElement = batchRootRef.current;
+    if (!rootElement) return false;
+
+    const targetElement = event.target instanceof Element ? event.target : null;
+    if (targetElement && rootElement.contains(targetElement)) {
+      return true;
+    }
+
+    const activeElement = document.activeElement;
+    return (
+      activeElement instanceof Element && rootElement.contains(activeElement)
+    );
+  }, []);
+
   // 保存到 IndexedDB（异步）
   useEffect(() => {
     // 等待缓存加载完成后再保存，避免覆盖
@@ -790,12 +816,16 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
   }, [selectedRows, language]);
 
   // 选中单元格
-  const selectCell = useCallback((row: number, col: string) => {
-    setActiveCell({ row, col });
-    setSelectedCells([{ row, col }]);
-    setEditingCell(null);
-    setOpenParamsCell(null);
-  }, []);
+  const selectCell = useCallback(
+    (row: number, col: string) => {
+      focusBatchKeyboardScope();
+      setActiveCell({ row, col });
+      setSelectedCells([{ row, col }]);
+      setEditingCell(null);
+      setOpenParamsCell(null);
+    },
+    [focusBatchKeyboardScope]
+  );
 
   // 进入编辑模式（双击进入，追加编辑）
   const enterEditMode = useCallback(
@@ -1019,12 +1049,13 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
     (row: number, col: string) => {
       // 如果正在填充拖拽，不启动选择拖拽
       if (isDraggingFill) return;
+      focusBatchKeyboardScope();
       setIsDraggingSelect(true);
       setSelectStartCell({ row, col });
       setActiveCell({ row, col });
       setSelectedCells([{ row, col }]);
     },
-    [isDraggingFill]
+    [focusBatchKeyboardScope, isDraggingFill]
   );
 
   // 处理拖拽过程中的鼠标移动
@@ -2279,6 +2310,10 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
     const handleKeyDown = (e: KeyboardEvent) => {
       // 图片预览由 MediaViewer 自己处理键盘事件，无需在此处理
 
+      if (isEditableElementTarget(e.target) || !isBatchKeyboardScopeActive(e)) {
+        return;
+      }
+
       if (!activeCell || editingCell || openParamsCell) return;
 
       const { row, col } = activeCell;
@@ -2445,6 +2480,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
     updateCellValue,
     undo,
     redo,
+    isBatchKeyboardScopeActive,
   ]);
 
   // 使用 paste 事件自带数据，避免 iframe 权限策略阻止 navigator.clipboard.readText。
@@ -2452,25 +2488,12 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
     const handlePaste = (event: ClipboardEvent) => {
       if (!activeCell || editingCell) return;
 
-      const targetElement =
-        event.target instanceof Element ? event.target : null;
-      if (targetElement?.closest('input, textarea, [contenteditable="true"]')) {
+      if (
+        isEditableElementTarget(event.target) ||
+        !isBatchKeyboardScopeActive(event)
+      ) {
         return;
       }
-
-      const rootElement = batchRootRef.current;
-      const activeElement = document.activeElement;
-      const isWithinBatch =
-        !!rootElement &&
-        ((targetElement && rootElement.contains(targetElement)) ||
-          (activeElement instanceof Element &&
-            rootElement.contains(activeElement)));
-      const isDocumentPaste =
-        !activeElement ||
-        activeElement === document.body ||
-        activeElement === document.documentElement;
-
-      if (!isWithinBatch && !isDocumentPaste) return;
 
       const text =
         event.clipboardData?.getData('text/plain') ||
@@ -2503,9 +2526,28 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
     activeCell,
     applyPastedTextToCells,
     editingCell,
+    isBatchKeyboardScopeActive,
     pasteCopiedCells,
     selectedCells,
   ]);
+
+  useEffect(() => {
+    const handleDocumentPointerDown = (event: PointerEvent) => {
+      const rootElement = batchRootRef.current;
+      const targetNode = event.target instanceof Node ? event.target : null;
+      if (!rootElement || !targetNode || rootElement.contains(targetNode)) {
+        return;
+      }
+
+      if (document.activeElement === rootElement) {
+        rootElement.blur();
+      }
+    };
+
+    document.addEventListener('pointerdown', handleDocumentPointerDown);
+    return () =>
+      document.removeEventListener('pointerdown', handleDocumentPointerDown);
+  }, []);
 
   // 全局鼠标释放监听 - 确保拖拽在任何地方释放都能结束
   useEffect(() => {
@@ -3041,7 +3083,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
   };
 
   return (
-    <div ref={batchRootRef} className="batch-image-generation">
+    <div ref={batchRootRef} className="batch-image-generation" tabIndex={-1}>
       <div className="batch-main-content">
         {/* 工具栏 - 按用户动线排列：导入数据 → 选择操作 → 删除 → 下载 */}
         <div className="batch-toolbar">

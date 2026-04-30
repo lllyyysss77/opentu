@@ -32,7 +32,13 @@ import {
   type ParamConfig,
 } from '../../constants/model-config';
 import { useSelectableModels } from '../../hooks/use-runtime-models';
-import { createModelRef, type ModelRef } from '../../utils/settings-manager';
+import {
+  createModelRef,
+  hasInvocationRouteCredentials,
+  settingsManager,
+  type ModelRef,
+} from '../../utils/settings-manager';
+import { promptForApiKey } from '../../utils/gemini-api';
 import { getSelectionKey } from '../../utils/model-selection';
 import { generateUUID } from '../../utils/runtime-helpers';
 import { taskQueueService } from '../../services/task-queue';
@@ -1113,6 +1119,24 @@ const ComicCreator: React.FC = () => {
     try {
       const sourcePrompt = storyPrompt.trim();
       const safePageCount = sanitizeComicPageCount(pageCountInput);
+      await settingsManager.waitForInitialization();
+
+      if (!hasInvocationRouteCredentials('text', textModelRef || textModel)) {
+        const newApiKey = await promptForApiKey();
+        if (!newApiKey) {
+          trackComicCreatorEvent('generate_outline', {
+            status: 'cancelled',
+            reason: 'missing_api_key',
+            scenario_id: scenarioId,
+            prompt_input_mode: promptInputMode,
+            text_model: textModel,
+            has_pdf_attachment: Boolean(pdfAttachment),
+          });
+          MessagePlugin.warning('需要 API Key 才能生成提示词');
+          return;
+        }
+      }
+
       trackComicCreatorClick('generate_outline', {
         status: 'start',
         scenario_id: scenarioId,
