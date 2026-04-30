@@ -1,6 +1,6 @@
 {
   "version": "0.6.93",
-  "buildTime": "2026-04-30T08:40:34.148Z",
+  "buildTime": "2026-04-30T08:40:37.616Z",
   "gitCommit": "unknown",
   "changelog": [
     "防止复制粘贴事件在可编辑元素中触发"
