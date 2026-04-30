@@ -1,3 +1,17 @@
+## 0.6.93 (2026-04-30)
+
+### 🩹 Fixes
+
+- 防止复制粘贴事件在可编辑元素中触发 ([00d767f4](https://github.com/ljquan/aitu/commit/00d767f4))
+
+### 🔧 Chores
+
+- 更新应用版本号至0.6.92并同步构建时间 ([abf59634](https://github.com/ljquan/aitu/commit/abf59634))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+
 ## 0.6.92 (2026-04-30)
 
 ### 🚀 Features

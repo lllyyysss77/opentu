@@ -1,6 +1,21 @@
 {
   "versions": [
     {
+      "version": "0.6.93",
+      "date": "2026-04-30",
+      "changes": {
+        "features": [],
+        "fixes": [
+          "防止复制粘贴事件在可编辑元素中触发"
+        ],
+        "improvements": [
+          "更新应用版本号至0.6.92并同步构建时间"
+        ]
+      },
+      "type": "patch",
+      "highlights": "防止复制粘贴事件在可编辑元素中触发"
+    },
+    {
       "version": "0.6.92",
       "date": "2026-04-30",
       "changes": {
@@ -796,28 +811,6 @@
       },
       "type": "patch",
       "highlights": "引入音频卡片自适应尺寸及多工具窗口支持"
-    },
-    {
-      "version": "0.6.27",
-      "date": "2026-04-15",
-      "changes": {
-        "features": [
-          "基于 pricing endpoints 推断 provider bindings",
-          "统一爆款音乐续写与 infill 能力",
-          "优化爆款音乐生成工具流程与体验",
-          "支持工具默认窗口行为并修复音乐任务卡片异常"
-        ],
-        "fixes": [
-          "首屏异步预热价格并补全 LLM 原始响应日志",
-          "清理任务列表批量索引误渲染 0",
-          "补齐 suno 续写所需 task_id",
-          "保留爆款音乐创作描述并上移错误提示",
-          "优化音乐分析历史标题并隐藏续写入口"
-        ],
-        "improvements": []
-      },
-      "type": "patch",
-      "highlights": "基于 pricing endpoints 推断 provider bindings"
     }
   ]
 }
