@@ -60,7 +60,7 @@ import {
 import type { ModelConfig } from '../../constants/model-config';
 import './batch-image-generation.scss';
 import { trackMemory } from '../../utils/common';
-import { HoverTip } from '../shared';
+import { HoverTip } from '../shared/hover';
 
 // 本地缓存 key
 const BATCH_IMAGE_CACHE_KEY = LS_KEYS_TO_MIGRATE.BATCH_IMAGE_CACHE;
@@ -2643,49 +2643,57 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
                     {completedUrls
                       .slice(0, isGenerating ? 2 : 3)
                       .map((url, idx) => (
-                        <div
+                        <HoverTip
                           key={idx}
-                          className="preview-thumb clickable"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openImagePreview(completedUrls, idx);
-                          }}
-                          title={
+                          content={
                             language === 'zh'
                               ? '点击放大，左右切换'
                               : 'Click to enlarge, swipe to navigate'
                           }
+                          showArrow={false}
                         >
-                          <img src={url} alt={`Result ${idx + 1}`} />
-                        </div>
+                          <div
+                            className="preview-thumb clickable"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openImagePreview(completedUrls, idx);
+                            }}
+                          >
+                            <img src={url} alt={`Result ${idx + 1}`} />
+                          </div>
+                        </HoverTip>
                       ))}
                     {/* 生成中状态：显示加载动画 */}
                     {isGenerating && (
-                      <span
-                        className="preview-generating-inline"
-                        title={
+                      <HoverTip
+                        content={
                           language === 'zh'
                             ? `还有 ${processingCount} 张生成中`
                             : `${processingCount} more generating`
                         }
+                        showArrow={false}
                       >
-                        <span className="loading-spinner" />+{processingCount}
-                      </span>
+                        <span className="preview-generating-inline">
+                          <span className="loading-spinner" />+{processingCount}
+                        </span>
+                      </HoverTip>
                     )}
                     {/* 完成状态：超过3张显示更多 */}
                     {!isGenerating && rowInfo.completedCount > 3 && (
-                      <span
-                        className="preview-more clickable"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setGalleryRowIndex(rowIndex);
-                        }}
-                        title={
-                          language === 'zh' ? '查看全部图片' : 'View all images'
-                        }
+                      <HoverTip
+                        content={language === 'zh' ? '查看全部图片' : 'View all images'}
+                        showArrow={false}
                       >
-                        +{rowInfo.completedCount - 3}
-                      </span>
+                        <span
+                          className="preview-more clickable"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setGalleryRowIndex(rowIndex);
+                          }}
+                        >
+                          +{rowInfo.completedCount - 3}
+                        </span>
+                      </HoverTip>
                     )}
                   </div>
                 );
@@ -2725,21 +2733,25 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
                   <div className="preview-partial">
                     <div className="preview-images">
                       {partialUrls.slice(0, 2).map((url, idx) => (
-                        <div
+                        <HoverTip
                           key={idx}
-                          className="preview-thumb clickable"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openImagePreview(partialUrls, idx);
-                          }}
-                          title={
+                          content={
                             language === 'zh'
                               ? '点击放大，左右切换'
                               : 'Click to enlarge, swipe to navigate'
                           }
+                          showArrow={false}
                         >
-                          <img src={url} alt={`Result ${idx + 1}`} />
-                        </div>
+                          <div
+                            className="preview-thumb clickable"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openImagePreview(partialUrls, idx);
+                            }}
+                          >
+                            <img src={url} alt={`Result ${idx + 1}`} />
+                          </div>
+                        </HoverTip>
                       ))}
                     </div>
                     <span className="preview-partial-info">
@@ -3220,23 +3232,27 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
                 </div>
               ) : (
                 imageAssets.map((asset) => (
-                  <div
+                  <HoverTip
                     key={asset.id}
-                    className="library-image"
-                    onClick={() => addImageToSelectedRows(asset.url)}
-                    draggable
-                    onDragStart={(e) =>
-                      handleLibraryImageDragStart(e, asset.url)
-                    }
-                    title={
+                    content={
                       language === 'zh'
                         ? '点击添加到选中行，或拖拽到指定行'
                         : 'Click to add to selected rows, or drag to a specific row'
                     }
-                    data-track="batch_library_image_click"
+                    showArrow={false}
                   >
-                    <img src={asset.url} alt={asset.name} draggable={false} />
-                  </div>
+                    <div
+                      className="library-image"
+                      onClick={() => addImageToSelectedRows(asset.url)}
+                      draggable
+                      onDragStart={(e) =>
+                        handleLibraryImageDragStart(e, asset.url)
+                      }
+                      data-track="batch_library_image_click"
+                    >
+                      <img src={asset.url} alt={asset.name} draggable={false} />
+                    </div>
+                  </HoverTip>
                 ))
               )}
             </div>

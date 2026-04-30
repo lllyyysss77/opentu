@@ -57,6 +57,7 @@ import {
 import { MediaLibraryModal } from '../media-library/MediaLibraryModal';
 import { ModelDropdown } from './ModelDropdown';
 import { ModelHealthBadge } from '../shared/ModelHealthBadge';
+import { HoverTip } from '../shared/hover';
 import { ParametersDropdown } from './ParametersDropdown';
 import { PromptHistoryPopover } from './PromptHistoryPopover';
 import { usePromptHistory } from '../../hooks/usePromptHistory';
@@ -4130,31 +4131,39 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
               style={{ display: 'none' }}
             />
 
-            <button
-              className="ai-input-bar__upload-btn"
-              onMouseDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-              }}
-              onClick={handleUploadClick}
-              title={language === 'zh' ? '上传图片' : 'Upload images'}
-              data-track="ai_input_click_upload"
+            <HoverTip
+              content={language === 'zh' ? '上传图片' : 'Upload images'}
+              showArrow={false}
             >
-              <ImageUploadIcon size={18} />
-            </button>
+              <button
+                className="ai-input-bar__upload-btn"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                onClick={handleUploadClick}
+                data-track="ai_input_click_upload"
+              >
+                <ImageUploadIcon size={18} />
+              </button>
+            </HoverTip>
 
-            <button
-              className="ai-input-bar__library-btn"
-              onMouseDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-              }}
-              onClick={() => setShowMediaLibrary(true)}
-              title={language === 'zh' ? '从素材库选择' : 'Select from library'}
-              data-track="ai_input_click_library"
+            <HoverTip
+              content={language === 'zh' ? '从素材库选择' : 'Select from library'}
+              showArrow={false}
             >
-              <MediaLibraryIcon size={18} />
-            </button>
+              <button
+                className="ai-input-bar__library-btn"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                onClick={() => setShowMediaLibrary(true)}
+                data-track="ai_input_click_library"
+              >
+                <MediaLibraryIcon size={18} />
+              </button>
+            </HoverTip>
 
             <GenerationTypeDropdown
               value={generationType}

@@ -15,6 +15,7 @@ import {
   ITEMS_PER_PAGE,
 } from './constants';
 import type { InspirationBoardProps, InspirationTemplate } from './types';
+import { HoverTip } from '../shared/hover';
 import './inspiration-board.scss';
 
 const HIDE_INSPIRATION_KEY = 'aitu_hide_inspiration_board';
@@ -149,29 +150,31 @@ export const InspirationBoard: React.FC<InspirationBoardProps> = ({
         )}
 
         {/* 不再提示按钮 */}
-        <button
-          className="inspiration-board__hide-btn"
-          onClick={handleHide}
-          onMouseDown={(e) => e.preventDefault()}
-          title="不再提示"
-          data-track="inspiration_click_hide"
-        >
-          <X size={14} />
-          <span>不再提示</span>
-        </button>
+        <HoverTip content="不再提示" showArrow={false}>
+          <button
+            className="inspiration-board__hide-btn"
+            onClick={handleHide}
+            onMouseDown={(e) => e.preventDefault()}
+            data-track="inspiration_click_hide"
+          >
+            <X size={14} />
+            <span>不再提示</span>
+          </button>
+        </HoverTip>
 
         {/* 提示词工具按钮 */}
         {!isGuideView && onOpenPromptTool && (
-          <button
-            className="inspiration-board__prompt-btn"
-            onClick={onOpenPromptTool}
-            onMouseDown={(e) => e.preventDefault()}
-            title="提示词工具"
-            data-track="inspiration_click_prompt_tool"
-          >
-            <Lightbulb size={14} />
-            <span>提示词</span>
-          </button>
+          <HoverTip content="提示词工具" showArrow={false}>
+            <button
+              className="inspiration-board__prompt-btn"
+              onClick={onOpenPromptTool}
+              onMouseDown={(e) => e.preventDefault()}
+              data-track="inspiration_click_prompt_tool"
+            >
+              <Lightbulb size={14} />
+              <span>提示词</span>
+            </button>
+          </HoverTip>
         )}
 
         {!isGuideView && hasMultiplePages && (
@@ -244,16 +247,17 @@ export const InspirationBoard: React.FC<InspirationBoardProps> = ({
                   size={26}
                   aria-hidden="true"
                 />
-                <button
-                  type="button"
-                  className="inspiration-board__guide-send-preview"
-                  onClick={handleGuidePreviewClick}
-                  onMouseDown={(e) => e.preventDefault()}
-                  title="请点击右下角真正的发送按钮"
-                  aria-label="示意发送按钮"
-                >
-                  <Send size={17} />
-                </button>
+                <HoverTip content="请点击右下角真正的发送按钮" showArrow={false}>
+                  <button
+                    type="button"
+                    className="inspiration-board__guide-send-preview"
+                    onClick={handleGuidePreviewClick}
+                    onMouseDown={(e) => e.preventDefault()}
+                    aria-label="示意发送按钮"
+                  >
+                    <Send size={17} />
+                  </button>
+                </HoverTip>
               </div>
 
               <div className="inspiration-board__guide-tip">

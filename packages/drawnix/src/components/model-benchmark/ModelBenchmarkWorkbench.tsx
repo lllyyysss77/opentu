@@ -45,7 +45,7 @@ import {
 import type { ModelConfig } from '../../constants/model-config';
 import { useConfirmDialog } from '../dialog/ConfirmDialog';
 import './model-benchmark-workbench.scss';
-import { HoverTip } from '../shared';
+import { HoverTip } from '../shared/hover';
 
 interface ModelBenchmarkWorkbenchProps {
   // props reserved for future use
@@ -1611,7 +1611,6 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
                   }
                   onClick={() => setSessionModalityFilter(tab.value)}
                   aria-label={tab.label}
-                  title={tab.label}
                 >
                   {tab.icon}
                 </button>
