@@ -17,6 +17,7 @@ import {
   Plus,
   RefreshCw,
   Square,
+  Star,
   Trash2,
   X,
 } from 'lucide-react';
@@ -2864,10 +2865,27 @@ const ComicCreator: React.FC = () => {
                 <p>{record.sourcePrompt}</p>
               </button>
               <div className="comic-history-actions">
-                <button onClick={() => void handleToggleStarRecord(record)}>
-                  {record.starred ? '★' : '☆'}
+                <button
+                  className={`comic-history-action comic-history-star ${
+                    record.starred ? 'is-starred' : ''
+                  }`}
+                  aria-label={record.starred ? '取消收藏' : '收藏'}
+                  title={record.starred ? '取消收藏' : '收藏'}
+                  onClick={() => void handleToggleStarRecord(record)}
+                >
+                  <Star
+                    size={15}
+                    strokeWidth={2.1}
+                    fill={record.starred ? 'currentColor' : 'none'}
+                    aria-hidden="true"
+                  />
                 </button>
-                <button onClick={() => void handleDeleteRecord(record.id)}>
+                <button
+                  className="comic-history-action comic-history-delete"
+                  aria-label="删除历史"
+                  title="删除历史"
+                  onClick={() => void handleDeleteRecord(record.id)}
+                >
                   <Trash2 size={14} />
                 </button>
               </div>

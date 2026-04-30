@@ -43,6 +43,7 @@ import {
   type ProviderProfile,
 } from '../../utils/settings-manager';
 import type { ModelConfig } from '../../constants/model-config';
+import { AI_GENERATION_CONCURRENCY_LIMIT } from '../../constants/TASK_CONSTANTS';
 import { useConfirmDialog } from '../dialog/ConfirmDialog';
 import './model-benchmark-workbench.scss';
 import { HoverTip } from '../shared/hover';
@@ -2003,7 +2004,10 @@ function ModelBenchmarkWorkbench({}: ModelBenchmarkWorkbenchProps) {
                         );
                         const nextValue = Number(digitsOnly);
                         setConcurrency(
-                          Math.min(10, Math.max(1, nextValue || 1))
+                          Math.min(
+                            AI_GENERATION_CONCURRENCY_LIMIT,
+                            Math.max(1, nextValue || 1)
+                          )
                         );
                       }}
                     />

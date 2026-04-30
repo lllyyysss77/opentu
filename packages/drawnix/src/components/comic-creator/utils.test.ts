@@ -262,7 +262,7 @@ describe('comic-creator utils', () => {
       getComicPagesForGeneration({ pages, singlePageId: 'page-02' })
     ).toHaveLength(1);
     expect(getComicGenerationConcurrency('serial', 12)).toBe(1);
-    expect(getComicGenerationConcurrency('parallel', 12)).toBe(5);
+    expect(getComicGenerationConcurrency('parallel', 12)).toBe(12);
     expect(getComicGenerationConcurrency('parallel', 0)).toBe(0);
   });
 

@@ -1,10 +1,12 @@
 import type { ModelRef } from '../../utils/settings-manager';
+import { AI_GENERATION_CONCURRENCY_LIMIT } from '../../constants/TASK_CONSTANTS';
 
 export const DEFAULT_COMIC_PAGE_COUNT = 6;
 export const MIN_COMIC_PAGE_COUNT = 1;
 export const MAX_COMIC_PAGE_COUNT = 60;
 export const DEFAULT_COMIC_IMAGE_SIZE = '16x9';
-export const COMIC_PARALLEL_CONCURRENCY_LIMIT = 5;
+export const COMIC_PARALLEL_CONCURRENCY_LIMIT =
+  AI_GENERATION_CONCURRENCY_LIMIT;
 
 export type ComicPageStatus =
   | 'draft'
