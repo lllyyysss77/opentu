@@ -1,6 +1,32 @@
 {
   "versions": [
     {
+      "version": "0.6.92",
+      "date": "2026-04-30",
+      "changes": {
+        "features": [
+          "在历史记录中显示创建时间并调整排序",
+          "新增 HappyHorse 视频模型支持并重构工作流外壳",
+          "完善多图生成视觉提示词工作流",
+          "优化多图生成提示词预览"
+        ],
+        "fixes": [
+          "修正任务队列批量序号显示",
+          "修复多图生成队列参数并记录经验",
+          "优化媒体预览缩放同步",
+          "优化媒体预览自适应展示",
+          "修复 Milkdown 节点上下文注册顺序"
+        ],
+        "improvements": [
+          "同步 0.6.91 Web 版本元数据",
+          "Refresh docs, CI, and Docker build",
+          "perf(changelog): 限制解析的版本数量以避免内存问题"
+        ]
+      },
+      "type": "patch",
+      "highlights": "在历史记录中显示创建时间并调整排序"
+    },
+    {
       "version": "0.6.91",
       "date": "2026-04-29",
       "changes": {
@@ -792,32 +818,6 @@
       },
       "type": "patch",
       "highlights": "基于 pricing endpoints 推断 provider bindings"
-    },
-    {
-      "version": "0.6.26",
-      "date": "2026-04-14",
-      "changes": {
-        "features": [
-          "新增爆款音乐生成工具",
-          "历史关联任务展开、生成回填、风格传递与脚本版本优化",
-          "支持工具弹窗多窗口实例",
-          "脚本版本管理，支持多版本切换",
-          "优化视频分析与脚本改编交互",
-          "视频分析任务接入队列并优化结果插入",
-          "上传视频分析后自动提取首帧图片"
-        ],
-        "fixes": [
-          "修复音乐分析器兼容性并完善工作流展示",
-          "统一持久化删除的二次确认",
-          "统一确认弹窗与媒体预览提示词交互",
-          "批量生成使用每个镜头独立的 batchId",
-          "修复 Markdown 卡片初始化阶段的 Milkdown editorView 异常",
-          "在爆款视频分析页提示 gemini-mix 分组"
-        ],
-        "improvements": []
-      },
-      "type": "patch",
-      "highlights": "新增爆款音乐生成工具"
     }
   ]
 }

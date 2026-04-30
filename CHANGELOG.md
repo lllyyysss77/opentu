@@ -1,3 +1,31 @@
+## 0.6.92 (2026-04-30)
+
+### 🚀 Features
+
+- 在历史记录中显示创建时间并调整排序 ([db7d44a4](https://github.com/ljquan/aitu/commit/db7d44a4))
+- 新增 HappyHorse 视频模型支持并重构工作流外壳 ([7f297f5e](https://github.com/ljquan/aitu/commit/7f297f5e))
+- 完善多图生成视觉提示词工作流 ([0f11b9c7](https://github.com/ljquan/aitu/commit/0f11b9c7))
+- 优化多图生成提示词预览 ([459b4e31](https://github.com/ljquan/aitu/commit/459b4e31))
+
+### 🩹 Fixes
+
+- 修正任务队列批量序号显示 ([ae172b8d](https://github.com/ljquan/aitu/commit/ae172b8d))
+- 修复多图生成队列参数并记录经验 ([dac73844](https://github.com/ljquan/aitu/commit/dac73844))
+- 优化媒体预览缩放同步 ([269c02d5](https://github.com/ljquan/aitu/commit/269c02d5))
+- 优化媒体预览自适应展示 ([d30183f2](https://github.com/ljquan/aitu/commit/d30183f2))
+- 修复 Milkdown 节点上下文注册顺序 ([a8bf269d](https://github.com/ljquan/aitu/commit/a8bf269d))
+
+### 🔧 Chores
+
+- 同步 0.6.91 Web 版本元数据 ([50fe68d0](https://github.com/ljquan/aitu/commit/50fe68d0))
+- refactor(drawnix): 统一 HoverTip 提示规范 ([533b06a1](https://github.com/ljquan/aitu/commit/533b06a1))
+- Refresh docs, CI, and Docker build ([a614f3e5](https://github.com/ljquan/aitu/commit/a614f3e5))
+- perf(changelog): 限制解析的版本数量以避免内存问题 ([647d77b7](https://github.com/ljquan/aitu/commit/647d77b7))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+
 ## 0.6.91 (2026-04-29)
 
 ### 🚀 Features
