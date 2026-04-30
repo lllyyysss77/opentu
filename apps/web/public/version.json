@@ -1,8 +1,8 @@
 {
-  "version": "0.6.93",
-  "buildTime": "2026-04-30T08:40:37.616Z",
+  "version": "0.6.94",
+  "buildTime": "2026-04-30T09:34:13.374Z",
   "gitCommit": "unknown",
   "changelog": [
-    "防止复制粘贴事件在可编辑元素中触发"
+    "强化历史收藏入口并放宽 AI 并发"
   ]
 }

@@ -1,3 +1,18 @@
+## 0.6.94 (2026-04-30)
+
+### 🩹 Fixes
+
+- 强化历史收藏入口并放宽 AI 并发 ([4e952541](https://github.com/ljquan/aitu/commit/4e952541))
+
+### 🔧 Chores
+
+- 更新应用版本至0.6.93并刷新构建时间 ([fcc19f31](https://github.com/ljquan/aitu/commit/fcc19f31))
+- style(组件样式): 统一复选框样式并使用CSS变量 ([f7411cb1](https://github.com/ljquan/aitu/commit/f7411cb1))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+
 ## 0.6.93 (2026-04-30)
 
 ### 🩹 Fixes
