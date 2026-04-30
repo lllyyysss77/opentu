@@ -501,6 +501,20 @@ function getRecordStatus(record: ComicRecord): string {
   return '草稿';
 }
 
+function formatRecordCreatedAt(createdAt: number): string {
+  if (!Number.isFinite(createdAt) || createdAt <= 0) {
+    return '时间未知';
+  }
+
+  return new Date(createdAt).toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 const ComicCreator: React.FC = () => {
   const {
     records,
@@ -2076,7 +2090,7 @@ const ComicCreator: React.FC = () => {
         }
         return true;
       })
-      .sort((left, right) => right.updatedAt - left.updatedAt);
+      .sort((left, right) => right.createdAt - left.createdAt);
   }, [historyQuery, historyStatus, records, showStarred]);
 
   const handleHistorySearchBlur = useCallback(() => {
@@ -2818,6 +2832,7 @@ const ComicCreator: React.FC = () => {
                 onClick={() => handleHistorySelect(record)}
               >
                 <strong>{record.title || '未命名连环画'}</strong>
+                <span>创建时间 {formatRecordCreatedAt(record.createdAt)}</span>
                 <span>
                   {getRecordStatus(record)} · {record.pageCount} 页 ·{' '}
                   {getComicGeneratedImageCount(record)} 张图
