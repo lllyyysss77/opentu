@@ -446,10 +446,6 @@
     cursor: pointer;
 
     input {
-      width: 14px;
-      height: 14px;
-      margin: 0;
-      accent-color: #f39c12;
       cursor: pointer;
 
       &:disabled {
@@ -508,9 +504,59 @@
     font-size: 12px;
     color: #666;
     white-space: nowrap;
+  }
 
-    input {
+  .comic-check,
+  .comic-generation-mode-check {
+    input[type='checkbox'] {
+      position: relative;
+      flex: 0 0 16px;
+      width: 16px;
+      height: 16px;
       margin: 0;
+      -webkit-appearance: none;
+      appearance: none;
+      border: 1.5px solid rgba(15, 23, 42, 0.24);
+      border-radius: 4px;
+      background: #fff;
+      cursor: pointer;
+      transition:
+        background 0.15s ease,
+        border-color 0.15s ease,
+        box-shadow 0.15s ease;
+
+      &::after {
+        content: '';
+        position: absolute;
+        left: 5px;
+        top: 2px;
+        width: 4px;
+        height: 8px;
+        border: solid #fff;
+        border-width: 0 2px 2px 0;
+        opacity: 0;
+        transform: rotate(45deg);
+      }
+
+      &:checked {
+        border-color: #f39c12;
+        background: #f39c12;
+        box-shadow: 0 2px 6px rgba(243, 156, 18, 0.22);
+      }
+
+      &:checked::after {
+        opacity: 1;
+      }
+
+      &:focus-visible {
+        outline: 2px solid rgba(243, 156, 18, 0.28);
+        outline-offset: 2px;
+      }
+
+      &:disabled {
+        cursor: not-allowed;
+        opacity: 0.55;
+      }
     }
   }
 
