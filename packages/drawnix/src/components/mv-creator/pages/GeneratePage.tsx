@@ -1354,52 +1354,82 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
       const currentCharacters = latestRecordRef.current.characters || [];
       const charsNeedingRef = currentCharacters.filter(c => !c.referenceImageUrl);
       if (charsNeedingRef.length > 0 && !batchStopRef.current) {
-        for (const char of charsNeedingRef) {
-          if (batchStopRef.current) break;
+        const characterRefResults = await Promise.all(charsNeedingRef.map(async (char) => {
+          if (batchStopRef.current) return null;
           const charBatchId = `mv_${record.id}_char${char.id}_ref`;
           const charPrompt = buildCharacterReferencePrompt(
             char,
             pseudoAnalysis,
             pseudoProductInfo
           );
-          const result = await mcpRegistry.executeTool(
-            { name: 'generate_image', arguments: {
-              prompt: charPrompt,
-              count: 1,
-              size: imageGenerationSize,
-              knowledgeContextRefs,
-              batchId: charBatchId,
-              autoInsertToCanvas: false,
-              assetMetadata: {
-                category: AssetCategory.CHARACTER,
-                characterName: char.name,
-                characterPrompt: charPrompt,
-              },
-              ...(imageModel ? { model: imageModel, modelRef: imageModelRef } : {}),
-              ...(imageGenerationExtraParams ? { params: imageGenerationExtraParams } : {}),
-            }},
-            { mode: 'queue' }
-          );
-          const taskId = (result as { taskId?: string; data?: { taskId?: string } }).taskId
-            || (result.data as { taskId?: string } | undefined)?.taskId;
-          if (taskId) {
+          try {
+            const result = await mcpRegistry.executeTool(
+              { name: 'generate_image', arguments: {
+                prompt: charPrompt,
+                count: 1,
+                size: imageGenerationSize,
+                knowledgeContextRefs,
+                batchId: charBatchId,
+                autoInsertToCanvas: false,
+                assetMetadata: {
+                  category: AssetCategory.CHARACTER,
+                  characterName: char.name,
+                  characterPrompt: charPrompt,
+                },
+                ...(imageModel ? { model: imageModel, modelRef: imageModelRef } : {}),
+                ...(imageGenerationExtraParams ? { params: imageGenerationExtraParams } : {}),
+              }},
+              { mode: 'queue' }
+            );
+            const taskId = (result as { taskId?: string; data?: { taskId?: string } }).taskId
+              || (result.data as { taskId?: string } | undefined)?.taskId;
+            if (!taskId) {
+              return null;
+            }
+
             activeBatchTaskIdsRef.current.add(taskId);
+
             let waitResult: Awaited<ReturnType<typeof waitForBatchVideoTask>> | null = null;
             try {
+              if (batchStopRef.current) {
+                taskQueueService.cancelTask(taskId);
+                return null;
+              }
               waitResult = await waitForBatchVideoTask(taskId, batchAbortControllerRef.current?.signal);
             } finally {
               activeBatchTaskIdsRef.current.delete(taskId);
             }
-            if (waitResult?.success) {
-              const task = waitResult.task || taskQueueService.getTask(taskId);
-              const url = task?.result?.url;
-              if (url) {
-                const base = latestRecordRef.current.characters || [];
-                const updated = base.map(c => c.id === char.id ? { ...c, referenceImageUrl: url } : c);
-                await applyRecordPatch({ characters: updated });
-              }
+            if (!waitResult?.success) {
+              return null;
             }
+
+            const task = waitResult.task || taskQueueService.getTask(taskId);
+            const url = task?.result?.url;
+            return url ? { charId: char.id, url } : null;
+          } catch (error) {
+            if (!batchStopRef.current) {
+              console.error('[MVCreator] Character reference generation failed:', {
+                characterId: char.id,
+                error,
+              });
+            }
+            return null;
           }
+        }));
+
+        const characterRefUpdates = characterRefResults.filter(
+          (item): item is { charId: string; url: string } => !!item?.url
+        );
+        if (characterRefUpdates.length > 0) {
+          const urlByCharacterId = new Map(
+            characterRefUpdates.map(item => [item.charId, item.url])
+          );
+          const base = latestRecordRef.current.characters || [];
+          const updated = base.map(c => {
+            const url = urlByCharacterId.get(c.id);
+            return url ? { ...c, referenceImageUrl: url } : c;
+          });
+          await applyRecordPatch({ characters: updated });
         }
       }
 
