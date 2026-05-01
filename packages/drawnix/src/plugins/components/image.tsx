@@ -16,6 +16,120 @@ import {
   clearVirtualUrlImageError,
   handleVirtualUrlImageError,
 } from '../../utils/asset-cleanup';
+import {
+  debugImage3D,
+  getImage3DSvgOverlayGeometry,
+  isOrdinary3DTransformImage,
+  sanitizeImage3DTransform,
+} from '../../utils/image-3d-transform';
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const XLINK_NS = 'http://www.w3.org/1999/xlink';
+
+const image3DForeignObjectOverflowRefs = new WeakMap<
+  SVGForeignObjectElement,
+  { count: number; previousOverflow: string }
+>();
+const image3DForeignObjectVisibilityRefs = new WeakMap<
+  SVGForeignObjectElement,
+  { count: number; previousVisibility: string; previousPointerEvents: string }
+>();
+
+interface Image3DOverlayRef {
+  group: SVGGElement;
+  image: SVGImageElement;
+  clipPath: SVGClipPathElement;
+  clipPolygon: SVGPolygonElement;
+}
+
+function setImage3DForeignObjectOverflowVisible(
+  foreignObject: SVGForeignObjectElement
+): () => void {
+  const current = image3DForeignObjectOverflowRefs.get(foreignObject);
+  if (current) {
+    current.count += 1;
+    foreignObject.style.overflow = 'visible';
+    return () => {
+      current.count -= 1;
+      if (current.count <= 0) {
+        foreignObject.style.overflow = current.previousOverflow;
+        image3DForeignObjectOverflowRefs.delete(foreignObject);
+      }
+    };
+  }
+
+  const previousOverflow = foreignObject.style.overflow;
+  image3DForeignObjectOverflowRefs.set(foreignObject, {
+    count: 1,
+    previousOverflow,
+  });
+  foreignObject.style.overflow = 'visible';
+  return () => {
+    const latest = image3DForeignObjectOverflowRefs.get(foreignObject);
+    if (!latest) {
+      return;
+    }
+    latest.count -= 1;
+    if (latest.count <= 0) {
+      foreignObject.style.overflow = latest.previousOverflow;
+      image3DForeignObjectOverflowRefs.delete(foreignObject);
+    }
+  };
+}
+
+function setImage3DForeignObjectHidden(
+  foreignObject: SVGForeignObjectElement
+): () => void {
+  const current = image3DForeignObjectVisibilityRefs.get(foreignObject);
+  if (current) {
+    current.count += 1;
+    foreignObject.style.visibility = 'hidden';
+    foreignObject.style.pointerEvents = 'none';
+    return () => {
+      current.count -= 1;
+      if (current.count <= 0) {
+        foreignObject.style.visibility = current.previousVisibility;
+        foreignObject.style.pointerEvents = current.previousPointerEvents;
+        image3DForeignObjectVisibilityRefs.delete(foreignObject);
+      }
+    };
+  }
+
+  const previousVisibility = foreignObject.style.visibility;
+  const previousPointerEvents = foreignObject.style.pointerEvents;
+  image3DForeignObjectVisibilityRefs.set(foreignObject, {
+    count: 1,
+    previousVisibility,
+    previousPointerEvents,
+  });
+  foreignObject.style.visibility = 'hidden';
+  foreignObject.style.pointerEvents = 'none';
+
+  return () => {
+    const latest = image3DForeignObjectVisibilityRefs.get(foreignObject);
+    if (!latest) {
+      return;
+    }
+    latest.count -= 1;
+    if (latest.count <= 0) {
+      foreignObject.style.visibility = latest.previousVisibility;
+      foreignObject.style.pointerEvents = latest.previousPointerEvents;
+      image3DForeignObjectVisibilityRefs.delete(foreignObject);
+    }
+  };
+}
+
+function serializeRect(rect: DOMRect | undefined) {
+  if (!rect) {
+    return undefined;
+  }
+  return {
+    x: Math.round(rect.x * 100) / 100,
+    y: Math.round(rect.y * 100) / 100,
+    width: Math.round(rect.width * 100) / 100,
+    height: Math.round(rect.height * 100) / 100,
+  };
+}
 
 // 检查是否为视频元素（通过URL标识、扩展名或元数据）
 const isVideoElement = (imageItem: any): boolean => {
@@ -48,6 +162,8 @@ const isVideoElement = (imageItem: any): boolean => {
 export const Image: React.FC<ImageProps> = (props: ImageProps) => {
   const currentImageUrlRef = useRef(props.imageItem.url);
   const cleanupSWRecoveryRef = useRef<(() => void) | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const svgOverlayRef = useRef<Image3DOverlayRef | null>(null);
 
   const clearSWRecovery = useCallback(() => {
     cleanupSWRecoveryRef.current?.();
@@ -123,6 +239,14 @@ export const Image: React.FC<ImageProps> = (props: ImageProps) => {
   const handleImageError = useCallback(
     (event: any) => {
       const imageElement = event.currentTarget as HTMLImageElement;
+      debugImage3D('image load error', {
+        elementId: (props.element as any)?.id,
+        url: props.imageItem.url,
+        currentSrc: imageElement.currentSrc,
+        naturalWidth: imageElement.naturalWidth,
+        naturalHeight: imageElement.naturalHeight,
+        visibilityBefore: imageElement.style.visibility,
+      });
       imageElement.style.visibility = 'hidden';
       retryImageAfterSWClaim(imageElement);
 
@@ -144,7 +268,16 @@ export const Image: React.FC<ImageProps> = (props: ImageProps) => {
   );
   const handleImageLoad = useCallback(
     (event: any) => {
-      (event.currentTarget as HTMLImageElement).style.visibility = '';
+      const imageElement = event.currentTarget as HTMLImageElement;
+      debugImage3D('image load success', {
+        elementId: (props.element as any)?.id,
+        url: props.imageItem.url,
+        currentSrc: imageElement.currentSrc,
+        naturalWidth: imageElement.naturalWidth,
+        naturalHeight: imageElement.naturalHeight,
+        visibilityBefore: imageElement.style.visibility,
+      });
+      imageElement.style.visibility = '';
       clearSWRecovery();
       clearVirtualUrlImageError(
         props.board,
@@ -173,6 +306,217 @@ export const Image: React.FC<ImageProps> = (props: ImageProps) => {
     !isLegacyAudioElement &&
     !isVideo &&
     typeof elementData?.frameId === 'string';
+  const image3DTransform = isOrdinary3DTransformImage(props.element as any)
+    ? sanitizeImage3DTransform(elementData?.transform3d)
+    : undefined;
+  const hasImage3DTransform = !!image3DTransform;
+  const image3DRectangle = image3DTransform ? props.getRectangle?.() : undefined;
+  const image3DRotateX = image3DTransform?.rotateX;
+  const image3DRotateY = image3DTransform?.rotateY;
+  const image3DPerspective = image3DTransform?.perspective;
+
+  useEffect(() => {
+    if (!hasImage3DTransform || !rootRef.current) {
+      return;
+    }
+
+    const foreignObject = rootRef.current.closest(
+      'foreignObject'
+    ) as SVGForeignObjectElement | null;
+    if (!foreignObject) {
+      return;
+    }
+
+    const previousOverflow =
+      image3DForeignObjectOverflowRefs.get(foreignObject)?.previousOverflow ??
+      foreignObject.style.overflow;
+    const releaseForeignObjectOverflow =
+      setImage3DForeignObjectOverflowVisible(foreignObject);
+
+    const parentG = foreignObject.parentElement as SVGGElement | null;
+    if (!parentG) {
+      releaseForeignObjectOverflow();
+      return;
+    }
+
+    const releaseForeignObjectVisibility =
+      setImage3DForeignObjectHidden(foreignObject);
+    const overlayGroup = document.createElementNS(SVG_NS, 'g');
+    const clipPath = document.createElementNS(SVG_NS, 'clipPath');
+    const clipPolygon = document.createElementNS(SVG_NS, 'polygon');
+    const overlayImage = document.createElementNS(SVG_NS, 'image');
+    const clipPathId = `image-3d-clip-${elementData?.id || 'image'}-${Date.now()}`;
+
+    overlayGroup.classList.add('image-3d-svg-overlay');
+    overlayGroup.setAttribute('data-image-3d-overlay', 'true');
+    overlayGroup.setAttribute('pointer-events', 'none');
+    clipPath.setAttribute('id', clipPathId);
+    clipPath.append(clipPolygon);
+    overlayImage.setAttribute('clip-path', `url(#${clipPathId})`);
+    overlayImage.setAttribute('preserveAspectRatio', 'none');
+    overlayGroup.append(clipPath, overlayImage);
+    parentG.insertBefore(overlayGroup, foreignObject.nextSibling);
+    svgOverlayRef.current = {
+      group: overlayGroup,
+      image: overlayImage,
+      clipPath,
+      clipPolygon,
+    };
+
+    debugImage3D('enable svg overlay', {
+      elementId: elementData?.id,
+      imageUrl: props.imageItem.url,
+      previousForeignObjectOverflow: previousOverflow,
+      foreignObjectOverflow: foreignObject.style.overflow,
+      foreignObjectVisibility: foreignObject.style.visibility,
+    });
+
+    return () => {
+      if (svgOverlayRef.current?.group === overlayGroup) {
+        svgOverlayRef.current = null;
+      }
+      overlayGroup.remove();
+      releaseForeignObjectVisibility();
+      releaseForeignObjectOverflow();
+      debugImage3D('disable svg overlay', {
+        elementId: elementData?.id,
+        foreignObjectOverflow: foreignObject.style.overflow,
+        foreignObjectVisibility: foreignObject.style.visibility,
+      });
+    };
+  }, [elementData?.id, hasImage3DTransform, props.imageItem.url]);
+
+  useEffect(() => {
+    if (
+      image3DRotateX === undefined ||
+      image3DRotateY === undefined ||
+      image3DPerspective === undefined ||
+      !image3DRectangle ||
+      !rootRef.current
+    ) {
+      return;
+    }
+
+    const foreignObject = rootRef.current.closest(
+      'foreignObject'
+    ) as SVGForeignObjectElement | null;
+    if (!foreignObject) {
+      return;
+    }
+
+    const currentTransform = {
+      rotateX: image3DRotateX,
+      rotateY: image3DRotateY,
+      perspective: image3DPerspective,
+    };
+    const overlayGroup =
+      svgOverlayRef.current ||
+      (() => {
+        const group = foreignObject.parentElement?.querySelector<SVGGElement>(
+          'g[data-image-3d-overlay="true"]'
+        );
+        const image = group?.querySelector<SVGImageElement>('image') || null;
+        const clipPath =
+          group?.querySelector<SVGClipPathElement>('clipPath') || null;
+        const clipPolygon =
+          group?.querySelector<SVGPolygonElement>('clipPath polygon') || null;
+        return group && image && clipPath && clipPolygon
+          ? { group, image, clipPath, clipPolygon }
+          : null;
+      })();
+    if (!overlayGroup) {
+      return;
+    }
+    svgOverlayRef.current = overlayGroup;
+
+    const overlayGeometry = getImage3DSvgOverlayGeometry(
+      image3DRectangle,
+      currentTransform
+    );
+    overlayGroup.clipPolygon.setAttribute(
+      'points',
+      overlayGeometry.pointsAttribute
+    );
+    overlayGroup.image.setAttribute('href', props.imageItem.url);
+    overlayGroup.image.setAttributeNS(XLINK_NS, 'href', props.imageItem.url);
+    overlayGroup.image.setAttribute('x', String(overlayGeometry.boundingBox.x));
+    overlayGroup.image.setAttribute('y', String(overlayGeometry.boundingBox.y));
+    overlayGroup.image.setAttribute(
+      'width',
+      String(overlayGeometry.boundingBox.width)
+    );
+    overlayGroup.image.setAttribute(
+      'height',
+      String(overlayGeometry.boundingBox.height)
+    );
+    if (overlayGeometry.textureTransform) {
+      overlayGroup.image.setAttribute(
+        'transform',
+        overlayGeometry.textureTransform
+      );
+    } else {
+      overlayGroup.image.removeAttribute('transform');
+    }
+
+    debugImage3D('update svg overlay', {
+      elementId: elementData?.id,
+      imageUrl: props.imageItem.url,
+      transform3d: currentTransform,
+      imageRectangle: image3DRectangle,
+      overlayGeometry,
+      foreignObjectOverflow: foreignObject.style.overflow,
+      foreignObjectVisibility: foreignObject.style.visibility,
+    });
+
+    let animationFrame: number | null = null;
+    let timeoutId: number | null = null;
+    let cancelled = false;
+
+    const inspectRender = () => {
+      if (cancelled || !rootRef.current) {
+        return;
+      }
+      const imageElement = rootRef.current.querySelector('img');
+      debugImage3D('rendered DOM rect', {
+        elementId: elementData?.id,
+        wrapperRect: serializeRect(rootRef.current.getBoundingClientRect()),
+        imageRect: serializeRect(imageElement?.getBoundingClientRect()),
+        overlayRect: serializeRect(overlayGroup.group.getBoundingClientRect()),
+        foreignObjectRect: serializeRect(foreignObject.getBoundingClientRect()),
+        foreignObjectOverflow: foreignObject.style.overflow,
+        foreignObjectVisibility: foreignObject.style.visibility,
+      });
+    };
+
+    if (typeof window.requestAnimationFrame === 'function') {
+      animationFrame = window.requestAnimationFrame(inspectRender);
+    } else {
+      timeoutId = window.setTimeout(inspectRender, 0);
+    }
+
+    return () => {
+      cancelled = true;
+      if (
+        animationFrame != null &&
+        typeof window.cancelAnimationFrame === 'function'
+      ) {
+        window.cancelAnimationFrame(animationFrame);
+      }
+      if (timeoutId != null) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [
+    elementData?.id,
+    image3DRectangle?.height,
+    image3DRectangle?.x,
+    image3DRectangle?.y,
+    image3DRectangle?.width,
+    image3DPerspective,
+    image3DRotateX,
+    image3DRotateY,
+    props.imageItem.url,
+  ]);
 
   const handlePPTImageGenerate = useCallback(async () => {
     if (!props.board || !pptFrameId || !pptPrompt || pptStatus === 'loading')
@@ -287,13 +631,17 @@ export const Image: React.FC<ImageProps> = (props: ImageProps) => {
         }
       : {
           width: '100%',
+          style: undefined,
         }),
   };
   return (
     <div
+      ref={rootRef}
       data-slideshow-legacy-audio={isLegacyAudioElement ? 'true' : undefined}
       style={
-        shouldContainFrameImage ? { width: '100%', height: '100%' } : undefined
+        image3DTransform || shouldContainFrameImage
+          ? { width: '100%', height: '100%' }
+          : undefined
       }
     >
       <img
@@ -301,6 +649,7 @@ export const Image: React.FC<ImageProps> = (props: ImageProps) => {
         className={classNames('image-origin', {
           'image-origin--focus': props.isFocus,
         })}
+        style={imgProps.style}
         onError={handleImageError}
         onLoad={handleImageLoad}
       />

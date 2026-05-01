@@ -42,6 +42,7 @@ import { useI18n } from '../../i18n';
 import { TaskStatus } from '../../types/task.types';
 import { taskQueueService } from '../../services/task-queue';
 import {
+  AI_SELECTION_CONTENT_REFRESH_EVENT,
   processSelectedContentForAI,
   scrollToPointIfNeeded,
 } from '../../utils/selection-utils';
@@ -630,9 +631,17 @@ const SelectionWatcher: React.FC<{
         setTimeout(handleSelectionChange, 50);
       };
       document.addEventListener('mouseup', handleMouseUp);
+      document.addEventListener(
+        AI_SELECTION_CONTENT_REFRESH_EVENT,
+        handleSelectionChange
+      );
 
       return () => {
         document.removeEventListener('mouseup', handleMouseUp);
+        document.removeEventListener(
+          AI_SELECTION_CONTENT_REFRESH_EVENT,
+          handleSelectionChange
+        );
       };
     }, [language]);
 

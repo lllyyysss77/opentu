@@ -10,6 +10,12 @@ import { isFillConfig, ImageFillConfig } from '../types/fill.types';
 import { generateFillDefId } from './fill-renderer';
 import { isCardElement } from '../types/card.types';
 import { safeToImage } from './common';
+import {
+  debugImage3D,
+  getImage3DSvgOverlayGeometry,
+  isOrdinary3DTransformImage,
+  sanitizeImage3DTransform,
+} from './image-3d-transform';
 
 /**
  * 从图片 URL 获取原始尺寸
@@ -124,6 +130,16 @@ export interface ProcessedContent {
   graphicsImage?: string;
   /** 图形图片的尺寸（如果有） */
   graphicsImageDimensions?: { width: number; height: number };
+}
+
+export const AI_SELECTION_CONTENT_REFRESH_EVENT =
+  'drawnix:ai-selection-content-refresh';
+
+export function notifyAISelectionContentRefresh(): void {
+  if (typeof document === 'undefined') {
+    return;
+  }
+  document.dispatchEvent(new Event(AI_SELECTION_CONTENT_REFRESH_EVENT));
 }
 
 /**
@@ -785,6 +801,216 @@ export const extractImagesFromElement = (element: PlaitElement, board?: PlaitBoa
   return images;
 };
 
+const shouldRenderImageElementForAI = (element: PlaitElement): boolean => {
+  const has3DTransform = !!sanitizeImage3DTransform(
+    (element as any).transform3d
+  );
+  const angle = getRenderableImageAngle(element);
+
+  return (
+    isOrdinary3DTransformImage(element) &&
+    (has3DTransform || angle !== 0)
+  );
+};
+
+function getRenderableImageAngle(element: PlaitElement): number {
+  const angle = (element as any).angle;
+  return typeof angle === 'number' && Number.isFinite(angle)
+    ? angle
+    : 0;
+}
+
+function rotateCanvasPoint(point: Point, center: Point, angle: number): Point {
+  if (!angle) {
+    return point;
+  }
+
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  const dx = point[0] - center[0];
+  const dy = point[1] - center[1];
+
+  return [
+    center[0] + dx * cos - dy * sin,
+    center[1] + dx * sin + dy * cos,
+  ];
+}
+
+function loadImageForCanvas(url: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    if (!url.startsWith('data:') && !url.startsWith('blob:')) {
+      image.crossOrigin = 'anonymous';
+      image.referrerPolicy = 'no-referrer';
+    }
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('Failed to load image for 3D snapshot'));
+    image.src = url;
+  });
+}
+
+function hasVisibleCanvasContent(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number
+): boolean {
+  const sampleColumns = Math.min(32, width);
+  const sampleRows = Math.min(32, height);
+  const stepX = Math.max(1, Math.floor(width / sampleColumns));
+  const stepY = Math.max(1, Math.floor(height / sampleRows));
+
+  try {
+    for (let y = 0; y < height; y += stepY) {
+      for (let x = 0; x < width; x += stepX) {
+        const [red, green, blue, alpha] = context.getImageData(x, y, 1, 1).data;
+        if (alpha > 0 && (red < 248 || green < 248 || blue < 248)) {
+          return true;
+        }
+      }
+    }
+  } catch {
+    return true;
+  }
+
+  return false;
+}
+
+async function renderImageTransformForAI(
+  board: PlaitBoard,
+  element: PlaitElement
+): Promise<string | null> {
+  const transform = sanitizeImage3DTransform((element as any).transform3d);
+  const angle = getRenderableImageAngle(element);
+  const url = (element as any).url;
+  if ((!transform && angle === 0) || typeof url !== 'string') {
+    return null;
+  }
+
+  const rectangle = getRectangleByElements(board, [element], false);
+  const geometry = transform
+    ? getImage3DSvgOverlayGeometry(rectangle, transform)
+    : {
+        points: RectangleClient.getCornerPoints(rectangle),
+        boundingBox: rectangle,
+      };
+  const rotationCenter = RectangleClient.getCenterPoint(rectangle);
+  const rotatedPoints =
+    angle === 0
+      ? geometry.points
+      : geometry.points.map((point) =>
+          rotateCanvasPoint(point, rotationCenter, angle)
+        );
+  const outputBounds = RectangleClient.getRectangleByPoints(rotatedPoints);
+  const padding = 8;
+  const maxOutputSize = 1024;
+  const outputWidth = Math.max(1, Math.ceil(outputBounds.width + padding * 2));
+  const outputHeight = Math.max(1, Math.ceil(outputBounds.height + padding * 2));
+  const scale = Math.min(2, maxOutputSize / Math.max(outputWidth, outputHeight));
+  const canvas = document.createElement('canvas');
+  const context = canvas.getContext('2d');
+
+  if (!context) {
+    return null;
+  }
+
+  canvas.width = Math.max(1, Math.ceil(outputWidth * scale));
+  canvas.height = Math.max(1, Math.ceil(outputHeight * scale));
+  context.scale(scale, scale);
+  context.fillStyle = '#fff';
+  context.fillRect(0, 0, outputWidth, outputHeight);
+
+  const sourceUrl = await convertImageUrlToBase64(url);
+  const image = await loadImageForCanvas(sourceUrl);
+  const offsetX = padding - outputBounds.x;
+  const offsetY = padding - outputBounds.y;
+  const bounds = geometry.boundingBox;
+  const centerX = bounds.x + bounds.width / 2;
+  const centerY = bounds.y + bounds.height / 2;
+  const flipX = transform ? Math.abs(transform.rotateY) > 90 : false;
+  const flipY = transform ? Math.abs(transform.rotateX) > 90 : false;
+
+  context.save();
+  context.translate(offsetX, offsetY);
+  if (angle !== 0) {
+    context.translate(rotationCenter[0], rotationCenter[1]);
+    context.rotate(angle);
+    context.translate(-rotationCenter[0], -rotationCenter[1]);
+  }
+  context.beginPath();
+  geometry.points.forEach((point, index) => {
+    if (index === 0) {
+      context.moveTo(point[0], point[1]);
+    } else {
+      context.lineTo(point[0], point[1]);
+    }
+  });
+  context.closePath();
+  context.clip();
+
+  if (flipX || flipY) {
+    context.translate(centerX, centerY);
+    context.scale(flipX ? -1 : 1, flipY ? -1 : 1);
+    context.translate(-centerX, -centerY);
+  }
+
+  context.drawImage(image, bounds.x, bounds.y, bounds.width, bounds.height);
+  context.restore();
+
+  if (!hasVisibleCanvasContent(context, canvas.width, canvas.height)) {
+    debugImage3D('AI direct snapshot blank', {
+      elementId: element.id,
+      transform3d: transform,
+      angle,
+      outputWidth: canvas.width,
+      outputHeight: canvas.height,
+    });
+    return null;
+  }
+
+  const dataUrl = canvas.toDataURL('image/png');
+  return compressImageUrl(dataUrl, 512, 512, 0.86);
+}
+
+export const extractImagesFromElementForAI = async (
+  board: PlaitBoard,
+  element: PlaitElement
+): Promise<{ url: string; name?: string; width?: number; height?: number }[]> => {
+  if (shouldRenderImageElementForAI(element)) {
+    debugImage3D('AI snapshot start', {
+      elementId: element.id,
+      transform3d: (element as any).transform3d,
+      angle: (element as any).angle,
+      url: (element as any).url,
+    });
+    const renderedUrl = await renderImageTransformForAI(board, element).catch(
+      (error) => {
+        debugImage3D('AI direct snapshot failed', {
+          elementId: element.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return null;
+      }
+    );
+    debugImage3D('AI snapshot result', {
+      elementId: element.id,
+      success: !!renderedUrl,
+      dataUrlLength: renderedUrl?.length,
+      fallback: renderedUrl ? undefined : 'source-image',
+    });
+    if (renderedUrl) {
+      return [
+        {
+          url: renderedUrl,
+          name: `draw-image-transform-${Date.now()}.png`,
+        },
+      ];
+    }
+    return extractImagesFromElement(element, board);
+  }
+
+  return extractImagesFromElement(element, board);
+};
+
 /**
  * Extract text and images from currently selected elements on the board
  */
@@ -899,7 +1125,7 @@ export const processSelectedContentForAI = async (
     }
     
     // Extract images
-    const elementImages = extractImagesFromElement(element, board);
+    const elementImages = await extractImagesFromElementForAI(board, element);
     if (elementImages.length > 0) {
       remainingImages.push(...elementImages);
       // console.log('Found images from element:', elementImages.length);
