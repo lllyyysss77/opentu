@@ -1,9 +1,14 @@
 import type { VideoAnalysisData } from '../../../services/video-analysis-service';
 import type { VideoShot } from '../../../services/video-analysis-service';
+import {
+  formatCreativeBriefPromptBlock,
+  type CreativeBrief,
+} from './creative-brief';
 
 interface WorkflowPromptProductInfo {
   videoStyle?: string;
   bgmMood?: string;
+  creativeBrief?: CreativeBrief;
 }
 
 function trimTrailingPeriod(text: string): string {
@@ -54,6 +59,10 @@ export function buildVideoPrompt(
   const bgmMood = productInfo?.bgmMood || analysis?.bgm_mood;
   if (videoStyle) styleParts.push(`画面风格：${trimTrailingPeriod(videoStyle)}`);
   if (bgmMood) styleParts.push(`BGM情绪：${trimTrailingPeriod(bgmMood)}`);
+  const creativeBriefBlock = formatCreativeBriefPromptBlock(
+    productInfo?.creativeBrief,
+    'generation'
+  );
 
   const characterAnchor = shot.character_description
     ? `The same ${trimTrailingPeriod(shot.character_description)}`
@@ -62,6 +71,7 @@ export function buildVideoPrompt(
   return [
     '请生成一个真实自然、上下文连贯的单镜头短视频',
     ...styleParts,
+    creativeBriefBlock,
     characterAnchor ? `角色一致性：${characterAnchor}` : '',
     description ? `镜头主题：${description}` : '',
     narrationPrompt,
@@ -83,6 +93,14 @@ export function buildFramePrompt(
   productInfo?: WorkflowPromptProductInfo | null
 ): string {
   const videoStyle = productInfo?.videoStyle || analysis?.video_style;
-  if (!videoStyle || !shotPrompt) return shotPrompt;
-  return `${trimTrailingPeriod(videoStyle)}。${shotPrompt}`;
+  if (!shotPrompt) return shotPrompt;
+  const creativeBriefBlock = formatCreativeBriefPromptBlock(
+    productInfo?.creativeBrief,
+    'generation'
+  );
+  return [
+    videoStyle ? trimTrailingPeriod(videoStyle) : '',
+    creativeBriefBlock,
+    shotPrompt,
+  ].filter(Boolean).join('。');
 }
