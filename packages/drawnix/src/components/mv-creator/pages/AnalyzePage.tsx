@@ -447,39 +447,6 @@ export const AnalyzePage: React.FC<AnalyzePageProps> = ({
             )}
           </div>
 
-          <div className="ma-card mv-storyboard-control-card">
-            <div className="mv-storyboard-control-row">
-              <div className="mv-storyboard-field mv-storyboard-field--knowledge">
-                <label className="mv-storyboard-field-label">知识库上下文</label>
-                <KnowledgeNoteContextSelector
-                  value={knowledgeContextRefs}
-                  onChange={setKnowledgeContextRefs}
-                  disabled={submitting}
-                  className="mv-knowledge-context-selector mv-knowledge-context-selector--inline"
-                />
-              </div>
-              <div className="mv-storyboard-field mv-storyboard-field--model">
-                <label className="mv-storyboard-field-label">AI 分镜模型</label>
-                <ModelDropdown
-                  models={storyboardModels}
-                  selectedModel={storyboardModel}
-                  selectedSelectionKey={getSelectionKey(storyboardModel, storyboardModelRef)}
-                  onSelect={(id: string, ref?: ModelRef | null) => setStoryboardModel(id, ref)}
-                  variant="form"
-                  placement="down"
-                  disabled={submitting}
-                />
-              </div>
-              <button
-                className="va-analyze-btn va-analyze-btn--inline mv-storyboard-generate-btn"
-                onClick={handleGenerateStoryboard}
-                disabled={submitting}
-              >
-                {submitting ? '提交中...' : shots.length > 0 ? '重新生成分镜' : 'AI 生成分镜'}
-              </button>
-            </div>
-          </div>
-
           <div className="ma-card">
             <div className="ma-card-header"><span>专业创作 Brief</span></div>
             <CreativeBriefEditor
@@ -529,6 +496,39 @@ export const AnalyzePage: React.FC<AnalyzePageProps> = ({
               </div>
             </div>
           )}
+
+          <div className="ma-card mv-storyboard-control-card">
+            <div className="mv-storyboard-control-row">
+              <div className="mv-storyboard-field mv-storyboard-field--knowledge">
+                <label className="mv-storyboard-field-label">知识库上下文</label>
+                <KnowledgeNoteContextSelector
+                  value={knowledgeContextRefs}
+                  onChange={setKnowledgeContextRefs}
+                  disabled={submitting}
+                  className="mv-knowledge-context-selector mv-knowledge-context-selector--inline"
+                />
+              </div>
+              <div className="mv-storyboard-field mv-storyboard-field--model">
+                <label className="mv-storyboard-field-label">AI 分镜模型</label>
+                <ModelDropdown
+                  models={storyboardModels}
+                  selectedModel={storyboardModel}
+                  selectedSelectionKey={getSelectionKey(storyboardModel, storyboardModelRef)}
+                  onSelect={(id: string, ref?: ModelRef | null) => setStoryboardModel(id, ref)}
+                  variant="form"
+                  placement="down"
+                  disabled={submitting}
+                />
+              </div>
+              <button
+                className="va-analyze-btn va-analyze-btn--inline mv-storyboard-generate-btn"
+                onClick={handleGenerateStoryboard}
+                disabled={submitting}
+              >
+                {submitting ? '提交中...' : shots.length > 0 ? '重新生成分镜' : 'AI 生成分镜'}
+              </button>
+            </div>
+          </div>
 
           {message && <div className="ma-progress">{message}</div>}
         </>

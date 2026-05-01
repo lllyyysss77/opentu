@@ -837,6 +837,50 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
     );
   }, []);
 
+  const mergeReferenceImages = useCallback((
+    ...groups: Array<Array<{ url: string; name: string }> | undefined>
+  ): ReferenceImage[] | undefined => {
+    const seenUrls = new Set<string>();
+    const merged: ReferenceImage[] = [];
+
+    groups.forEach((group) => {
+      group?.forEach((image) => {
+        const url = image.url?.trim();
+        if (!url || seenUrls.has(url)) {
+          return;
+        }
+        seenUrls.add(url);
+        merged.push({
+          url,
+          name: image.name || '参考图',
+        });
+      });
+    });
+
+    return merged.length > 0 ? merged : undefined;
+  }, []);
+
+  const getShotCharacterReferenceImages = useCallback((shot: VideoShot): ReferenceImage[] => {
+    if (!shot.character_ids?.length) {
+      return [];
+    }
+
+    const seenUrls = new Set<string>();
+    return shot.character_ids.reduce<ReferenceImage[]>((acc, charId) => {
+      const character = characters.find((item) => item.id === charId);
+      const url = character?.referenceImageUrl?.trim();
+      if (!url || seenUrls.has(url)) {
+        return acc;
+      }
+      seenUrls.add(url);
+      acc.push({
+        url,
+        name: character?.name ? `角色：${character.name}` : '角色参考图',
+      });
+      return acc;
+    }, []);
+  }, [characters]);
+
   const saveShotDraft = useCallback(async (
     shotId: string,
     type: 'first' | 'last' | 'video',
@@ -932,6 +976,11 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
       characters,
     });
     const draft = shot.first_frame_draft;
+    const draftImages = draft ? toDraftImages(draft.images || []) : undefined;
+    const existingFrameImages = !draft && shot.generated_first_frame_url
+      ? [{ url: shot.generated_first_frame_url, name: '首帧' }]
+      : undefined;
+    const characterReferenceImages = getShotCharacterReferenceImages(shot);
     const shotBatchId = `mv_${record.id}_shot${shot.id}_first`;
     openDialog(DialogType.aiImageGeneration, {
       initialPrompt: draft?.prompt || prompt,
@@ -941,18 +990,18 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
       initialModel: imageModel || undefined,
       initialModelRef: imageModelRef,
       autoInsertToCanvas: false,
-      initialImages: draft
-        ? toDraftImages(draft.images || [])
-        : shot.generated_first_frame_url
-          ? [{ url: shot.generated_first_frame_url, name: '首帧' }]
-          : undefined,
+      initialImages: mergeReferenceImages(
+        draftImages,
+        existingFrameImages,
+        characterReferenceImages
+      ),
       onDraftChange: (nextDraft: {
         prompt: string;
         images: Array<{ url: string; name: string }>;
         aspectRatio?: string;
       }) => saveShotDraft(shot.id, 'first', nextDraft),
     });
-  }, [record.id, pseudoAnalysis, pseudoProductInfo, characters, knowledgeContextRefs, openDialog, imageModel, imageModelRef, saveShotDraft, selectedImageAspectRatio, toDraftImages]);
+  }, [record.id, pseudoAnalysis, pseudoProductInfo, characters, knowledgeContextRefs, openDialog, imageModel, imageModelRef, mergeReferenceImages, getShotCharacterReferenceImages, saveShotDraft, selectedImageAspectRatio, toDraftImages]);
 
   const getLastFrameUrl = useCallback((shot: VideoShot, index: number) => {
     if (shot.generated_last_frame_url) return shot.generated_last_frame_url;
