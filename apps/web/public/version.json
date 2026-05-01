@@ -1,6 +1,6 @@
 {
   "version": "0.6.96",
-  "buildTime": "2026-05-01T15:09:42.140Z",
+  "buildTime": "2026-05-01T15:15:12.754Z",
   "gitCommit": "unknown",
   "changelog": [
     "enhance audio asset handling in workflow export and improve caching logic",
