@@ -45,11 +45,20 @@ The system SHALL keep 3D panel interactions responsive while committing each con
 - **WHEN** the user cancels or dismisses the panel
 - **THEN** the image transform SHALL return to the value before the panel opened
 
-### Requirement: AI reference images include 3D visual transforms
-The system SHALL pass rendered 3D image transforms to AI workflows instead of the original untransformed image URL.
+### Requirement: AI context includes image transform parameters
+The system SHALL pass original image references to AI workflows and include image transform parameters in text context.
 
-#### Scenario: Use transformed image as AI reference
-- **GIVEN** a selected ordinary image has a `transform3d` value
+#### Scenario: Use original image and transform context
+- **GIVEN** a selected ordinary image has a 2D rotation angle or `transform3d` value
 - **WHEN** the selection is used as an AI image, video, or agent reference
-- **THEN** the reference image SHALL be generated from the rendered canvas appearance
-- **AND** the model SHALL receive the 3D rotated visual result rather than the source image URL
+- **THEN** the reference image SHALL remain the original image URL or source image data
+- **AND** the text context SHALL include the image's 2D rotation angle when present
+- **AND** the text context SHALL include `rotateX`, `rotateY`, and `perspective` when `transform3d` is present
+
+#### Scenario: Rotated image overlaps graphics
+- **GIVEN** a selected ordinary image has a 2D rotation angle or `transform3d` value
+- **AND** the image overlaps selected graphics
+- **WHEN** the selection is used as an AI image, video, or agent reference
+- **THEN** the image SHALL be passed as its original image URL or source image data
+- **AND** the graphics export SHALL NOT bake that rotated image into the graphics reference
+- **AND** the text context SHALL describe the image transform parameters

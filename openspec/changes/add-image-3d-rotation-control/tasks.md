@@ -7,7 +7,7 @@
 - [x] 2.2 Apply 3D transform in the image render component.
 - [x] 2.3 Add popup-toolbar 3D adjustment panel for ordinary images.
 - [x] 2.4 Remove the active-layer 3D drag control from the Drawnix plugin chain.
-- [x] 2.5 Use rendered 3D image snapshots when selected images are passed to AI workflows.
+- [x] 2.5 Pass source images to AI workflows and add image rotation parameters to text context.
 
 ## 3. Verification
 - [x] 3.1 Add targeted unit coverage for math and image eligibility.
