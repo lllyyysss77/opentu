@@ -29,7 +29,11 @@ export {
   type UseWorkflowNavigationOptions,
   type UseWorkflowNavigationResult,
 } from './useWorkflowNavigation';
-export { buildVideoPrompt, buildFramePrompt } from './prompt-builders';
+export {
+  buildVideoPrompt,
+  buildFramePrompt,
+  buildCharacterReferencePrompt,
+} from './prompt-builders';
 export {
   CreativeBriefEditor,
   type CreativeBriefEditorProps,

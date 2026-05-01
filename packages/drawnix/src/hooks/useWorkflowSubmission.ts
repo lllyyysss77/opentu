@@ -497,6 +497,7 @@ export function useWorkflowSubmission(
         },
         selection: parsedInput.selection || { texts: [], images: [], videos: [], graphics: [] },
         finalPrompt: parsedInput.prompt,
+        knowledgeContextRefs: parsedInput.knowledgeContextRefs,
       },
       referenceImages,
       textModel,

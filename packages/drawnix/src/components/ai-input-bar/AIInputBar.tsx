@@ -30,6 +30,7 @@ import { ImageUploadIcon, MediaLibraryIcon } from '../icons';
 import { useBoard } from '@plait-board/react-board';
 import { SelectedContentPreview } from '../shared/SelectedContentPreview';
 import { PromptOptimizeButton } from '../shared/PromptOptimizeButton';
+import { KnowledgeNoteContextSelector } from '../shared/KnowledgeNoteContextSelector';
 import {
   getSelectedElements,
   ATTACHED_ELEMENT_CLASS_NAME,
@@ -39,7 +40,7 @@ import {
   RectangleClient,
 } from '@plait/core';
 import { useI18n } from '../../i18n';
-import { TaskStatus } from '../../types/task.types';
+import { TaskStatus, type KnowledgeContextRef } from '../../types/task.types';
 import { taskQueueService } from '../../services/task-queue';
 import {
   AI_SELECTION_CONTENT_REFRESH_EVENT,
@@ -166,6 +167,7 @@ import {
   AI_INPUT_FOCUS_EVENT,
   type AIInputFocusEventDetail,
 } from '../../services/ai-input-ui-events';
+import { normalizeKnowledgeContextRefs } from '../../services/generation-context-service';
 
 /**
  * 将 WorkflowDefinition 转换为 WorkflowMessageData
@@ -216,6 +218,13 @@ function toPromptAnalyticsType(
 }
 
 type PromptLineageMeta = NonNullable<GenerationParams['promptMeta']>;
+const KNOWLEDGE_CONTEXT_MCP_TOOLS = new Set([
+  'generate_image',
+  'generate_video',
+  'generate_long_video',
+  'generate_audio',
+  'generate_text',
+]);
 
 function getPromptHistoryCategoryForStep(
   mcp: string,
@@ -255,6 +264,9 @@ function buildPromptLineageMeta(
   const skillName =
     workflow.scenarioType === 'skill_flow' ? workflow.name.trim() : undefined;
   const category = getPromptHistoryCategoryForStep(step.mcp, workflow);
+  const knowledgeContextRefs = normalizeKnowledgeContextRefs(
+    workflow.metadata.knowledgeContextRefs
+  );
 
   return {
     initialPrompt,
@@ -263,14 +275,29 @@ function buildPromptLineageMeta(
     skillId: workflow.skillId,
     skillName,
     tags: [category, skillName].filter(Boolean) as string[],
+    knowledgeContextRefs:
+      knowledgeContextRefs.length > 0 ? knowledgeContextRefs : undefined,
   };
 }
 
 function enrichStepArgsWithPromptMeta<
   T extends { mcp: string; args: Record<string, unknown> }
 >(workflow: WorkflowDefinition, step: T): T {
+  const knowledgeContextRefs = normalizeKnowledgeContextRefs(
+    workflow.metadata.knowledgeContextRefs
+  );
+  const argsWithKnowledgeContext =
+    knowledgeContextRefs.length > 0 &&
+    KNOWLEDGE_CONTEXT_MCP_TOOLS.has(step.mcp) &&
+    !step.args.knowledgeContextRefs
+      ? {
+          ...step.args,
+          knowledgeContextRefs,
+        }
+      : step.args;
+
   if (
-    step.args.promptMeta ||
+    argsWithKnowledgeContext.promptMeta ||
     ![
       'generate_image',
       'generate_video',
@@ -279,13 +306,16 @@ function enrichStepArgsWithPromptMeta<
       'generate_text',
     ].includes(step.mcp)
   ) {
-    return step;
+    return {
+      ...step,
+      args: argsWithKnowledgeContext,
+    };
   }
 
   return {
     ...step,
     args: {
-      ...step.args,
+      ...argsWithKnowledgeContext,
       promptMeta: buildPromptLineageMeta(workflow, step),
     },
   };
@@ -940,7 +970,11 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
     const [uploadedContent, setUploadedContent] = useState<SelectedContent[]>(
       []
     ); // 用户上传内容
+    const [knowledgeContextRefs, setKnowledgeContextRefs] = useState<
+      KnowledgeContextRef[]
+    >([]);
     const [isSubmitting, setIsSubmitting] = useState(false); // 防止快速重复点击（3秒防抖）
+    const submitLockRef = useRef(false);
     const submitCooldownRef = useRef<NodeJS.Timeout | null>(null); // 提交冷却定时器
     const [isFocused, setIsFocused] = useState(false);
     const [isCanvasEmpty, setIsCanvasEmpty] = useState<boolean | null>(null); // null=加载中, true=空, false=有内容
@@ -1453,6 +1487,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
         if (submitCooldownRef.current) {
           clearTimeout(submitCooldownRef.current);
         }
+        submitLockRef.current = false;
       };
     }, []);
 
@@ -1469,6 +1504,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
           clearTimeout(submitCooldownRef.current);
           submitCooldownRef.current = null;
         }
+        submitLockRef.current = false;
         setIsSubmitting(false);
       };
 
@@ -1670,6 +1706,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
               clearTimeout(submitCooldownRef.current);
               submitCooldownRef.current = null;
             }
+            submitLockRef.current = false;
             setIsSubmitting(false);
 
             // 关闭 ChatDrawer（如果是由 AIInputBar 触发的对话）
@@ -1954,6 +1991,13 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
         setShowMediaLibrary(false);
       }
     }, []);
+
+    const handleKnowledgeContextChange = useCallback(
+      (refs: KnowledgeContextRef[]) => {
+        setKnowledgeContextRefs(normalizeKnowledgeContextRefs(refs));
+      },
+      []
+    );
 
     // 处理上传按钮点击
     const handleUploadClick = useCallback(() => {
@@ -2516,9 +2560,10 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
       if (!trimmedPrompt && allContent.length === 0) {
         return;
       }
-      if (isSubmitting) {
+      if (submitLockRef.current || isSubmitting) {
         return; // 仅防止快速重复点击
       }
+      submitLockRef.current = true;
       setIsInspirationSendGuideActive(false);
       onEnableRuntime?.();
 
@@ -2536,6 +2581,8 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
         has_attached_content: allContent.length > 0,
         attachedCount: allContent.length,
         attached_count: allContent.length,
+        knowledgeContextCount: knowledgeContextRefs.length,
+        knowledge_context_count: knowledgeContextRefs.length,
         promptLength,
         prompt_length: promptLength,
         promptLengthBucket: getPromptLengthBucket(promptLength),
@@ -2580,6 +2627,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
               submitMode: 'preflight',
               submit_mode: 'preflight',
             });
+            submitLockRef.current = false;
             setIsSubmitting(false);
             return;
           }
@@ -2624,6 +2672,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
           params: selectedParams,
           generationType: generationType,
           count: selectedCount,
+          knowledgeContextRefs,
           defaultModels:
             generationType === 'agent' ? agentMediaDefaultModels : undefined,
           defaultModelRefs:
@@ -3047,6 +3096,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
           },
           selection,
           finalPrompt: parsedParams.prompt,
+          knowledgeContextRefs: parsedParams.knowledgeContextRefs,
         };
 
         const textModel = resolveInvocationRoute('text').modelId;
@@ -3092,11 +3142,13 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
             setPrompt('');
             setSelectedContent([]);
             setUploadedContent([]);
+            setKnowledgeContextRefs([]);
 
             if (submitCooldownRef.current) {
               clearTimeout(submitCooldownRef.current);
             }
             submitCooldownRef.current = setTimeout(() => {
+              submitLockRef.current = false;
               setIsSubmitting(false);
               submitCooldownRef.current = null;
             }, 1000);
@@ -3127,10 +3179,12 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
         setPrompt('');
         setSelectedContent([]);
         setUploadedContent([]);
+        setKnowledgeContextRefs([]);
         if (submitCooldownRef.current) {
           clearTimeout(submitCooldownRef.current);
         }
         submitCooldownRef.current = setTimeout(() => {
+          submitLockRef.current = false;
           setIsSubmitting(false);
           submitCooldownRef.current = null;
         }, 1000);
@@ -3543,6 +3597,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
           );
         }
         workflowControl.abortWorkflow();
+        submitLockRef.current = false;
         setIsSubmitting(false);
       }
     }, [
@@ -3555,6 +3610,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
       submitWorkflowToSW,
       addPromptHistory,
       selectedParams,
+      knowledgeContextRefs,
       agentMediaDefaultModels,
       agentMediaDefaultModelRefs,
       generationType,
@@ -3624,6 +3680,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
             duration: retryContext.aiContext.params.duration,
             referenceImages: retryContext.referenceImages,
             selection: retryContext.aiContext.selection,
+            knowledgeContextRefs: retryContext.aiContext.knowledgeContextRefs,
           },
           createdAt: Date.now(),
         };
@@ -4073,11 +4130,13 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
           profileId: selectedModelRef?.profileId || null,
           hasAttachedContent: allContent.length > 0,
           attachedCount: allContent.length,
+          knowledgeContextCount: knowledgeContextRefs.length,
           promptLengthBucket: getPromptLengthBucket(prompt.trim().length),
         }),
       [
         allContent.length,
         generationType,
+        knowledgeContextRefs.length,
         prompt,
         selectedModel,
         selectedModelRef?.profileId,
@@ -4173,6 +4232,15 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
                 <MediaLibraryIcon size={18} />
               </button>
             </HoverTip>
+
+            <KnowledgeNoteContextSelector
+              value={knowledgeContextRefs}
+              onChange={handleKnowledgeContextChange}
+              disabled={isSubmitting}
+              language={language}
+              variant="compact"
+              className="ai-input-bar__knowledge-selector"
+            />
 
             <GenerationTypeDropdown
               value={generationType}

@@ -11,6 +11,7 @@ import { generateFillDefId } from './fill-renderer';
 import { isCardElement } from '../types/card.types';
 import { safeToImage } from './common';
 import {
+  type Image3DTransform,
   isOrdinary3DTransformImage,
   sanitizeImage3DTransform,
 } from './image-3d-transform';
@@ -477,15 +478,29 @@ export const findElementsOverlappingWithGraphics = (board: PlaitBoard, elements:
  * 将图片 URL 转换为 base64 数据 URL
  * 支持普通 URL、虚拟路径（通过 fetch）和已有的 data URL
  */
-const convertImageUrlToBase64 = async (imageUrl: string): Promise<string> => {
+const convertImageUrlToBase64 = async (
+  imageUrl: string,
+  timeoutMs?: number
+): Promise<string> => {
   // 如果已经是 data URL，直接返回
   if (imageUrl.startsWith('data:')) {
     return imageUrl;
   }
 
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
   try {
+    const controller =
+      timeoutMs && typeof AbortController !== 'undefined'
+        ? new AbortController()
+        : undefined;
+    timeoutId =
+      controller && timeoutMs
+        ? setTimeout(() => controller.abort(), timeoutMs)
+        : undefined;
     // 通过 fetch 获取图片（会被 Service Worker 拦截处理虚拟路径）
-    const response = await fetch(imageUrl);
+    const response = await fetch(imageUrl, {
+      signal: controller?.signal,
+    });
     if (!response.ok) {
       throw new Error(`Failed to fetch image: ${response.status}`);
     }
@@ -507,6 +522,10 @@ const convertImageUrlToBase64 = async (imageUrl: string): Promise<string> => {
   } catch (error) {
     // 转换失败时返回原 URL
     return imageUrl;
+  } finally {
+    if (timeoutId !== undefined) {
+      clearTimeout(timeoutId);
+    }
   }
 };
 
@@ -799,27 +818,117 @@ export const extractImagesFromElement = (element: PlaitElement, board?: PlaitBoa
   return images;
 };
 
-function getRenderableImageAngle(element: PlaitElement): number {
-  const angle = (element as any).angle;
-  return typeof angle === 'number' && Number.isFinite(angle)
-    ? angle
-    : 0;
-}
-
-function radiansToDegrees(angle: number): number {
-  return Math.round((angle * 18000) / Math.PI) / 100;
-}
-
-function formatTransformValue(value: number): string {
-  return Number.isInteger(value) ? String(value) : value.toFixed(2);
-}
-
 function shouldPassOriginalImageReferenceForAI(element: PlaitElement): boolean {
   return (
     isOrdinary3DTransformImage(element) &&
-    (getRenderableImageAngle(element) !== 0 ||
-      !!sanitizeImage3DTransform((element as any).transform3d))
+    !!sanitizeImage3DTransform((element as any).transform3d)
   );
+}
+
+function describeHorizontalCameraView(
+  transform: Image3DTransform | undefined
+): string | null {
+  if (!transform || transform.rotateY === 0) {
+    return null;
+  }
+
+  const side = transform.rotateY < 0 ? '右侧' : '左侧';
+  const farSide = transform.rotateY < 0 ? '左侧' : '右侧';
+  const absRotateY = Math.abs(transform.rotateY);
+
+  if (absRotateY > 135) {
+    return `相机位于主体${side}偏后方，接近背侧视角；主体的${side}轮廓和背侧更明显，${farSide}远离并被遮挡，脸部不要完整正对镜头`;
+  }
+  if (absRotateY > 90) {
+    return `相机位于主体${side}侧后方；身体朝向、脸部可见范围和前后遮挡必须按侧后方机位重排`;
+  }
+  if (absRotateY > 35) {
+    return `相机位于主体${side}斜侧方；主体呈明显侧向姿态，近侧更大更清晰，远侧退后`;
+  }
+
+  return `相机从主体${side}轻微偏移观察；不要保留参考图的完全正面机位`;
+}
+
+function describeCompositionMigration(
+  transform: Image3DTransform | undefined
+): string | null {
+  if (!transform) {
+    return null;
+  }
+
+  const instructions: string[] = [];
+  const absRotateY = Math.abs(transform.rotateY);
+  const absRotateX = Math.abs(transform.rotateX);
+  let horizontalMigration: { from: string; to: string } | undefined;
+  let verticalMigration: { from: string; to: string } | undefined;
+
+  if (absRotateY >= 8) {
+    const fromSide = transform.rotateY < 0 ? '左' : '右';
+    const toSide = transform.rotateY < 0 ? '右' : '左';
+    const strength = absRotateY > 60 ? '明显' : '轻微';
+    horizontalMigration = { from: fromSide, to: toSide };
+    instructions.push(
+      `左右站位必须${strength}换边：主要人物/视觉重心从参考图偏${fromSide}的关系迁移到画面${toSide}侧或${toSide}前方；不要只改脸部朝向，人物在画面中的位置也要跨到${toSide}侧`
+    );
+  }
+
+  if (absRotateX >= 8) {
+    const fromSide = transform.rotateX > 0 ? '上' : '下';
+    const toSide = transform.rotateX > 0 ? '下' : '上';
+    const strength = absRotateX > 60 ? '明显' : '轻微';
+    verticalMigration = { from: fromSide, to: toSide };
+    instructions.push(
+      `上下站位必须${strength}换位：主要人物/视觉重心从参考图偏${fromSide}的关系迁移到画面${toSide}侧或${toSide}前方；道具和背景层次也要跟着改到${toSide}侧透视`
+    );
+  }
+
+  if (horizontalMigration || verticalMigration) {
+    instructions.unshift(
+      `整体构图趋势：视觉重心从${horizontalMigration?.from || ''}${
+        verticalMigration?.from || ''
+      }向${horizontalMigration?.to || ''}${
+        verticalMigration?.to || ''
+      }迁移`
+    );
+  }
+
+  return instructions.length > 0
+    ? `构图迁移方向：${instructions.join('；')}`
+    : null;
+}
+
+function describeVerticalCameraView(
+  transform: Image3DTransform | undefined
+): string | null {
+  if (!transform || transform.rotateX === 0) {
+    return null;
+  }
+
+  const absRotateX = Math.abs(transform.rotateX);
+  const strength = absRotateX > 60 ? '明显' : absRotateX > 25 ? '中等' : '轻微';
+
+  if (transform.rotateX > 0) {
+    return `${strength}低机位仰视；画面下方和近处物体更靠近镜头，上方背景后退，主体姿态高低关系必须随之改变`;
+  }
+
+  return `${strength}高机位俯视；画面上方和远处空间更可见，下方近处物体被压缩或遮挡，主体姿态高低关系必须随之改变`;
+}
+
+function describePerspectiveStrength(
+  transform: Image3DTransform | undefined
+): string | null {
+  if (!transform) {
+    return null;
+  }
+
+  if (transform.perspective < 600) {
+    return '使用强透视，近处肢体、道具边缘或前景更大，远处主体和背景明显缩小';
+  }
+  if (transform.perspective > 1400) {
+    return '使用较弱透视，空间变化自然克制，但主体朝向和遮挡仍必须按新机位重排';
+  }
+
+  return '使用自然中等透视，近处略大、远处略小，环境线条按新机位收束';
 }
 
 export function getImageTransformPromptContext(
@@ -829,36 +938,30 @@ export function getImageTransformPromptContext(
     return null;
   }
 
-  const angle = getRenderableImageAngle(element);
   const transform = sanitizeImage3DTransform((element as any).transform3d);
-  const parts: string[] = [];
+  const viewInstructions = [
+    describeCompositionMigration(transform),
+    describeHorizontalCameraView(transform),
+    describeVerticalCameraView(transform),
+    describePerspectiveStrength(transform),
+  ].filter((text): text is string => !!text);
 
-  if (angle !== 0) {
-    parts.push(`二维旋转 ${formatTransformValue(radiansToDegrees(angle))}°`);
-  }
-
-  if (transform) {
-    parts.push(
-      `三维旋转 rotateX ${formatTransformValue(transform.rotateX)}°`,
-      `rotateY ${formatTransformValue(transform.rotateY)}°`,
-      `perspective ${formatTransformValue(transform.perspective)}px`
-    );
-  }
-
-  if (parts.length === 0) {
+  if (viewInstructions.length === 0) {
     return null;
   }
 
-  return `画布图片显示参数：参考图为未变换原图；请按以下画布显示效果理解图片 ${
+  return `三维机位重绘硬约束（最高优先级）：先忽略参考图在画布上的平面旋转角度；只把参考图当作人物身份、服装、关系、场景和风格来源。输出必须是满幅矩形的自然成片，画面边缘就是场景边缘。Core instruction: reconstruct the same scene in 3D and render it from the new camera position; do not render the source image as a tilted photo, poster, card, screen, or floating rectangle. 目标图片 ${
     element.id || 'unknown'
-  }：${parts.join('，')}。`;
+  }。目标机位：${viewInstructions.join(
+    '；'
+  )}。生成顺序：1. 建立三维空间和主体骨架；2. 移动相机到目标方位；3. 重新计算主体、道具、前景、中景和背景的大小、遮挡、朝向、前后关系。主体不能保持原参考图的正面摆放，主体位置和姿态必须出现可见变化。失败条件：如果画面是在白色/空白背景上摆放一张倾斜矩形图片，或只是把整张参考图旋转/投影成四边形，这个结果无效。`;
 }
 
 export const extractImagesFromElementForAI = async (
-  _board: PlaitBoard,
+  board: PlaitBoard,
   element: PlaitElement
 ): Promise<{ url: string; name?: string; width?: number; height?: number }[]> => {
-  return extractImagesFromElement(element, _board);
+  return extractImagesFromElement(element, board);
 };
 
 /**
@@ -936,7 +1039,7 @@ export const processSelectedContentForAI = async (
   // console.log('Graphics elements:', graphicsElements.length, 'Overlapping elements:', overlappingElements.length);
   
   // Step 2: Combine graphics elements with overlapping elements, preserving sorted order.
-  // Rotated ordinary images stay as original AI references, with transform details in text context.
+  // 3D-transformed ordinary images stay as original AI references, with camera-view details in text context.
   const originalImageReferenceElements = new Set(
     overlappingElements.filter(shouldPassOriginalImageReferenceForAI)
   );

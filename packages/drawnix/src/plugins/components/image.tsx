@@ -2,7 +2,7 @@ import type { ImageProps } from '@plait/common';
 import { RectangleClient } from '@plait/core';
 import { Loading, MessagePlugin } from 'tdesign-react';
 import classNames from 'classnames';
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { Video } from './video';
 import { generateImage } from '../../mcp/tools/image-generation';
 import { getImageRegion } from '../../services/ppt';
@@ -17,7 +17,7 @@ import {
   handleVirtualUrlImageError,
 } from '../../utils/asset-cleanup';
 import {
-  debugImage3D,
+  getImage3DSourceRectangle,
   getImage3DSvgOverlayGeometry,
   isOrdinary3DTransformImage,
   sanitizeImage3DTransform,
@@ -119,18 +119,6 @@ function setImage3DForeignObjectHidden(
   };
 }
 
-function serializeRect(rect: DOMRect | undefined) {
-  if (!rect) {
-    return undefined;
-  }
-  return {
-    x: Math.round(rect.x * 100) / 100,
-    y: Math.round(rect.y * 100) / 100,
-    width: Math.round(rect.width * 100) / 100,
-    height: Math.round(rect.height * 100) / 100,
-  };
-}
-
 // 检查是否为视频元素（通过URL标识、扩展名或元数据）
 const isVideoElement = (imageItem: any): boolean => {
   // 检查是否有视频标识属性
@@ -164,6 +152,7 @@ export const Image: React.FC<ImageProps> = (props: ImageProps) => {
   const cleanupSWRecoveryRef = useRef<(() => void) | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const svgOverlayRef = useRef<Image3DOverlayRef | null>(null);
+  const pptImageGenerationLockRef = useRef(false);
 
   const clearSWRecovery = useCallback(() => {
     cleanupSWRecoveryRef.current?.();
@@ -239,14 +228,6 @@ export const Image: React.FC<ImageProps> = (props: ImageProps) => {
   const handleImageError = useCallback(
     (event: any) => {
       const imageElement = event.currentTarget as HTMLImageElement;
-      debugImage3D('image load error', {
-        elementId: (props.element as any)?.id,
-        url: props.imageItem.url,
-        currentSrc: imageElement.currentSrc,
-        naturalWidth: imageElement.naturalWidth,
-        naturalHeight: imageElement.naturalHeight,
-        visibilityBefore: imageElement.style.visibility,
-      });
       imageElement.style.visibility = 'hidden';
       retryImageAfterSWClaim(imageElement);
 
@@ -269,14 +250,6 @@ export const Image: React.FC<ImageProps> = (props: ImageProps) => {
   const handleImageLoad = useCallback(
     (event: any) => {
       const imageElement = event.currentTarget as HTMLImageElement;
-      debugImage3D('image load success', {
-        elementId: (props.element as any)?.id,
-        url: props.imageItem.url,
-        currentSrc: imageElement.currentSrc,
-        naturalWidth: imageElement.naturalWidth,
-        naturalHeight: imageElement.naturalHeight,
-        visibilityBefore: imageElement.style.visibility,
-      });
       imageElement.style.visibility = '';
       clearSWRecovery();
       clearVirtualUrlImageError(
@@ -310,12 +283,14 @@ export const Image: React.FC<ImageProps> = (props: ImageProps) => {
     ? sanitizeImage3DTransform(elementData?.transform3d)
     : undefined;
   const hasImage3DTransform = !!image3DTransform;
-  const image3DRectangle = image3DTransform ? props.getRectangle?.() : undefined;
+  const image3DRectangle = image3DTransform
+    ? getImage3DSourceRectangle(props.element)
+    : undefined;
   const image3DRotateX = image3DTransform?.rotateX;
   const image3DRotateY = image3DTransform?.rotateY;
   const image3DPerspective = image3DTransform?.perspective;
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!hasImage3DTransform || !rootRef.current) {
       return;
     }
@@ -327,9 +302,6 @@ export const Image: React.FC<ImageProps> = (props: ImageProps) => {
       return;
     }
 
-    const previousOverflow =
-      image3DForeignObjectOverflowRefs.get(foreignObject)?.previousOverflow ??
-      foreignObject.style.overflow;
     const releaseForeignObjectOverflow =
       setImage3DForeignObjectOverflowVisible(foreignObject);
 
@@ -345,7 +317,9 @@ export const Image: React.FC<ImageProps> = (props: ImageProps) => {
     const clipPath = document.createElementNS(SVG_NS, 'clipPath');
     const clipPolygon = document.createElementNS(SVG_NS, 'polygon');
     const overlayImage = document.createElementNS(SVG_NS, 'image');
-    const clipPathId = `image-3d-clip-${elementData?.id || 'image'}-${Date.now()}`;
+    const clipPathId = `image-3d-clip-${
+      elementData?.id || 'image'
+    }-${Date.now()}`;
 
     overlayGroup.classList.add('image-3d-svg-overlay');
     overlayGroup.setAttribute('data-image-3d-overlay', 'true');
@@ -363,14 +337,6 @@ export const Image: React.FC<ImageProps> = (props: ImageProps) => {
       clipPolygon,
     };
 
-    debugImage3D('enable svg overlay', {
-      elementId: elementData?.id,
-      imageUrl: props.imageItem.url,
-      previousForeignObjectOverflow: previousOverflow,
-      foreignObjectOverflow: foreignObject.style.overflow,
-      foreignObjectVisibility: foreignObject.style.visibility,
-    });
-
     return () => {
       if (svgOverlayRef.current?.group === overlayGroup) {
         svgOverlayRef.current = null;
@@ -378,15 +344,10 @@ export const Image: React.FC<ImageProps> = (props: ImageProps) => {
       overlayGroup.remove();
       releaseForeignObjectVisibility();
       releaseForeignObjectOverflow();
-      debugImage3D('disable svg overlay', {
-        elementId: elementData?.id,
-        foreignObjectOverflow: foreignObject.style.overflow,
-        foreignObjectVisibility: foreignObject.style.visibility,
-      });
     };
   }, [elementData?.id, hasImage3DTransform, props.imageItem.url]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (
       image3DRotateX === undefined ||
       image3DRotateY === undefined ||
@@ -458,54 +419,6 @@ export const Image: React.FC<ImageProps> = (props: ImageProps) => {
       overlayGroup.image.removeAttribute('transform');
     }
 
-    debugImage3D('update svg overlay', {
-      elementId: elementData?.id,
-      imageUrl: props.imageItem.url,
-      transform3d: currentTransform,
-      imageRectangle: image3DRectangle,
-      overlayGeometry,
-      foreignObjectOverflow: foreignObject.style.overflow,
-      foreignObjectVisibility: foreignObject.style.visibility,
-    });
-
-    let animationFrame: number | null = null;
-    let timeoutId: number | null = null;
-    let cancelled = false;
-
-    const inspectRender = () => {
-      if (cancelled || !rootRef.current) {
-        return;
-      }
-      const imageElement = rootRef.current.querySelector('img');
-      debugImage3D('rendered DOM rect', {
-        elementId: elementData?.id,
-        wrapperRect: serializeRect(rootRef.current.getBoundingClientRect()),
-        imageRect: serializeRect(imageElement?.getBoundingClientRect()),
-        overlayRect: serializeRect(overlayGroup.group.getBoundingClientRect()),
-        foreignObjectRect: serializeRect(foreignObject.getBoundingClientRect()),
-        foreignObjectOverflow: foreignObject.style.overflow,
-        foreignObjectVisibility: foreignObject.style.visibility,
-      });
-    };
-
-    if (typeof window.requestAnimationFrame === 'function') {
-      animationFrame = window.requestAnimationFrame(inspectRender);
-    } else {
-      timeoutId = window.setTimeout(inspectRender, 0);
-    }
-
-    return () => {
-      cancelled = true;
-      if (
-        animationFrame != null &&
-        typeof window.cancelAnimationFrame === 'function'
-      ) {
-        window.cancelAnimationFrame(animationFrame);
-      }
-      if (timeoutId != null) {
-        window.clearTimeout(timeoutId);
-      }
-    };
   }, [
     elementData?.id,
     image3DRectangle?.height,
@@ -519,9 +432,16 @@ export const Image: React.FC<ImageProps> = (props: ImageProps) => {
   ]);
 
   const handlePPTImageGenerate = useCallback(async () => {
-    if (!props.board || !pptFrameId || !pptPrompt || pptStatus === 'loading')
+    if (
+      !props.board ||
+      !pptFrameId ||
+      !pptPrompt ||
+      pptStatus === 'loading' ||
+      pptImageGenerationLockRef.current
+    )
       return;
 
+    pptImageGenerationLockRef.current = true;
     setPPTImagePlaceholderStatus(props.board, pptFrameId, 'loading');
     setFramePPTImageStatus(props.board, pptFrameId, 'loading');
 
@@ -565,6 +485,8 @@ export const Image: React.FC<ImageProps> = (props: ImageProps) => {
       setPPTImagePlaceholderStatus(props.board, pptFrameId, 'placeholder');
       setFramePPTImageStatus(props.board, pptFrameId, 'placeholder');
       MessagePlugin.error(error?.message || '图片生成失败');
+    } finally {
+      pptImageGenerationLockRef.current = false;
     }
   }, [props.board, pptFrameId, pptPrompt, pptStatus]);
 

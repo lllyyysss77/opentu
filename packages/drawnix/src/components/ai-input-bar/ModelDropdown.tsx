@@ -21,9 +21,9 @@ import { Check, ChevronDown, Copy, ExternalLink, Plus, Search, X } from 'lucide-
 import { MessagePlugin } from 'tdesign-react';
 import {
   IMAGE_MODELS,
+  ModelVendor,
   getModelConfig,
   type ModelConfig,
-  type ModelVendor,
 } from '../../constants/model-config';
 import { VendorTabPanel, type VendorTab } from '../shared/VendorTabPanel';
 import { ATTACHED_ELEMENT_CLASS_NAME } from '@plait/core';
@@ -339,6 +339,8 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
     () => (currentModel ? getModelProfile(currentModel) : null),
     [currentModel, getModelProfile]
   );
+  const shouldUseVendorIconInTrigger =
+    currentModel?.vendor === ModelVendor.HAPPYHORSE;
   // 使用 shortCode 或默认简写
   const shortCode = currentModel?.shortCode || 'img';
   const isSearching = Boolean(searchQuery.trim());
@@ -781,9 +783,15 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
             <ModelSourceIcon
               vendor={currentModel.vendor}
               profileName={
-                currentProfile?.name || currentModel.sourceProfileName
+                shouldUseVendorIconInTrigger
+                  ? undefined
+                  : currentProfile?.name || currentModel.sourceProfileName
               }
-              iconUrl={currentProfile?.iconUrl}
+              iconUrl={
+                shouldUseVendorIconInTrigger
+                  ? undefined
+                  : currentProfile?.iconUrl
+              }
               size={15}
               className="model-dropdown__trigger-source-icon"
             />
@@ -826,9 +834,15 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
             <ModelSourceIcon
               vendor={currentModel.vendor}
               profileName={
-                currentProfile?.name || currentModel.sourceProfileName
+                shouldUseVendorIconInTrigger
+                  ? undefined
+                  : currentProfile?.name || currentModel.sourceProfileName
               }
-              iconUrl={currentProfile?.iconUrl}
+              iconUrl={
+                shouldUseVendorIconInTrigger
+                  ? undefined
+                  : currentProfile?.iconUrl
+              }
               size={18}
               className="model-dropdown__trigger-source-icon"
             />
