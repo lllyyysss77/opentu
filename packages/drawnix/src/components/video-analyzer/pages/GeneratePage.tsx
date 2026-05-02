@@ -54,7 +54,7 @@ import {
   waitForBatchVideoTask,
 } from '../../../utils/batch-video-generation';
 import { VideoPosterPreview } from '../../shared/VideoPosterPreview';
-import { HoverTip } from '../../shared';
+import { HoverTip, RetryImage } from '../../shared';
 import { useWorkflowAssetActions } from '../../shared/workflow';
 import {
   buildVideoAnalyzerResetPayload,
@@ -1845,10 +1845,11 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
                 <div className="va-character-ref">
                   {char.referenceImageUrl ? (
                     <div className="va-character-ref-thumb">
-                      <img
+                      <RetryImage
                         src={char.referenceImageUrl}
                         alt={char.name}
-                        referrerPolicy="no-referrer"
+                        showSkeleton={false}
+                        eager
                       />
                       <button
                         className="va-shot-frame-delete"
@@ -1953,10 +1954,11 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
                     onMouseEnter={e => handleThumbEnter(shot.generated_first_frame_url!, 'image', e)}
                     onMouseLeave={handleThumbLeave}
                   >
-                    <img
+                    <RetryImage
                       src={shot.generated_first_frame_url}
                       alt="首帧"
-                      referrerPolicy="no-referrer"
+                      showSkeleton={false}
+                      eager
                       onClick={() => handleShotGenerateFirstFrame(shot)}
                     />
                   <button className="va-shot-frame-delete" onClick={() => handleDeleteFrame(shot.id, 'first')}>×</button>
@@ -1989,10 +1991,11 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
                         onMouseEnter={e => handleThumbEnter(shot.generated_last_frame_url!, 'image', e)}
                         onMouseLeave={handleThumbLeave}
                       >
-                        <img
+                        <RetryImage
                           src={shot.generated_last_frame_url}
                           alt="尾帧"
-                          referrerPolicy="no-referrer"
+                          showSkeleton={false}
+                          eager
                           onClick={() => handleShotGenerateLastFrame(shot, i)}
                         />
                         <button className="va-shot-frame-delete" onClick={() => handleDeleteFrame(shot.id, 'last')}>×</button>
@@ -2008,10 +2011,11 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
                         onMouseEnter={e => handleThumbEnter(lastFrameUrl!, 'image', e)}
                         onMouseLeave={handleThumbLeave}
                       >
-                        <img
+                        <RetryImage
                           src={lastFrameUrl}
                           alt="尾帧(下一镜头首帧)"
-                          referrerPolicy="no-referrer"
+                          showSkeleton={false}
+                          eager
                           onClick={() => handleShotGenerateLastFrame(shot, i)}
                         />
                         <span className="va-shot-frame-label">下一镜头首帧</span>
@@ -2136,7 +2140,12 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
           onMouseLeave={handleHoverPreviewLeave}
         >
           {hoverPreview.type === 'image' ? (
-            <img src={hoverPreview.url} alt="Preview" referrerPolicy="no-referrer" />
+            <RetryImage
+              src={hoverPreview.url}
+              alt="Preview"
+              showSkeleton={false}
+              eager
+            />
           ) : (
             <video src={hoverPreview.url} controls muted preload="metadata" />
           )}

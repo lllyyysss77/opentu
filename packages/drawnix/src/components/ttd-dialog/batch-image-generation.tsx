@@ -70,7 +70,7 @@ import type { ModelConfig } from '../../constants/model-config';
 import './batch-image-generation.scss';
 import { trackMemory } from '../../utils/common';
 import { HoverTip } from '../shared/hover';
-import { KnowledgeNoteContextSelector } from '../shared';
+import { KnowledgeNoteContextSelector, RetryImage } from '../shared';
 import {
   loadScopedAIImageToolPreferences,
   sanitizeImageToolExtraParams,
@@ -3011,7 +3011,12 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
                               openImagePreview(completedUrls, idx);
                             }}
                           >
-                            <img src={url} alt={`Result ${idx + 1}`} />
+                            <RetryImage
+                              src={url}
+                              alt={`Result ${idx + 1}`}
+                              showSkeleton={false}
+                              eager
+                            />
                           </div>
                         </HoverTip>
                       ))}
@@ -3103,7 +3108,12 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
                               openImagePreview(partialUrls, idx);
                             }}
                           >
-                            <img src={url} alt={`Result ${idx + 1}`} />
+                            <RetryImage
+                              src={url}
+                              alt={`Result ${idx + 1}`}
+                              showSkeleton={false}
+                              eager
+                            />
                           </div>
                         </HoverTip>
                       ))}
@@ -3817,7 +3827,12 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
                       className="gallery-item"
                       onClick={() => openImagePreview(galleryUrls, idx)}
                     >
-                      <img src={t.result!.url} alt={`Result ${idx + 1}`} />
+                      <RetryImage
+                        src={t.result!.url}
+                        alt={`Result ${idx + 1}`}
+                        showSkeleton={false}
+                        eager
+                      />
                       <span className="gallery-item-index">{idx + 1}</span>
                     </div>
                   ))}
