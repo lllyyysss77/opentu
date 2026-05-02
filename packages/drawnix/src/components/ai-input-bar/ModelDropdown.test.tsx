@@ -32,6 +32,7 @@ vi.mock('../../utils/settings-manager', () => ({
 
 vi.mock('../../hooks/use-model-pricing', () => ({
   useFormattedModelPrice: () => '',
+  useModelPriceText: () => ({ summary: '', detail: '' }),
   useModelMeta: () => null,
 }));
 

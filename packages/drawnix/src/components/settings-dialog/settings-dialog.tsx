@@ -31,7 +31,7 @@ import { LS_KEYS } from '../../constants/storage-keys';
 import { ModelDiscoveryDialog } from './model-discovery-dialog';
 import { PricingFieldGroup } from './pricing-field-group';
 import {
-  useFormattedModelPrice,
+  useModelPriceText,
   useModelMeta,
 } from '../../hooks/use-model-pricing';
 import {
@@ -63,6 +63,7 @@ import {
   invocationPresetsSettings,
   LEGACY_DEFAULT_PROVIDER_PROFILE_ID,
   providerProfilesSettings,
+  TUZI_BUSINESS_PROVIDER_PROFILE_ID,
   settingsManager,
   TUZI_MIX_PROVIDER_PROFILE_ID,
   TUZI_CODEX_PROVIDER_PROFILE_ID,
@@ -158,9 +159,13 @@ const ModelPriceLabel = memo(function ModelPriceLabel({
   profileId: string;
   modelId: string;
 }) {
-  const priceText = useFormattedModelPrice(profileId, modelId);
-  if (!priceText) return null;
-  return <span className="settings-dialog__model-price">{priceText}</span>;
+  const { summary, detail } = useModelPriceText(profileId, modelId);
+  if (!summary) return null;
+  return (
+    <HoverTip content={detail} placement="top" disabled={detail === summary}>
+      <span className="settings-dialog__model-price">{summary}</span>
+    </HoverTip>
+  );
 });
 
 const ModelIdWithDesc = memo(function ModelIdWithDesc({
@@ -291,7 +296,7 @@ function resolveAutoImageApiCompatibilityForDisplay(
     return 'openai-gpt-image';
   }
 
-  if (normalizedBaseUrl.includes('api.tu-zi.com')) {
+  if (normalizedBaseUrl.includes('.tu-zi.com')) {
     return 'tuzi-gpt-image';
   }
 
@@ -418,6 +423,38 @@ function getProviderIconUrl(
   return trimmed || null;
 }
 
+function getProviderHomepageUrl(
+  profile: Pick<ProviderProfile, 'homepageUrl' | 'baseUrl'>
+): string | null {
+  const homepageUrl = normalizeOpenableUrl(profile.homepageUrl);
+  if (homepageUrl) {
+    return homepageUrl;
+  }
+
+  try {
+    const baseUrl = normalizeOpenableUrl(profile.baseUrl);
+    return baseUrl ? new URL(baseUrl).origin : null;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeOpenableUrl(value?: string | null): string | null {
+  const trimmed = typeof value === 'string' ? value.trim() : '';
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    const url = new URL(
+      /^[a-z][a-z\d+\-.]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`
+    );
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
 function getProviderAvatarLabel(name: string): string {
   const trimmed = name.trim();
   if (!trimmed) {
@@ -486,7 +523,8 @@ function isManagedProviderProfile(profileId: string): boolean {
     profileId === LEGACY_DEFAULT_PROVIDER_PROFILE_ID ||
     profileId === TUZI_ORIGINAL_PROVIDER_PROFILE_ID ||
     profileId === TUZI_MIX_PROVIDER_PROFILE_ID ||
-    profileId === TUZI_CODEX_PROVIDER_PROFILE_ID
+    profileId === TUZI_CODEX_PROVIDER_PROFILE_ID ||
+    profileId === TUZI_BUSINESS_PROVIDER_PROFILE_ID
   );
 }
 
@@ -1571,6 +1609,7 @@ export const SettingsDialog = ({
           ...profile,
           name: profile.name.trim() || '未命名供应商',
           iconUrl: profile.iconUrl?.trim() || undefined,
+          homepageUrl: profile.homepageUrl?.trim() || undefined,
           baseUrl: normalizedBaseUrl,
           apiKey: profile.apiKey.trim(),
         };
@@ -2018,6 +2057,7 @@ export const SettingsDialog = ({
     const draftState = getProviderDraftState(selectedProfile, initialProfiles);
     const totalModels =
       selectedCounts.image + selectedCounts.video + selectedCounts.text;
+    const selectedProfileHomepageUrl = getProviderHomepageUrl(selectedProfile);
 
     return (
       <div
@@ -2048,7 +2088,26 @@ export const SettingsDialog = ({
         ) : null}
         <div className="settings-dialog__section settings-dialog__section--compact">
           <div className="settings-dialog__panel-header">
-            <div className="settings-dialog__profile-hero">
+            <a
+              className={`settings-dialog__profile-hero ${
+                selectedProfileHomepageUrl
+                  ? 'settings-dialog__profile-hero--link'
+                  : ''
+              }`}
+              href={selectedProfileHomepageUrl || undefined}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={
+                selectedProfileHomepageUrl
+                  ? `打开 ${selectedProfile.name} 域名页面`
+                  : undefined
+              }
+              onClick={(event) => {
+                if (!selectedProfileHomepageUrl) {
+                  event.preventDefault();
+                }
+              }}
+            >
               <ProviderAvatar profile={selectedProfile} size="large" />
               <div>
                 <h3 className="settings-dialog__section-title">
@@ -2063,7 +2122,7 @@ export const SettingsDialog = ({
                   <span>{draftState === 'saved' ? '已保存' : '未保存'}</span>
                 </div>
               </div>
-            </div>
+            </a>
             {!isManagedProviderProfile(selectedProfile.id) ? (
               <button
                 type="button"
@@ -2184,6 +2243,27 @@ export const SettingsDialog = ({
               />
               <span className="settings-dialog__field-hint">
                 支持填写远程图片地址；未填写时将根据供应商名称生成默认图标。
+              </span>
+            </div>
+
+            <div className="settings-dialog__field settings-dialog__field--column settings-dialog__field--full">
+              <label className="settings-dialog__label settings-dialog__label--stacked">
+                供应商域名
+              </label>
+              <input
+                type="url"
+                className="settings-dialog__input"
+                value={selectedProfile.homepageUrl || ''}
+                onChange={(event) =>
+                  updateProfile(selectedProfile.id, (profile) => ({
+                    ...profile,
+                    homepageUrl: event.target.value,
+                  }))
+                }
+                placeholder="如 https://business.tu-zi.com"
+              />
+              <span className="settings-dialog__field-hint">
+                弹窗头部的供应商图标和名称会跳转到此页面；未填写时使用 API 地址域名。
               </span>
             </div>
 

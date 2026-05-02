@@ -80,8 +80,7 @@ function isGeminiFamilyModel(model: ModelConfig): boolean {
 }
 
 function isTuziProviderProfile(profile: ProviderProfileSnapshot): boolean {
-  const baseUrl = profile.baseUrl.toLowerCase();
-  return baseUrl.includes('api.tu-zi.com');
+  return isTuziBaseUrl(profile.baseUrl);
 }
 
 function isMidjourneyModel(model: ModelConfig): boolean {
@@ -197,7 +196,26 @@ function isOfficialOpenAIProfile(profile: ProviderProfileSnapshot): boolean {
 }
 
 function isTuziProfile(profile: ProviderProfileSnapshot): boolean {
-  return profile.baseUrl.toLowerCase().includes('api.tu-zi.com');
+  return isTuziBaseUrl(profile.baseUrl);
+}
+
+function isTuziBaseUrl(baseUrl: string): boolean {
+  const normalizedBaseUrl = baseUrl.trim().toLowerCase();
+  if (!normalizedBaseUrl) {
+    return false;
+  }
+
+  try {
+    const url = new URL(
+      /^[a-z][a-z\d+\-.]*:\/\//i.test(normalizedBaseUrl)
+        ? normalizedBaseUrl
+        : `https://${normalizedBaseUrl}`
+    );
+    const hostname = url.hostname.toLowerCase();
+    return hostname === 'tu-zi.com' || hostname.endsWith('.tu-zi.com');
+  } catch {
+    return false;
+  }
 }
 
 function normalizeImageApiCompatibilityMode(

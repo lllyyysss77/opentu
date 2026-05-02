@@ -526,6 +526,37 @@ describe('provider routing', () => {
     );
   });
 
+  it('routes business tuzi GPT Image models with Tuzi compatibility in auto mode', () => {
+    const model: ModelConfig = {
+      id: 'gpt-image-2',
+      label: 'GPT Image 2',
+      type: 'image',
+      vendor: ModelVendor.GPT,
+    };
+
+    const bindings = inferBindingsForProviderModel(
+      {
+        id: 'provider-business',
+        name: 'Business',
+        providerType: 'openai-compatible',
+        baseUrl: 'https://business.tu-zi.com/v1',
+        apiKey: 'business-key',
+        authType: 'bearer',
+        imageApiCompatibility: 'auto',
+      },
+      model
+    );
+
+    expect(bindings.map((binding) => binding.requestSchema)).toEqual([
+      'tuzi.image.gpt-generation-json',
+      'tuzi.image.gpt-edit-json',
+    ]);
+    expect(bindings[0]?.metadata?.image).toMatchObject({
+      imageApiCompatibility: 'auto',
+      resolvedImageApiCompatibility: 'tuzi-gpt-image',
+    });
+  });
+
   it('keeps discovered generateContent bindings below template image bindings for tuzi-gpt-image endpoints', () => {
     const profile = {
       id: 'provider-b',

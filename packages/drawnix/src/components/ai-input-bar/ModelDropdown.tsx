@@ -44,7 +44,8 @@ import {
 import './model-dropdown.scss';
 import { ModelHealthBadge } from '../shared/ModelHealthBadge';
 import { ModelBenchmarkBadge } from '../shared/ModelBenchmarkBadge';
-import { useFormattedModelPrice, useModelMeta } from '../../hooks/use-model-pricing';
+import { HoverTip } from '../shared/hover';
+import { useModelPriceText, useModelMeta } from '../../hooks/use-model-pricing';
 import { modelPricingService } from '../../utils/model-pricing-service';
 import { KeyboardDropdown } from './KeyboardDropdown';
 import {
@@ -72,9 +73,16 @@ function normalizeSearchText(value?: string | null): string {
 
 const ModelDropdownPriceTag: React.FC<{ model: ModelConfig }> = React.memo(
   ({ model }) => {
-    const text = useFormattedModelPrice(model.sourceProfileId, model.id);
-    if (!text) return null;
-    return <span className="model-dropdown__item-price">{text}</span>;
+    const { summary, detail } = useModelPriceText(
+      model.sourceProfileId,
+      model.id
+    );
+    if (!summary) return null;
+    return (
+      <HoverTip content={detail} placement="top" disabled={detail === summary}>
+        <span className="model-dropdown__item-price">{summary}</span>
+      </HoverTip>
+    );
   }
 );
 
