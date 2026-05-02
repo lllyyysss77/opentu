@@ -1,9 +1,6 @@
 {
-  "version": "0.6.97",
-  "buildTime": "2026-05-02T05:43:49.614Z",
+  "version": "0.6.98",
+  "buildTime": "2026-05-02T06:10:59.635Z",
   "gitCommit": "unknown",
-  "changelog": [
-    "update app version to 0.6.96 and add image generation message type",
-    "优化价格展示增加Bussiness"
-  ]
+  "changelog": []
 }

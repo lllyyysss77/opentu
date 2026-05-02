@@ -1,3 +1,14 @@
+## 0.6.98 (2026-05-02)
+
+### 🔧 Chores
+
+- 更新应用版本至0.6.97 ([dc254677](https://github.com/ljquan/aitu/commit/dc254677))
+- refactor(settings-dialog): 提取 MessagePlugin 工具并移除供应商域名字段 ([47708bb2](https://github.com/ljquan/aitu/commit/47708bb2))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+
 ## 0.6.97 (2026-05-02)
 
 ### 🚀 Features
