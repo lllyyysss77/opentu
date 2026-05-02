@@ -11,7 +11,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from 'react';
-import { MessagePlugin, Switch } from 'tdesign-react';
+import { Switch } from 'tdesign-react';
 import { InfoCircleIcon } from 'tdesign-icons-react';
 import {
   AlertTriangle,
@@ -98,6 +98,7 @@ import {
 import { modelBenchmarkService } from '../../services/model-benchmark-service';
 import { HoverTip } from '../shared/hover';
 import { createProviderProfileDraft } from './provider-profile-draft';
+import { MessagePlugin } from '../../utils/message-plugin';
 
 export { IMAGE_MODEL_GROUPED_SELECT_OPTIONS as IMAGE_MODEL_GROUPED_OPTIONS } from '../../constants/model-config';
 export { VIDEO_MODEL_SELECT_OPTIONS as VIDEO_MODEL_OPTIONS } from '../../constants/model-config';
@@ -1431,13 +1432,7 @@ export const SettingsDialog = ({
     }
 
     if (hasPendingChanges) {
-      const savingMessage = MessagePlugin.loading('正在保存当前配置...', 0);
-      let saved = false;
-      try {
-        saved = await persistDrafts(false);
-      } finally {
-        MessagePlugin.close(savingMessage);
-      }
+      const saved = await persistDrafts(false);
       if (!saved) {
         return;
       }
@@ -1814,13 +1809,7 @@ export const SettingsDialog = ({
     }
 
     void (async () => {
-      const savingMessage = MessagePlugin.loading('正在保存设置...', 0);
-      let saved = false;
-      try {
-        saved = await persistDrafts(true);
-      } finally {
-        MessagePlugin.close(savingMessage);
-      }
+      const saved = await persistDrafts(true);
 
       if (!saved) {
         MessagePlugin.warning('设置尚未保存，请检查后重试');
@@ -2243,27 +2232,6 @@ export const SettingsDialog = ({
               />
               <span className="settings-dialog__field-hint">
                 支持填写远程图片地址；未填写时将根据供应商名称生成默认图标。
-              </span>
-            </div>
-
-            <div className="settings-dialog__field settings-dialog__field--column settings-dialog__field--full">
-              <label className="settings-dialog__label settings-dialog__label--stacked">
-                供应商域名
-              </label>
-              <input
-                type="url"
-                className="settings-dialog__input"
-                value={selectedProfile.homepageUrl || ''}
-                onChange={(event) =>
-                  updateProfile(selectedProfile.id, (profile) => ({
-                    ...profile,
-                    homepageUrl: event.target.value,
-                  }))
-                }
-                placeholder="如 https://business.tu-zi.com"
-              />
-              <span className="settings-dialog__field-hint">
-                弹窗头部的供应商图标和名称会跳转到此页面；未填写时使用 API 地址域名。
               </span>
             </div>
 
