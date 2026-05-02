@@ -1064,26 +1064,31 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
       characters,
     });
     const draft = shot.last_frame_draft;
+    const draftImages = draft ? toDraftImages(draft.images || []) : undefined;
     const shotBatchId = `va_${record.id}_shot${shot.id}_last`;
     const lastFrameUrl = getLastFrameUrl(shot, index);
+    const existingFrameImages = !draft && lastFrameUrl
+      ? [{ url: lastFrameUrl, name: '尾帧' }]
+      : undefined;
+    const characterReferenceImages = getShotCharacterReferenceImages(shot);
     openDialog(DialogType.aiImageGeneration, {
       initialPrompt: draft?.prompt || prompt,
       batchId: shotBatchId,
       initialAspectRatio: draft?.aspectRatio ?? selectedImageAspectRatio,
       initialModel: imageModel || undefined,
       initialModelRef: imageModelRef,
-      initialImages: draft
-        ? toDraftImages(draft.images || [])
-        : lastFrameUrl
-          ? [{ url: lastFrameUrl, name: '尾帧' }]
-          : undefined,
+      initialImages: mergeReferenceImages(
+        draftImages,
+        existingFrameImages,
+        characterReferenceImages
+      ),
       onDraftChange: (nextDraft: {
         prompt: string;
         images: Array<{ url: string; name: string }>;
         aspectRatio?: string;
       }) => saveShotDraft(shot.id, 'last', nextDraft),
     });
-  }, [record, generationProductInfo, characters, openDialog, getLastFrameUrl, imageModel, imageModelRef, saveShotDraft, selectedImageAspectRatio, toDraftImages]);
+  }, [record, generationProductInfo, characters, openDialog, getLastFrameUrl, imageModel, imageModelRef, mergeReferenceImages, getShotCharacterReferenceImages, saveShotDraft, selectedImageAspectRatio, toDraftImages]);
 
   // --- 单镜头：打开视频生成弹窗 ---
   const handleShotGenerateVideo = useCallback((shot: VideoShot, index: number) => {

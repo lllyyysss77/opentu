@@ -86,10 +86,20 @@ function buildFrameCharacterBlock(
   const characterLines = ids
     .map((id) => options.characters?.find((character) => character.id === id))
     .filter((character): character is VideoCharacter => !!character?.description)
-    .map((character) => `${character.name || character.id}: ${character.description}`);
+    .map((character) => {
+      const name = character.name || character.id;
+      const referenceRule = character.referenceImageUrl
+        ? '随请求附带角色参考图；以参考图为最高优先级锁定同一人物身份、脸型、五官、发型、肤色、体型、年龄感、服装款式、服装颜色、材质和配饰'
+        : '严格按角色描述锁定同一人物身份、发型、肤色、体型、年龄感、服装款式、服装颜色、材质和配饰';
+      return `${name}: ${character.description}（${referenceRule}）`;
+    });
 
   return characterLines.length > 0
-    ? `画面内角色：${characterLines.join('; ')}`
+    ? [
+        `画面内角色：${characterLines.join('; ')}`,
+        '一致性优先级：角色参考图和角色描述高于当前关键帧文字；若关键帧文字与角色参考图冲突，保留参考图中的人物与服装，只调整姿态、表情、动作、镜头角度、光线和背景。',
+        '禁止：换脸、换发型、换发色、改变年龄感、改变体型、重设计服装、替换衣服颜色或新增无关人物。',
+      ].join('\n')
     : '';
 }
 

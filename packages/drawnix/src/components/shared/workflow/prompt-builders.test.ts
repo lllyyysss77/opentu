@@ -101,6 +101,7 @@ describe('prompt-builders', () => {
             id: 'char_1',
             name: '主角',
             description: 'young woman in a silver running jacket',
+            referenceImageUrl: 'https://example.com/character.png',
           },
         ],
         continueFromPreviousFrame: true,
@@ -114,6 +115,11 @@ describe('prompt-builders', () => {
     expect(prompt).not.toContain('用户目标/主题');
     expect(prompt).not.toContain('只把鞋换成红色');
     expect(prompt).toContain('画面内角色：主角: young woman in a silver running jacket');
+    expect(prompt).toContain('以参考图为最高优先级锁定同一人物身份');
+    expect(prompt).toContain('服装款式、服装颜色、材质和配饰');
+    expect(prompt).toContain('若关键帧文字与角色参考图冲突，保留参考图中的人物与服装');
+    expect(prompt).toContain('禁止：换脸、换发型、换发色');
+    expect(prompt).toContain('重设计服装');
     expect(prompt).toContain('连续性要求');
   });
 

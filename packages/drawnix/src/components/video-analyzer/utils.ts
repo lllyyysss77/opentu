@@ -107,7 +107,7 @@ JSON 字段要求：
 
 规划要求：
 1. 结构必须兼容视频分析结果，shots 的时间轴必须连续，duration 等于 endTime - startTime。
-2. first_frame_prompt 必须可直接用于文生图模型，写清主体、构图、动作起始状态、光线、背景和必要文字。
+2. first_frame_prompt 必须可直接用于文生图模型，写清主体、构图、动作起始状态、光线、背景和必要文字；若镜头包含角色，必须写入对应 characters[].description 中的同一人物身份、发型、脸部特征、体型、年龄感、完整服装款式、服装颜色、材质和配饰，不得重新设计衣服。
 3. narration 是画外音；dialogue 是角色台词。speech_relation 必须与 narration/dialogue 是否为空一致。
 4. 相邻镜头要有可拼接的视觉锚点、动作延续或转场提示。
 5. 所有可读内容使用与用户提示词相同的语言；characters[].description 使用英文。
@@ -115,7 +115,8 @@ JSON 字段要求：
 7. 若提供视频模型或单段时长，镜头数量、时间轴和每个镜头 prompt 必须服务于后续逐段生成，避免超长单镜头、复杂多场景同镜头和不可执行的跳切。
 8. 视频模型单段通常只有 8-15 秒；若一个连续动作/场景超过单段时长，必须拆成多个连续 shots。连续拆分时，第 N+1 段的 first_frame_prompt 就是第 N 段的尾帧状态，第 N 段 last_frame_prompt 应留空字符串；只有最后一段、非连续转场、明确需要独立结束定格时才填写 last_frame_prompt。
 9. 不要为了字段完整强行生成尾帧提示词；没有独立尾帧需求时填 ""。
-10. 只返回 JSON，不要 markdown。`;
+10. 非空 last_frame_prompt 若包含角色，必须沿用同一个 character_ids 对应角色的完整身份和服装锚点；只改变结尾姿态、表情、动作定格、构图、光线或背景，不得换脸、换发型、换衣服颜色或新增无关人物。
+11. 只返回 JSON，不要 markdown。`;
 }
 
 export function parseVideoPromptGenerationResponse(
@@ -253,8 +254,8 @@ ${productInfo.bgmMood ? `- BGM 情绪：${productInfo.bgmMood}` : ''}
 3. **dialogue（角色说话）**：角色台词，无角色说话则为空字符串；多角色请按”角色名: 台词”分行输出
 4. **dialogue_speakers（对白角色）**：单角色填角色名，多角色用”角色A|角色B”按发言顺序列出；无对白填空字符串
 5. **speech_relation（旁白与对白关系）**：必须是 'none' | 'narration_only' | 'dialogue_only' | 'both' 之一，并与 narration/dialogue 是否为空严格一致
-6. **first_frame_prompt（首帧图片提示词）**：用于生成镜头开场画面，需精确描述主体位置、动作起始状态、构图、光线与背景${productInfo.videoStyle ? `，并写入画面风格”${productInfo.videoStyle}”` : ''}${hasCharacters ? `；若该镜头有角色（character_ids 非空），必须在 prompt 中包含对应角色的完整外貌描述` : ''}
-7. **last_frame_prompt（尾帧图片提示词，可为空）**：只有该镜头必须独立生成结尾关键帧时才填写，需精确描述主体位置、动作定格状态、构图、光线与背景${productInfo.videoStyle ? `，并写入画面风格”${productInfo.videoStyle}”` : ''}${hasCharacters ? `；若该镜头有角色（character_ids 非空），必须在 prompt 中包含对应角色的完整外貌描述` : ''}；若下一段的首帧自然就是本段尾帧，则本字段填空字符串
+6. **first_frame_prompt（首帧图片提示词）**：用于生成镜头开场画面，需精确描述主体位置、动作起始状态、构图、光线与背景${productInfo.videoStyle ? `，并写入画面风格”${productInfo.videoStyle}”` : ''}${hasCharacters ? `；若该镜头有角色（character_ids 非空），必须在 prompt 中包含对应角色的完整外貌描述，并明确沿用同一人物身份、脸型五官、发型、体型、年龄感、完整服装款式、服装颜色、材质和配饰，不得重新设计衣服` : ''}
+7. **last_frame_prompt（尾帧图片提示词，可为空）**：只有该镜头必须独立生成结尾关键帧时才填写，需精确描述主体位置、动作定格状态、构图、光线与背景${productInfo.videoStyle ? `，并写入画面风格”${productInfo.videoStyle}”` : ''}${hasCharacters ? `；若该镜头有角色（character_ids 非空），必须在 prompt 中包含对应角色的完整外貌与服装锚点，和首帧保持同一人物、同一发型、同一套衣服、同一配饰，只改变结尾姿态、表情、动作、镜头角度或环境` : ''}；若下一段的首帧自然就是本段尾帧，则本字段填空字符串
 8. **camera_movement（运镜方式）**：根据新内容适当调整
 9. **character_ids（角色 ID 列表）**：根据改编后的角色出场重新设置；若改编后该镜头不再涉及角色则设为空数组 []
 10. **characters（角色列表）**：如果用户提示词或原创性要求导致角色外貌、身份、服装、物种、数量发生变化，必须同步更新 characters 数组；如果不再需要角色，返回空数组 []

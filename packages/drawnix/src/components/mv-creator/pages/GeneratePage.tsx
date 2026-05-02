@@ -1022,8 +1022,13 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
       characters,
     });
     const draft = shot.last_frame_draft;
+    const draftImages = draft ? toDraftImages(draft.images || []) : undefined;
     const shotBatchId = `mv_${record.id}_shot${shot.id}_last`;
     const lastFrameUrl = getLastFrameUrl(shot, index);
+    const existingFrameImages = !draft && lastFrameUrl
+      ? [{ url: lastFrameUrl, name: '尾帧' }]
+      : undefined;
+    const characterReferenceImages = getShotCharacterReferenceImages(shot);
     openDialog(DialogType.aiImageGeneration, {
       initialPrompt: draft?.prompt || prompt,
       initialKnowledgeContextRefs: knowledgeContextRefs,
@@ -1032,18 +1037,18 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
       initialModel: imageModel || undefined,
       initialModelRef: imageModelRef,
       autoInsertToCanvas: false,
-      initialImages: draft
-        ? toDraftImages(draft.images || [])
-        : lastFrameUrl
-          ? [{ url: lastFrameUrl, name: '尾帧' }]
-          : undefined,
+      initialImages: mergeReferenceImages(
+        draftImages,
+        existingFrameImages,
+        characterReferenceImages
+      ),
       onDraftChange: (nextDraft: {
         prompt: string;
         images: Array<{ url: string; name: string }>;
         aspectRatio?: string;
       }) => saveShotDraft(shot.id, 'last', nextDraft),
     });
-  }, [record.id, pseudoAnalysis, pseudoProductInfo, characters, knowledgeContextRefs, openDialog, getLastFrameUrl, imageModel, imageModelRef, saveShotDraft, selectedImageAspectRatio, toDraftImages]);
+  }, [record.id, pseudoAnalysis, pseudoProductInfo, characters, knowledgeContextRefs, openDialog, getLastFrameUrl, imageModel, imageModelRef, mergeReferenceImages, getShotCharacterReferenceImages, saveShotDraft, selectedImageAspectRatio, toDraftImages]);
 
   const handleShotGenerateVideo = useCallback(async (shot: VideoShot, index: number) => {
     const prompt = buildVideoPrompt(shot, pseudoAnalysis, pseudoProductInfo);

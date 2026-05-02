@@ -88,6 +88,10 @@ describe('video-analyzer utils', () => {
     expect(prompt).toContain('VideoAnalysisData');
     expect(prompt).toContain('只返回 JSON，不要 markdown');
     expect(prompt).toContain('first_frame_prompt');
+    expect(prompt).toContain('同一人物身份、发型、脸部特征、体型、年龄感、完整服装款式');
+    expect(prompt).toContain('不得重新设计衣服');
+    expect(prompt).toContain('非空 last_frame_prompt 若包含角色');
+    expect(prompt).toContain('不得换脸、换发型、换衣服颜色或新增无关人物');
     expect(prompt).toContain('原创性与合规要求');
   });
 
