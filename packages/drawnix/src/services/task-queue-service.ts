@@ -45,6 +45,10 @@ import type { GeminiMessage } from '../utils/gemini-api/types';
 import { buildInlineDataPart } from '../utils/gemini-api/message-utils';
 import { unifiedCacheService } from './unified-cache-service';
 import { buildGenerateContentConfig } from './analysis-core';
+import {
+  createTaskInvocationRouteSnapshotFromTask,
+  mergeTaskInvocationRoute,
+} from './task-invocation-route';
 import { callGoogleGenerateContentWithLog } from '../utils/gemini-api/logged-calls';
 import { executeVideoAnalysis } from './video-analysis-service';
 import {
@@ -109,6 +113,7 @@ const STORAGE_SYNC_FIELDS = [
   'completedAt',
   'startedAt',
   'remoteId',
+  'invocationRoute',
   'insertedToCanvas',
   'executionPhase',
   'savedToLibrary',
@@ -195,6 +200,10 @@ function buildTaskAnalyticsPayload(task: Task): Record<string, unknown> {
     execution_phase: task.executionPhase,
     hasRemoteId: Boolean(task.remoteId),
     has_remote_id: Boolean(task.remoteId),
+    providerProfileId: task.invocationRoute?.providerProfileId || undefined,
+    provider_profile_id: task.invocationRoute?.providerProfileId || undefined,
+    bindingId: task.invocationRoute?.binding?.id || undefined,
+    binding_id: task.invocationRoute?.binding?.id || undefined,
     resultCount,
     result_count: resultCount,
     hasReferenceImage,
@@ -400,6 +409,7 @@ class TaskQueueService {
       error: task.error as any,
       progress: task.progress,
       remoteId: task.remoteId,
+      invocationRoute: task.invocationRoute,
       executionPhase: task.executionPhase,
       savedToLibrary: task.savedToLibrary,
       insertedToCanvas: task.insertedToCanvas,
@@ -635,6 +645,10 @@ class TaskQueueService {
               onSubmitted: (remoteId: string) => {
                 this.updateTaskStatus(task.id, TaskStatus.PROCESSING, {
                   remoteId,
+                  invocationRoute: mergeTaskInvocationRoute(
+                    task.invocationRoute,
+                    createTaskInvocationRouteSnapshotFromTask(task, 'audio')
+                  ),
                   executionPhase: TaskExecutionPhase.POLLING,
                 });
               },
@@ -1869,6 +1883,10 @@ class TaskQueueService {
         progress: 0,
       }),
     };
+    const invocationRoute = createTaskInvocationRouteSnapshotFromTask(task);
+    if (invocationRoute) {
+      task.invocationRoute = invocationRoute;
+    }
 
     this.blockedTaskIds.delete(task.id);
 
@@ -2177,10 +2195,16 @@ class TaskQueueService {
   trackExternalTask(task: Task): void {
     this.blockedTaskIds.delete(task.id);
     if (this.tasks.has(task.id)) return;
-    this.tasks.set(task.id, task);
-    this.persistTask(task);
-    this.emitEvent('taskCreated', task);
-    trackTaskAnalytics('generation_task_created', task, {
+    const trackedTask: Task = task.invocationRoute
+      ? task
+      : {
+          ...task,
+          invocationRoute: createTaskInvocationRouteSnapshotFromTask(task),
+        };
+    this.tasks.set(task.id, trackedTask);
+    this.persistTask(trackedTask);
+    this.emitEvent('taskCreated', trackedTask);
+    trackTaskAnalytics('generation_task_created', trackedTask, {
       source: 'external_task',
     });
   }
