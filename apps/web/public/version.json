@@ -1,9 +1,9 @@
 {
-  "version": "0.6.96",
-  "buildTime": "2026-05-01T15:15:12.754Z",
+  "version": "0.6.97",
+  "buildTime": "2026-05-02T05:43:48.986Z",
   "gitCommit": "unknown",
   "changelog": [
-    "enhance audio asset handling in workflow export and improve caching logic",
-    "优化视频工作流批量生成"
+    "update app version to 0.6.96 and add image generation message type",
+    "优化价格展示增加Bussiness"
   ]
 }

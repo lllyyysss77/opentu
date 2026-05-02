@@ -1,3 +1,22 @@
+## 0.6.97 (2026-05-02)
+
+### 🚀 Features
+
+- 优化价格展示增加Bussiness ([a2ba39ae](https://github.com/ljquan/aitu/commit/a2ba39ae))
+- update app version to 0.6.96 and add image generation message type ([65b5cf71](https://github.com/ljquan/aitu/commit/65b5cf71))
+
+### 🩹 Fixes
+
+- parallelize character reference generation ([1b17f80a](https://github.com/ljquan/aitu/commit/1b17f80a))
+
+### 🔧 Chores
+
+- refactor: 统一 AI JSON 响应解析并优化样式与功能 ([dc91f938](https://github.com/ljquan/aitu/commit/dc91f938))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+
 ## 0.6.96 (2026-05-01)
 
 ### 🚀 Features
