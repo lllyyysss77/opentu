@@ -70,6 +70,7 @@ describe('video-analyzer utils', () => {
       pdfAttachmentName: '品牌资料.pdf',
       videoStyle: '电影感光影',
       videoModel: 'happy-horse-1.0-r2v',
+      targetDuration: 30,
       segmentDuration: 5,
       creativeBrief: {
         purpose: '口播种草',
@@ -83,8 +84,10 @@ describe('video-analyzer utils', () => {
     expect(prompt).toContain('视频用途/场景：口播种草');
     expect(prompt).toContain('画面风格：电影感光影');
     expect(prompt).toContain('视频模型：happy-horse-1.0-r2v');
+    expect(prompt).toContain('目标视频总时长：30 秒');
     expect(prompt).toContain('单段视频时长：5 秒');
     expect(prompt).toContain('shots[].duration 必须等于 5');
+    expect(prompt).toContain('建议生成 6 个镜头，实际总时长 30 秒');
     expect(prompt).toContain('VideoAnalysisData');
     expect(prompt).toContain('只返回 JSON，不要 markdown');
     expect(prompt).toContain('first_frame_prompt');

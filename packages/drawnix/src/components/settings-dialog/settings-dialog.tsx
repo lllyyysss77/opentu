@@ -2237,27 +2237,6 @@ export const SettingsDialog = ({
 
             <div className="settings-dialog__field settings-dialog__field--column settings-dialog__field--full">
               <label className="settings-dialog__label settings-dialog__label--stacked">
-                供应商域名
-              </label>
-              <input
-                type="url"
-                className="settings-dialog__input"
-                value={selectedProfile.homepageUrl || ''}
-                onChange={(event) =>
-                  updateProfile(selectedProfile.id, (profile) => ({
-                    ...profile,
-                    homepageUrl: event.target.value,
-                  }))
-                }
-                placeholder="如 https://business.tu-zi.com"
-              />
-              <span className="settings-dialog__field-hint">
-                弹窗头部的供应商图标和名称会跳转到此页面；未填写时使用 API 地址域名。
-              </span>
-            </div>
-
-            <div className="settings-dialog__field settings-dialog__field--column settings-dialog__field--full">
-              <label className="settings-dialog__label settings-dialog__label--stacked">
                 API 地址
               </label>
               <input

@@ -74,6 +74,7 @@ const DEFAULT_ANALYSIS_MODEL = 'gemini-3.1-pro-preview';
 const STORAGE_KEY_MODEL = 'video-analyzer:model';
 const STORAGE_KEY_VIDEO_MODEL = 'video-analyzer:video-model';
 const DEFAULT_VIDEO_MODEL = 'veo3';
+const DEFAULT_PROMPT_TARGET_DURATION = 30;
 const SETTINGS_PROVIDER_NAV_EVENT = 'aitu:settings:provider-nav';
 const MAX_PROMPT_PDF_SIZE = 20 * 1024 * 1024;
 
@@ -115,6 +116,12 @@ export const AnalyzePage: React.FC<AnalyzePageProps> = ({
       existingRecord?.productInfo?.videoStyle ||
       existingRecord?.analysis.video_style ||
       ''
+  );
+  const [targetDuration, setTargetDuration] = useState<number>(
+    () =>
+      existingRecord?.productInfo?.targetDuration ||
+      existingRecord?.analysis.totalDuration ||
+      DEFAULT_PROMPT_TARGET_DURATION
   );
   const [creativeBrief, setCreativeBrief] = useState<CreativeBrief>({});
   const [knowledgeContextRefs, setKnowledgeContextRefs] = useState<
@@ -240,6 +247,7 @@ export const AnalyzePage: React.FC<AnalyzePageProps> = ({
         setInputMode('prompt');
         setPromptText('');
         setVideoStyle('');
+        setTargetDuration(DEFAULT_PROMPT_TARGET_DURATION);
         setCreativeBrief({});
         setPdfAttachment(null);
         setYoutubeUrl('');
@@ -256,6 +264,11 @@ export const AnalyzePage: React.FC<AnalyzePageProps> = ({
         existingRecord.productInfo?.videoStyle ||
           existingRecord.analysis.video_style ||
           ''
+      );
+      setTargetDuration(
+        existingRecord.productInfo?.targetDuration ||
+          existingRecord.analysis.totalDuration ||
+          DEFAULT_PROMPT_TARGET_DURATION
       );
       if (existingRecord.productInfo?.videoModel) {
         setVideoModelState(existingRecord.productInfo.videoModel);
@@ -567,6 +580,7 @@ export const AnalyzePage: React.FC<AnalyzePageProps> = ({
           videoStyle,
           videoModel,
           segmentDuration,
+          targetDuration,
         });
         params = {
           prompt,
@@ -593,6 +607,7 @@ export const AnalyzePage: React.FC<AnalyzePageProps> = ({
             prompt: sourcePrompt,
             videoModel,
             videoModelRef,
+            targetDuration,
             segmentDuration,
             videoStyle,
             creativeBrief: normalizedCreativeBrief,
@@ -684,6 +699,7 @@ export const AnalyzePage: React.FC<AnalyzePageProps> = ({
     videoStyle,
     videoModel,
     videoModelRef,
+    targetDuration,
     segmentDuration,
     creativeBrief,
     knowledgeContextRefs,
@@ -888,10 +904,29 @@ export const AnalyzePage: React.FC<AnalyzePageProps> = ({
                       )}
                       onSelect={setVideoModel}
                       models={videoModels}
-                      placement="down"
+                      placement="auto"
                       disabled={analyzing || !!pendingAnalyzeTaskId}
                       placeholder="选择视频模型"
                     />
+                    <div className="va-target-duration-input">
+                      <label className="va-model-label">目标时长</label>
+                      <input
+                        className="va-form-input"
+                        type="number"
+                        min={5}
+                        max={300}
+                        value={targetDuration}
+                        onChange={(event) => {
+                          const value = Number(event.target.value);
+                          setTargetDuration(
+                            Number.isFinite(value) && value > 0
+                              ? value
+                              : DEFAULT_PROMPT_TARGET_DURATION
+                          );
+                        }}
+                        disabled={analyzing || !!pendingAnalyzeTaskId}
+                      />
+                    </div>
                     <div className="va-segment-duration-select">
                       <label className="va-model-label">单段</label>
                       <select
@@ -995,7 +1030,7 @@ export const AnalyzePage: React.FC<AnalyzePageProps> = ({
                 )}
                 onSelect={setSelectedModel}
                 models={selectableAnalysisModels}
-                placement="down"
+                placement="auto"
                 disabled={analyzing}
                 placeholder={
                   isGeminiRequiredForAnalysis ? '选择 Gemini 模型' : '选择文本模型'

@@ -77,6 +77,7 @@ function createPromptGenerateTask(
         prompt: '防滑拖鞋小红书爆款视频',
         videoStyle: '电影感光影',
         videoModel: 'happy-horse-1.0-r2v',
+        targetDuration: 30,
         segmentDuration: 5,
         creativeBrief: {
           purpose: '口播种草',
@@ -126,6 +127,7 @@ describe('video-analyzer task sync', () => {
         prompt: '防滑拖鞋小红书爆款视频',
         videoStyle: '电影感光影',
         videoModel: 'happy-horse-1.0-r2v',
+        targetDuration: 30,
         segmentDuration: 5,
         creativeBrief: {
           purpose: '口播种草',

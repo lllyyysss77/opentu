@@ -995,17 +995,18 @@
 
   .va-character-ref-thumb {
     position: relative;
-    width: 48px;
-    height: 48px;
+    width: 56px;
+    height: 72px;
     border-radius: 6px;
     overflow: hidden;
     border: 1px solid var(--td-border-level-1-color, #ddd);
+    background: var(--td-bg-color-container, #fff);
     flex-shrink: 0;
 
     img {
       width: 100%;
       height: 100%;
-      object-fit: cover;
+      object-fit: contain;
       display: block;
     }
 
@@ -1047,6 +1048,7 @@
   border-radius: 6px;
   overflow: hidden;
   border: 1px solid var(--td-border-level-1-color, #ddd);
+  background: var(--td-bg-color-secondarycontainer, #f7f7f7);
   flex-shrink: 0;
 
   img,
@@ -1054,7 +1056,7 @@
   .va-shot-frame-media {
     width: 100%;
     height: 100%;
-    object-fit: cover;
+    object-fit: contain;
     display: block;
     cursor: pointer;
   }
@@ -1304,6 +1306,19 @@
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
+}
+
+.va-target-duration-input {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+
+  .va-form-input {
+    width: 72px;
+    flex: 0 0 72px;
+    text-align: center;
+  }
 }
 
 // ComboInput

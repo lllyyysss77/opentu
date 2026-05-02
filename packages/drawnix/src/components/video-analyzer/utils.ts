@@ -45,22 +45,44 @@ export function buildVideoPromptGenerationPrompt(params: {
   creativeBrief?: CreativeBrief | null;
   videoStyle?: string;
   videoModel?: string;
+  targetDuration?: number;
   segmentDuration?: number;
 }): string {
   const userPrompt = String(params.userPrompt || '').trim();
   const pdfAttachmentName = String(params.pdfAttachmentName || '').trim();
   const videoStyle = String(params.videoStyle || '').trim();
   const videoModel = String(params.videoModel || '').trim();
+  const targetDuration = Number(params.targetDuration);
   const segmentDuration = Number(params.segmentDuration);
   const creativeBriefSection = formatCreativeBriefPromptBlock(
     params.creativeBrief,
     'popular_video'
   );
+  const hasTargetDuration =
+    Number.isFinite(targetDuration) && targetDuration > 0;
+  const hasSegmentDuration =
+    Number.isFinite(segmentDuration) && segmentDuration > 0;
+  const segmentPlan =
+    hasTargetDuration && hasSegmentDuration
+      ? computeSegmentPlan(targetDuration, [
+          { label: `${segmentDuration}秒`, value: String(segmentDuration) },
+        ])
+      : null;
   const videoParameterLines = [
     videoStyle ? `- 画面风格：${videoStyle}` : '',
     videoModel ? `- 视频模型：${videoModel}` : '',
-    Number.isFinite(segmentDuration) && segmentDuration > 0
+    hasTargetDuration
+      ? `- 目标视频总时长：${targetDuration} 秒`
+      : '',
+    hasSegmentDuration
       ? `- 单段视频时长：${segmentDuration} 秒；每个镜头都应能作为一个独立视频片段生成，shots[].duration 必须等于 ${segmentDuration}，totalDuration 必须等于 shotCount × ${segmentDuration}`
+      : '',
+    segmentPlan
+      ? `- 分段规划：建议生成 ${segmentPlan.segments.length} 个镜头，实际总时长 ${segmentPlan.actualTotal} 秒${
+          segmentPlan.overflow > 0
+            ? `（比目标多 ${parseFloat(segmentPlan.overflow.toFixed(2))} 秒）`
+            : ''
+        }，内容节奏按实际总时长分配`
       : '',
   ].filter(Boolean);
   const videoParameterSection =
@@ -112,7 +134,7 @@ JSON 字段要求：
 4. 相邻镜头要有可拼接的视觉锚点、动作延续或转场提示。
 5. 所有可读内容使用与用户提示词相同的语言；characters[].description 使用英文。
 6. 若提供画面风格，video_style、description、first_frame_prompt、非空 last_frame_prompt 必须共同继承该风格，不要只写在总字段里。
-7. 若提供视频模型或单段时长，镜头数量、时间轴和每个镜头 prompt 必须服务于后续逐段生成，避免超长单镜头、复杂多场景同镜头和不可执行的跳切。
+7. 若提供目标总时长、视频模型或单段时长，镜头数量、时间轴和每个镜头 prompt 必须服务于后续逐段生成，避免超长单镜头、复杂多场景同镜头和不可执行的跳切。
 8. 视频模型单段通常只有 8-15 秒；若一个连续动作/场景超过单段时长，必须拆成多个连续 shots。连续拆分时，第 N+1 段的 first_frame_prompt 就是第 N 段的尾帧状态，第 N 段 last_frame_prompt 应留空字符串；只有最后一段、非连续转场、明确需要独立结束定格时才填写 last_frame_prompt。
 9. 不要为了字段完整强行生成尾帧提示词；没有独立尾帧需求时填 ""。
 10. 非空 last_frame_prompt 若包含角色，必须沿用同一个 character_ids 对应角色的完整身份和服装锚点；只改变结尾姿态、表情、动作定格、构图、光线或背景，不得换脸、换发型、换衣服颜色或新增无关人物。

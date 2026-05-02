@@ -484,7 +484,7 @@ export const AnalyzePage: React.FC<AnalyzePageProps> = ({
                   selectedSelectionKey={getSelectionKey(videoModel, videoModelRef)}
                   onSelect={(id: string, ref?: ModelRef | null) => setVideoModel(id, ref)}
                   variant="form"
-                  placement="down"
+                  placement="auto"
                 />
                 <div className="va-segment-duration-select">
                   <label className="va-model-label">单段</label>
@@ -523,7 +523,7 @@ export const AnalyzePage: React.FC<AnalyzePageProps> = ({
                   selectedSelectionKey={getSelectionKey(storyboardModel, storyboardModelRef)}
                   onSelect={(id: string, ref?: ModelRef | null) => setStoryboardModel(id, ref)}
                   variant="form"
-                  placement="down"
+                  placement="auto"
                   disabled={submitting}
                 />
               </div>

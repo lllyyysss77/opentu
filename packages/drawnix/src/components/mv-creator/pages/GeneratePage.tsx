@@ -1800,7 +1800,10 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
     const [w, h] = selectedVideoAspectRatio.split(':').map(Number);
     if (!w || !h) return {};
     const computedW = Math.round(54 * w / h);
-    return { width: Math.max(computedW, 48), height: computedW < 48 ? Math.round(48 * h / w) : 54 };
+    return {
+      width: Math.max(computedW, 48),
+      height: computedW < 48 ? Math.round(48 * h / w) : 54,
+    };
   }, [selectedVideoAspectRatio]);
 
   return (
