@@ -56,6 +56,26 @@ function autoResizeRef(el: HTMLTextAreaElement | null) {
   if (el) autoResize(el);
 }
 
+function getProductInfoForRecord(record: AnalysisRecord): ProductInfo {
+  const migrated = migrateProductInfo(
+    record.productInfo || { prompt: '' },
+    record.analysis.totalDuration
+  );
+  return {
+    ...migrated,
+    videoStyle: migrated.videoStyle ?? record.analysis.video_style ?? '',
+    bgmMood: migrated.bgmMood ?? record.analysis.bgm_mood ?? '',
+  };
+}
+
+function findUpdatedRecord(
+  records: AnalysisRecord[],
+  id: string,
+  fallback: AnalysisRecord
+): AnalysisRecord {
+  return records.find(item => item.id === id) || fallback;
+}
+
 const STORAGE_KEY_SCRIPT_MODEL = 'video-analyzer:script-model';
 const STORAGE_KEY_VIDEO_MODEL = 'video-analyzer:video-model';
 const DEFAULT_SCRIPT_MODEL = 'gemini-3.1-pro-preview';
@@ -105,17 +125,9 @@ export const ScriptPage: React.FC<ScriptPageProps> = ({
   onRecordsChange,
   onNext,
 }) => {
-  const [productInfo, setProductInfo] = useState<ProductInfo>(() => {
-    const migrated = migrateProductInfo(
-      record.productInfo || { prompt: '' },
-      record.analysis.totalDuration
-    );
-    return {
-      ...migrated,
-      videoStyle: migrated.videoStyle ?? record.analysis.video_style ?? '',
-      bgmMood: migrated.bgmMood ?? record.analysis.bgm_mood ?? '',
-    };
-  });
+  const [productInfo, setProductInfo] = useState<ProductInfo>(() =>
+    getProductInfoForRecord(record)
+  );
   const [shots, setShots] = useState<VideoShot[]>(
     record.editedShots || [...record.analysis.shots]
   );
@@ -199,17 +211,9 @@ export const ScriptPage: React.FC<ScriptPageProps> = ({
   );
 
   useEffect(() => {
-    const migrated = migrateProductInfo(
-      record.productInfo || { prompt: '' },
-      record.analysis.totalDuration
-    );
-    setProductInfo({
-      ...migrated,
-      videoStyle: migrated.videoStyle ?? record.analysis.video_style ?? '',
-      bgmMood: migrated.bgmMood ?? record.analysis.bgm_mood ?? '',
-    });
+    setProductInfo(getProductInfoForRecord(record));
     setShots(record.editedShots || [...record.analysis.shots]);
-    setPendingRewriteTaskId(prev => record.pendingRewriteTaskId ?? prev ?? null);
+    setPendingRewriteTaskId(record.pendingRewriteTaskId || null);
     setRewriteProgress(prev => (record.pendingRewriteTaskId ? prev : ''));
   }, [record]);
 
@@ -220,7 +224,11 @@ export const ScriptPage: React.FC<ScriptPageProps> = ({
     saveTimerRef.current = setTimeout(async () => {
       const updated = await updateRecord(record.id, { productInfo });
       onRecordsChange(updated);
-      onRecordUpdate({ ...record, productInfo, pendingRewriteTaskId });
+      onRecordUpdate(findUpdatedRecord(updated, record.id, {
+        ...record,
+        productInfo,
+        pendingRewriteTaskId,
+      }));
     }, 500);
     return () => clearTimeout(saveTimerRef.current);
   }, [productInfo, pendingRewriteTaskId]); // 只跟随表单和挂起任务状态
@@ -230,18 +238,23 @@ export const ScriptPage: React.FC<ScriptPageProps> = ({
     const shotsPatch = updateActiveShotsInRecord(record, newShots);
     const updated = await updateRecord(record.id, { ...shotsPatch, productInfo });
     onRecordsChange(updated);
-    onRecordUpdate({
+    onRecordUpdate(findUpdatedRecord(updated, record.id, {
       ...record,
       ...shotsPatch,
       productInfo,
       pendingRewriteTaskId,
-    });
+    }));
   }, [record, productInfo, pendingRewriteTaskId, onRecordUpdate, onRecordsChange]);
 
   const saveRecordField = useCallback(async (patch: Partial<AnalysisRecord>) => {
     const updated = await updateRecord(record.id, patch);
     onRecordsChange(updated);
-    onRecordUpdate({ ...record, ...patch, productInfo, pendingRewriteTaskId });
+    onRecordUpdate(findUpdatedRecord(updated, record.id, {
+      ...record,
+      ...patch,
+      productInfo,
+      pendingRewriteTaskId,
+    }));
   }, [record, productInfo, pendingRewriteTaskId, onRecordUpdate, onRecordsChange]);
 
   const handleShotFieldChange = useCallback((shotId: string, field: keyof VideoShot, value: string) => {
@@ -305,7 +318,10 @@ export const ScriptPage: React.FC<ScriptPageProps> = ({
         pendingRewriteTaskId: task.id,
       });
       onRecordsChange(updated);
-      onRecordUpdate({ ...record, pendingRewriteTaskId: task.id });
+      onRecordUpdate(findUpdatedRecord(updated, record.id, {
+        ...record,
+        pendingRewriteTaskId: task.id,
+      }));
     } catch (err: any) {
       rewritingRef.current = false;
       setError(err.message || '改编失败');
@@ -331,6 +347,39 @@ export const ScriptPage: React.FC<ScriptPageProps> = ({
     }
 
     const currentTask = taskQueueService.getTask(pendingRewriteTaskId);
+    if (currentTask?.status === 'failed') {
+      rewritingRef.current = false;
+      setPendingRewriteTaskId(null);
+      setRewriteProgress('');
+      setError(currentTask.error?.message || '改编失败');
+      void updateRecord(record.id, { pendingRewriteTaskId: null }).then(updated => {
+        onRecordsChange(updated);
+        onRecordUpdate(findUpdatedRecord(updated, record.id, {
+          ...record,
+          pendingRewriteTaskId: null,
+        }));
+      });
+      return;
+    }
+    if (currentTask?.status === 'completed') {
+      void syncVideoAnalyzerTask(currentTask).then(synced => {
+        if (!synced) {
+          setError('改编任务已完成，但未找到可回填的记录');
+          return;
+        }
+        onRecordsChange(synced.records);
+        onRecordUpdate(synced.record);
+        setProductInfo(getProductInfoForRecord(synced.record));
+        setShots(synced.record.editedShots || synced.record.analysis.shots);
+      }).catch((err: any) => {
+        setError(err.message || '改编结果同步失败');
+      }).finally(() => {
+        rewritingRef.current = false;
+        setPendingRewriteTaskId(null);
+        setRewriteProgress('');
+      });
+      return;
+    }
     if (typeof currentTask?.progress === 'number') {
       setRewriteProgress(`AI 改编中 ${Math.round(currentTask.progress)}%`);
     }
@@ -347,7 +396,10 @@ export const ScriptPage: React.FC<ScriptPageProps> = ({
         setError(event.task.error?.message || '改编失败');
         void updateRecord(record.id, { pendingRewriteTaskId: null }).then(updated => {
           onRecordsChange(updated);
-          onRecordUpdate({ ...record, pendingRewriteTaskId: null });
+          onRecordUpdate(findUpdatedRecord(updated, record.id, {
+            ...record,
+            pendingRewriteTaskId: null,
+          }));
         });
         return;
       }
@@ -355,10 +407,12 @@ export const ScriptPage: React.FC<ScriptPageProps> = ({
       if (event.task.status === 'completed') {
         void syncVideoAnalyzerTask(event.task).then(synced => {
           if (!synced) {
+            setError('改编任务已完成，但未找到可回填的记录');
             return;
           }
           onRecordsChange(synced.records);
           onRecordUpdate(synced.record);
+          setProductInfo(getProductInfoForRecord(synced.record));
           setShots(synced.record.editedShots || synced.record.analysis.shots);
         }).catch((err: any) => {
           setError(err.message || '改编结果同步失败');
@@ -396,7 +450,7 @@ export const ScriptPage: React.FC<ScriptPageProps> = ({
     setShots(patch.editedShots!);
     const updated = await updateRecord(record.id, patch);
     onRecordsChange(updated);
-    onRecordUpdate({ ...record, ...patch });
+    onRecordUpdate(findUpdatedRecord(updated, record.id, { ...record, ...patch }));
   }, [record, onRecordUpdate, onRecordsChange]);
 
   // 点击外部关闭版本菜单
@@ -428,6 +482,30 @@ export const ScriptPage: React.FC<ScriptPageProps> = ({
           value={productInfo.creativeBrief}
           onChange={creativeBrief => setProductInfo(p => ({ ...p, creativeBrief }))}
         />
+        <div className="va-form-row">
+          <div style={{ flex: 1 }}>
+            <label className="va-edit-label">画面风格</label>
+            <ComboInput
+              className="va-style-combo"
+              value={productInfo.videoStyle || ''}
+              onChange={value => setProductInfo(p => ({ ...p, videoStyle: value }))}
+              options={VISUAL_STYLE_OPTIONS}
+              placeholder={VISUAL_STYLE_PLACEHOLDER}
+            />
+          </div>
+          <div style={{ flex: 1 }}>
+            <label className="va-edit-label">BGM 情绪</label>
+            <textarea
+              ref={autoResizeRef}
+              className="va-edit-textarea va-auto-resize"
+              rows={estimateRows(productInfo.bgmMood)}
+              value={productInfo.bgmMood || ''}
+              onChange={e => setProductInfo(p => ({ ...p, bgmMood: e.target.value }))}
+              onInput={e => autoResize(e.currentTarget)}
+              placeholder="如：轻快、治愈、科技感"
+            />
+          </div>
+        </div>
         <div className="va-form-row">
           <div className="va-duration-input" style={{ width: 'auto', flex: 1 }}>
             <label className="va-edit-label">视频时长(秒)</label>
@@ -516,31 +594,6 @@ export const ScriptPage: React.FC<ScriptPageProps> = ({
               )}
             </div>
           )}
-        </div>
-        {/* 风格 & BGM */}
-        <div className="va-form-row">
-          <div style={{ flex: 1 }}>
-            <label className="va-edit-label">画面风格</label>
-            <ComboInput
-              className="va-style-combo"
-              value={productInfo.videoStyle || ''}
-              onChange={value => setProductInfo(p => ({ ...p, videoStyle: value }))}
-              options={VISUAL_STYLE_OPTIONS}
-              placeholder={VISUAL_STYLE_PLACEHOLDER}
-            />
-          </div>
-          <div style={{ flex: 1 }}>
-            <label className="va-edit-label">BGM 情绪</label>
-            <textarea
-              ref={autoResizeRef}
-              className="va-edit-textarea va-auto-resize"
-              rows={estimateRows(productInfo.bgmMood)}
-              value={productInfo.bgmMood || ''}
-              onChange={e => setProductInfo(p => ({ ...p, bgmMood: e.target.value }))}
-              onInput={e => autoResize(e.currentTarget)}
-              placeholder="如：轻快、治愈、科技感"
-            />
-          </div>
         </div>
         {error && <div className="va-error">{error}</div>}
       </div>

@@ -46,6 +46,18 @@ describe('batch-video-generation retry classification', () => {
     expect(reason).toBe('参数错误：视频时长必须是 3~15 的整数');
   });
 
+  it('treats IP infringement safety failures as non-retryable', () => {
+    const reason = getNonRetryableBatchVideoFailureReason(
+      buildFailedTask(
+        'Input data is suspected of being involved in IP infringement.'
+      )
+    );
+
+    expect(reason).toBe(
+      'Input data is suspected of being involved in IP infringement.'
+    );
+  });
+
   it('keeps transient failures retryable', () => {
     const reason = getNonRetryableBatchVideoFailureReason(
       buildFailedTask('Video generation timeout'),

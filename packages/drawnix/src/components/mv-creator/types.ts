@@ -18,6 +18,10 @@ export interface StoryboardVersion {
   label: string;
   prompt?: string;
   shots: VideoShot[];
+  /** 该版本同步生成的角色快照 */
+  characters?: VideoCharacter[];
+  /** 该版本同步生成的画面风格快照 */
+  videoStyle?: string;
 }
 
 /** MV 创作记录 */

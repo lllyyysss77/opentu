@@ -51,6 +51,14 @@ function estimateRows(text: string | undefined, charsPerLine = 30): number {
   return Math.max(1, total);
 }
 
+function findUpdatedRecord(
+  records: MVRecord[],
+  id: string,
+  fallback: MVRecord
+): MVRecord {
+  return records.find(item => item.id === id) || fallback;
+}
+
 const CAMERA_MOVEMENT_OPTIONS = [
   '固定镜头 (Static)', '缓慢推近 (Dolly In)', '缓慢拉远 (Dolly Out)',
   '水平平移 (Pan)', '垂直摇移 (Tilt)', '跟随拍摄 (Follow)',
@@ -137,7 +145,7 @@ export const ScriptPage: React.FC<ScriptPageProps> = ({
   const saveRecordField = useCallback(async (patch: Partial<MVRecord>) => {
     const updated = await updateRecord(record.id, patch);
     onRecordsChange(updated);
-    onRecordUpdate({ ...record, ...patch });
+    onRecordUpdate(findUpdatedRecord(updated, record.id, { ...record, ...patch }));
   }, [record, onRecordUpdate, onRecordsChange]);
 
   // 角色描述编辑
@@ -175,7 +183,7 @@ export const ScriptPage: React.FC<ScriptPageProps> = ({
         creativeBrief,
       });
       onRecordsChange(updated);
-      onRecordUpdate({
+      onRecordUpdate(findUpdatedRecord(updated, record.id, {
         ...record,
         rewritePrompt,
         videoModel,
@@ -183,7 +191,7 @@ export const ScriptPage: React.FC<ScriptPageProps> = ({
         segmentDuration: selectedSegmentDuration,
         videoStyle,
         creativeBrief,
-      });
+      }));
     }, 500);
     return () => clearTimeout(saveTimerRef.current);
   }, [rewritePrompt, videoModel, videoModelRef, selectedSegmentDuration, videoStyle, creativeBrief]);
@@ -205,7 +213,7 @@ export const ScriptPage: React.FC<ScriptPageProps> = ({
     const patch = updateActiveShotsInRecord(record, updatedShots);
     const updated = await updateRecord(record.id, patch);
     onRecordsChange(updated);
-    onRecordUpdate({ ...record, ...patch });
+    onRecordUpdate(findUpdatedRecord(updated, record.id, { ...record, ...patch }));
   }, [record, onRecordUpdate, onRecordsChange]);
 
   const handleShotEdit = useCallback((shotId: string, field: string, value: string) => {
@@ -256,7 +264,10 @@ export const ScriptPage: React.FC<ScriptPageProps> = ({
       setPendingRewriteTaskId(task.id);
       const updated = await updateRecord(record.id, { pendingRewriteTaskId: task.id });
       onRecordsChange(updated);
-      onRecordUpdate({ ...record, pendingRewriteTaskId: task.id });
+      onRecordUpdate(findUpdatedRecord(updated, record.id, {
+        ...record,
+        pendingRewriteTaskId: task.id,
+      }));
       setRewriteProgress('AI 改编中...');
     } catch (err: any) {
       setError(err.message || '提交失败');
@@ -287,6 +298,13 @@ export const ScriptPage: React.FC<ScriptPageProps> = ({
       setPendingRewriteTaskId(null);
       setRewriteProgress('');
       setError(currentTask.error?.message || '改编失败');
+      void updateRecord(record.id, { pendingRewriteTaskId: null }).then(updated => {
+        onRecordsChange(updated);
+        onRecordUpdate(findUpdatedRecord(updated, record.id, {
+          ...record,
+          pendingRewriteTaskId: null,
+        }));
+      });
       return;
     }
     if (currentTask?.status === 'completed') {
@@ -295,6 +313,9 @@ export const ScriptPage: React.FC<ScriptPageProps> = ({
           onRecordsChange(synced.records);
           onRecordUpdate(synced.record);
           setShots(synced.record.editedShots || []);
+          setVideoStyle(synced.record.videoStyle || '');
+        } else {
+          setError('改编任务已完成，但未找到可回填的记录');
         }
       }).finally(() => { setPendingRewriteTaskId(null); setRewriteProgress(''); });
       return;
@@ -310,7 +331,10 @@ export const ScriptPage: React.FC<ScriptPageProps> = ({
         setError(event.task.error?.message || '改编失败');
         void updateRecord(record.id, { pendingRewriteTaskId: null }).then(updated => {
           onRecordsChange(updated);
-          onRecordUpdate({ ...record, pendingRewriteTaskId: null });
+          onRecordUpdate(findUpdatedRecord(updated, record.id, {
+            ...record,
+            pendingRewriteTaskId: null,
+          }));
         });
         return;
       }
@@ -320,6 +344,9 @@ export const ScriptPage: React.FC<ScriptPageProps> = ({
             onRecordsChange(synced.records);
             onRecordUpdate(synced.record);
             setShots(synced.record.editedShots || []);
+            setVideoStyle(synced.record.videoStyle || '');
+          } else {
+            setError('改编任务已完成，但未找到可回填的记录');
           }
         }).catch((err: any) => {
           setError(err.message || '改编结果同步失败');
@@ -341,7 +368,7 @@ export const ScriptPage: React.FC<ScriptPageProps> = ({
     setShots(patch.editedShots!);
     const updated = await updateRecord(record.id, patch);
     onRecordsChange(updated);
-    onRecordUpdate({ ...record, ...patch });
+    onRecordUpdate(findUpdatedRecord(updated, record.id, { ...record, ...patch }));
   }, [record, onRecordUpdate, onRecordsChange]);
 
   useEffect(() => {
@@ -380,6 +407,18 @@ export const ScriptPage: React.FC<ScriptPageProps> = ({
           onChange={setCreativeBrief}
           workflow="mv"
         />
+        <div className="va-form-row">
+          <div style={{ flex: 1 }}>
+            <label className="va-edit-label">画面风格</label>
+            <ComboInput
+              className="va-style-combo"
+              value={videoStyle}
+              onChange={setVideoStyle}
+              options={VISUAL_STYLE_OPTIONS}
+              placeholder={VISUAL_STYLE_PLACEHOLDER}
+            />
+          </div>
+        </div>
         <div className="va-model-select">
           <label className="va-model-label">改编模型</label>
           <ModelDropdown
@@ -423,19 +462,6 @@ export const ScriptPage: React.FC<ScriptPageProps> = ({
               实际 {segmentPlan.actualTotal}s（+{parseFloat(segmentPlan.overflow.toFixed(2))}s）
             </span>
           )}
-        </div>
-        {/* 画面风格 */}
-        <div className="va-form-row">
-          <div style={{ flex: 1 }}>
-            <label className="va-edit-label">画面风格</label>
-            <ComboInput
-              className="va-style-combo"
-              value={videoStyle}
-              onChange={setVideoStyle}
-              options={VISUAL_STYLE_OPTIONS}
-              placeholder={VISUAL_STYLE_PLACEHOLDER}
-            />
-          </div>
         </div>
         <div className="va-version-row">
           <button

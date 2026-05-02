@@ -10,10 +10,12 @@ import {
 
 interface WorkflowPromptProductInfo {
   prompt?: string;
+  generationTopic?: string;
   videoStyle?: string;
   bgmMood?: string;
   creativeBrief?: CreativeBrief;
   generationContext?: string;
+  generationAdvice?: string;
 }
 
 interface WorkflowFramePromptOptions {
@@ -54,13 +56,15 @@ function buildGenerationContextBlock(
   analysis?: VideoAnalysisData,
   productInfo?: WorkflowPromptProductInfo | null
 ): string {
-  const userPrompt = compactPromptText(productInfo?.prompt, 500);
+  const generationTopic = compactPromptText(productInfo?.generationTopic, 500);
   const extraContext = compactPromptText(productInfo?.generationContext, 900);
+  const generationAdvice = compactPromptText(productInfo?.generationAdvice, 700);
   const aspectRatio = analysis?.aspect_ratio;
 
   const lines = [
-    userPrompt ? `用户目标/主题：${userPrompt}` : '',
+    generationTopic ? `创作主题：${generationTopic}` : '',
     extraContext ? `背景信息：${extraContext}` : '',
+    generationAdvice ? `生成建议：${generationAdvice}` : '',
     aspectRatio ? `画面比例：${aspectRatio}` : '',
   ].filter(Boolean);
 
@@ -69,7 +73,7 @@ function buildGenerationContextBlock(
   return [
     '生成上下文：',
     ...lines,
-    '使用要求：角色、首帧和镜头必须继承上述主题、世界观、受众、音乐情绪与禁忌，不要只根据单句画面提示发散。',
+    '使用要求：角色、首帧和镜头必须继承上述稳定上下文、世界观、受众、音乐情绪与禁忌，不要把脚本改编指令当成画面主题。',
   ].join('\n');
 }
 

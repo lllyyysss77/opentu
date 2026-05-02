@@ -213,6 +213,7 @@ export const AnalyzePage: React.FC<AnalyzePageProps> = ({
       || null;
   }, [selectedClipId, existingRecord?.generatedClips, existingAudioClips]);
 
+  const selectedAudioUrl = selectedClip?.audioUrl || (selectedClipId ? existingRecord?.selectedClipAudioUrl : null);
   const clipDuration = existingRecord?.selectedClipDuration || selectedClip?.duration || 30;
 
   const handleOpenMusicTool = useCallback(() => {
@@ -279,6 +280,7 @@ export const AnalyzePage: React.FC<AnalyzePageProps> = ({
       onComplete({ ...record, ...patch });
     }
     setSelectedClipId(clip.clipId);
+    setMessage('');
   }, [existingRecord, onComplete, onRecordsChange]);
 
   const setVideoModel = useCallback((model: string, ref?: ModelRef | null) => {
@@ -297,6 +299,10 @@ export const AnalyzePage: React.FC<AnalyzePageProps> = ({
 
   const handleGenerateStoryboard = useCallback(async () => {
     if (generatingRef.current) return;
+    if (!selectedAudioUrl) {
+      setMessage('请先选择配乐');
+      return;
+    }
     generatingRef.current = true;
     const targetRecord: MVRecord = existingRecord || {
       id: generateUUID(),
@@ -315,7 +321,7 @@ export const AnalyzePage: React.FC<AnalyzePageProps> = ({
       control: 'generate_storyboard',
       source: 'mv_creator_analyze_page',
       metadata: {
-        hasSelectedClip: !!selectedClip?.audioUrl,
+        hasSelectedClip: !!selectedAudioUrl,
         clipDuration,
         segmentDuration,
         hasStoryboardModelRef: !!storyboardModelRef,
@@ -335,7 +341,7 @@ export const AnalyzePage: React.FC<AnalyzePageProps> = ({
         aspectRatio: targetRecord.aspectRatio || '16x9',
         videoStyle,
         creativeBrief,
-        hasAudio: !!selectedClip?.audioUrl,
+        hasAudio: !!selectedAudioUrl,
       });
       const task = taskQueueService.createTask(
         {
@@ -345,7 +351,7 @@ export const AnalyzePage: React.FC<AnalyzePageProps> = ({
           mvCreatorAction: 'storyboard',
           mvCreatorRecordId: targetRecord.id,
           knowledgeContextRefs,
-          audioCacheUrl: selectedClip?.audioUrl,
+          audioCacheUrl: selectedAudioUrl,
         },
         TaskType.CHAT
       );
@@ -371,7 +377,7 @@ export const AnalyzePage: React.FC<AnalyzePageProps> = ({
       setSubmitting(false);
       generatingRef.current = false;
     }
-  }, [existingRecord, clipDuration, videoModel, videoModelRef, segmentDuration, videoStyle, creativeBrief, storyboardModel, storyboardModelRef, knowledgeContextRefs, selectedClip, onComplete, onRecordsChange]);
+  }, [existingRecord, clipDuration, videoModel, videoModelRef, segmentDuration, videoStyle, creativeBrief, storyboardModel, storyboardModelRef, knowledgeContextRefs, selectedAudioUrl, onComplete, onRecordsChange]);
 
 // PLACEHOLDER_ANALYZE_PAGE_RENDER
 
@@ -498,6 +504,7 @@ export const AnalyzePage: React.FC<AnalyzePageProps> = ({
           )}
 
           <div className="ma-card mv-storyboard-control-card">
+            {message && <div className="ma-progress mv-storyboard-message">{message}</div>}
             <div className="mv-storyboard-control-row">
               <div className="mv-storyboard-field mv-storyboard-field--knowledge">
                 <label className="mv-storyboard-field-label">知识库上下文</label>
@@ -529,8 +536,6 @@ export const AnalyzePage: React.FC<AnalyzePageProps> = ({
               </button>
             </div>
           </div>
-
-          {message && <div className="ma-progress">{message}</div>}
         </>
       )}
 

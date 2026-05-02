@@ -53,9 +53,8 @@ import {
 } from '../components/video-analyzer/types';
 import { loadRecords } from '../components/video-analyzer/storage';
 import {
-  applyRewriteShotUpdates,
   parseVideoPromptGenerationResponse,
-  parseRewriteShotUpdates,
+  parseScriptRewriteResponse,
 } from '../components/video-analyzer/utils';
 import {
   DEFAULT_MUSIC_ANALYSIS_PROMPT,
@@ -1319,10 +1318,10 @@ class TaskQueueService {
         ? (await loadRecords()).find((record) => record.id === recordId) || null
         : null;
 
-      const updates = parseRewriteShotUpdates(text);
       const baseShots =
         targetRecord?.editedShots || targetRecord?.analysis.shots || [];
-      const editedShots = applyRewriteShotUpdates(baseShots, updates);
+      const rewriteResult = parseScriptRewriteResponse(text, baseShots);
+      const editedShots = rewriteResult.shots;
       const formattedText =
         targetRecord && editedShots.length > 0
           ? formatShotsMarkdown(
@@ -1335,11 +1334,18 @@ class TaskQueueService {
       options.onProgress({ progress: 100 });
       await this.finalizeChatTask(task, {
         title: '脚本改编结果',
-        chatResponse: formattedText,
+        chatResponse: text,
         format: 'md',
         resultExtras: {
           analysisData: {
             editedShots,
+            shots: editedShots,
+            characters: rewriteResult.hasCharacters
+              ? rewriteResult.characters || []
+              : undefined,
+            video_style: rewriteResult.videoStyle,
+            bgm_mood: rewriteResult.bgmMood,
+            formattedText,
             rawResponse: text,
           },
         },

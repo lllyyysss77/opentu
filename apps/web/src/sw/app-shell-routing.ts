@@ -25,10 +25,6 @@ export function shouldUseAppShellStrategy(
   return requestMode === 'navigate' && !pathname.endsWith('.html');
 }
 
-export function shouldMirrorToAppShellAliases(pathname: string): boolean {
-  return isRootPathname(pathname);
-}
-
 export function shouldUseOriginFirstPreload(pathname: string): boolean {
   if (isRootPathname(pathname)) {
     return true;

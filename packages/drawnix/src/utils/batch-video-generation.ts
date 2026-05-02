@@ -24,6 +24,7 @@ const NON_RETRYABLE_VIDEO_ERROR_PATTERNS = [
   /未返回(?:任务\s*)?ID|未返回有效的视频 URL/,
   /(?:校验|验证)失败|格式错误|字段错误/,
   /内容(?:政策|审核|安全)|安全策略|违规|敏感内容|policy|safety/i,
+  /(?:ip|intellectual\s+property|copyright|trademark)\s*(?:infringement|violation)|涉嫌(?:知识产权|版权|商标|IP)(?:侵权|违规)|知识产权侵权/i,
 ];
 
 interface BuildBatchVideoReferenceImagesParams {

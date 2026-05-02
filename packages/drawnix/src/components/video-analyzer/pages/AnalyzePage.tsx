@@ -17,9 +17,12 @@ import { quickInsert } from '../../../mcp/tools/canvas-insertion';
 import { ModelDropdown } from '../../ai-input-bar/ModelDropdown';
 import { KnowledgeNoteContextSelector } from '../../shared';
 import {
+  ComboInput,
   CreativeBriefEditor,
   normalizeCreativeBrief,
   type CreativeBrief,
+  VISUAL_STYLE_OPTIONS,
+  VISUAL_STYLE_PLACEHOLDER,
 } from '../../shared/workflow';
 import { useSelectableModels } from '../../../hooks/use-runtime-models';
 import { useProviderProfiles } from '../../../hooks/use-provider-profiles';
@@ -33,6 +36,7 @@ import {
   getSelectionKey,
 } from '../../../utils/model-selection';
 import { ModelVendor, type ModelConfig } from '../../../constants/model-config';
+import { getVideoModelConfig } from '../../../constants/video-model-config';
 import {
   TUZI_MIX_PROVIDER_PROFILE_ID,
   type ModelRef,
@@ -68,6 +72,8 @@ interface PromptPdfAttachment {
 
 const DEFAULT_ANALYSIS_MODEL = 'gemini-3.1-pro-preview';
 const STORAGE_KEY_MODEL = 'video-analyzer:model';
+const STORAGE_KEY_VIDEO_MODEL = 'video-analyzer:video-model';
+const DEFAULT_VIDEO_MODEL = 'veo3';
 const SETTINGS_PROVIDER_NAV_EVENT = 'aitu:settings:provider-nav';
 const MAX_PROMPT_PDF_SIZE = 20 * 1024 * 1024;
 
@@ -104,6 +110,12 @@ export const AnalyzePage: React.FC<AnalyzePageProps> = ({
   const { setAppState } = useDrawnix();
   const [inputMode, setInputMode] = useState<InputMode>('prompt');
   const [promptText, setPromptText] = useState('');
+  const [videoStyle, setVideoStyle] = useState(
+    () =>
+      existingRecord?.productInfo?.videoStyle ||
+      existingRecord?.analysis.video_style ||
+      ''
+  );
   const [creativeBrief, setCreativeBrief] = useState<CreativeBrief>({});
   const [knowledgeContextRefs, setKnowledgeContextRefs] = useState<
     KnowledgeContextRef[]
@@ -129,6 +141,55 @@ export const AnalyzePage: React.FC<AnalyzePageProps> = ({
       setSelectedModelState(model);
       setSelectedModelRef(modelRef || null);
       writeStoredModelSelection(STORAGE_KEY_MODEL, model, modelRef);
+    },
+    []
+  );
+  const videoModels = useSelectableModels('video');
+  const [videoModel, setVideoModelState] = useState(
+    () =>
+      existingRecord?.productInfo?.videoModel ||
+      readStoredModelSelection(STORAGE_KEY_VIDEO_MODEL, DEFAULT_VIDEO_MODEL)
+        .modelId
+  );
+  const [videoModelRef, setVideoModelRef] = useState<ModelRef | null>(
+    () =>
+      existingRecord?.productInfo?.videoModelRef ||
+      readStoredModelSelection(
+        STORAGE_KEY_VIDEO_MODEL,
+        existingRecord?.productInfo?.videoModel || DEFAULT_VIDEO_MODEL
+      ).modelRef
+  );
+  const videoConfig = useMemo(
+    () => getVideoModelConfig(videoModel),
+    [videoModel]
+  );
+  const [segmentDuration, setSegmentDuration] = useState<number>(() => {
+    const initialModel =
+      existingRecord?.productInfo?.videoModel ||
+      readStoredModelSelection(STORAGE_KEY_VIDEO_MODEL, DEFAULT_VIDEO_MODEL)
+        .modelId;
+    const cfg = getVideoModelConfig(initialModel);
+    return (
+      existingRecord?.productInfo?.segmentDuration ||
+      parseInt(cfg.defaultDuration, 10) ||
+      8
+    );
+  });
+  const durationOptions = useMemo(
+    () =>
+      (videoConfig.durationOptions || []).map((option) => ({
+        value: parseInt(option.value, 10),
+        label: option.label,
+      })),
+    [videoConfig]
+  );
+  const setVideoModel = useCallback(
+    (model: string, modelRef?: ModelRef | null) => {
+      setVideoModelState(model);
+      setVideoModelRef(modelRef || null);
+      writeStoredModelSelection(STORAGE_KEY_VIDEO_MODEL, model, modelRef);
+      const cfg = getVideoModelConfig(model);
+      setSegmentDuration(parseInt(cfg.defaultDuration, 10) || 8);
     },
     []
   );
@@ -178,6 +239,7 @@ export const AnalyzePage: React.FC<AnalyzePageProps> = ({
         setAnalysis(null);
         setInputMode('prompt');
         setPromptText('');
+        setVideoStyle('');
         setCreativeBrief({});
         setPdfAttachment(null);
         setYoutubeUrl('');
@@ -190,6 +252,21 @@ export const AnalyzePage: React.FC<AnalyzePageProps> = ({
       setSelectedModelState(existingRecord.model || DEFAULT_ANALYSIS_MODEL);
       setSelectedModelRef(existingRecord.modelRef || null);
       setError('');
+      setVideoStyle(
+        existingRecord.productInfo?.videoStyle ||
+          existingRecord.analysis.video_style ||
+          ''
+      );
+      if (existingRecord.productInfo?.videoModel) {
+        setVideoModelState(existingRecord.productInfo.videoModel);
+        setVideoModelRef(existingRecord.productInfo.videoModelRef || null);
+        const cfg = getVideoModelConfig(existingRecord.productInfo.videoModel);
+        setSegmentDuration(
+          existingRecord.productInfo.segmentDuration ||
+            parseInt(cfg.defaultDuration, 10) ||
+            8
+        );
+      }
 
       const snapshot = existingRecord.sourceSnapshot;
       if (snapshot?.type === 'prompt') {
@@ -487,6 +564,9 @@ export const AnalyzePage: React.FC<AnalyzePageProps> = ({
           userPrompt: sourcePrompt,
           pdfAttachmentName: pdfAttachment?.name,
           creativeBrief: normalizedCreativeBrief,
+          videoStyle,
+          videoModel,
+          segmentDuration,
         });
         params = {
           prompt,
@@ -511,6 +591,10 @@ export const AnalyzePage: React.FC<AnalyzePageProps> = ({
           },
           videoAnalyzerProductInfo: {
             prompt: sourcePrompt,
+            videoModel,
+            videoModelRef,
+            segmentDuration,
+            videoStyle,
             creativeBrief: normalizedCreativeBrief,
           },
           knowledgeContextRefs,
@@ -597,6 +681,10 @@ export const AnalyzePage: React.FC<AnalyzePageProps> = ({
     videoFile,
     youtubeUrl,
     promptText,
+    videoStyle,
+    videoModel,
+    videoModelRef,
+    segmentDuration,
     creativeBrief,
     knowledgeContextRefs,
     pdfAttachment,
@@ -776,6 +864,54 @@ export const AnalyzePage: React.FC<AnalyzePageProps> = ({
                 onChange={setCreativeBrief}
                 workflow="popular_video"
               />
+              <div className="va-prompt-generation-fields">
+                <div className="va-prompt-field">
+                  <label className="va-edit-label">画面风格</label>
+                  <ComboInput
+                    className="va-style-combo"
+                    value={videoStyle}
+                    onChange={setVideoStyle}
+                    options={VISUAL_STYLE_OPTIONS}
+                    placeholder={VISUAL_STYLE_PLACEHOLDER}
+                  />
+                </div>
+                <div className="va-prompt-field va-prompt-field--video-params">
+                  <div className="va-section-header">视频参数</div>
+                  <div className="va-model-select">
+                    <label className="va-model-label">视频模型</label>
+                    <ModelDropdown
+                      variant="form"
+                      selectedModel={videoModel}
+                      selectedSelectionKey={getSelectionKey(
+                        videoModel,
+                        videoModelRef
+                      )}
+                      onSelect={setVideoModel}
+                      models={videoModels}
+                      placement="down"
+                      disabled={analyzing || !!pendingAnalyzeTaskId}
+                      placeholder="选择视频模型"
+                    />
+                    <div className="va-segment-duration-select">
+                      <label className="va-model-label">单段</label>
+                      <select
+                        className="va-form-select"
+                        value={String(segmentDuration)}
+                        onChange={(event) =>
+                          setSegmentDuration(parseInt(event.target.value, 10))
+                        }
+                        disabled={durationOptions.length <= 1}
+                      >
+                        {durationOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </div>
               <textarea
                 className="va-prompt-textarea"
                 value={promptText}

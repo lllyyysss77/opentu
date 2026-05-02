@@ -53,7 +53,7 @@ describe('prompt-builders', () => {
       purpose: '口播种草',
       directorStyle: '快节奏短视频导演',
       narrativeStyle: '痛点-解决-转化',
-      targetPlatform: '抖音 / TikTok 竖屏信息流',
+      targetPlatform: '竖屏短视频信息流',
       audience: '年轻女性',
       pacing: '前三秒强钩子，全程快节奏',
       negativePrompt: '不要硬广口吻',
@@ -73,7 +73,7 @@ describe('prompt-builders', () => {
     expect(videoPrompt).toContain('创作 Brief');
     expect(videoPrompt).toContain('视频用途/场景：口播种草');
     expect(videoPrompt).toContain('导演风格：快节奏短视频导演');
-    expect(videoPrompt).toContain('目标平台：抖音 / TikTok 竖屏信息流');
+    expect(videoPrompt).toContain('目标平台：竖屏短视频信息流');
     expect(videoPrompt).toContain('避免：不要硬广口吻');
     expect(framePrompt).toContain('单镜头生成必须继承导演风格');
     expect(framePrompt).toContain('当前关键帧：产品放在桌面上');
@@ -89,8 +89,10 @@ describe('prompt-builders', () => {
         bgm_mood: 'Synth Pop',
       },
       {
-        prompt: '城市夜跑 MV',
+        prompt: '只把鞋换成红色',
+        generationTopic: '城市夜跑 MV',
         generationContext: '音乐标题：追光\n歌词/意象：穿过雨夜',
+        generationAdvice: '保持霓虹雨夜与跑步动作连贯',
       },
       {
         shot: { character_ids: ['char_1'] },
@@ -106,8 +108,11 @@ describe('prompt-builders', () => {
     );
 
     expect(prompt).toContain('生成上下文');
-    expect(prompt).toContain('用户目标/主题：城市夜跑 MV');
+    expect(prompt).toContain('创作主题：城市夜跑 MV');
     expect(prompt).toContain('音乐标题：追光');
+    expect(prompt).toContain('生成建议：保持霓虹雨夜与跑步动作连贯');
+    expect(prompt).not.toContain('用户目标/主题');
+    expect(prompt).not.toContain('只把鞋换成红色');
     expect(prompt).toContain('画面内角色：主角: young woman in a silver running jacket');
     expect(prompt).toContain('连续性要求');
   });

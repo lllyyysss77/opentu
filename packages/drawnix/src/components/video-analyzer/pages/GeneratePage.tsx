@@ -318,6 +318,8 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
   const generationProductInfo = useMemo(() => {
     const snapshot = record.sourceSnapshot;
     const sourcePrompt = snapshot?.type === 'prompt' ? snapshot.prompt : '';
+    const generationTopic =
+      sourcePrompt || (record.source === 'prompt' ? record.sourceLabel : '');
     const generationContext = [
       record.source !== 'prompt' && record.sourceLabel
         ? `素材来源：${record.sourceLabel}`
@@ -325,13 +327,13 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
       snapshot?.type === 'prompt' && snapshot.pdfName
         ? `参考 PDF：${snapshot.pdfName}`
         : '',
-      record.analysis.suggestion ? `分析建议：${record.analysis.suggestion}` : '',
     ].filter(Boolean).join('\n');
 
     return {
       ...(record.productInfo || {}),
-      prompt: record.productInfo?.prompt || sourcePrompt || record.sourceLabel || '',
+      generationTopic,
       generationContext,
+      generationAdvice: record.analysis.suggestion || '',
     };
   }, [
     record.analysis.suggestion,
@@ -1048,7 +1050,7 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
   }, [shots]);
 
   const handleShotGenerateLastFrame = useCallback((shot: VideoShot, index: number) => {
-    const rawPrompt = shot.last_frame_prompt || shot.description || '';
+    const rawPrompt = shot.last_frame_prompt || '';
     if (!rawPrompt) return;
     analytics.trackUIInteraction({
       area: 'popular_video_tool',
@@ -1163,14 +1165,17 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
   }, [record, onRecordUpdate, onRecordsChange]);
 
   /**
-   * 为单个镜头生成首帧图（等待完成后返回 URL）
+   * 为单个镜头生成关键帧图（等待完成后返回 URL）
    * 参考图 = 全局参考图 + 该镜头涉及的角色参考图（如有）
    */
-  const generateFirstFrameForShot = useCallback(async (
+  const generateFrameForShot = useCallback(async (
     shot: VideoShot,
-    currentCharacters: VideoCharacter[]
+    currentCharacters: VideoCharacter[],
+    frameType: 'first' | 'last'
   ): Promise<string | null> => {
-    const rawPrompt = shot.first_frame_prompt || shot.description || '';
+    const rawPrompt = frameType === 'first'
+      ? shot.first_frame_prompt || shot.description || ''
+      : shot.last_frame_prompt || '';
     if (!rawPrompt) return null;
 
     const prompt = buildFramePrompt(rawPrompt, record.analysis, generationProductInfo, {
@@ -1187,7 +1192,7 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
       }
     }
 
-    const shotBatchId = `va_${record.id}_shot${shot.id}_first`;
+    const shotBatchId = `va_${record.id}_shot${shot.id}_${frameType}`;
     const result = await mcpRegistry.executeTool(
       { name: 'generate_image', arguments: {
         prompt: prompt.trim(), count: 1, size: imageGenerationSize,
@@ -1229,6 +1234,16 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
     return task?.result?.url || null;
   }, [record, generationProductInfo, imageGenerationExtraParams, imageGenerationSize, imageModel, imageModelRef, refImageUrls]);
 
+  const generateFirstFrameForShot = useCallback((
+    shot: VideoShot,
+    currentCharacters: VideoCharacter[]
+  ) => generateFrameForShot(shot, currentCharacters, 'first'), [generateFrameForShot]);
+
+  const generateLastFrameForShot = useCallback((
+    shot: VideoShot,
+    currentCharacters: VideoCharacter[]
+  ) => generateFrameForShot(shot, currentCharacters, 'last'), [generateFrameForShot]);
+
   const writeShotFirstFrameResult = useCallback(async (
     shotId: string,
     firstFrameUrl: string
@@ -1240,6 +1255,22 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
     }
     const updatedShots = latestShots.map(item =>
       item.id === shotId ? { ...item, generated_first_frame_url: firstFrameUrl } : item
+    );
+    await applyUpdatedShots(updatedShots);
+    return updatedShots;
+  }, [applyUpdatedShots]);
+
+  const writeShotLastFrameResult = useCallback(async (
+    shotId: string,
+    lastFrameUrl: string
+  ) => {
+    const latestShots = latestShotsRef.current;
+    const shot = latestShots.find(item => item.id === shotId);
+    if (!shot || shot.generated_last_frame_url === lastFrameUrl) {
+      return latestShots;
+    }
+    const updatedShots = latestShots.map(item =>
+      item.id === shotId ? { ...item, generated_last_frame_url: lastFrameUrl } : item
     );
     await applyUpdatedShots(updatedShots);
     return updatedShots;
@@ -1264,14 +1295,17 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
     return updatedShots;
   }, [applyUpdatedShots]);
 
-  const createBatchVideoTask = useCallback(async (shot: VideoShot) => {
+  const createBatchVideoTask = useCallback(async (
+    shot: VideoShot,
+    resolvedLastFrameUrl?: string
+  ) => {
     const prompt = buildVideoPrompt(shot, record.analysis, generationProductInfo);
     if (!prompt) {
       return null;
     }
 
     const firstFrameUrl = shot.generated_first_frame_url;
-    const lastFrameUrl = shot.generated_last_frame_url;
+    const lastFrameUrl = resolvedLastFrameUrl || shot.generated_last_frame_url;
     // 角色一致性通过首帧图实现，不再传 characterReferenceUrls 给视频模型
     const { referenceImages } = buildBatchVideoReferenceImages({
       model: videoModel,
@@ -1486,7 +1520,7 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
         }
       }
 
-      // ── Step 1: 镜头级并行生成首帧 + 视频 ──
+      // ── Step 1: 先并行准备关键帧，再按每段依赖就绪启动视频 ──
       const batchShots = latestShotsRef.current;
       const markShotDone = () => {
         setBatchVideoState(prev => ({
@@ -1495,6 +1529,97 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
           activeCount: activeBatchTaskIdsRef.current.size,
         }));
       };
+      const framePromises = new Map<
+        string,
+        {
+          first?: Promise<string | null>;
+          last?: Promise<string | null>;
+        }
+      >();
+      const ensureFirstFrame = (shot: VideoShot) => {
+        const latestShot = getLatestShotById(shot.id) || shot;
+        if (latestShot.generated_first_frame_url) {
+          return Promise.resolve(latestShot.generated_first_frame_url);
+        }
+        const cached = framePromises.get(shot.id)?.first;
+        if (cached) {
+          return cached;
+        }
+        const promise = (async () => {
+          const pipelineCharacters = latestRecordRef.current.characters || latestRecordRef.current.analysis.characters || [];
+          const firstFrameUrl = await generateFirstFrameForShot(latestShot, pipelineCharacters);
+          if (firstFrameUrl && !batchStopRef.current) {
+            await writeShotFirstFrameResult(latestShot.id, firstFrameUrl);
+          }
+          return firstFrameUrl;
+        })();
+        framePromises.set(shot.id, {
+          ...(framePromises.get(shot.id) || {}),
+          first: promise,
+        });
+        return promise;
+      };
+      const ensureOwnLastFrame = (shot: VideoShot) => {
+        const latestShot = getLatestShotById(shot.id) || shot;
+        if (latestShot.generated_last_frame_url) {
+          return Promise.resolve(latestShot.generated_last_frame_url);
+        }
+        if (!latestShot.last_frame_prompt?.trim()) {
+          return Promise.resolve(null);
+        }
+        const cached = framePromises.get(shot.id)?.last;
+        if (cached) {
+          return cached;
+        }
+        const promise = (async () => {
+          const pipelineCharacters = latestRecordRef.current.characters || latestRecordRef.current.analysis.characters || [];
+          const lastFrameUrl = await generateLastFrameForShot(latestShot, pipelineCharacters);
+          if (lastFrameUrl && !batchStopRef.current) {
+            await writeShotLastFrameResult(latestShot.id, lastFrameUrl);
+          }
+          return lastFrameUrl;
+        })();
+        framePromises.set(shot.id, {
+          ...(framePromises.get(shot.id) || {}),
+          last: promise,
+        });
+        return promise;
+      };
+
+      for (let index = 0; index < batchShots.length; index += 1) {
+        const shot = batchShots[index];
+        const nextShot = batchShots[index + 1];
+        void ensureFirstFrame(shot).catch((error) => {
+          if (!batchStopRef.current) {
+            console.error('[VideoAnalyzer] Batch first frame generation failed:', {
+              shotId: shot.id,
+              error,
+            });
+          }
+          return null;
+        });
+        if (nextShot && !shot.generated_last_frame_url && !shot.last_frame_prompt?.trim()) {
+          void ensureFirstFrame(nextShot).catch((error) => {
+            if (!batchStopRef.current) {
+              console.error('[VideoAnalyzer] Batch next first frame generation failed:', {
+                shotId: nextShot.id,
+                error,
+              });
+            }
+            return null;
+          });
+        } else if (shot.last_frame_prompt?.trim()) {
+          void ensureOwnLastFrame(shot).catch((error) => {
+            if (!batchStopRef.current) {
+              console.error('[VideoAnalyzer] Batch last frame generation failed:', {
+                shotId: shot.id,
+                error,
+              });
+            }
+            return null;
+          });
+        }
+      }
 
       const runShotPipeline = async (shot: VideoShot, index: number) => {
         try {
@@ -1520,16 +1645,12 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
             return;
           }
 
-          if (!currentShot.generated_first_frame_url && !batchStopRef.current) {
-            const pipelineCharacters = latestRecordRef.current.characters || latestRecordRef.current.analysis.characters || [];
-            const firstFrameUrl = await generateFirstFrameForShot(currentShot, pipelineCharacters);
-            if (firstFrameUrl) {
-              await writeShotFirstFrameResult(currentShot.id, firstFrameUrl);
-              currentShot = {
-                ...currentShot,
-                generated_first_frame_url: firstFrameUrl,
-              };
-            }
+          const firstFrameUrl = await ensureFirstFrame(currentShot);
+          if (firstFrameUrl) {
+            currentShot = {
+              ...currentShot,
+              generated_first_frame_url: firstFrameUrl,
+            };
           }
 
           if (batchStopRef.current) {
@@ -1541,12 +1662,31 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
             return;
           }
 
+          let resolvedLastFrameUrl = currentShot.generated_last_frame_url;
+          if (!resolvedLastFrameUrl) {
+            if (currentShot.last_frame_prompt?.trim()) {
+              resolvedLastFrameUrl = (await ensureOwnLastFrame(currentShot)) || undefined;
+            } else {
+              const nextShot = batchShots[index + 1];
+              resolvedLastFrameUrl = nextShot
+                ? (await ensureFirstFrame(nextShot)) || undefined
+                : undefined;
+            }
+          }
+
+          if (batchStopRef.current) {
+            return;
+          }
+
           let retryCount = 0;
           let taskId: string | null = null;
 
           while (!batchStopRef.current) {
             if (!taskId) {
-              taskId = await createBatchVideoTask(currentShot);
+              taskId = await createBatchVideoTask(
+                getLatestShotById(currentShot.id) || currentShot,
+                resolvedLastFrameUrl
+              );
             }
 
             if (!taskId) {
@@ -1594,6 +1734,12 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
               );
               if (nonRetryableReason) {
                 batchStopRef.current = true;
+                for (const activeTaskId of activeBatchTaskIdsRef.current) {
+                  taskQueueService.cancelTask(activeTaskId);
+                }
+                activeBatchTaskIdsRef.current.clear();
+                activeBatchTaskIdRef.current = null;
+                batchAbortControllerRef.current?.abort();
                 MessagePlugin.error(
                   `视频生成失败且不可重试，已停止：${nonRetryableReason}`
                 );
@@ -1640,6 +1786,7 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
     createBatchVideoTask,
     ensureBatchId,
     generateFirstFrameForShot,
+    generateLastFrameForShot,
     applyRecordPatch,
     getLatestShotById,
     record.id,
@@ -1654,6 +1801,7 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
     updateBatchActiveCount,
     updateBatchVideoProgress,
     writeShotFirstFrameResult,
+    writeShotLastFrameResult,
     writeShotVideoResult,
     board,
   ]);
@@ -1870,7 +2018,7 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
                       </div>
                     );
                   }
-                  if (shot.last_frame_prompt || shot.description) {
+                  if (shot.last_frame_prompt?.trim()) {
                     return (
                       <span className="va-shot-frame-btn-group">
                         <button onClick={() => handleShotGenerateLastFrame(shot, i)}>生成尾帧</button>

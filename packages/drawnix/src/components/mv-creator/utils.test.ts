@@ -37,6 +37,7 @@ describe('mv-creator utils', () => {
     expect(prompt).toContain('创作 Brief');
     expect(prompt).toContain('视频用途/场景：品牌广告');
     expect(prompt).toContain('歌词画面化和段落推进');
+    expect(prompt).toContain('原创性与合规要求');
   });
 
   it('injects creative brief into MV rewrite prompt', () => {
@@ -65,6 +66,8 @@ describe('mv-creator utils', () => {
     expect(prompt).toContain('创作 Brief');
     expect(prompt).toContain('导演风格：MV 视觉导演');
     expect(prompt).toContain('节奏策略：音乐驱动，随节拍切镜');
+    expect(prompt).toContain('"video_style"');
+    expect(prompt).toContain('原创性与合规要求');
   });
 
   it('formats creative brief in MV markdown', () => {
