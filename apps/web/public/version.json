@@ -1,6 +1,6 @@
 {
   "version": "0.6.99",
-  "buildTime": "2026-05-03T01:25:01.729Z",
+  "buildTime": "2026-05-03T01:25:02.756Z",
   "gitCommit": "unknown",
   "changelog": [
     "为视频生成 prompt 添加参考图用途说明",
