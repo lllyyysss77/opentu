@@ -173,7 +173,16 @@ describe('model-pricing-service', () => {
           completion_ratio: 0,
           model_price: 0.08,
           enable_groups: ['vip'],
-          supported_endpoint_types: ['image-generation'],
+          supported_endpoint_types: ['image-generation', 'openai-video'],
+          endpoints: {
+            'openai-video': {
+              label: 'Async Image Generation',
+              path: '/v1/videos',
+              method: 'post',
+              description: '异步图片任务接口',
+              scenario: 'async-image',
+            },
+          },
         },
         {
           model_name: 'hidden-model',
@@ -227,6 +236,13 @@ describe('model-pricing-service', () => {
     expect(cache.modelEndpoints?.['task-price']?.['image-generation']).toEqual({
       path: '/v1/images/generations',
       method: 'POST',
+    });
+    expect(cache.modelEndpoints?.['task-price']?.['openai-video']).toEqual({
+      label: 'Async Image Generation',
+      path: '/v1/videos',
+      method: 'POST',
+      description: '异步图片任务接口',
+      scenario: 'async-image',
     });
   });
 

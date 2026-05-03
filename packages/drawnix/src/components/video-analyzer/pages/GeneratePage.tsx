@@ -648,6 +648,9 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
     const charPrefix = `va_${record.id}_char`;
     let hasUpdate = false;
     const currentRecord = record;
+    const generatedAssetsResetAt =
+      latestRecordRef.current.generatedAssetsResetAt ||
+      currentRecord.generatedAssetsResetAt;
     let currentShots = currentRecord.editedShots || currentRecord.analysis.shots;
     const newVideoShots: Array<{ shotId: string; videoUrl: string }> = [];
 
@@ -659,6 +662,13 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
 
       // 处理角色参考图生成结果：batchId 格式 va_${recordId}_char${charId}_ref
       if (taskBatchId.startsWith(charPrefix)) {
+        if (
+          generatedAssetsResetAt &&
+          task.createdAt <= generatedAssetsResetAt
+        ) {
+          processedTaskIdsRef.current.add(task.id);
+          continue;
+        }
         const resultUrl = task.result?.url;
         processedTaskIdsRef.current.add(task.id);
         if (resultUrl) {
@@ -675,6 +685,13 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
       }
 
       if (!taskBatchId.startsWith(prefix)) continue;
+      if (
+        generatedAssetsResetAt &&
+        task.createdAt <= generatedAssetsResetAt
+      ) {
+        processedTaskIdsRef.current.add(task.id);
+        continue;
+      }
       // 跳过在当前脚本生成之前创建的任务，防止旧任务结果污染新脚本
       if (record.storyboardGeneratedAt && task.createdAt < record.storyboardGeneratedAt) {
         processedTaskIdsRef.current.add(task.id);
@@ -1816,9 +1833,12 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
       latestRecordRef.current,
       latestShotsRef.current
     );
-    await applyUpdatedShots(resetResult.shots);
-    await applyRecordPatch({ characters: resetResult.characters });
-  }, [applyUpdatedShots, applyRecordPatch]);
+    await applyRecordPatch({
+      ...updateActiveShotsInRecord(latestRecordRef.current, resetResult.shots),
+      characters: resetResult.characters,
+      generatedAssetsResetAt: Date.now(),
+    });
+  }, [applyRecordPatch]);
 
   const thumbStyle = useMemo(() => {
     const [w, h] = selectedVideoAspectRatio.split(':').map(Number);

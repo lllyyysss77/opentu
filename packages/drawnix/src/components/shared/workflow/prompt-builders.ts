@@ -19,7 +19,17 @@ interface WorkflowPromptProductInfo {
 }
 
 interface WorkflowFramePromptOptions {
-  shot?: Pick<VideoShot, 'character_ids'>;
+  shot?: Pick<
+    VideoShot,
+    | 'id'
+    | 'label'
+    | 'startTime'
+    | 'endTime'
+    | 'description'
+    | 'camera_movement'
+    | 'transition_hint'
+    | 'character_ids'
+  >;
   characters?: VideoCharacter[];
   continueFromPreviousFrame?: boolean;
 }
@@ -37,6 +47,7 @@ const CONTEXT_WEIGHT = {
   bgmMood: 55,
   videoStyle: 70,
   character: 80,
+  shotIdentity: 95,
   continuity: 90,
 } as const;
 
@@ -101,6 +112,48 @@ function buildFrameCharacterBlock(
         '禁止：换脸、换发型、换发色、改变年龄感、改变体型、重设计服装、替换衣服颜色或新增无关人物。',
       ].join('\n')
     : '';
+}
+
+function formatShotTimeRange(shot: WorkflowFramePromptOptions['shot']): string {
+  if (!shot) return '';
+  const hasStart = typeof shot.startTime === 'number';
+  const hasEnd = typeof shot.endTime === 'number';
+  if (!hasStart && !hasEnd) return '';
+  return `${hasStart ? `${shot.startTime}s` : '?'}-${hasEnd ? `${shot.endTime}s` : '?'}`;
+}
+
+function buildFrameShotIdentityBlock(
+  options?: WorkflowFramePromptOptions
+): string {
+  const shot = options?.shot;
+  if (!shot) return '';
+
+  const timeRange = formatShotTimeRange(shot);
+  const label = compactPromptText(shot.label, 120);
+  const description = compactPromptText(shot.description, 420);
+  const cameraMovement = compactPromptText(shot.camera_movement, 180);
+  const transitionHint = compactPromptText(shot.transition_hint, 80);
+
+  const identityParts = [
+    shot.id ? `ID ${shot.id}` : '',
+    label,
+    timeRange,
+  ].filter(Boolean);
+
+  const lines = [
+    identityParts.length > 0 ? `镜头身份：${identityParts.join(' · ')}` : '',
+    description ? `本镜头剧情/动作：${description}` : '',
+    cameraMovement ? `本镜头运镜：${cameraMovement}` : '',
+    transitionHint ? `转场方向：${transitionHint}` : '',
+  ].filter(Boolean);
+
+  if (lines.length === 0) return '';
+
+  return [
+    '片段区分锚点：',
+    ...lines,
+    '执行要求：优先表现本镜头独有的动作阶段、角色关系、主体位置、构图方向和情绪节奏；不要被全局上下文带偏成其它片段的相似画面。',
+  ].join('\n');
 }
 
 function joinPromptParts(
@@ -266,7 +319,15 @@ export function buildFramePrompt(
     'generation'
   );
   const characterBlock = buildFrameCharacterBlock(options);
+  const shotIdentityBlock = buildFrameShotIdentityBlock(options);
   return buildWeightedPrompt([
+    {
+      text: `当前关键帧（最高优先级）：${shotPrompt}。必须严格生成这一帧，不要生成相邻片段、角色参考图姿势或全局剧情的泛化画面`,
+    },
+    {
+      text: shotIdentityBlock,
+      contextWeight: CONTEXT_WEIGHT.shotIdentity,
+    },
     {
       text: videoStyle ? trimTrailingPeriod(videoStyle) : '',
       contextWeight: CONTEXT_WEIGHT.videoStyle,
@@ -283,7 +344,6 @@ export function buildFramePrompt(
       text: creativeBriefBlock,
       contextWeight: CONTEXT_WEIGHT.creativeBrief,
     },
-    { text: `当前关键帧：${shotPrompt}` },
     {
       text: characterBlock,
       contextWeight: CONTEXT_WEIGHT.character,
@@ -337,7 +397,7 @@ export function buildCharacterReferencePrompt(
       { text: `角色名称：${character.name || character.id}` },
       { text: `角色外貌：${character.description}` },
       {
-        text: '要求：根据上下文校准角色气质、年代感、职业感、服装和色彩；不要生成多人、文字、Logo、水印或无关背景。',
+        text: '要求：只生成稳定的角色设定图，用中性站姿或半身展示锁定外貌、发型、服装和材质；不要演绎具体镜头动作、剧情拥抱、奔跑、跳舞或片段构图；不要生成多人、文字、Logo、水印或无关背景。',
       },
     ],
     MAX_VIDEO_GENERATION_PROMPT_LENGTH,

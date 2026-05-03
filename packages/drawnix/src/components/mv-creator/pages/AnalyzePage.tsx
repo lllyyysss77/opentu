@@ -14,22 +14,20 @@ import { musicAnalyzerTool } from '../../../tools/tools/music-analyzer';
 import { taskStorageReader } from '../../../services/task-storage-reader';
 import { taskQueueService } from '../../../services/task-queue';
 import { buildStoryboardPrompt } from '../utils';
-import { ModelDropdown } from '../../ai-input-bar/ModelDropdown';
 import { useSelectableModels } from '../../../hooks/use-runtime-models';
 import { getSelectionKey } from '../../../utils/model-selection';
 import type { ModelRef } from '../../../utils/settings-manager';
 import { getVideoModelConfig } from '../../../constants/video-model-config';
 import {
-  ComboInput,
   CreativeBriefEditor,
+  VideoParametersRow,
   normalizeCreativeBrief,
   readStoredModelSelection,
   writeStoredModelSelection,
   ShotCard,
   type CreativeBrief,
-  VISUAL_STYLE_OPTIONS,
-  VISUAL_STYLE_PLACEHOLDER,
 } from '../../shared/workflow';
+import { ModelDropdown } from '../../ai-input-bar/ModelDropdown';
 import { KnowledgeNoteContextSelector } from '../../shared';
 import { analytics } from '../../../utils/posthog-analytics';
 
@@ -453,54 +451,25 @@ export const AnalyzePage: React.FC<AnalyzePageProps> = ({
             )}
           </div>
 
-          <div className="ma-card">
-            <div className="ma-card-header"><span>专业创作 Brief</span></div>
-            <CreativeBriefEditor
-              value={creativeBrief}
-              onChange={setCreativeBrief}
-              workflow="mv"
-            />
-            <div style={{ marginTop: '8px' }}>
-              <label className="va-edit-label mv-visual-style-label">画面风格</label>
-              <ComboInput
-                className="va-style-combo"
-                value={videoStyle}
-                onChange={setVideoStyle}
-                options={VISUAL_STYLE_OPTIONS}
-                placeholder={VISUAL_STYLE_PLACEHOLDER}
-              />
-            </div>
-          </div>
+          <CreativeBriefEditor
+            value={creativeBrief}
+            onChange={setCreativeBrief}
+            workflow="mv"
+            videoStyle={videoStyle}
+            onVideoStyleChange={setVideoStyle}
+          />
 
           {/* 视频模型 + 单段时长 */}
           {selectedClipId && (
-            <div className="ma-card">
-              <div className="ma-card-header"><span>视频参数</span></div>
-              <div className="va-model-select">
-                <label className="va-model-label">视频模型</label>
-                <ModelDropdown
-                  models={videoModels}
-                  selectedModel={videoModel}
-                  selectedSelectionKey={getSelectionKey(videoModel, videoModelRef)}
-                  onSelect={(id: string, ref?: ModelRef | null) => setVideoModel(id, ref)}
-                  variant="form"
-                  placement="auto"
-                />
-                <div className="va-segment-duration-select">
-                  <label className="va-model-label">单段</label>
-                  <select
-                    className="va-form-select"
-                    value={String(segmentDuration)}
-                    onChange={e => setSegmentDuration(parseInt(e.target.value, 10))}
-                    disabled={durationOptions.length <= 1}
-                  >
-                    {durationOptions.map(opt => (
-                      <option key={opt.value} value={opt.value}>{opt.label}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            </div>
+            <VideoParametersRow
+              selectedModel={videoModel}
+              selectedSelectionKey={getSelectionKey(videoModel, videoModelRef)}
+              onSelectModel={setVideoModel}
+              models={videoModels}
+              segmentDuration={segmentDuration}
+              durationOptions={durationOptions}
+              onSegmentDurationChange={setSegmentDuration}
+            />
           )}
 
           <div className="ma-card mv-storyboard-control-card">

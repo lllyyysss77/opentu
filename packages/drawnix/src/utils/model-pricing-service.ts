@@ -367,10 +367,31 @@ function normalizeNewApiEndpointInfo(
       ? endpoint.method.trim().toUpperCase()
       : undefined;
   const docs = typeof endpoint.docs === 'string' ? endpoint.docs.trim() : '';
+  const label = typeof endpoint.label === 'string' ? endpoint.label.trim() : '';
   const description =
     typeof endpoint.description === 'string' ? endpoint.description.trim() : '';
+  const scenario =
+    typeof endpoint.scenario === 'string' ? endpoint.scenario.trim() : '';
+  const highlights = Array.isArray(endpoint.highlights)
+    ? endpoint.highlights.filter((item): item is string => typeof item === 'string')
+    : undefined;
+  const parameters = Array.isArray(endpoint.parameters)
+    ? endpoint.parameters
+    : undefined;
+  const requestTemplate =
+    endpoint.request_template !== undefined ? endpoint.request_template : undefined;
 
-  if (!path && !method && !docs && !description) {
+  if (
+    !path &&
+    !method &&
+    !docs &&
+    !label &&
+    !description &&
+    !scenario &&
+    !highlights?.length &&
+    !parameters?.length &&
+    requestTemplate === undefined
+  ) {
     return null;
   }
 
@@ -378,7 +399,12 @@ function normalizeNewApiEndpointInfo(
     ...(path ? { path } : {}),
     ...(method ? { method } : {}),
     ...(docs ? { docs } : {}),
+    ...(label ? { label } : {}),
     ...(description ? { description } : {}),
+    ...(scenario ? { scenario } : {}),
+    ...(highlights?.length ? { highlights } : {}),
+    ...(parameters?.length ? { parameters } : {}),
+    ...(requestTemplate !== undefined ? { request_template: requestTemplate } : {}),
   };
 }
 

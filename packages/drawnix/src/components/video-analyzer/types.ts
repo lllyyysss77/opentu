@@ -143,6 +143,8 @@ export interface AnalysisRecord {
   activeVersionId?: string;
   /** 最近一次生成/改编脚本的时间戳（用于过滤旧任务结果，防止污染新脚本） */
   storyboardGeneratedAt?: number;
+  /** 最近一次重置生成素材的时间戳（用于过滤旧图片/视频/角色参考图任务） */
+  generatedAssetsResetAt?: number;
 }
 
 /** 镜头类型颜色映射 */

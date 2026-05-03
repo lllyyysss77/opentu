@@ -11,8 +11,7 @@ import { ShotCard } from '../components/ShotCard';
 import { ComboInput } from '../components/ComboInput';
 import {
   CreativeBriefEditor,
-  VISUAL_STYLE_OPTIONS,
-  VISUAL_STYLE_PLACEHOLDER,
+  VideoParametersRow,
 } from '../../shared/workflow';
 import { CharacterDescriptionList } from '../../shared/workflow';
 import { ModelDropdown } from '../../ai-input-bar/ModelDropdown';
@@ -481,18 +480,10 @@ export const ScriptPage: React.FC<ScriptPageProps> = ({
         <CreativeBriefEditor
           value={productInfo.creativeBrief}
           onChange={creativeBrief => setProductInfo(p => ({ ...p, creativeBrief }))}
+          videoStyle={productInfo.videoStyle || ''}
+          onVideoStyleChange={value => setProductInfo(p => ({ ...p, videoStyle: value }))}
         />
         <div className="va-form-row">
-          <div style={{ flex: 1 }}>
-            <label className="va-edit-label">画面风格</label>
-            <ComboInput
-              className="va-style-combo"
-              value={productInfo.videoStyle || ''}
-              onChange={value => setProductInfo(p => ({ ...p, videoStyle: value }))}
-              options={VISUAL_STYLE_OPTIONS}
-              placeholder={VISUAL_STYLE_PLACEHOLDER}
-            />
-          </div>
           <div style={{ flex: 1 }}>
             <label className="va-edit-label">BGM 情绪</label>
             <textarea
@@ -504,12 +495,6 @@ export const ScriptPage: React.FC<ScriptPageProps> = ({
               onInput={e => autoResize(e.currentTarget)}
               placeholder="如：轻快、治愈、科技感"
             />
-          </div>
-        </div>
-        <div className="va-form-row">
-          <div className="va-duration-input" style={{ width: 'auto', flex: 1 }}>
-            <label className="va-edit-label">视频时长(秒)</label>
-            <input className="va-form-input" type="number" min={5} max={300} value={productInfo.targetDuration ?? record.analysis.totalDuration} onChange={e => setProductInfo(p => ({ ...p, targetDuration: Number(e.target.value) || undefined }))} />
           </div>
         </div>
         <div className="va-model-select">
@@ -525,37 +510,28 @@ export const ScriptPage: React.FC<ScriptPageProps> = ({
             placeholder="选择文本模型"
           />
         </div>
-        <div className="va-model-select">
-          <label className="va-model-label">视频模型</label>
-          <ModelDropdown
-            variant="form"
-            selectedModel={videoModel}
-            selectedSelectionKey={getSelectionKey(videoModel, videoModelRef)}
-            onSelect={setVideoModel}
-            models={videoModels}
-            placement="down"
-            disabled={rewriting}
-            placeholder="选择视频模型"
-          />
-          <div className="va-segment-duration-select">
-            <label className="va-model-label">单段</label>
-            <select
-              className="va-form-select"
-              value={String(selectedSegmentDuration)}
-              onChange={e => setProductInfo(p => ({ ...p, segmentDuration: parseInt(e.target.value, 10) }))}
-              disabled={durationOptions.length <= 1}
-            >
-              {durationOptions.map(opt => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
-          </div>
-          {segmentPlan.overflow > 0 && (
-            <span className="va-duration-overflow">
-              实际 {segmentPlan.actualTotal}s（+{parseFloat(segmentPlan.overflow.toFixed(2))}s）
-            </span>
-          )}
-        </div>
+        <VideoParametersRow
+          selectedModel={videoModel}
+          selectedSelectionKey={getSelectionKey(videoModel, videoModelRef)}
+          onSelectModel={setVideoModel}
+          models={videoModels}
+          segmentDuration={selectedSegmentDuration}
+          durationOptions={durationOptions}
+          onSegmentDurationChange={value =>
+            setProductInfo(p => ({ ...p, segmentDuration: value }))
+          }
+          targetDuration={productInfo.targetDuration ?? record.analysis.totalDuration}
+          onTargetDurationChange={value =>
+            setProductInfo(p => ({ ...p, targetDuration: value || undefined }))
+          }
+          disabled={rewriting}
+          placement="down"
+          overflowText={
+            segmentPlan.overflow > 0
+              ? `实际 ${segmentPlan.actualTotal}s（+${parseFloat(segmentPlan.overflow.toFixed(2))}s）`
+              : undefined
+          }
+        />
         <div className="va-version-row">
           <button className="va-analyze-btn" onClick={handleRewrite} disabled={rewriting || !!pendingRewriteTaskId} style={{ flex: 1 }}>
             {rewriting || pendingRewriteTaskId ? rewriteProgress || 'AI 改编中...' : 'AI 改编脚本'}

@@ -39,6 +39,11 @@ export {
   type CreativeBriefEditorProps,
 } from './CreativeBriefEditor';
 export {
+  VideoParametersRow,
+  type VideoDurationOption,
+  type VideoParametersRowProps,
+} from './VideoParametersRow';
+export {
   type CreativeBrief,
   normalizeCreativeBrief,
   hasCreativeBrief,

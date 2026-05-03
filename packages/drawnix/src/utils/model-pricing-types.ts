@@ -11,9 +11,14 @@ export interface PricingGroupPrice {
 /** tuzi-api /api/pricing 响应中的模型信息 */
 export interface PricingEndpointInfo {
   docs?: string;
+  label?: string;
   method?: string;
   path?: string;
   description?: string;
+  scenario?: string;
+  highlights?: string[];
+  parameters?: unknown[];
+  request_template?: unknown;
 }
 
 export interface PricingModelInfo {

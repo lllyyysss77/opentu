@@ -123,6 +123,33 @@ describe('prompt-builders', () => {
     expect(prompt).toContain('连续性要求');
   });
 
+  it('injects shot identity into frame prompts to separate similar shots', () => {
+    const prompt = buildFramePrompt(
+      '一家人在门口团抱',
+      undefined,
+      { videoStyle: '童话电影动画风格' },
+      {
+        shot: {
+          id: 'shot_3',
+          label: '三女儿爬入团抱',
+          startTime: 10,
+          endTime: 15,
+          description: '三女儿从画面下方慢慢爬来，抬头笑着抓住姐姐裙角。',
+          camera_movement: '轻微俯拍后回落，最后定住形成三层团抱画面',
+          transition_hint: 'match_cut',
+          character_ids: [],
+        },
+      }
+    );
+
+    expect(prompt).toContain('当前关键帧（最高优先级）：一家人在门口团抱');
+    expect(prompt).toContain('片段区分锚点');
+    expect(prompt).toContain('ID shot_3 · 三女儿爬入团抱 · 10s-15s');
+    expect(prompt).toContain('三女儿从画面下方慢慢爬来');
+    expect(prompt).toContain('轻微俯拍后回落');
+    expect(prompt).toContain('优先表现本镜头独有的动作阶段');
+  });
+
   it('drops low-weight video context before required shot prompt when too long', () => {
     const longBrief = '创意上下文'.repeat(140);
     const prompt = buildVideoPrompt(
@@ -172,5 +199,17 @@ describe('prompt-builders', () => {
         creativeBrief: { purpose: '品牌广告' },
       })
     ).toBe('');
+  });
+
+  it('keeps character reference prompts free of shot-specific action', () => {
+    const prompt = buildCharacterReferencePrompt({
+      id: 'char_1',
+      name: '大女儿',
+      description: 'a cheerful girl in a pink dress',
+    });
+
+    expect(prompt).toContain('可复用的角色参考图');
+    expect(prompt).toContain('中性站姿或半身展示');
+    expect(prompt).toContain('不要演绎具体镜头动作');
   });
 });

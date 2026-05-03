@@ -17,12 +17,10 @@ import { quickInsert } from '../../../mcp/tools/canvas-insertion';
 import { ModelDropdown } from '../../ai-input-bar/ModelDropdown';
 import { KnowledgeNoteContextSelector } from '../../shared';
 import {
-  ComboInput,
   CreativeBriefEditor,
+  VideoParametersRow,
   normalizeCreativeBrief,
   type CreativeBrief,
-  VISUAL_STYLE_OPTIONS,
-  VISUAL_STYLE_PLACEHOLDER,
 } from '../../shared/workflow';
 import { useSelectableModels } from '../../../hooks/use-runtime-models';
 import { useProviderProfiles } from '../../../hooks/use-provider-profiles';
@@ -879,74 +877,27 @@ export const AnalyzePage: React.FC<AnalyzePageProps> = ({
                 value={creativeBrief}
                 onChange={setCreativeBrief}
                 workflow="popular_video"
+                videoStyle={videoStyle}
+                onVideoStyleChange={setVideoStyle}
               />
-              <div className="va-prompt-generation-fields">
-                <div className="va-prompt-field">
-                  <label className="va-edit-label">画面风格</label>
-                  <ComboInput
-                    className="va-style-combo"
-                    value={videoStyle}
-                    onChange={setVideoStyle}
-                    options={VISUAL_STYLE_OPTIONS}
-                    placeholder={VISUAL_STYLE_PLACEHOLDER}
-                  />
-                </div>
-                <div className="va-prompt-field va-prompt-field--video-params">
-                  <div className="va-section-header">视频参数</div>
-                  <div className="va-model-select">
-                    <label className="va-model-label">视频模型</label>
-                    <ModelDropdown
-                      variant="form"
-                      selectedModel={videoModel}
-                      selectedSelectionKey={getSelectionKey(
-                        videoModel,
-                        videoModelRef
-                      )}
-                      onSelect={setVideoModel}
-                      models={videoModels}
-                      placement="auto"
-                      disabled={analyzing || !!pendingAnalyzeTaskId}
-                      placeholder="选择视频模型"
-                    />
-                    <div className="va-target-duration-input">
-                      <label className="va-model-label">目标时长</label>
-                      <input
-                        className="va-form-input"
-                        type="number"
-                        min={5}
-                        max={300}
-                        value={targetDuration}
-                        onChange={(event) => {
-                          const value = Number(event.target.value);
-                          setTargetDuration(
-                            Number.isFinite(value) && value > 0
-                              ? value
-                              : DEFAULT_PROMPT_TARGET_DURATION
-                          );
-                        }}
-                        disabled={analyzing || !!pendingAnalyzeTaskId}
-                      />
-                    </div>
-                    <div className="va-segment-duration-select">
-                      <label className="va-model-label">单段</label>
-                      <select
-                        className="va-form-select"
-                        value={String(segmentDuration)}
-                        onChange={(event) =>
-                          setSegmentDuration(parseInt(event.target.value, 10))
-                        }
-                        disabled={durationOptions.length <= 1}
-                      >
-                        {durationOptions.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <VideoParametersRow
+                selectedModel={videoModel}
+                selectedSelectionKey={getSelectionKey(videoModel, videoModelRef)}
+                onSelectModel={setVideoModel}
+                models={videoModels}
+                segmentDuration={segmentDuration}
+                durationOptions={durationOptions}
+                onSegmentDurationChange={setSegmentDuration}
+                targetDuration={targetDuration}
+                onTargetDurationChange={(value) =>
+                  setTargetDuration(
+                    Number.isFinite(value) && value > 0
+                      ? value
+                      : DEFAULT_PROMPT_TARGET_DURATION
+                  )
+                }
+                disabled={analyzing || !!pendingAnalyzeTaskId}
+              />
               <textarea
                 className="va-prompt-textarea"
                 value={promptText}

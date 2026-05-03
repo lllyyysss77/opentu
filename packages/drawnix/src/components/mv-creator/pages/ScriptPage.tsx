@@ -10,10 +10,9 @@ import {
   ComboInput,
   CharacterDescriptionList,
   CreativeBriefEditor,
+  VideoParametersRow,
   normalizeCreativeBrief,
   type CreativeBrief,
-  VISUAL_STYLE_OPTIONS,
-  VISUAL_STYLE_PLACEHOLDER,
 } from '../../shared/workflow';
 import { ModelDropdown } from '../../ai-input-bar/ModelDropdown';
 import { useSelectableModels } from '../../../hooks/use-runtime-models';
@@ -406,19 +405,9 @@ export const ScriptPage: React.FC<ScriptPageProps> = ({
           value={creativeBrief}
           onChange={setCreativeBrief}
           workflow="mv"
+          videoStyle={videoStyle}
+          onVideoStyleChange={setVideoStyle}
         />
-        <div className="va-form-row">
-          <div style={{ flex: 1 }}>
-            <label className="va-edit-label">画面风格</label>
-            <ComboInput
-              className="va-style-combo"
-              value={videoStyle}
-              onChange={setVideoStyle}
-              options={VISUAL_STYLE_OPTIONS}
-              placeholder={VISUAL_STYLE_PLACEHOLDER}
-            />
-          </div>
-        </div>
         <div className="va-model-select">
           <label className="va-model-label">改编模型</label>
           <ModelDropdown
@@ -432,37 +421,22 @@ export const ScriptPage: React.FC<ScriptPageProps> = ({
             placeholder="选择文本模型"
           />
         </div>
-        <div className="va-model-select">
-          <label className="va-model-label">视频模型</label>
-          <ModelDropdown
-            variant="form"
-            selectedModel={videoModel}
-            selectedSelectionKey={getSelectionKey(videoModel, videoModelRef)}
-            onSelect={setVideoModel}
-            models={videoModels}
-            placement="down"
-            disabled={!!pendingRewriteTaskId}
-            placeholder="选择视频模型"
-          />
-          <div className="va-segment-duration-select">
-            <label className="va-model-label">单段</label>
-            <select
-              className="va-form-select"
-              value={String(selectedSegmentDuration)}
-              onChange={e => setSelectedSegmentDuration(parseInt(e.target.value, 10))}
-              disabled={durationOptions.length <= 1}
-            >
-              {durationOptions.map(opt => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
-          </div>
-          {segmentPlan.overflow > 0 && (
-            <span className="va-duration-overflow">
-              实际 {segmentPlan.actualTotal}s（+{parseFloat(segmentPlan.overflow.toFixed(2))}s）
-            </span>
-          )}
-        </div>
+        <VideoParametersRow
+          selectedModel={videoModel}
+          selectedSelectionKey={getSelectionKey(videoModel, videoModelRef)}
+          onSelectModel={setVideoModel}
+          models={videoModels}
+          segmentDuration={selectedSegmentDuration}
+          durationOptions={durationOptions}
+          onSegmentDurationChange={setSelectedSegmentDuration}
+          disabled={!!pendingRewriteTaskId}
+          placement="down"
+          overflowText={
+            segmentPlan.overflow > 0
+              ? `实际 ${segmentPlan.actualTotal}s（+${parseFloat(segmentPlan.overflow.toFixed(2))}s）`
+              : undefined
+          }
+        />
         <div className="va-version-row">
           <button
             className="va-analyze-btn"
