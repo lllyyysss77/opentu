@@ -34,6 +34,10 @@ interface WorkflowFramePromptOptions {
   continueFromPreviousFrame?: boolean;
 }
 
+interface WorkflowVideoPromptOptions {
+  referenceImageDescriptions?: string[];
+}
+
 interface WeightedPromptPart {
   text: string;
   contextWeight?: number;
@@ -45,8 +49,10 @@ const CONTEXT_WEIGHT = {
   creativeBrief: 30,
   generationContext: 40,
   bgmMood: 55,
+  userRequirement: 60,
   videoStyle: 70,
   character: 80,
+  referenceImage: 85,
   shotIdentity: 95,
   continuity: 90,
 } as const;
@@ -82,9 +88,22 @@ function buildGenerationContextBlock(
   if (lines.length === 0) return '';
 
   return [
-    '生成上下文：',
+    '上下文内容：',
     ...lines,
-    '使用要求：角色、首帧和镜头必须继承上述稳定上下文、世界观、受众、音乐情绪与禁忌，不要把脚本改编指令当成画面主题。',
+    '上下文使用方式：这些内容用于稳定世界观、受众、音乐情绪、画面比例和生成禁忌；不要把上下文当成当前镜头的新增剧情。',
+  ].join('\n');
+}
+
+function buildUserRequirementBlock(
+  productInfo?: WorkflowPromptProductInfo | null
+): string {
+  const prompt = compactPromptText(productInfo?.prompt, 500);
+  if (!prompt) return '';
+
+  return [
+    '用户要求：',
+    prompt,
+    '用户要求使用方式：用于校准主题、改编方向和取舍；若与当前镜头、首尾帧或参考图说明冲突，优先执行当前镜头任务。',
   ].join('\n');
 }
 
@@ -156,6 +175,48 @@ function buildFrameShotIdentityBlock(
   ].join('\n');
 }
 
+function buildVideoReferenceImageBlock(
+  options?: WorkflowVideoPromptOptions
+): string {
+  const descriptions = (options?.referenceImageDescriptions || [])
+    .map((description) => compactPromptText(description, 260))
+    .filter(Boolean);
+
+  if (descriptions.length === 0) return '';
+
+  return [
+    '参考图说明：',
+    ...descriptions.map((description, index) =>
+      /^参考图\d+[：:]/.test(description)
+        ? description
+        : `参考图${index + 1}：${description}`
+    ),
+    '参考图使用方式：严格按每张图的用途使用；首帧/尾帧图用于时间起止，角色/全局参考图只用于主体、角色、产品、风格或场景一致性，不代表时间顺序。',
+  ].join('\n');
+}
+
+export function buildVideoReferenceImageDescriptions(
+  images?: Array<{ name?: string; url?: string }>
+): string[] | undefined {
+  const descriptions = (images || [])
+    .filter((image) => !!image.url?.trim())
+    .map((image, index) => {
+      const name = compactPromptText(image.name || '', 80);
+      if (/首帧/.test(name)) {
+        return `参考图${index + 1}：首帧图，视频必须从这张图的画面状态开始。`;
+      }
+      if (/尾帧/.test(name)) {
+        return `参考图${index + 1}：尾帧图，视频应自然过渡到这张图的画面状态。`;
+      }
+      if (/角色/.test(name)) {
+        return `参考图${index + 1}：角色参考图${name ? `（${name}）` : ''}，仅用于锁定人物身份、发型、服装、材质和气质，不表示时间顺序。`;
+      }
+      return `参考图${index + 1}：${name || '用户提供的参考图'}，仅用于主体、产品、场景、风格或色彩一致性，不表示时间顺序。`;
+    });
+
+  return descriptions.length > 0 ? descriptions : undefined;
+}
+
 function joinPromptParts(
   parts: WeightedPromptPart[],
   separator = PROMPT_SEPARATOR
@@ -216,9 +277,11 @@ function buildWeightedPrompt(
 export function buildVideoPrompt(
   shot: VideoShot,
   analysis?: VideoAnalysisData,
-  productInfo?: WorkflowPromptProductInfo | null
+  productInfo?: WorkflowPromptProductInfo | null,
+  options?: WorkflowVideoPromptOptions
 ): string {
   const description = shot.description ? trimTrailingPeriod(shot.description) : '';
+  const shotTimeRange = formatShotTimeRange(shot);
   const cameraMovement = shot.camera_movement
     ? trimTrailingPeriod(shot.camera_movement)
     : '';
@@ -258,6 +321,8 @@ export function buildVideoPrompt(
     analysis,
     productInfo
   );
+  const userRequirementBlock = buildUserRequirementBlock(productInfo);
+  const referenceImageBlock = buildVideoReferenceImageBlock(options);
   const creativeBriefBlock = formatCreativeBriefPromptBlock(
     productInfo?.creativeBrief,
     'generation'
@@ -267,8 +332,13 @@ export function buildVideoPrompt(
     ? `The same ${trimTrailingPeriod(shot.character_description)}`
     : '';
 
-  return buildWeightedPrompt([
-    { text: '请生成一个真实自然、上下文连贯的单镜头短视频' },
+  const shotIdentity = [shot.id ? `ID ${shot.id}` : '', shot.label, shotTimeRange]
+    .filter(Boolean)
+    .join(' · ');
+
+  return buildWeightedPrompt(
+    [
+    { text: '任务：请生成一个真实自然、上下文连贯的单镜头短视频。' },
     {
       text: videoStyle ? `画面风格：${trimTrailingPeriod(videoStyle)}` : '',
       contextWeight: CONTEXT_WEIGHT.videoStyle,
@@ -282,14 +352,28 @@ export function buildVideoPrompt(
       contextWeight: CONTEXT_WEIGHT.generationContext,
     },
     {
+      text: userRequirementBlock,
+      contextWeight: CONTEXT_WEIGHT.userRequirement,
+    },
+    {
       text: creativeBriefBlock,
       contextWeight: CONTEXT_WEIGHT.creativeBrief,
+    },
+    {
+      text: referenceImageBlock,
+      contextWeight: CONTEXT_WEIGHT.referenceImage,
     },
     {
       text: characterAnchor ? `角色一致性：${characterAnchor}` : '',
       contextWeight: CONTEXT_WEIGHT.character,
     },
-    { text: description ? `镜头主题：${description}` : '' },
+    {
+      text: [
+        '当前镜头任务：',
+        shotIdentity ? `镜头身份：${shotIdentity}` : '',
+        description ? `镜头主题：${description}` : '',
+      ].filter(Boolean).join('\n'),
+    },
     { text: narrationPrompt },
     { text: dialoguePrompt },
     { text: `语音关系：${speechRelation}` },
@@ -298,7 +382,10 @@ export function buildVideoPrompt(
     { text: cameraMovement ? `运镜方式：${cameraMovement}` : '' },
     { text: transitionHint ? `转场建议：${transitionHint}` : '' },
     { text: '要求主体动作连贯、时序自然、画面风格统一，避免突兀跳变与闪烁' },
-  ]);
+    ],
+    MAX_VIDEO_GENERATION_PROMPT_LENGTH,
+    '\n\n'
+  );
 }
 
 export function buildFramePrompt(

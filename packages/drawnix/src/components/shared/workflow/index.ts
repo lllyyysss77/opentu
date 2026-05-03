@@ -33,6 +33,7 @@ export {
   buildVideoPrompt,
   buildFramePrompt,
   buildCharacterReferencePrompt,
+  buildVideoReferenceImageDescriptions,
 } from './prompt-builders';
 export {
   CreativeBriefEditor,

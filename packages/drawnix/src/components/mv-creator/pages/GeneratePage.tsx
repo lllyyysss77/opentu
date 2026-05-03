@@ -26,6 +26,7 @@ import { quickInsert, setCanvasBoard } from '../../../mcp/tools/canvas-insertion
 import {
   ShotCard,
   buildCharacterReferencePrompt,
+  buildVideoReferenceImageDescriptions,
   buildVideoPrompt,
   buildFramePrompt,
   readStoredModelSelection,
@@ -1068,8 +1069,6 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
   }, [record.id, pseudoAnalysis, pseudoProductInfo, characters, knowledgeContextRefs, openDialog, getLastFrameUrl, imageModel, imageModelRef, mergeReferenceImages, getShotCharacterReferenceImages, saveShotDraft, selectedImageAspectRatio, toDraftImages]);
 
   const handleShotGenerateVideo = useCallback(async (shot: VideoShot, index: number) => {
-    const prompt = buildVideoPrompt(shot, pseudoAnalysis, pseudoProductInfo);
-    if (!prompt) return;
     analytics.trackUIInteraction({
       area: 'popular_mv_tool',
       action: 'shot_video_generation_opened',
@@ -1093,6 +1092,10 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
       : initialImages.length > 0
         ? initialImages
         : undefined;
+    const prompt = buildVideoPrompt(shot, pseudoAnalysis, pseudoProductInfo, {
+      referenceImageDescriptions: buildVideoReferenceImageDescriptions(resolvedInitialImages),
+    });
+    if (!prompt) return;
 
     const durationStr = String(draft?.duration ?? segmentDuration);
     const validDuration = videoModelConfig.durationOptions.some(o => o.value === durationStr)
@@ -1291,11 +1294,6 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
     currentCharacters: VideoCharacter[],
     resolvedLastFrameUrl?: string
   ) => {
-    const prompt = buildVideoPrompt(shot, pseudoAnalysis, pseudoProductInfo);
-    if (!prompt) {
-      return null;
-    }
-
     const currentShot = currentShots.find((item) => item.id === shot.id) || currentShots[index] || shot;
     const firstFrameUrl = currentShot.generated_first_frame_url;
     const lastFrameUrl = resolvedLastFrameUrl || currentShot.generated_last_frame_url;
@@ -1304,14 +1302,20 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
       .filter((url): url is string => !!url);
     const extraReferenceUrls = Array.from(new Set([
       ...refImageUrls,
-      ...characterReferenceUrls,
     ]));
-    const { referenceImages } = buildBatchVideoReferenceImages({
+    const { referenceImages, referenceImageDescriptions } = buildBatchVideoReferenceImages({
       model: videoModel,
       firstFrameUrl,
       lastFrameUrl,
       extraReferenceUrls,
+      characterReferenceUrls,
     });
+    const prompt = buildVideoPrompt(currentShot, pseudoAnalysis, pseudoProductInfo, {
+      referenceImageDescriptions,
+    });
+    if (!prompt) {
+      return null;
+    }
 
     const shotBatchId = `mv_${record.id}_shot${shot.id}_video`;
     const videoExtraParams = {
@@ -1614,18 +1618,32 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
           return;
         }
 
-        const prompt = buildVideoPrompt(initialShot, pseudoAnalysis, pseudoProductInfo);
-        if (!prompt) {
-          markShotDone(index);
-          return;
-        }
-
         let shot = latestShotsRef.current.find((item) => item.id === initialShot.id) || initialShot;
         setBatchVideoState(prev => ({
           ...prev,
           currentIndex: index,
           retryCount: 0,
         }));
+
+        const currentCharacters = latestRecordRef.current.characters || [];
+        const lastFrameUrl = getLastFrameUrl(shot, index);
+        const characterReferenceUrls = (shot.character_ids || [])
+          .map((charId) => currentCharacters.find((char) => char.id === charId)?.referenceImageUrl)
+          .filter((url): url is string => !!url);
+        const { referenceImageDescriptions } = buildBatchVideoReferenceImages({
+          model: videoModel,
+          firstFrameUrl: shot.generated_first_frame_url,
+          lastFrameUrl,
+          extraReferenceUrls: refImageUrls,
+          characterReferenceUrls,
+        });
+        const prompt = buildVideoPrompt(shot, pseudoAnalysis, pseudoProductInfo, {
+          referenceImageDescriptions,
+        });
+        if (!prompt) {
+          markShotDone(index);
+          return;
+        }
 
         if (shot.generated_video_url) {
           if (shouldInsertToCanvas) {

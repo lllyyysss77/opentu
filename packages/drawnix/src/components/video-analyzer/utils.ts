@@ -18,6 +18,7 @@ import {
   DEFAULT_ORIGINAL_VERSION_ID,
   appendVersionToRecord,
   buildCharacterReferencePrompt,
+  buildVideoReferenceImageDescriptions,
   buildVideoPrompt,
   buildFramePrompt,
   formatCreativeBriefPromptBlock,
@@ -28,7 +29,12 @@ import {
   updateActiveVersionShotsInRecord,
 } from '../shared/workflow';
 
-export { buildVideoPrompt, buildFramePrompt, buildCharacterReferencePrompt };
+export {
+  buildVideoPrompt,
+  buildFramePrompt,
+  buildCharacterReferencePrompt,
+  buildVideoReferenceImageDescriptions,
+};
 export { readStoredModelSelection, writeStoredModelSelection };
 
 const ORIGINAL_CONTENT_GUARDRAIL =

@@ -32,6 +32,7 @@ import type { Asset } from '../../../types/asset.types';
 import { ShotCard } from '../components/ShotCard';
 import {
   buildCharacterReferencePrompt,
+  buildVideoReferenceImageDescriptions,
   buildVideoPrompt,
   buildFramePrompt,
 } from '../utils';
@@ -1109,8 +1110,6 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
 
   // --- 单镜头：打开视频生成弹窗 ---
   const handleShotGenerateVideo = useCallback((shot: VideoShot, index: number) => {
-    const prompt = buildVideoPrompt(shot, record.analysis, generationProductInfo);
-    if (!prompt) return;
     analytics.trackUIInteraction({
       area: 'popular_video_tool',
       action: 'shot_video_generation_opened',
@@ -1135,6 +1134,10 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
       : initialImages.length > 0
         ? initialImages
         : undefined;
+    const prompt = buildVideoPrompt(shot, record.analysis, generationProductInfo, {
+      referenceImageDescriptions: buildVideoReferenceImageDescriptions(resolvedInitialImages),
+    });
+    if (!prompt) return;
     const durationStr = String(draft?.duration ?? segmentDuration);
     const validDuration = videoModelConfig.durationOptions.some(o => o.value === durationStr)
       ? (draft?.duration ?? segmentDuration)
@@ -1321,20 +1324,21 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
     shot: VideoShot,
     resolvedLastFrameUrl?: string
   ) => {
-    const prompt = buildVideoPrompt(shot, record.analysis, generationProductInfo);
-    if (!prompt) {
-      return null;
-    }
-
     const firstFrameUrl = shot.generated_first_frame_url;
     const lastFrameUrl = resolvedLastFrameUrl || shot.generated_last_frame_url;
     // 角色一致性通过首帧图实现，不再传 characterReferenceUrls 给视频模型
-    const { referenceImages } = buildBatchVideoReferenceImages({
+    const { referenceImages, referenceImageDescriptions } = buildBatchVideoReferenceImages({
       model: videoModel,
       firstFrameUrl,
       lastFrameUrl,
       extraReferenceUrls: refImageUrls,
     });
+    const prompt = buildVideoPrompt(shot, record.analysis, generationProductInfo, {
+      referenceImageDescriptions,
+    });
+    if (!prompt) {
+      return null;
+    }
 
     const shotBatchId = `va_${record.id}_shot${shot.id}_video`;
     const videoExtraParams = {
@@ -1649,17 +1653,25 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
             return;
           }
 
-          const prompt = buildVideoPrompt(shot, record.analysis, generationProductInfo);
-          if (!prompt) {
-            return;
-          }
-
           setBatchVideoState(prev => ({
             ...prev,
             currentIndex: index,
           }));
 
           let currentShot = getLatestShotById(shot.id) || shot;
+          const currentLastFrameUrl = getLastFrameUrl(currentShot, index);
+          const { referenceImageDescriptions } = buildBatchVideoReferenceImages({
+            model: videoModel,
+            firstFrameUrl: currentShot.generated_first_frame_url,
+            lastFrameUrl: currentLastFrameUrl,
+            extraReferenceUrls: refImageUrls,
+          });
+          const prompt = buildVideoPrompt(currentShot, record.analysis, generationProductInfo, {
+            referenceImageDescriptions,
+          });
+          if (!prompt) {
+            return;
+          }
           if (currentShot.generated_video_url) {
             if (shouldInsertToCanvas) {
               await insertGeneratedVideoToCanvas(currentShot.generated_video_url);
