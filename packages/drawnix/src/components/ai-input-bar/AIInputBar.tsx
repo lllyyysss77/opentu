@@ -1983,6 +1983,8 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
           );
         } else {
           suppressSelectionContentUrlsRef.current = new Set();
+          setSelectedContent([]);
+          selectedFrameRef.current = null;
         }
 
         setGenerationType(nextGenerationType);
