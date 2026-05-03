@@ -1659,19 +1659,6 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
           }));
 
           let currentShot = getLatestShotById(shot.id) || shot;
-          const currentLastFrameUrl = getLastFrameUrl(currentShot, index);
-          const { referenceImageDescriptions } = buildBatchVideoReferenceImages({
-            model: videoModel,
-            firstFrameUrl: currentShot.generated_first_frame_url,
-            lastFrameUrl: currentLastFrameUrl,
-            extraReferenceUrls: refImageUrls,
-          });
-          const prompt = buildVideoPrompt(currentShot, record.analysis, generationProductInfo, {
-            referenceImageDescriptions,
-          });
-          if (!prompt) {
-            return;
-          }
           if (currentShot.generated_video_url) {
             if (shouldInsertToCanvas) {
               await insertGeneratedVideoToCanvas(currentShot.generated_video_url);

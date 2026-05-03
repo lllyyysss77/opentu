@@ -172,7 +172,7 @@ describe('prompt-builders', () => {
       }
     );
 
-    expect(prompt).toContain('生成上下文');
+    expect(prompt).toContain('上下文内容');
     expect(prompt).toContain('创作主题：城市夜跑 MV');
     expect(prompt).toContain('音乐标题：追光');
     expect(prompt).toContain('生成建议：保持霓虹雨夜与跑步动作连贯');
