@@ -1,3 +1,17 @@
+## 0.7.0 (2026-05-03)
+
+### 🩹 Fixes
+
+- allow hand panning while drawing ([60c4828b](https://github.com/ljquan/aitu/commit/60c4828b))
+
+### 🔧 Chores
+
+- 更新应用版本号至0.6.99并同步构建时间 ([60daf04e](https://github.com/ljquan/aitu/commit/60daf04e))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+
 ## 0.6.99 (2026-05-03)
 
 ### 🚀 Features

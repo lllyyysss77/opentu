@@ -1,6 +1,21 @@
 {
   "versions": [
     {
+      "version": "0.7.0",
+      "date": "2026-05-03",
+      "changes": {
+        "features": [],
+        "fixes": [
+          "allow hand panning while drawing"
+        ],
+        "improvements": [
+          "更新应用版本号至0.6.99并同步构建时间"
+        ]
+      },
+      "type": "minor",
+      "highlights": "allow hand panning while drawing"
+    },
+    {
       "version": "0.6.99",
       "date": "2026-05-03",
       "changes": {
@@ -767,21 +782,6 @@
       },
       "type": "patch",
       "highlights": "构建修复与稳定性改进"
-    },
-    {
-      "version": "0.6.35",
-      "date": "2026-04-20",
-      "changes": {
-        "features": [
-          "智能 CDN 优先加载与经验沉淀"
-        ],
-        "fixes": [
-          "修复版本记录类型定义和函数调用错误"
-        ],
-        "improvements": []
-      },
-      "type": "patch",
-      "highlights": "智能 CDN 优先加载与经验沉淀"
     }
   ]
 }
