@@ -1,6 +1,25 @@
 {
   "versions": [
     {
+      "version": "0.6.99",
+      "date": "2026-05-03",
+      "changes": {
+        "features": [
+          "为视频生成 prompt 添加参考图用途说明",
+          "支持异步图片生成和生成素材重置",
+          "添加目标总时长配置并优化UI与错误处理"
+        ],
+        "fixes": [
+          "移除生成视频时重复的提示词构建逻辑",
+          "强化爆款视频首尾帧角色一致性",
+          "绑定异步任务供应商路由"
+        ],
+        "improvements": []
+      },
+      "type": "patch",
+      "highlights": "为视频生成 prompt 添加参考图用途说明"
+    },
+    {
       "version": "0.6.98",
       "date": "2026-05-02",
       "type": "patch",
@@ -763,19 +782,6 @@
       },
       "type": "patch",
       "highlights": "智能 CDN 优先加载与经验沉淀"
-    },
-    {
-      "version": "0.6.34",
-      "date": "2026-04-20",
-      "changes": {
-        "features": [],
-        "fixes": [
-          "跨域下载失败时回退打开链接"
-        ],
-        "improvements": []
-      },
-      "type": "patch",
-      "highlights": "跨域下载失败时回退打开链接"
     }
   ]
 }

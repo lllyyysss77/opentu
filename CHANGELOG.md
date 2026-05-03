@@ -1,3 +1,26 @@
+## 0.6.99 (2026-05-03)
+
+### 🚀 Features
+
+- 为视频生成 prompt 添加参考图用途说明 ([95b7722d](https://github.com/ljquan/aitu/commit/95b7722d))
+- 支持异步图片生成和生成素材重置 ([d5fdb613](https://github.com/ljquan/aitu/commit/d5fdb613))
+- 添加目标总时长配置并优化UI与错误处理 ([abff6536](https://github.com/ljquan/aitu/commit/abff6536))
+
+### 🩹 Fixes
+
+- 移除生成视频时重复的提示词构建逻辑 ([7edd47d9](https://github.com/ljquan/aitu/commit/7edd47d9))
+- 强化爆款视频首尾帧角色一致性 ([743a7afa](https://github.com/ljquan/aitu/commit/743a7afa))
+- 绑定异步任务供应商路由 ([3a56d795](https://github.com/ljquan/aitu/commit/3a56d795))
+- unify generated image retry rendering ([70acfa65](https://github.com/ljquan/aitu/commit/70acfa65))
+
+### 🔧 Chores
+
+- 更新应用版本至0.6.98并同步构建时间 ([a09a6a0e](https://github.com/ljquan/aitu/commit/a09a6a0e))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+
 ## 0.6.98 (2026-05-02)
 
 ### 🔧 Chores
