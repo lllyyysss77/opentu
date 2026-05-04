@@ -1,6 +1,9 @@
 {
-  "version": "0.9.1",
-  "buildTime": "2026-05-03T03:20:26.285Z",
+  "version": "0.9.2",
+  "buildTime": "2026-05-04T12:04:41.799Z",
   "gitCommit": "unknown",
-  "changelog": []
+  "changelog": [
+    "优化参考图描述和提示词优先级协议",
+    "优化长提示词输入框展开体验"
+  ]
 }

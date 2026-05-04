@@ -1,3 +1,29 @@
+## 0.9.2 (2026-05-04)
+
+### 🚀 Features
+
+- 优化长提示词输入框展开体验 ([241a18fe](https://github.com/ljquan/aitu/commit/241a18fe))
+- add image generate-again prefill ([9812fd10](https://github.com/ljquan/aitu/commit/9812fd10))
+
+### 🩹 Fixes
+
+- 优化参考图描述和提示词优先级协议 ([457cc0e7](https://github.com/ljquan/aitu/commit/457cc0e7))
+- allow hand panning while drawing ([7beb5c86](https://github.com/ljquan/aitu/commit/7beb5c86))
+- address regenerate prefill review findings ([ff39ffef](https://github.com/ljquan/aitu/commit/ff39ffef))
+
+### 🔧 Chores
+
+- 更新版本至0.9.0并增强部署脚本 ([38adcb97](https://github.com/ljquan/aitu/commit/38adcb97))
+- bump version to 0.9.1 ([c1617975](https://github.com/ljquan/aitu/commit/c1617975))
+- bump version to 0.9.0 ([e66a8b43](https://github.com/ljquan/aitu/commit/e66a8b43))
+- bump version to 0.8.0 ([ea01d364](https://github.com/ljquan/aitu/commit/ea01d364))
+- bump version to 0.7.0 ([5e409295](https://github.com/ljquan/aitu/commit/5e409295))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+- SkyzcYou <youzhengcai@gmail.com>
+
 ## 0.7.0 (2026-05-03)
 
 ### 🩹 Fixes
