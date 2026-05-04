@@ -2,7 +2,7 @@ import { getSelectedElements, PlaitBoard, PlaitElement, getRectangleByElements, 
 import { MindElement } from '@plait/mind';
 import { PlaitDrawElement } from '@plait/draw';
 import { Node } from 'slate';
-import { Freehand } from '../plugins/freehand/type';
+import { Freehand, FreehandShape } from '../plugins/freehand/type';
 import { PenPath } from '../plugins/pen/type';
 import { SAME_ROW_THRESHOLD } from '../components/ttd-dialog/shared/size-constants';
 import { trimImageWhiteAndTransparentBorder } from '@aitu/utils';
@@ -15,6 +15,11 @@ import {
   isOrdinary3DTransformImage,
   sanitizeImage3DTransform,
 } from './image-3d-transform';
+import {
+  exportImageMaskFromBrushes,
+  findMaskBrushesForImage,
+  isMaskBrushEligibleImage,
+} from './ai-mask-brush';
 
 /**
  * 从图片 URL 获取原始尺寸
@@ -127,6 +132,7 @@ export interface ProcessedContent {
   remainingImages: { url: string; name?: string; width?: number; height?: number }[];
   remainingText: string;
   graphicsImage?: string;
+  maskImage?: string;
   /** 图形图片的尺寸（如果有） */
   graphicsImageDimensions?: { width: number; height: number };
 }
@@ -346,6 +352,9 @@ export const isGraphicsElement = (board: PlaitBoard, element: PlaitElement): boo
   
   // Freehand drawings
   if (Freehand.isFreehand(element)) {
+    if (element.shape === FreehandShape.mask) {
+      return false;
+    }
     // console.log('Element classified as freehand graphics');
     return true;
   }
@@ -1037,6 +1046,14 @@ export const processSelectedContentForAI = async (
   // Step 1: Find graphics elements and their overlapping elements (using sorted elements)
   const { graphicsElements, overlappingElements } = findElementsOverlappingWithGraphics(board, sortedElements);
   // console.log('Graphics elements:', graphicsElements.length, 'Overlapping elements:', overlappingElements.length);
+  const selectedImageForMask =
+    sortedElements.length === 1 && isMaskBrushEligibleImage(sortedElements[0])
+      ? sortedElements[0]
+      : undefined;
+  const maskBrushElements = selectedImageForMask
+    ? findMaskBrushesForImage(board, selectedImageForMask)
+    : [];
+  const maskBrushElementSet = new Set(maskBrushElements);
   
   // Step 2: Combine graphics elements with overlapping elements, preserving sorted order.
   // 3D-transformed ordinary images stay as original AI references, with camera-view details in text context.
@@ -1049,7 +1066,11 @@ export const processSelectedContentForAI = async (
       (element) => !originalImageReferenceElements.has(element)
     ),
   ]);
-  const allGraphicsRelatedElements = sortedElements.filter(el => allGraphicsRelatedElementsSet.has(el));
+  const allGraphicsRelatedElements = sortedElements.filter(
+    (el) =>
+      allGraphicsRelatedElementsSet.has(el) &&
+      !maskBrushElementSet.has(el as any)
+  );
   
   // Step 3: Identify remaining elements (not graphics-related), preserving sorted order
   const remainingElements = sortedElements.filter(
@@ -1120,11 +1141,25 @@ export const processSelectedContentForAI = async (
       graphicsImageDimensions = dims;
     }
   }
+
+  let maskImage: string | undefined;
+  if (selectedImageForMask && maskBrushElements.length > 0) {
+    try {
+      maskImage = await exportImageMaskFromBrushes({
+        imageElement: selectedImageForMask,
+        maskElements: maskBrushElements,
+        invert: !!(selectedImageForMask as any).aiMaskInverted,
+      });
+    } catch (error) {
+      console.warn('[selection-utils] Failed to export AI mask brush:', error);
+    }
+  }
   
   const result = {
     remainingImages: imagesWithDimensions,
     remainingText: remainingTexts.join('\n'),
     graphicsImage,
+    maskImage,
     graphicsImageDimensions,
   };
   

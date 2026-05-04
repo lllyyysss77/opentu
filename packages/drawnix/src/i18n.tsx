@@ -12,6 +12,7 @@ export interface Translations {
   'toolbar.mind': string;
   'toolbar.text': string;
   'toolbar.pen': string;
+  'toolbar.maskBrush': string;
   'toolbar.vectorPen': string;
   'toolbar.eraser': string;
   'toolbar.arrow': string;
@@ -204,6 +205,7 @@ const translations: Record<Language, Translations> = {
     'toolbar.mind': '思维导图 — M',
     'toolbar.text': '文本 — T',
     'toolbar.pen': '画笔 — P',
+    'toolbar.maskBrush': '蒙版画笔 — Shift+M',
     'toolbar.vectorPen': '钢笔 — Shift+P',
     'toolbar.eraser': '橡皮擦 — E',
     'toolbar.anchorCorner': '角点',
@@ -393,6 +395,7 @@ const translations: Record<Language, Translations> = {
     'toolbar.mind': 'Mind — M',
     'toolbar.text': 'Text — T',
     'toolbar.pen': 'Pen — P',
+    'toolbar.maskBrush': 'Mask Brush — Shift+M',
     'toolbar.vectorPen': 'Vector Pen — Shift+P',
     'toolbar.eraser': 'Eraser — E',
     'toolbar.anchorCorner': 'Corner',

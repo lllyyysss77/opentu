@@ -163,6 +163,7 @@ export const geminiImageAdapter: ImageModelAdapter = {
           prompt: request.prompt,
           size: request.size,
           referenceImages: request.referenceImages,
+          maskImage: request.maskImage,
         },
         {
           interval: 5000,

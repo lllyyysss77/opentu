@@ -379,6 +379,7 @@ type SelectedContentType = 'image' | 'video' | 'graphics' | 'text';
 interface SelectedContent {
   type: SelectedContentType;
   url?: string; // 图片/视频/图形的 URL
+  maskImage?: string; // 单图局部编辑蒙版 URL
   text?: string; // 文字内容
   name: string; // 显示名称
   width?: number; // 图片/视频宽度
@@ -715,6 +716,7 @@ const SelectionWatcher: React.FC<{
 
             content.push({
               url: imgUrl,
+              maskImage: !isVideo ? processedContent.maskImage : undefined,
               name:
                 img.name ||
                 (isVideo ? `video-${Date.now()}` : `image-${Date.now()}`),
@@ -2046,6 +2048,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
             name: image.name || `参考图 ${index + 1}`,
             width: image.width,
             height: image.height,
+            maskImage: image.maskImage,
           }))
         );
         setSelectedModel(nextModelId);
@@ -2989,6 +2992,10 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
           graphics: graphicsItems.map((item) => item.url!),
           // 添加图片尺寸信息（始终传递数组，避免下游处理 undefined）
           imageDimensions: imageDimensions,
+          maskImage:
+            imageItems.length === 1 && graphicsItems.length === 0
+              ? imageItems[0].maskImage
+              : undefined,
         };
 
         // 解析输入内容，使用选中的模型和尺寸

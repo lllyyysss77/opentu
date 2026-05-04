@@ -180,6 +180,18 @@ export const buildDrawnixHotkeyPlugin = (
           event.preventDefault();
           return;
         }
+        if (
+          !event.altKey &&
+          !event.metaKey &&
+          !event.ctrlKey &&
+          isHotkey(['shift+m'], { byKey: true })(event)
+        ) {
+          setCreationMode(board, BoardCreationMode.drawing);
+          BoardTransforms.updatePointerType(board, FreehandShape.mask);
+          updateAppState({ pointer: FreehandShape.mask });
+          event.preventDefault();
+          return;
+        }
 
         if (!event.altKey && !event.metaKey && !event.ctrlKey && !event.shiftKey) {
           if (event.key === 'l') {

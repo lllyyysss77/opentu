@@ -3,9 +3,40 @@ import {
   extractImagesFromElementForAI,
   extractTextFromElement,
   getImageTransformPromptContext,
+  isGraphicsElement,
 } from '../selection-utils';
+import { FreehandShape } from '../../plugins/freehand/type';
 
 describe('selection-utils', () => {
+  describe('isGraphicsElement', () => {
+    it('蒙版画笔不作为普通图形合成', () => {
+      const board = { children: [] };
+      expect(
+        isGraphicsElement(board as any, {
+          id: 'mask-1',
+          type: 'freehand',
+          shape: FreehandShape.mask,
+          points: [
+            [0, 0],
+            [10, 10],
+          ],
+        } as any)
+      ).toBe(false);
+
+      expect(
+        isGraphicsElement(board as any, {
+          id: 'pen-1',
+          type: 'freehand',
+          shape: FreehandShape.feltTipPen,
+          points: [
+            [0, 0],
+            [10, 10],
+          ],
+        } as any)
+      ).toBe(true);
+    });
+  });
+
   describe('extractTextFromElement', () => {
     it('应该将 markdown card 的标题和正文作为文本提取', () => {
       const result = extractTextFromElement({
