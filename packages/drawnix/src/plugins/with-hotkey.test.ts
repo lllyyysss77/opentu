@@ -11,6 +11,13 @@ const {
   isMovingPointInBoardMock,
   hasBeenTextEditingMock,
   getSelectedElementsMock,
+  getFreehandSettingsMock,
+  setFreehandStrokeWidthMock,
+  setEraserWidthMock,
+  getPenSettingsMock,
+  setPenStrokeWidthMock,
+  updatePencilCursorMock,
+  updateEraserCursorMock,
 } = vi.hoisted(() => ({
   updatePointerTypeMock: vi.fn(),
   setCreationModeMock: vi.fn(),
@@ -21,6 +28,13 @@ const {
   isMovingPointInBoardMock: vi.fn(),
   hasBeenTextEditingMock: vi.fn(),
   getSelectedElementsMock: vi.fn(),
+  getFreehandSettingsMock: vi.fn(),
+  setFreehandStrokeWidthMock: vi.fn(),
+  setEraserWidthMock: vi.fn(),
+  getPenSettingsMock: vi.fn(),
+  setPenStrokeWidthMock: vi.fn(),
+  updatePencilCursorMock: vi.fn(),
+  updateEraserCursorMock: vi.fn(),
 }));
 
 vi.mock('@plait/core', () => ({
@@ -70,6 +84,22 @@ vi.mock('./pen/type', () => ({
   PenShape: {
     pen: 'pen',
   },
+}));
+
+vi.mock('./freehand/freehand-settings', () => ({
+  getFreehandSettings: getFreehandSettingsMock,
+  setFreehandStrokeWidth: setFreehandStrokeWidthMock,
+  setEraserWidth: setEraserWidthMock,
+}));
+
+vi.mock('./pen/pen-settings', () => ({
+  getPenSettings: getPenSettingsMock,
+  setPenStrokeWidth: setPenStrokeWidthMock,
+}));
+
+vi.mock('../hooks/usePencilCursor', () => ({
+  updatePencilCursor: updatePencilCursorMock,
+  updateEraserCursor: updateEraserCursorMock,
 }));
 
 vi.mock('@plait/draw', () => ({
@@ -154,6 +184,13 @@ describe('buildDrawnixHotkeyPlugin', () => {
     isMovingPointInBoardMock.mockReturnValue(false);
     hasBeenTextEditingMock.mockReturnValue(false);
     getSelectedElementsMock.mockReturnValue([]);
+    getFreehandSettingsMock.mockReturnValue({
+      strokeWidth: 10,
+      eraserWidth: 32,
+    });
+    getPenSettingsMock.mockReturnValue({
+      strokeWidth: 4,
+    });
   });
 
   it('switches to vector pen on Shift+P', () => {
@@ -211,5 +248,101 @@ describe('buildDrawnixHotkeyPlugin', () => {
     expect(updatePointerTypeMock).not.toHaveBeenCalled();
     expect(updateAppStateMock).not.toHaveBeenCalled();
     expect(globalKeyDownMock).toHaveBeenCalledWith(event);
+  });
+
+  it('decreases freehand brush size with -', () => {
+    const board = buildDrawnixHotkeyPlugin(updateAppStateMock)({
+      ...createBoard(),
+      pointer: 'felt-tip-pen',
+      appState: { toolSettingsVersion: 2 },
+    } as TestBoard & { pointer: string; appState: { toolSettingsVersion: number } }) as TestBoard;
+    const event = new KeyboardEvent('keydown', {
+      key: '-',
+      cancelable: true,
+    });
+
+    board.globalKeyDown(event);
+
+    expect(setFreehandStrokeWidthMock).toHaveBeenCalledWith(board, 9);
+    expect(updatePencilCursorMock).toHaveBeenCalledWith(board, 'felt-tip-pen');
+    expect(updateAppStateMock).toHaveBeenCalledWith({ toolSettingsVersion: 3 });
+    expect(event.defaultPrevented).toBe(true);
+    expect(globalKeyDownMock).not.toHaveBeenCalled();
+  });
+
+  it('increases mask brush size with +', () => {
+    const board = buildDrawnixHotkeyPlugin(updateAppStateMock)({
+      ...createBoard(),
+      pointer: 'mask',
+    } as TestBoard & { pointer: string }) as TestBoard;
+    const event = new KeyboardEvent('keydown', {
+      key: '+',
+      shiftKey: true,
+      cancelable: true,
+    });
+
+    board.globalKeyDown(event);
+
+    expect(setFreehandStrokeWidthMock).toHaveBeenCalledWith(board, 11);
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('increases eraser size with +', () => {
+    const board = buildDrawnixHotkeyPlugin(updateAppStateMock)({
+      ...createBoard(),
+      pointer: 'eraser',
+    } as TestBoard & { pointer: string }) as TestBoard;
+    const event = new KeyboardEvent('keydown', {
+      key: '+',
+      shiftKey: true,
+      cancelable: true,
+    });
+
+    board.globalKeyDown(event);
+
+    expect(setEraserWidthMock).toHaveBeenCalledWith(board, 33);
+    expect(updateEraserCursorMock).toHaveBeenCalledWith(board);
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('increases vector pen size with +', () => {
+    const board = buildDrawnixHotkeyPlugin(updateAppStateMock)({
+      ...createBoard(),
+      pointer: 'pen',
+    } as TestBoard & { pointer: string }) as TestBoard;
+    const event = new KeyboardEvent('keydown', {
+      key: '+',
+      shiftKey: true,
+      cancelable: true,
+    });
+
+    board.globalKeyDown(event);
+
+    expect(setPenStrokeWidthMock).toHaveBeenCalledWith(board, 5);
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it.each([
+    ['ArrowUp', 11],
+    ['ArrowRight', 11],
+    ['ArrowDown', 9],
+    ['ArrowLeft', 9],
+  ])('adjusts freehand brush size with %s', (key, expectedSize) => {
+    const board = buildDrawnixHotkeyPlugin(updateAppStateMock)({
+      ...createBoard(),
+      pointer: 'felt-tip-pen',
+    } as TestBoard & { pointer: string }) as TestBoard;
+    const event = new KeyboardEvent('keydown', {
+      key,
+      cancelable: true,
+    });
+
+    board.globalKeyDown(event);
+
+    expect(setFreehandStrokeWidthMock).toHaveBeenCalledWith(
+      board,
+      expectedSize
+    );
+    expect(event.defaultPrevented).toBe(true);
   });
 });
