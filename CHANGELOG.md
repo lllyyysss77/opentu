@@ -1,3 +1,13 @@
+## 0.9.5 (2026-05-06)
+
+### 🩹 Fixes
+
+- 修复蒙版画笔导出和预览样式问题 ([69f94d26](https://github.com/ljquan/aitu/commit/69f94d26))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+
 ## 0.9.4 (2026-05-06)
 
 ### 🔧 Chores

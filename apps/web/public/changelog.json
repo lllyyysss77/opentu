@@ -1,6 +1,19 @@
 {
   "versions": [
     {
+      "version": "0.9.5",
+      "date": "2026-05-06",
+      "changes": {
+        "features": [],
+        "fixes": [
+          "修复蒙版画笔导出和预览样式问题"
+        ],
+        "improvements": []
+      },
+      "type": "patch",
+      "highlights": "修复蒙版画笔导出和预览样式问题"
+    },
+    {
       "version": "0.9.4",
       "date": "2026-05-06",
       "changes": {
@@ -775,21 +788,6 @@
       },
       "type": "patch",
       "highlights": "构建修复与稳定性改进"
-    },
-    {
-      "version": "0.6.41",
-      "date": "2026-04-21",
-      "changes": {
-        "features": [],
-        "fixes": [
-          "修复版本更新后懒加载 chunk 失效白屏"
-        ],
-        "improvements": [
-          "补充 PostHog 埋点复盘并收紧模型解析保护"
-        ]
-      },
-      "type": "patch",
-      "highlights": "修复版本更新后懒加载 chunk 失效白屏"
     }
   ]
 }
