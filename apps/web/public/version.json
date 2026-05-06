@@ -1,6 +1,6 @@
 {
   "version": "0.9.3",
-  "buildTime": "2026-05-06T03:01:45.492Z",
+  "buildTime": "2026-05-06T03:01:46.340Z",
   "gitCommit": "unknown",
   "changelog": [
     "resume async image tasks after reload"
