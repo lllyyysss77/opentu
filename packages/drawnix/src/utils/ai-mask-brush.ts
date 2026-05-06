@@ -10,11 +10,21 @@ import { unifiedCacheService } from '../services/unified-cache-service';
 
 export const MAX_AI_MASK_PIXELS = 16_777_216;
 export const MAX_AI_MASK_BYTES = 4 * 1024 * 1024;
+const MAX_AI_MASK_BYTE_RETRY_COUNT = 3;
+const AI_MASK_EDGE_TRIM_PX = 2;
 
 export interface MaskStrokeDrawCommand {
   points: Point[];
   strokeWidth: number;
   brushShape?: BrushShape;
+}
+
+export interface MaskExportInfo {
+  width: number;
+  height: number;
+  naturalWidth: number;
+  naturalHeight: number;
+  scale: number;
 }
 
 export interface ExportMaskBrushOptions {
@@ -26,6 +36,7 @@ export interface ExportMaskBrushOptions {
   cacheMask?: boolean;
   createCanvas?: (width: number, height: number) => HTMLCanvasElement;
   onDrawStroke?: (command: MaskStrokeDrawCommand) => void;
+  onExportInfo?: (info: MaskExportInfo) => void;
 }
 
 function isRectangleHit(left: RectangleClient, right: RectangleClient) {
@@ -100,7 +111,11 @@ async function resolveImageNaturalSize(
     height: (imageElement as any).height || rect.height,
   });
 
-  if (imageElement.url && fallback) {
+  if (
+    imageElement.url &&
+    fallback &&
+    (!(imageElement as any).width || !(imageElement as any).height)
+  ) {
     return loadImageNaturalSize(
       imageElement.url,
       fallback.width,
@@ -189,6 +204,22 @@ function drawMaskStroke(
   ctx.stroke();
 }
 
+function clearMaskCanvasEdges(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  inset = AI_MASK_EDGE_TRIM_PX
+) {
+  const edge = Math.max(0, Math.min(inset, Math.floor(width / 2), Math.floor(height / 2)));
+  if (edge <= 0) {
+    return;
+  }
+  ctx.clearRect(0, 0, width, edge);
+  ctx.clearRect(width - edge, 0, edge, height);
+  ctx.clearRect(0, height - edge, width, edge);
+  ctx.clearRect(0, 0, edge, height);
+}
+
 export function buildMaskStrokeCommands(
   imageElement: PlaitDrawElement,
   maskElements: Freehand[],
@@ -214,6 +245,81 @@ export function buildMaskStrokeCommands(
     .filter((command) => command.points.length > 0);
 }
 
+function createScaledSize(
+  naturalSize: { width: number; height: number },
+  scale: number
+): { width: number; height: number; scale: number } {
+  const safeScale = Math.max(0, Math.min(1, scale));
+  return {
+    width: Math.max(1, Math.floor(naturalSize.width * safeScale)),
+    height: Math.max(1, Math.floor(naturalSize.height * safeScale)),
+    scale: safeScale,
+  };
+}
+
+export function fitMaskSizeToMaxPixels(
+  naturalSize: { width: number; height: number },
+  maxPixels = MAX_AI_MASK_PIXELS
+): { width: number; height: number; scale: number } {
+  const pixels = naturalSize.width * naturalSize.height;
+  if (pixels <= maxPixels) {
+    return { ...naturalSize, scale: 1 };
+  }
+  return createScaledSize(naturalSize, Math.sqrt(maxPixels / pixels));
+}
+
+async function renderMaskBlob(
+  options: ExportMaskBrushOptions,
+  naturalSize: { width: number; height: number },
+  maskSize: { width: number; height: number; scale: number }
+) {
+  const canvas = (options.createCanvas || createDefaultCanvas)(
+    maskSize.width,
+    maskSize.height
+  );
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    throw new Error('无法创建蒙版画布');
+  }
+
+  const invert = !!options.invert;
+  ctx.clearRect(0, 0, maskSize.width, maskSize.height);
+  if (!invert) {
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, maskSize.width, maskSize.height);
+  }
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 0, maskSize.width, maskSize.height);
+  ctx.clip();
+  ctx.globalCompositeOperation = invert ? 'source-over' : 'destination-out';
+
+  const commands = buildMaskStrokeCommands(
+    options.imageElement,
+    options.maskElements,
+    maskSize
+  );
+  for (const command of commands) {
+    drawMaskStroke(ctx, command, invert ? '#fff' : '#000');
+  }
+  ctx.restore();
+  if (!invert) {
+    clearMaskCanvasEdges(ctx, maskSize.width, maskSize.height);
+  }
+
+  return {
+    blob: await canvasToBlob(canvas),
+    commands,
+    info: {
+      width: maskSize.width,
+      height: maskSize.height,
+      naturalWidth: naturalSize.width,
+      naturalHeight: naturalSize.height,
+      scale: maskSize.scale,
+    },
+  };
+}
+
 export async function exportImageMaskFromBrushes(
   options: ExportMaskBrushOptions
 ): Promise<string | undefined> {
@@ -229,48 +335,38 @@ export async function exportImageMaskFromBrushes(
   if (!naturalSize) {
     return undefined;
   }
-  if (naturalSize.width * naturalSize.height > MAX_AI_MASK_PIXELS) {
-    throw new Error('蒙版图片过大，请缩小原图后重试');
+
+  let maskSize = fitMaskSizeToMaxPixels(naturalSize);
+  let rendered = await renderMaskBlob(options, naturalSize, maskSize);
+
+  for (
+    let attempt = 0;
+    rendered.blob.size > MAX_AI_MASK_BYTES &&
+    attempt < MAX_AI_MASK_BYTE_RETRY_COUNT;
+    attempt += 1
+  ) {
+    const nextScale = rendered.info.scale *
+      Math.sqrt(MAX_AI_MASK_BYTES / rendered.blob.size) *
+      0.92;
+    const nextSize = createScaledSize(naturalSize, nextScale);
+    if (nextSize.width === maskSize.width && nextSize.height === maskSize.height) {
+      break;
+    }
+    maskSize = nextSize;
+    rendered = await renderMaskBlob(options, naturalSize, maskSize);
   }
 
-  const canvas = (options.createCanvas || createDefaultCanvas)(
-    naturalSize.width,
-    naturalSize.height
-  );
-  const ctx = canvas.getContext('2d');
-  if (!ctx) {
-    throw new Error('无法创建蒙版画布');
+  if (rendered.blob.size > MAX_AI_MASK_BYTES) {
+    throw new Error('蒙版 PNG 降采样后仍超过 4MB，请缩小原图或减少蒙版复杂度');
   }
 
-  const invert = !!options.invert;
-  ctx.clearRect(0, 0, naturalSize.width, naturalSize.height);
-  if (!invert) {
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(0, 0, naturalSize.width, naturalSize.height);
-  }
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(0, 0, naturalSize.width, naturalSize.height);
-  ctx.clip();
-  ctx.globalCompositeOperation = invert ? 'source-over' : 'destination-out';
-
-  const commands = buildMaskStrokeCommands(
-    imageElement,
-    maskElements,
-    naturalSize
-  );
-  for (const command of commands) {
+  for (const command of rendered.commands) {
     options.onDrawStroke?.(command);
-    drawMaskStroke(ctx, command, invert ? '#fff' : '#000');
   }
-  ctx.restore();
+  options.onExportInfo?.(rendered.info);
 
-  const blob = await canvasToBlob(canvas);
-  if (blob.size > MAX_AI_MASK_BYTES) {
-    throw new Error('蒙版 PNG 超过 4MB，请缩小原图或减少蒙版复杂度');
-  }
   if (options.cacheMask === false) {
-    return URL.createObjectURL(blob);
+    return URL.createObjectURL(rendered.blob);
   }
 
   const cacheId =
@@ -279,11 +375,16 @@ export async function exportImageMaskFromBrushes(
       .toString(36)
       .slice(2, 8)}`;
   const stableUrl = `/__aitu_cache__/image/${cacheId}.png`;
-  await unifiedCacheService.cacheMediaFromBlob(stableUrl, blob, 'image', {
+  await unifiedCacheService.cacheMediaFromBlob(stableUrl, rendered.blob, 'image', {
     metadata: {
       source: 'ai-mask-brush',
       imageElementId: imageElement.id,
-      invert,
+      invert: !!options.invert,
+      width: rendered.info.width,
+      height: rendered.info.height,
+      naturalWidth: rendered.info.naturalWidth,
+      naturalHeight: rendered.info.naturalHeight,
+      scale: rendered.info.scale,
     },
   });
   return stableUrl;

@@ -33,6 +33,9 @@ vi.mock('@plait/core', () => ({
     isMovingPointInBoard: isMovingPointInBoardMock,
     hasBeenTextEditing: hasBeenTextEditingMock,
     isPointer: vi.fn(),
+    isInPointer: vi.fn((board: { pointer?: string }, pointers: string[]) =>
+      pointers.includes(board.pointer || '')
+    ),
   },
   PlaitPointerType: {
     hand: 'hand',
@@ -57,6 +60,7 @@ vi.mock('@plait/mind', () => ({
 vi.mock('./freehand/type', () => ({
   FreehandShape: {
     feltTipPen: 'felt-tip-pen',
+    mask: 'mask',
     eraser: 'eraser',
     laserPointer: 'laser-pointer',
   },
@@ -167,5 +171,45 @@ describe('buildDrawnixHotkeyPlugin', () => {
     expect(updateAppStateMock).toHaveBeenCalledWith({ pointer: 'pen' });
     expect(event.defaultPrevented).toBe(true);
     expect(globalKeyDownMock).not.toHaveBeenCalled();
+  });
+
+  it.each(['felt-tip-pen', 'mask', 'eraser', 'laser-pointer'])(
+    'switches %s back to selection on Escape',
+    (pointer) => {
+      const board = buildDrawnixHotkeyPlugin(updateAppStateMock)({
+        ...createBoard(),
+        pointer,
+      } as TestBoard & { pointer: string }) as TestBoard;
+      const event = new KeyboardEvent('keydown', {
+        key: 'Escape',
+        cancelable: true,
+      });
+
+      board.globalKeyDown(event);
+
+      expect(updatePointerTypeMock).toHaveBeenCalledWith(board, 'selection');
+      expect(updateAppStateMock).toHaveBeenCalledWith({ pointer: 'selection' });
+      expect(event.defaultPrevented).toBe(true);
+      expect(globalKeyDownMock).not.toHaveBeenCalled();
+    }
+  );
+
+  it('does not switch drawing tool to selection while typing Escape', () => {
+    const board = buildDrawnixHotkeyPlugin(updateAppStateMock)({
+      ...createBoard(),
+      pointer: 'eraser',
+    } as TestBoard & { pointer: string }) as TestBoard;
+    const input = document.createElement('input');
+    const event = new KeyboardEvent('keydown', {
+      key: 'Escape',
+      cancelable: true,
+    });
+    Object.defineProperty(event, 'target', { value: input });
+
+    board.globalKeyDown(event);
+
+    expect(updatePointerTypeMock).not.toHaveBeenCalled();
+    expect(updateAppStateMock).not.toHaveBeenCalled();
+    expect(globalKeyDownMock).toHaveBeenCalledWith(event);
   });
 });

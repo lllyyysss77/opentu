@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   buildMaskStrokeCommands,
   exportImageMaskFromBrushes,
+  fitMaskSizeToMaxPixels,
   findMaskBrushesForImage,
+  MAX_AI_MASK_BYTES,
   MAX_AI_MASK_PIXELS,
 } from '../ai-mask-brush';
 import { FreehandShape } from '../../plugins/freehand/type';
@@ -19,8 +21,11 @@ vi.mock('../../services/unified-cache-service', () => ({
 
 function createMockCanvas(blobSize = 128) {
   const compositeOperations: GlobalCompositeOperation[] = [];
+  const clearRects: Array<[number, number, number, number]> = [];
   const context = {
-    clearRect: vi.fn(),
+    clearRect: vi.fn((x: number, y: number, width: number, height: number) => {
+      clearRects.push([x, y, width, height]);
+    }),
     fillRect: vi.fn(),
     save: vi.fn(),
     beginPath: vi.fn(),
@@ -51,7 +56,7 @@ function createMockCanvas(blobSize = 128) {
     }),
   } as unknown as HTMLCanvasElement;
 
-  return { canvas, context, compositeOperations };
+  return { canvas, context, compositeOperations, clearRects };
 }
 
 function imageElement(overrides: Record<string, unknown> = {}) {
@@ -120,7 +125,7 @@ describe('ai-mask-brush', () => {
   });
 
   it('导出 PNG 后缓存为稳定 URL', async () => {
-    const { canvas } = createMockCanvas();
+    const { canvas, clearRects } = createMockCanvas();
     const strokes: Array<{ points: unknown[]; strokeWidth: number }> = [];
 
     const url = await exportImageMaskFromBrushes({
@@ -139,6 +144,14 @@ describe('ai-mask-brush', () => {
     expect(url).toBe('/__aitu_cache__/image/test-mask.png');
     expect(canvas.width).toBe(200);
     expect(canvas.height).toBe(100);
+    expect(clearRects).toEqual(
+      expect.arrayContaining([
+        [0, 0, 200, 2],
+        [198, 0, 2, 100],
+        [0, 98, 200, 2],
+        [0, 0, 2, 100],
+      ])
+    );
     expect(strokes[0]).toMatchObject({
       points: [
         [20, 20],
@@ -157,7 +170,7 @@ describe('ai-mask-brush', () => {
   });
 
   it('反选时把蒙版笔迹作为不透明区域绘制', async () => {
-    const { canvas, compositeOperations } = createMockCanvas();
+    const { canvas, compositeOperations, clearRects } = createMockCanvas();
 
     const url = await exportImageMaskFromBrushes({
       imageElement: imageElement(),
@@ -174,6 +187,7 @@ describe('ai-mask-brush', () => {
 
     expect(url).toBe('/__aitu_cache__/image/test-mask-invert.png');
     expect(compositeOperations).toContain('source-over');
+    expect(clearRects).toEqual([[0, 0, 200, 100]]);
     expect(mocks.cacheMediaFromBlob).toHaveBeenCalledWith(
       '/__aitu_cache__/image/test-mask-invert.png',
       expect.any(Blob),
@@ -195,12 +209,74 @@ describe('ai-mask-brush', () => {
   });
 
   it('图片像素超限时阻止生成', async () => {
-    await expect(
-      exportImageMaskFromBrushes({
-        imageElement: imageElement(),
-        maskElements: [maskElement()],
-        naturalSize: { width: MAX_AI_MASK_PIXELS + 1, height: 1 },
-      })
-    ).rejects.toThrow('蒙版图片过大');
+    const { canvas } = createMockCanvas();
+    const strokes: Array<{ points: unknown[]; strokeWidth: number }> = [];
+    let exportInfo:
+      | { width: number; height: number; naturalWidth: number; naturalHeight: number; scale: number }
+      | undefined;
+
+    const url = await exportImageMaskFromBrushes({
+      imageElement: imageElement(),
+      maskElements: [maskElement()],
+      naturalSize: { width: 6000, height: 3000 },
+      cacheId: 'large-landscape-mask',
+      createCanvas: (width, height) => {
+        canvas.width = width;
+        canvas.height = height;
+        return canvas;
+      },
+      onDrawStroke: (command) => strokes.push(command),
+      onExportInfo: (info) => {
+        exportInfo = info;
+      },
+    });
+
+    expect(url).toBe('/__aitu_cache__/image/large-landscape-mask.png');
+    expect(canvas.width * canvas.height).toBeLessThanOrEqual(MAX_AI_MASK_PIXELS);
+    expect(canvas.width).toBeLessThan(6000);
+    expect(canvas.height).toBeLessThan(3000);
+    expect(strokes[0]).toMatchObject({
+      points: [
+        [canvas.width * 0.1, canvas.height * 0.2],
+        [canvas.width * 0.5, canvas.height * 0.6],
+      ],
+      strokeWidth: canvas.width / 10,
+    });
+    expect(exportInfo).toMatchObject({
+      width: canvas.width,
+      height: canvas.height,
+      naturalWidth: 6000,
+      naturalHeight: 3000,
+    });
+  });
+
+  it('PNG 体积超限时继续降采样重绘', async () => {
+    const blobSizes = [
+      MAX_AI_MASK_BYTES + 1024,
+      MAX_AI_MASK_BYTES - 1024,
+    ];
+    const createdSizes: Array<{ width: number; height: number }> = [];
+
+    await exportImageMaskFromBrushes({
+      imageElement: imageElement(),
+      maskElements: [maskElement()],
+      naturalSize: { width: 2000, height: 1000 },
+      cacheId: 'byte-resized-mask',
+      createCanvas: (width, height) => {
+        createdSizes.push({ width, height });
+        return createMockCanvas(blobSizes.shift() || 128).canvas;
+      },
+    });
+
+    expect(createdSizes).toHaveLength(2);
+    expect(createdSizes[1].width).toBeLessThan(createdSizes[0].width);
+    expect(createdSizes[1].height).toBeLessThan(createdSizes[0].height);
+  });
+
+  it('计算大图蒙版降采样尺寸', () => {
+    const fitted = fitMaskSizeToMaxPixels({ width: 7680, height: 4320 });
+
+    expect(fitted.width * fitted.height).toBeLessThanOrEqual(MAX_AI_MASK_PIXELS);
+    expect(fitted.scale).toBeLessThan(1);
   });
 });

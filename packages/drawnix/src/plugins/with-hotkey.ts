@@ -201,7 +201,16 @@ export const buildDrawnixHotkeyPlugin = (
             event.preventDefault();
             return;
           }
-          if (event.key === 'Escape' && PlaitBoard.isPointer(board, FreehandShape.laserPointer)) {
+          const escapeToSelectionPointers = [
+            FreehandShape.feltTipPen,
+            FreehandShape.mask,
+            FreehandShape.eraser,
+            FreehandShape.laserPointer,
+          ];
+          if (
+            event.key === 'Escape' &&
+            PlaitBoard.isInPointer(board, escapeToSelectionPointers)
+          ) {
             BoardTransforms.updatePointerType(board, PlaitPointerType.selection);
             updateAppState({ pointer: PlaitPointerType.selection });
             event.preventDefault();
