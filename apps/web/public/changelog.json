@@ -1,6 +1,24 @@
 {
   "versions": [
     {
+      "version": "0.9.3",
+      "date": "2026-05-06",
+      "changes": {
+        "features": [
+          "support AI image mask editing"
+        ],
+        "fixes": [
+          "keep send button visible",
+          "resume async image tasks after reload"
+        ],
+        "improvements": [
+          "更新版本号至0.9.2并刷新构建时间"
+        ]
+      },
+      "type": "patch",
+      "highlights": "support AI image mask editing"
+    },
+    {
       "version": "0.9.2",
       "date": "2026-05-04",
       "changes": {
@@ -774,19 +792,6 @@
       },
       "type": "patch",
       "highlights": "增强AI生成任务追踪与模型排序"
-    },
-    {
-      "version": "0.6.37",
-      "date": "2026-04-21",
-      "changes": {
-        "features": [
-          "优化启动加载与延迟功能挂载"
-        ],
-        "fixes": [],
-        "improvements": []
-      },
-      "type": "patch",
-      "highlights": "优化启动加载与延迟功能挂载"
     }
   ]
 }
