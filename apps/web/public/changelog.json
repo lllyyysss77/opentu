@@ -1,6 +1,19 @@
 {
   "versions": [
     {
+      "version": "0.9.4",
+      "date": "2026-05-06",
+      "changes": {
+        "features": [],
+        "fixes": [],
+        "improvements": [
+          "Stop idle-prefetch retries from blocking SW updates"
+        ]
+      },
+      "type": "patch",
+      "highlights": "构建修复与稳定性改进"
+    },
+    {
       "version": "0.9.3",
       "date": "2026-05-06",
       "changes": {
@@ -777,21 +790,6 @@
       },
       "type": "patch",
       "highlights": "修复版本更新后懒加载 chunk 失效白屏"
-    },
-    {
-      "version": "0.6.40",
-      "date": "2026-04-21",
-      "changes": {
-        "features": [
-          "增强AI生成任务追踪与模型排序"
-        ],
-        "fixes": [],
-        "improvements": [
-          "Refine boot error handling and idle prefetch defaults"
-        ]
-      },
-      "type": "patch",
-      "highlights": "增强AI生成任务追踪与模型排序"
     }
   ]
 }

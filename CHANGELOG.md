@@ -1,3 +1,13 @@
+## 0.9.4 (2026-05-06)
+
+### 🔧 Chores
+
+- Stop idle-prefetch retries from blocking SW updates ([d2d51319](https://github.com/ljquan/aitu/commit/d2d51319))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+
 ## 0.9.3 (2026-05-06)
 
 ### 🚀 Features
