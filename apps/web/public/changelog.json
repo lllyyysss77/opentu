@@ -1,6 +1,19 @@
 {
   "versions": [
     {
+      "version": "0.9.6",
+      "date": "2026-05-06",
+      "changes": {
+        "features": [
+          "为绘图工具添加键盘快捷键调整大小功能"
+        ],
+        "fixes": [],
+        "improvements": []
+      },
+      "type": "patch",
+      "highlights": "为绘图工具添加键盘快捷键调整大小功能"
+    },
+    {
       "version": "0.9.5",
       "date": "2026-05-06",
       "changes": {
@@ -775,19 +788,6 @@
       },
       "type": "patch",
       "highlights": "add keyboard shortcuts during pen creation"
-    },
-    {
-      "version": "0.6.42",
-      "date": "2026-04-21",
-      "changes": {
-        "features": [],
-        "fixes": [],
-        "improvements": [
-          "更新版本号至0.6.41并修复错误处理"
-        ]
-      },
-      "type": "patch",
-      "highlights": "构建修复与稳定性改进"
     }
   ]
 }

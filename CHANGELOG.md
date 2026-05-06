@@ -1,3 +1,17 @@
+## 0.9.6 (2026-05-06)
+
+### 🚀 Features
+
+- 为绘图工具添加键盘快捷键调整大小功能 ([26049f2d](https://github.com/ljquan/aitu/commit/26049f2d))
+
+### 🔧 Chores
+
+- 更新应用版本至0.9.5并刷新构建时间 ([ec03ee90](https://github.com/ljquan/aitu/commit/ec03ee90))
+
+### ❤️  Thank You
+
+- liquid <ljquan@qq.com>
+
 ## 0.9.5 (2026-05-06)
 
 ### 🩹 Fixes
