@@ -6,7 +6,12 @@
  */
 
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import { PlaitBoard, BoardTransforms } from '@plait/core';
+import {
+  ATTACHED_ELEMENT_CLASS_NAME,
+  PlaitBoard,
+  BoardTransforms,
+  getViewportOrigination,
+} from '@plait/core';
 import { MinusIcon, AddIcon, ChevronDownIcon } from 'tdesign-icons-react';
 import { useBoard } from '@plait-board/react-board';
 import { Minimap } from '../minimap/Minimap';
@@ -14,8 +19,10 @@ import { useChatDrawerControl } from '../../contexts/ChatDrawerContext';
 import { Popover, PopoverContent, PopoverTrigger } from '../popover/popover';
 import { Z_INDEX } from '../../constants/z-index';
 import { useI18n } from '../../i18n';
-import { fitFrame } from '../../utils/fit-frame';
+import { fitAllPPTFrames, fitFrame } from '../../utils/fit-frame';
 import { HoverTip } from '../shared/hover';
+import { isFrameElement } from '../../types/frame.types';
+import { requestOpenPPTEditor } from '../../services/ppt/ppt-ui-events';
 import './view-navigation.scss';
 
 export interface ViewNavigationProps {
@@ -29,6 +36,18 @@ export interface ViewNavigationProps {
 const EDGE_MARGIN = 10;
 // 自动隐藏延迟（毫秒）
 const AUTO_HIDE_DELAY = 3000;
+
+const getViewportSnapshot = (board?: PlaitBoard) => {
+  const origination = board
+    ? getViewportOrigination(board) || board.viewport.origination
+    : undefined;
+
+  return {
+    zoom: board?.viewport?.zoom || 1,
+    originX: origination?.[0] || 0,
+    originY: origination?.[1] || 0,
+  };
+};
 
 export const ViewNavigation: React.FC<ViewNavigationProps> = ({
   showMinimap = true,
@@ -44,19 +63,24 @@ export const ViewNavigation: React.FC<ViewNavigationProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   
   // 用于检测 viewport 变化
-  const lastViewportRef = useRef({
-    zoom: board?.viewport?.zoom || 1,
-    offsetX: board?.viewport?.offsetX || 0,
-    offsetY: board?.viewport?.offsetY || 0,
-  });
-  const initializedRef = useRef(false);
+  const lastViewportRef = useRef<
+    ReturnType<typeof getViewportSnapshot> | null
+  >(null);
   const autoHideTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // 计算右侧偏移量
   const rightOffset = useMemo(() => {
     if (isDrawerOpen) {
-      return drawerWidth + EDGE_MARGIN;
+      return `calc(var(--aitu-toolbar-right-dock-width, 0px) + ${
+        drawerWidth + EDGE_MARGIN
+      }px)`;
     }
+
+    const toolbarAvoidance = 'var(--aitu-toolbar-right-avoidance, 0px)';
+    if (typeof CSS !== 'undefined' && CSS.supports('right', 'max(1px, 2px)')) {
+      return `max(${EDGE_MARGIN}px, ${toolbarAvoidance})`;
+    }
+
     return EDGE_MARGIN;
   }, [isDrawerOpen, drawerWidth]);
 
@@ -79,11 +103,32 @@ export const ViewNavigation: React.FC<ViewNavigationProps> = ({
     setZoomMenuOpen(false);
   }, [board]);
 
+  const openPPTEditorIfNoFrame = useCallback((): boolean => {
+    const hasFrame = board.children.some(isFrameElement);
+    if (hasFrame) {
+      return false;
+    }
+
+    requestOpenPPTEditor({ viewMode: 'slides' });
+    return true;
+  }, [board]);
+
   // 自适应 Frame：将选中的 Frame（或第一个 Frame）缩放到可视区域完整显示
   const handleFitFrame = useCallback(() => {
-    fitFrame(board);
     setZoomMenuOpen(false);
-  }, [board]);
+    if (openPPTEditorIfNoFrame()) {
+      return;
+    }
+    fitFrame(board);
+  }, [board, openPPTEditorIfNoFrame]);
+
+  const handleFitPPTGlobal = useCallback(() => {
+    setZoomMenuOpen(false);
+    if (openPPTEditorIfNoFrame()) {
+      return;
+    }
+    fitAllPPTFrames(board);
+  }, [board, openPPTEditorIfNoFrame]);
 
   // 手动切换 minimap 展开状态
   const toggleMinimap = useCallback(() => {
@@ -125,29 +170,23 @@ export const ViewNavigation: React.FC<ViewNavigationProps> = ({
     if (!showMinimap || !board) return;
 
     const checkInterval = setInterval(() => {
-      const current = board.viewport;
+      const current = getViewportSnapshot(board);
       const last = lastViewportRef.current;
+      if (!last) {
+        lastViewportRef.current = current;
+        return;
+      }
 
       const hasZoomChanged = Math.abs(current.zoom - last.zoom) > 0.001;
-      const hasOffsetChanged =
-        Math.abs(current.offsetX - last.offsetX) > 0.5 ||
-        Math.abs(current.offsetY - last.offsetY) > 0.5;
+      const hasOriginChanged =
+        Math.abs(current.originX - last.originX) > 0.5 ||
+        Math.abs(current.originY - last.originY) > 0.5;
 
-      const hasInteraction = hasZoomChanged || hasOffsetChanged;
+      const hasInteraction = hasZoomChanged || hasOriginChanged;
 
       if (hasInteraction) {
         // 更新记录
-        lastViewportRef.current = {
-          zoom: current.zoom,
-          offsetX: current.offsetX,
-          offsetY: current.offsetY,
-        };
-
-        // 跳过初始化阶段的 viewport 变化
-        if (!initializedRef.current) {
-          initializedRef.current = true;
-          return;
-        }
+        lastViewportRef.current = current;
 
         // 有交互时自动展开小地图
         if (!minimapExpanded) {
@@ -193,7 +232,7 @@ export const ViewNavigation: React.FC<ViewNavigationProps> = ({
 
   return (
     <div
-      className="view-navigation"
+      className={`view-navigation ${ATTACHED_ELEMENT_CLASS_NAME}`}
       style={{
         right: rightOffset,
         zIndex: Z_INDEX.VIEW_NAVIGATION,
@@ -234,7 +273,11 @@ export const ViewNavigation: React.FC<ViewNavigationProps> = ({
               </button>
             </PopoverTrigger>
           </HoverTip>
-          <PopoverContent container={container} style={{ zIndex: Z_INDEX.POPOVER }}>
+          <PopoverContent
+            className={ATTACHED_ELEMENT_CLASS_NAME}
+            container={container}
+            style={{ zIndex: Z_INDEX.POPOVER }}
+          >
             <div className="view-navigation-zoom-menu">
               <button
                 className="zoom-menu-item"
@@ -250,6 +293,13 @@ export const ViewNavigation: React.FC<ViewNavigationProps> = ({
                 data-track="view_nav_zoom_fit_frame"
               >
                 <span className="zoom-menu-item__label">{t('zoom.fitFrame')}</span>
+              </button>
+              <button
+                className="zoom-menu-item"
+                onClick={handleFitPPTGlobal}
+                data-track="view_nav_zoom_fit_ppt_global"
+              >
+                <span className="zoom-menu-item__label">{t('zoom.fitPPTGlobal')}</span>
               </button>
               <button
                 className="zoom-menu-item"

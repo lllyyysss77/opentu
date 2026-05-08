@@ -37,7 +37,7 @@ export const FeedbackButton: React.FC = () => {
           type="icon"
           icon={<WeComIcon />}
           aria-label="用户反馈群"
-          title="用户反馈群"
+          tooltip="用户反馈群"
           tooltipPlacement="right"
           selected={open}
           visible={true}

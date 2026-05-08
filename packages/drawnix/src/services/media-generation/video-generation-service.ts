@@ -26,6 +26,7 @@ import {
   TaskStatus as QueueTaskStatus,
   TaskExecutionPhase,
 } from '../../types/task.types';
+import { createTaskInvocationRouteSnapshot } from '../task-invocation-route';
 
 /**
  * 生成视频
@@ -57,17 +58,27 @@ export async function generateVideo(
   // 创建任务记录
   const taskId = generateTaskId();
   const now = Date.now();
-  await taskStorageWriter.createTask(taskId, 'video', {
-    prompt: sanitizedParams.prompt,
-    model: options.model || 'veo3',
-    modelRef: options.modelRef || null,
-    duration:
-      typeof options.duration === 'string'
-        ? parseInt(options.duration, 10)
-        : options.duration,
-    size: options.size,
-    params: options.params,
-  });
+  const invocationRoute = createTaskInvocationRouteSnapshot(
+    'video',
+    options.modelRef || options.model || 'veo3'
+  );
+  await taskStorageWriter.createTask(
+    taskId,
+    'video',
+    {
+      prompt: sanitizedParams.prompt,
+      model: options.model || 'veo3',
+      modelRef: options.modelRef || null,
+      duration:
+        typeof options.duration === 'string'
+          ? parseInt(options.duration, 10)
+          : options.duration,
+      size: options.size,
+      params: options.params,
+      promptMeta: options.promptMeta,
+    },
+    invocationRoute
+  );
 
   // 注册到 TaskQueueService 内存 Map，确保任务队列 UI 和重试功能可用
   taskQueueService.trackExternalTask({
@@ -80,10 +91,12 @@ export async function generateVideo(
       modelRef: options.modelRef || null,
       size: options.size,
       params: options.params,
+      promptMeta: options.promptMeta,
     },
     createdAt: now,
     updatedAt: now,
     startedAt: now,
+    invocationRoute,
     executionPhase: TaskExecutionPhase.SUBMITTING,
     progress: 0,
   });

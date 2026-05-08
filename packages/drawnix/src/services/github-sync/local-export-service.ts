@@ -4,7 +4,6 @@
  */
 
 import { logDebug, logInfo, logSuccess, logWarning, logError } from './sync-log-service';
-import JSZip from 'jszip';
 import { dataSerializer } from './data-serializer';
 import { mediaCollector } from './media-collector';
 import { unifiedCacheService } from '../unified-cache-service';
@@ -14,6 +13,7 @@ import type {
   SyncedMediaFile,
   MediaSyncProgressCallback,
 } from './types';
+import { base64ToBlob, blobToBase64, formatSize } from './blob-utils';
 
 /** 导出进度回调 */
 export type ExportProgressCallback = (
@@ -47,43 +47,6 @@ export interface LocalImportResult {
     media: number;
   };
   errors: string[];
-}
-
-/**
- * 将 Blob 转换为 Base64
- */
-async function blobToBase64(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const base64 = reader.result as string;
-      const base64Data = base64.split(',')[1];
-      resolve(base64Data);
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
-}
-
-/**
- * 将 Base64 转换为 Blob
- */
-function base64ToBlob(base64: string, mimeType: string): Blob {
-  const binaryString = atob(base64);
-  const bytes = new Uint8Array(binaryString.length);
-  for (let i = 0; i < binaryString.length; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
-  return new Blob([bytes], { type: mimeType });
-}
-
-/**
- * 格式化文件大小
- */
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
 /**
@@ -121,6 +84,7 @@ class LocalExportService {
     };
 
     try {
+      const { default: JSZip } = await import('jszip');
       const zip = new JSZip();
 
       // 阶段 1：收集同步数据
@@ -288,6 +252,7 @@ class LocalExportService {
 
     try {
       onProgress?.(5, '正在读取文件...', 'collecting');
+      const { default: JSZip } = await import('jszip');
       const zip = await JSZip.loadAsync(file);
 
       onProgress?.(10, '正在验证文件格式...', 'collecting');

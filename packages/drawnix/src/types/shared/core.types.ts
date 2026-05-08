@@ -8,6 +8,9 @@
  * 主线程和 SW 都从这里导入，确保类型一致性。
  */
 
+import type { CacheWarning } from '../cache-warning.types';
+import type { ModelRef } from '../../utils/settings-manager';
+
 // ============================================================================
 // Chat Tool Call
 // ============================================================================
@@ -83,25 +86,102 @@ export enum TaskExecutionPhase {
   DOWNLOADING = 'downloading',
 }
 
+export type TaskInvocationOperation = 'image' | 'video' | 'audio' | 'text';
+
+export interface TaskInvocationBindingSnapshot {
+  id?: string;
+  protocol?: string;
+  requestSchema?: string;
+  responseSchema?: string;
+  submitPath?: string;
+  pollPathTemplate?: string;
+  baseUrlStrategy?: 'preserve' | 'trim-v1';
+  metadata?: Record<string, unknown>;
+}
+
+export interface TaskInvocationRouteSnapshot {
+  operation: TaskInvocationOperation;
+  modelRef?: ModelRef | null;
+  providerProfileId?: string | null;
+  providerType?: string | null;
+  modelId?: string | null;
+  binding?: TaskInvocationBindingSnapshot | null;
+}
+
 // ============================================================================
 // Generation Parameters
 // ============================================================================
 
-/**
- * Generation parameters interface
- * Contains all parameters needed for AI content generation
- */
-import type { ModelRef } from '../../utils/settings-manager';
+export interface KnowledgeContextRef {
+  noteId: string;
+  title: string;
+  directoryId?: string;
+  updatedAt?: number;
+}
+
+export interface GenerationAssetMetadata {
+  category?: 'GENERAL' | 'CHARACTER';
+  characterName?: string;
+  characterPrompt?: string;
+}
 
 export interface GenerationParams {
   /** Text prompt describing the desired content */
   prompt: string;
+  /** Lightweight asset-library metadata for generated media */
+  assetMetadata?: GenerationAssetMetadata;
+  /** Lightweight Knowledge Base note references used as generation context */
+  knowledgeContextRefs?: KnowledgeContextRef[];
+  /** Lightweight prompt lineage metadata used by prompt history views */
+  promptMeta?: {
+    /** Prompt entered before parsing or optimization */
+    initialPrompt?: string;
+    /** Prompt actually sent to the generation tool */
+    sentPrompt?: string;
+    /** Display title for history cards */
+    title?: string;
+    /** Prompt category for filtering */
+    category?:
+      | 'image'
+      | 'video'
+      | 'audio'
+      | 'text'
+      | 'agent'
+      | 'ppt-common'
+      | 'ppt-slide';
+    /** Lightweight tags such as Skill names */
+    tags?: string[];
+    /** Lightweight Knowledge Base note references used by this prompt */
+    knowledgeContextRefs?: KnowledgeContextRef[];
+    /** Agent Skill identifier, when available */
+    skillId?: string;
+    /** Agent Skill display name, when available */
+    skillName?: string;
+  };
   /** Image/video width in pixels */
   width?: number;
   /** Image/video height in pixels */
   height?: number;
   /** Size parameter for API (e.g., '16x9', '1x1') */
   size?: string;
+  /** Image generation mode for providers that distinguish generation/edit */
+  generationMode?: 'text_to_image' | 'image_to_image' | 'image_edit';
+  /** Whether this image task is generating a PPT slide image */
+  pptSlideImage?: boolean;
+  /** PPT slide-specific prompt, separated from the full generated image prompt */
+  pptSlidePrompt?: string;
+  /** Existing PPT slide element to replace after generation */
+  pptReplaceElementId?: string;
+  /** Image edit mask URL or data URL */
+  maskImage?: string;
+  /** Image edit input fidelity */
+  inputFidelity?: 'high' | 'low';
+  /** Image output background mode */
+  background?: 'transparent' | 'opaque' | 'auto';
+  /** Image output format */
+  outputFormat?: 'png' | 'jpeg' | 'webp';
+  /** Image output compression, 0-100 */
+  outputCompression?: number;
   /** Video duration in seconds (video only) */
   duration?: number;
   /** Audio title */
@@ -215,6 +295,8 @@ export interface TaskResult {
   analysisData?: unknown;
   /** Tool calls made during chat (chat only) */
   toolCalls?: ChatToolCall[];
+  /** Cache failure warning for media results */
+  cacheWarning?: CacheWarning;
 }
 
 export type TaskResultKind =
@@ -313,6 +395,8 @@ export interface Task {
   progress?: number;
   /** Remote task ID from API (e.g., videoId for video generation) */
   remoteId?: string;
+  /** Provider/model route snapshot used to resume async tasks with the original supplier */
+  invocationRoute?: TaskInvocationRouteSnapshot;
   /** Current execution phase for recovery support */
   executionPhase?: TaskExecutionPhase;
   /** Whether the task result has been saved to the media library */

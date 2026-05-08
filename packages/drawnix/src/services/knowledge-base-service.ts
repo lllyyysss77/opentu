@@ -6,6 +6,7 @@
  */
 
 import localforage from 'localforage';
+import { generateUUID } from '../utils/runtime-helpers';
 import { IDB_DATABASES, LS_KEYS } from '../constants/storage-keys';
 import type {
   KBDirectory,
@@ -25,15 +26,6 @@ import {
   KB_DEFAULT_SORT,
   KB_DEFAULT_DIRECTORIES,
 } from '../types/knowledge-base.types';
-
-import {
-  exportAllData,
-  importAllData,
-  exportNoteAsMarkdown,
-  importNoteFromMarkdown,
-  exportAsZip,
-  importFromZip,
-} from './kb-import-export-service';
 
 const { NAME, STORES } = IDB_DATABASES.KNOWLEDGE_BASE;
 
@@ -69,7 +61,7 @@ const noteImagesStore = localforage.createInstance({
 });
 
 function generateId(): string {
-  return crypto.randomUUID();
+  return generateUUID();
 }
 
 /**
@@ -833,16 +825,6 @@ export function loadSortPreference(): KBSortOptions {
   return KB_DEFAULT_SORT;
 }
 
-// --- Import & Export (delegated to kb-import-export-service.ts) ---
-
-export {
-  exportAllData,
-  importAllData,
-  exportNoteAsMarkdown,
-  importNoteFromMarkdown,
-  exportAsZip,
-} from './kb-import-export-service';
-
 // --- Initialize ---
 
 export async function initializeKnowledgeBase(): Promise<void> {
@@ -858,6 +840,5 @@ export const knowledgeBaseService = {
   getNotesBySourceUrl, upsertNoteBySourceUrl, batchCreateNotes, getUniqueDomains,
   searchNotes, sortNoteMetas, filterNotes, saveSortPreference, loadSortPreference,
   getStorageUsage, isStorageNearQuota,
-  exportAllData, importAllData, exportNoteAsMarkdown, importNoteFromMarkdown, exportAsZip, importFromZip,
   _getStoreInstances,
 };

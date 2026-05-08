@@ -1,37 +1,24 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import React, {
+  useState,
+  useRef,
+  useEffect,
+  useCallback,
+  useMemo,
+} from 'react';
 import { createPortal } from 'react-dom';
-import { Lightbulb, Sparkles, X } from 'lucide-react';
-import {
-  buildPromptOptimizationRequest,
-  getPromptExample,
-  normalizeOptimizedPromptResult,
-} from './ai-generation-utils';
+import { Lightbulb } from 'lucide-react';
+import { getPromptExample } from './ai-generation-utils';
 import { CharacterMentionPopup } from '../../character/CharacterMentionPopup';
 import { useMention } from '../../../hooks/useMention';
+import { useGenerationHistory } from '../../../hooks/useGenerationHistory';
 import { Z_INDEX } from '../../../constants/z-index';
 import { promptStorageService } from '../../../services/prompt-storage-service';
-import { PromptListPanel, type PromptItem } from '../../shared';
-import { MessagePlugin } from 'tdesign-react';
-import { executorFactory } from '../../../services/media-executor';
-import { ModelDropdown } from '../../ai-input-bar/ModelDropdown';
-import { useSelectableModels } from '../../../hooks/use-runtime-models';
 import {
-  createModelRef,
-  resolveInvocationRoute,
-  type ModelRef,
-} from '../../../utils/settings-manager';
-import { getPinnedSelectableModel } from '../../../utils/runtime-model-discovery';
-import {
-  findMatchingSelectableModel,
-  getModelRefFromConfig,
-  getSelectionKey,
-} from '../../../utils/model-selection';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeading,
-} from '../../dialog/dialog';
+  PromptListPanel,
+  PromptOptimizeButton,
+  type PromptItem,
+} from '../../shared';
+import { resolvePresetPromptItems } from './prompt-utils';
 import './PromptInput.scss';
 
 interface PromptInputProps {
@@ -60,39 +47,49 @@ export const PromptInput: React.FC<PromptInputProps> = ({
   videoProvider,
 }) => {
   const [isPresetOpen, setIsPresetOpen] = useState(false);
-  const [isOptimizeDialogOpen, setIsOptimizeDialogOpen] = useState(false);
-  const [optimizerRequirements, setOptimizerRequirements] = useState('');
-  const [isOptimizing, setIsOptimizing] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
-  const optimizationAbortRef = useRef<AbortController | null>(null);
-  const [tooltipPosition, setTooltipPosition] = useState<{ bottom: number; right: number; maxHeight: number } | null>(null);
+  const [tooltipPosition, setTooltipPosition] = useState<{
+    bottom: number;
+    right: number;
+    maxHeight: number;
+  } | null>(null);
   const [updateTrigger, setUpdateTrigger] = useState(0); // 用于触发重新渲染
-  const textModels = useSelectableModels('text');
-  const initialTextRoute = resolveInvocationRoute('text');
-  const initialTextModelId = initialTextRoute.modelId || textModels[0]?.id || '';
-  const initialTextModelRef =
-    createModelRef(initialTextRoute.profileId, initialTextRoute.modelId) ||
-    (initialTextModelId ? createModelRef(null, initialTextModelId) : null);
-  const [optimizerModel, setOptimizerModel] = useState(initialTextModelId);
-  const [optimizerModelRef, setOptimizerModelRef] = useState<ModelRef | null>(
-    initialTextModelRef
-  );
+  const { imageHistory, videoHistory } = useGenerationHistory();
+
+  useEffect(() => {
+    if (typeof promptStorageService.subscribeChanges !== 'function') {
+      return undefined;
+    }
+
+    return promptStorageService.subscribeChanges(() => {
+      setUpdateTrigger((prev) => prev + 1);
+    });
+  }, []);
 
   // 处理后的提示词列表（排序和过滤，转换为 PromptItem 格式）
   const promptItems: PromptItem[] = useMemo(() => {
-    const sorted = promptStorageService.sortPrompts(type, presetPrompts);
-    return sorted.map((content, index) => ({
-      id: `preset-${index}-${content.slice(0, 20)}`,
-      content,
-      pinned: promptStorageService.isPinned(type, content),
-    }));
+    return resolvePresetPromptItems({
+      generationType: type,
+      language,
+      promptContents: presetPrompts,
+      imageHistory,
+      videoHistory,
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [type, presetPrompts, updateTrigger]);
+  }, [
+    imageHistory,
+    language,
+    type,
+    presetPrompts,
+    updateTrigger,
+    videoHistory,
+  ]);
 
   // Use mention hook for @ functionality
   // Only enable for video type with Sora provider (@ mention is a Sora-specific feature)
-  const isMentionEnabled = enableMention && type === 'video' && videoProvider === 'sora';
+  const isMentionEnabled =
+    enableMention && type === 'video' && videoProvider === 'sora';
   const {
     mentionState,
     textareaRef,
@@ -117,13 +114,20 @@ export const PromptInput: React.FC<PromptInputProps> = ({
       // bottom: 弹窗底边到视口底部的距离（弹窗在按钮上方 4px）
       const bottom = window.innerHeight - rect.top + 4;
       // 面板实际宽度（窄屏时自适应）
-      const panelWidth = Math.min(PANEL_MAX_WIDTH, window.innerWidth - MARGIN * 2);
+      const panelWidth = Math.min(
+        PANEL_MAX_WIDTH,
+        window.innerWidth - MARGIN * 2
+      );
       // right: 弹窗右边缘到视口右边缘的距离（与按钮右边对齐，但不能溢出左边缘）
       const rightFromButton = window.innerWidth - rect.right;
       const maxRight = window.innerWidth - panelWidth - MARGIN;
       const right = Math.max(Math.min(rightFromButton, maxRight), MARGIN);
       // maxHeight: 限制面板高度（取默认值、按钮上方可用空间、视口45%三者最小值）
-      const maxHeight = Math.min(PANEL_DEFAULT_MAX_HEIGHT, rect.top - MARGIN, window.innerHeight * 0.45);
+      const maxHeight = Math.min(
+        PANEL_DEFAULT_MAX_HEIGHT,
+        rect.top - MARGIN,
+        window.innerHeight * 0.45
+      );
 
       setTooltipPosition({ bottom, right, maxHeight });
     }
@@ -151,7 +155,9 @@ export const PromptInput: React.FC<PromptInputProps> = ({
       // 检查点击是否在按钮或 tooltip 内
       if (containerRef.current && !containerRef.current.contains(target)) {
         // 还需要检查是否点击了 portal 中的 tooltip
-        const tooltipElement = document.querySelector('.preset-prompt-panel-portal');
+        const tooltipElement = document.querySelector(
+          '.preset-prompt-panel-portal'
+        );
         if (!tooltipElement?.contains(target)) {
           setIsPresetOpen(false);
         }
@@ -160,48 +166,61 @@ export const PromptInput: React.FC<PromptInputProps> = ({
 
     if (isPresetOpen) {
       document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
+      return () =>
+        document.removeEventListener('mousedown', handleClickOutside);
     }
     return undefined;
   }, [isPresetOpen]);
 
   // 选择提示词 - 接收 PromptItem 对象或字符串
-  const handleSelect = useCallback((item: PromptItem | string) => {
-    const content = typeof item === 'string' ? item : item.content;
-    onPromptChange(content);
-    onError?.(null);
-    setIsPresetOpen(false);
-  }, [onPromptChange, onError]);
+  const handleSelect = useCallback(
+    (item: PromptItem | string) => {
+      const content = typeof item === 'string' ? item : item.content;
+      onPromptChange(content);
+      onError?.(null);
+      setIsPresetOpen(false);
+    },
+    [onPromptChange, onError]
+  );
 
   // 置顶/取消置顶提示词
-  const handleTogglePin = useCallback((id: string) => {
-    const item = promptItems.find(p => p.id === id);
-    if (!item) return;
-    
-    if (item.pinned) {
-      promptStorageService.unpinPrompt(type, item.content);
-    } else {
-      promptStorageService.pinPrompt(type, item.content);
-    }
-    setUpdateTrigger(prev => prev + 1);
-  }, [type, promptItems]);
+  const handleTogglePin = useCallback(
+    (id: string) => {
+      const item = promptItems.find((p) => p.id === id);
+      if (!item) return;
+
+      if (item.pinned) {
+        promptStorageService.unpinPrompt(type, item.content);
+      } else {
+        promptStorageService.pinPrompt(type, item.content);
+      }
+      setUpdateTrigger((prev) => prev + 1);
+    },
+    [type, promptItems]
+  );
 
   // 删除提示词
-  const handleDelete = useCallback((id: string) => {
-    const item = promptItems.find(p => p.id === id);
-    if (!item) return;
-    
-    promptStorageService.deletePrompt(type, item.content);
-    setUpdateTrigger(prev => prev + 1);
-  }, [type, promptItems]);
+  const handleDelete = useCallback(
+    (id: string) => {
+      const item = promptItems.find((p) => p.id === id);
+      if (!item) return;
+
+      promptStorageService.deletePrompt(type, item.content);
+      setUpdateTrigger((prev) => prev + 1);
+    },
+    [type, promptItems]
+  );
 
   // Handle textarea change
-  const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const value = e.target.value;
-    const cursorPos = e.target.selectionStart || 0;
-    handleTextChange(value, cursorPos);
-    onError?.(null);
-  }, [handleTextChange, onError]);
+  const handleChange = useCallback(
+    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      const value = e.target.value;
+      const cursorPos = e.target.selectionStart || 0;
+      handleTextChange(value, cursorPos);
+      onError?.(null);
+    },
+    [handleTextChange, onError]
+  );
 
   // Close mention popup when type changes
   useEffect(() => {
@@ -210,191 +229,29 @@ export const PromptInput: React.FC<PromptInputProps> = ({
     }
   }, [type, closeMentionPopup]);
 
-  const visibleTextModels = useMemo(() => {
-    const matchedModel = findMatchingSelectableModel(
-      textModels,
-      optimizerModel,
-      optimizerModelRef
-    );
-    if (matchedModel || !optimizerModel) {
-      return textModels;
-    }
-
-    const pinnedModel = getPinnedSelectableModel(
-      'text',
-      optimizerModel,
-      optimizerModelRef
-    );
-    return pinnedModel ? [pinnedModel, ...textModels] : textModels;
-  }, [optimizerModel, optimizerModelRef, textModels]);
-
-  const syncOptimizerModelFromRoute = useCallback(() => {
-    const route = resolveInvocationRoute('text');
-    const routeModelRef = createModelRef(route.profileId, route.modelId);
-    const matchedModel =
-      findMatchingSelectableModel(textModels, route.modelId, routeModelRef) ||
-      getPinnedSelectableModel('text', route.modelId, routeModelRef);
-    const nextModelId = matchedModel?.id || route.modelId || textModels[0]?.id || '';
-    const nextModelRef =
-      getModelRefFromConfig(matchedModel) ||
-      routeModelRef ||
-      (nextModelId ? createModelRef(null, nextModelId) : null);
-
-    setOptimizerModel(nextModelId);
-    setOptimizerModelRef(nextModelRef);
-  }, [textModels]);
-
-  const handleCloseOptimizeDialog = useCallback(() => {
-    console.info('[PromptOptimize] close dialog', {
-      type,
-      language,
-    });
-    optimizationAbortRef.current?.abort();
-    optimizationAbortRef.current = null;
-    setIsOptimizing(false);
-    setOptimizerRequirements('');
-    setIsOptimizeDialogOpen(false);
-  }, [language, type]);
-
-  const handleOpenOptimizeDialog = useCallback(() => {
-    console.info('[PromptOptimize] handleOpenOptimizeDialog', {
-      type,
-      language,
-      promptLength: prompt.trim().length,
-      disabled,
-      isOptimizing,
-      model: optimizerModel,
-      modelRef: optimizerModelRef,
-    });
-
-    if (!prompt.trim()) {
-      MessagePlugin.warning(
-        language === 'zh' ? '请先输入提示词' : 'Please enter a prompt first'
-      );
-      return;
-    }
-
-    syncOptimizerModelFromRoute();
-    setOptimizerRequirements('');
-    setIsOptimizeDialogOpen(true);
-  }, [
-    disabled,
-    isOptimizing,
-    language,
-    optimizerModel,
-    optimizerModelRef,
-    prompt,
-    syncOptimizerModelFromRoute,
-    type,
-  ]);
-
-  const handleOptimizePrompt = useCallback(async () => {
-    const rawPrompt = prompt.trim();
-    if (!rawPrompt) {
-      MessagePlugin.warning(
-        language === 'zh' ? '请先输入提示词' : 'Please enter a prompt first'
-      );
-      return;
-    }
-
-    const controller = new AbortController();
-    optimizationAbortRef.current?.abort();
-    optimizationAbortRef.current = controller;
-    setIsOptimizing(true);
-
-    try {
-      const optimizedPrompt = normalizeOptimizedPromptResult(
-        (
-          await executorFactory.getFallbackExecutor().generateText(
-            {
-              prompt: buildPromptOptimizationRequest({
-                originalPrompt: rawPrompt,
-                optimizationRequirements: optimizerRequirements,
-                language,
-                type,
-              }),
-              model: optimizerModel || undefined,
-              modelRef: optimizerModelRef,
-            },
-            {
-              signal: controller.signal,
-            }
-          )
-        ).content
-      );
-
-      if (!optimizedPrompt) {
-        throw new Error('Empty optimized prompt');
-      }
-
-      onPromptChange(optimizedPrompt);
-      onError?.(null);
-      MessagePlugin.success(
-        language === 'zh' ? '提示词优化完成' : 'Prompt optimized'
-      );
-      setOptimizerRequirements('');
-      setIsOptimizeDialogOpen(false);
-    } catch (error) {
-      if (controller.signal.aborted) {
-        return;
-      }
-      console.error('[PromptInput] Failed to optimize prompt:', error);
-      MessagePlugin.error(
-        language === 'zh'
-          ? '提示词优化失败，请稍后重试'
-          : 'Failed to optimize prompt, please try again later'
-      );
-    } finally {
-      if (optimizationAbortRef.current === controller) {
-        optimizationAbortRef.current = null;
-      }
-      setIsOptimizing(false);
-    }
-  }, [
-    language,
-    onError,
-    onPromptChange,
-    optimizerModel,
-    optimizerModelRef,
-    optimizerRequirements,
-    prompt,
-    type,
-  ]);
-
-  useEffect(() => {
-    console.info('[PromptOptimize] dialog state changed', {
-      type,
-      open: isOptimizeDialogOpen,
-    });
-  }, [isOptimizeDialogOpen, type]);
-
-  useEffect(() => {
-    return () => {
-      optimizationAbortRef.current?.abort();
-      optimizationAbortRef.current = null;
-    };
-  }, []);
-
   // 渲染 tooltip 内容
   const renderTooltipContent = () => {
     if (!isPresetOpen || !tooltipPosition) return null;
 
-    const title = language === 'zh' 
-      ? `${type === 'image' ? '图片' : '视频'}描述预设` 
-      : `${type === 'image' ? 'Image' : 'Video'} Description Presets`;
+    const title =
+      language === 'zh'
+        ? `${type === 'image' ? '图片' : '视频'}描述预设`
+        : `${type === 'image' ? 'Image' : 'Video'} Description Presets`;
 
     const tooltipContent = (
       <div
         className="preset-prompt-panel-portal"
-        style={{
-          position: 'fixed',
-          bottom: tooltipPosition.bottom,
-          right: tooltipPosition.right,
-          zIndex: Z_INDEX.DIALOG_POPOVER,
-          // 通过 CSS 变量传递约束值，因为子元素 max-height: 100% 无法继承父元素的 maxHeight
-          ['--panel-max-width' as string]: 'calc(100vw - 16px)',
-          ['--panel-max-height' as string]: `${tooltipPosition.maxHeight}px`,
-        } as React.CSSProperties}
+        style={
+          {
+            position: 'fixed',
+            bottom: tooltipPosition.bottom,
+            right: tooltipPosition.right,
+            zIndex: Z_INDEX.DIALOG_POPOVER,
+            // 通过 CSS 变量传递约束值，因为子元素 max-height: 100% 无法继承父元素的 maxHeight
+            ['--panel-max-width' as string]: 'calc(100vw - 16px)',
+            ['--panel-max-height' as string]: `${tooltipPosition.maxHeight}px`,
+          } as React.CSSProperties
+        }
       >
         <PromptListPanel
           title={title}
@@ -415,22 +272,24 @@ export const PromptInput: React.FC<PromptInputProps> = ({
   return (
     <div className="form-field form-field--prompt">
       <div className="form-label-with-icon">
-      <label className="form-label">
-        {language === 'zh' ? `${type === 'image' ? '图片' : '视频'}描述` : `${type === 'image' ? 'Image' : 'Video'} Description`}
-      </label>
-      <div className="textarea-with-preset">
-        <div className="preset-tooltip-container" ref={containerRef}>
-          <button
-            ref={buttonRef}
-            type="button"
-            className="preset-icon-button"
-            disabled={disabled}
-            onClick={() => setIsPresetOpen(!isPresetOpen)}
-          >
-            <Lightbulb size={16} />
-          </button>
-          {renderTooltipContent()}
-        </div>
+        <label className="form-label">
+          {language === 'zh'
+            ? `${type === 'image' ? '图片' : '视频'}描述`
+            : `${type === 'image' ? 'Image' : 'Video'} Description`}
+        </label>
+        <div className="textarea-with-preset">
+          <div className="preset-tooltip-container" ref={containerRef}>
+            <button
+              ref={buttonRef}
+              type="button"
+              className="preset-icon-button"
+              disabled={disabled}
+              onClick={() => setIsPresetOpen(!isPresetOpen)}
+            >
+              <Lightbulb size={16} />
+            </button>
+            {renderTooltipContent()}
+          </div>
         </div>
       </div>
       <div className="prompt-textarea-wrapper">
@@ -444,36 +303,19 @@ export const PromptInput: React.FC<PromptInputProps> = ({
           rows={4}
           disabled={disabled}
         />
-        <button
-          type="button"
+        <PromptOptimizeButton
           className="prompt-optimize-button"
-          onPointerDown={(event) => {
-            const rect = buttonRef.current?.getBoundingClientRect();
-            console.info('[PromptOptimize] button pointerdown', {
-              type,
-              targetClass:
-                event.target instanceof HTMLElement
-                  ? event.target.className
-                  : 'unknown',
-              currentTargetClass:
-                event.currentTarget instanceof HTMLElement
-                  ? event.currentTarget.className
-                  : 'unknown',
-              rect,
-            });
+          originalPrompt={prompt}
+          language={language}
+          scenarioId={type === 'image' ? 'tool.image' : 'tool.video'}
+          disabled={disabled}
+          tooltipPlacement="top"
+          allowStructuredMode={true}
+          onApply={(optimizedPrompt) => {
+            onPromptChange(optimizedPrompt);
+            onError?.(null);
           }}
-          onClick={() => {
-            console.info('[PromptOptimize] button click', {
-              type,
-            });
-            handleOpenOptimizeDialog();
-          }}
-          disabled={disabled || isOptimizing}
-          aria-label={language === 'zh' ? '优化提示词' : 'Optimize prompt'}
-          title={language === 'zh' ? '优化提示词' : 'Optimize prompt'}
-        >
-          <Sparkles size={16} />
-        </button>
+        />
       </div>
 
       {/* Character mention popup - rendered in portal style with fixed position */}
@@ -488,131 +330,6 @@ export const PromptInput: React.FC<PromptInputProps> = ({
           onClose={closeMentionPopup}
         />
       )}
-
-      <Dialog
-        open={isOptimizeDialogOpen}
-        onOpenChange={(open) => {
-          console.info('[PromptOptimize] Dialog onOpenChange', {
-            type,
-            open,
-          });
-          if (!open) {
-            handleCloseOptimizeDialog();
-          }
-        }}
-      >
-        <DialogContent className="Dialog prompt-optimize-dialog">
-          <div className="prompt-optimize-dialog__header">
-            <div className="prompt-optimize-dialog__headline">
-              <DialogHeading className="prompt-optimize-dialog__title">
-                {language === 'zh' ? '优化提示词' : 'Optimize Prompt'}
-              </DialogHeading>
-              <DialogDescription className="prompt-optimize-dialog__description">
-                {language === 'zh'
-                  ? '输入优化方向，选择文本模型，优化后会直接回填当前提示词。'
-                  : 'Describe how to refine the prompt and the optimized result will fill back into the current field.'}
-              </DialogDescription>
-            </div>
-            <button
-              type="button"
-              className="prompt-optimize-dialog__close"
-              onClick={handleCloseOptimizeDialog}
-              aria-label={language === 'zh' ? '关闭' : 'Close'}
-            >
-              <X size={16} />
-            </button>
-          </div>
-
-          <div className="prompt-optimize-dialog__body">
-            <div className="prompt-optimize-dialog__section">
-              <span className="prompt-optimize-dialog__label">
-                {language === 'zh' ? '当前提示词' : 'Current Prompt'}
-              </span>
-              <div className="prompt-optimize-dialog__source">
-                {prompt.trim()}
-              </div>
-            </div>
-
-            <div className="prompt-optimize-dialog__section">
-              <label
-                className="prompt-optimize-dialog__label"
-                htmlFor={`prompt-optimize-requirements-${type}`}
-              >
-                {language === 'zh' ? '优化要求' : 'Refinement Requirements'}
-              </label>
-              <textarea
-                id={`prompt-optimize-requirements-${type}`}
-                className="prompt-optimize-dialog__textarea"
-                value={optimizerRequirements}
-                onChange={(event) => setOptimizerRequirements(event.target.value)}
-                placeholder={
-                  language === 'zh'
-                    ? '例如：更电影感、补充镜头语言、减少冗余、强调主体与光线...'
-                    : 'For example: make it more cinematic, add camera language, reduce redundancy, emphasize subject and lighting...'
-                }
-                rows={4}
-                disabled={isOptimizing}
-              />
-            </div>
-
-            <div className="prompt-optimize-dialog__section">
-              <span className="prompt-optimize-dialog__label">
-                {language === 'zh' ? '文本模型' : 'Text Model'}
-              </span>
-              <div className="prompt-optimize-dialog__model">
-                <ModelDropdown
-                  variant="form"
-                  selectedModel={optimizerModel}
-                  selectedSelectionKey={getSelectionKey(
-                    optimizerModel,
-                    optimizerModelRef
-                  )}
-                  onSelect={(value) => {
-                    setOptimizerModel(value);
-                    setOptimizerModelRef(null);
-                  }}
-                  onSelectModel={(model) => {
-                    setOptimizerModel(model.id);
-                    setOptimizerModelRef(getModelRefFromConfig(model));
-                  }}
-                  models={visibleTextModels}
-                  placement="down"
-                  disabled={isOptimizing}
-                  language={language}
-                  placeholder={
-                    language === 'zh' ? '选择文本模型' : 'Select text model'
-                  }
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="prompt-optimize-dialog__footer">
-            <button
-              type="button"
-              className="prompt-optimize-dialog__footer-btn prompt-optimize-dialog__footer-btn--secondary"
-              onClick={handleCloseOptimizeDialog}
-              disabled={isOptimizing}
-            >
-              {language === 'zh' ? '取消' : 'Cancel'}
-            </button>
-            <button
-              type="button"
-              className="prompt-optimize-dialog__footer-btn prompt-optimize-dialog__footer-btn--primary"
-              onClick={() => void handleOptimizePrompt()}
-              disabled={isOptimizing || !prompt.trim()}
-            >
-              {isOptimizing
-                ? language === 'zh'
-                  ? '优化中...'
-                  : 'Optimizing...'
-                : language === 'zh'
-                ? '确认优化'
-                : 'Optimize'}
-            </button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 };

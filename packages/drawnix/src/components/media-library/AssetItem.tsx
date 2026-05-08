@@ -12,16 +12,22 @@ import {
   Plus,
   Cloud,
   Heart,
+  UserRound,
 } from 'lucide-react';
 import { Checkbox } from 'tdesign-react';
 import { formatDate, formatFileSize } from '../../utils/asset-utils';
 import { useAssetSize } from '../../hooks/useAssetSize';
 import { LazyImage } from '../lazy-image';
 import { useThumbnailUrl } from '../../hooks/useThumbnailUrl';
+import { useUnifiedCache } from '../../hooks/useUnifiedCache';
 import { VideoPosterPreview } from '../shared/VideoPosterPreview';
-import type { Asset, ViewMode } from '../../types/asset.types';
+import { HoverTip } from '../shared/hover';
+import {
+  AssetCategory,
+  type Asset,
+  type ViewMode,
+} from '../../types/asset.types';
 import './AssetItem.scss';
-import { HoverTip } from '../shared';
 
 export interface AssetItemProps {
   asset: Asset;
@@ -62,6 +68,16 @@ export const AssetItem = memo<AssetItemProps>(
       asset.type === 'IMAGE' ? 'image' : undefined,
       thumbnailSize
     );
+    const { isCached, cacheWarning: detectedCacheWarning } = useUnifiedCache(
+      asset.type === 'IMAGE' || asset.type === 'VIDEO' ? asset.url : undefined
+    );
+    const cacheWarning =
+      (asset.type === 'IMAGE' || asset.type === 'VIDEO') && !isCached
+        ? detectedCacheWarning || asset.cacheWarning
+        : undefined;
+    const cacheWarningTip = cacheWarning
+      ? `${cacheWarning.message}${cacheWarning.expiresHint ? `\n${cacheWarning.expiresHint}` : ''}`
+      : '';
 
     const handleClick = useCallback(
       (e: React.MouseEvent) => {
@@ -125,6 +141,7 @@ export const AssetItem = memo<AssetItemProps>(
 
     const isListMode = viewMode === 'list';
     const isCompactMode = viewMode === 'compact';
+    const isSubjectAsset = asset.category === AssetCategory.CHARACTER;
 
     return (
       <div
@@ -201,10 +218,28 @@ export const AssetItem = memo<AssetItemProps>(
               {asset.source === 'AI_GENERATED' && (
                 <div className="asset-item__ai-badge">AI</div>
               )}
+              {isSubjectAsset && (
+                <HoverTip
+                  content={asset.characterMeta?.name || '主体'}
+                  showArrow={false}
+                >
+                  <div className="asset-item__subject-badge">
+                    <UserRound size={10} />
+                    <span>主体</span>
+                  </div>
+                </HoverTip>
+              )}
               {isSynced && (
                 <HoverTip content="已同步到云端" showArrow={false}>
                   <div className="asset-item__synced-badge">
                     <Cloud size={10} />
+                  </div>
+                </HoverTip>
+              )}
+              {cacheWarning && (
+                <HoverTip content={cacheWarningTip} showArrow={false}>
+                  <div className="asset-item__cache-warning-badge">
+                    需下载
                   </div>
                 </HoverTip>
               )}
@@ -245,6 +280,7 @@ export const AssetItem = memo<AssetItemProps>(
                 type="button"
                 className="asset-item__preview-btn"
                 onClick={handleInsertClick}
+                aria-label="插入到画布"
                 data-track="asset_item_insert"
               >
                 <Plus size={16} />
@@ -257,7 +293,9 @@ export const AssetItem = memo<AssetItemProps>(
             <>
               <div className="asset-item__overlay" />
               <HoverTip content={asset.name} showArrow={false}>
-                <div className="asset-item__name-overlay">{asset.name}</div>
+                <div className="asset-item__name-overlay">
+                  {asset.name}
+                </div>
               </HoverTip>
             </>
           )}
@@ -267,7 +305,9 @@ export const AssetItem = memo<AssetItemProps>(
         {isListMode && (
           <div className="asset-item__info">
             <HoverTip content={asset.name} showArrow={false}>
-              <div className="asset-item__name">{asset.name}</div>
+              <div className="asset-item__name">
+                {asset.name}
+              </div>
             </HoverTip>
             <div className="asset-item__meta">
               <span className="asset-item__type">
@@ -310,11 +350,31 @@ export const AssetItem = memo<AssetItemProps>(
           </div>
         )}
 
+        {isListMode && isSubjectAsset && (
+          <HoverTip
+            content={asset.characterMeta?.name || '主体'}
+            showArrow={false}
+          >
+            <div className="asset-item__subject-badge asset-item__subject-badge--list">
+              <UserRound size={12} />
+              <span>主体</span>
+            </div>
+          </HoverTip>
+        )}
+
         {/* 列表模式：已同步标识 */}
         {isListMode && isSynced && (
           <HoverTip content="已同步到云端" showArrow={false}>
             <div className="asset-item__synced-badge asset-item__synced-badge--list">
               <Cloud size={12} />
+            </div>
+          </HoverTip>
+        )}
+
+        {isListMode && cacheWarning && (
+          <HoverTip content={cacheWarningTip} showArrow={false}>
+            <div className="asset-item__cache-warning-badge asset-item__cache-warning-badge--list">
+              需下载
             </div>
           </HoverTip>
         )}
@@ -326,6 +386,7 @@ export const AssetItem = memo<AssetItemProps>(
               type="button"
               className="asset-item__preview-btn"
               onClick={handleInsertClick}
+              aria-label="插入到画布"
               data-track="asset_item_insert"
             >
               <Plus size={16} />
@@ -340,6 +401,7 @@ export const AssetItem = memo<AssetItemProps>(
     return (
       prevProps.asset.id === nextProps.asset.id &&
       prevProps.asset.name === nextProps.asset.name && // 检查名称变化（重命名后更新）
+      prevProps.asset.cacheWarning === nextProps.asset.cacheWarning &&
       prevProps.viewMode === nextProps.viewMode &&
       prevProps.isSelected === nextProps.isSelected &&
       prevProps.isInSelectionMode === nextProps.isInSelectionMode &&

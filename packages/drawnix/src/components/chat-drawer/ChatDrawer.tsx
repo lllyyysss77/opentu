@@ -1,7 +1,7 @@
 /**
  * ChatDrawer Component
  *
- * Main chat drawer component using @llamaindex/chat-ui.
+ * Main chat drawer component using local lightweight chat UI types.
  */
 
 import React, {
@@ -15,7 +15,6 @@ import React, {
   Suspense,
 } from 'react';
 import { CloseIcon, AddIcon, ViewListIcon } from 'tdesign-icons-react';
-import { type ChatHandler } from '@llamaindex/chat-ui';
 import { ATTACHED_ELEMENT_CLASS_NAME } from '@plait/core';
 import { SessionList } from './SessionList';
 import { ChatDrawerTrigger } from './ChatDrawerTrigger';
@@ -41,7 +40,7 @@ import type {
   ChatMessage as ChatMessageType,
 } from '../../types/chat.types';
 import { MessageRole, MessageStatus } from '../../types/chat.types';
-import type { Message } from '@llamaindex/chat-ui';
+import type { Message } from '../../types/chat-ui.types';
 import { useTextSelection } from '../../hooks/useTextSelection';
 
 import { analytics } from '../../utils/posthog-analytics';
@@ -291,6 +290,14 @@ export const ChatDrawer = forwardRef<ChatDrawerRef, ChatDrawerProps>(
           const results = await executeTools();
           analytics.track('chat_tool_execution_complete', {
             success: true,
+            resultCount: results.length,
+          });
+          analytics.track('ai_modality_used', {
+            modality: 'agent',
+            action: 'tool_execution_completed',
+            source: 'chat_drawer',
+            success: true,
+            toolCount: toolCalls.length,
             resultCount: results.length,
           });
 
@@ -769,6 +776,19 @@ export const ChatDrawer = forwardRef<ChatDrawerRef, ChatDrawerProps>(
         try {
           analytics.track('chat_message_send', {
             hasImages: msg.parts.some((p) => p.type === 'image_url'), // Message parts uses image_url usually
+          });
+          analytics.track('ai_modality_used', {
+            modality: 'agent',
+            action: 'message_send',
+            source: 'chat_drawer',
+            hasImages: msg.parts.some((p) => p.type === 'image_url'),
+            partCount: msg.parts.length,
+            textLength: msg.parts
+              .filter((part) => part.type === 'text')
+              .reduce(
+                (total, part) => total + String((part as any).text || '').length,
+                0
+              ),
           });
           // Check if API key is configured
           const settings = geminiSettings.get();
@@ -1361,13 +1381,14 @@ export const ChatDrawer = forwardRef<ChatDrawerRef, ChatDrawerProps>(
                     maxLength={50}
                   />
                 ) : (
-                  <h2
-                    className="chat-drawer__title chat-drawer__title--editable"
-                    onClick={handleStartEditTitle}
-                    title="点击编辑标题"
-                  >
-                    {title}
-                  </h2>
+                  <HoverTip content="点击编辑标题" showArrow={false}>
+                    <h2
+                      className="chat-drawer__title chat-drawer__title--editable"
+                      onClick={handleStartEditTitle}
+                    >
+                      {title}
+                    </h2>
+                  </HoverTip>
                 )}
               </div>
               <div className="chat-drawer__header-bottom">

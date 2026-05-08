@@ -4,6 +4,11 @@
 
 import type { VideoAnalysisData, VideoShot, VideoCharacter } from '../../services/video-analysis-service';
 import { createModelRef, type ModelRef } from '../../utils/settings-manager';
+import {
+  formatCreativeBriefSummary,
+  normalizeCreativeBrief,
+  type CreativeBrief,
+} from '../shared/workflow/creative-brief';
 
 export type { VideoAnalysisData, VideoShot, VideoCharacter };
 
@@ -28,6 +33,8 @@ export interface ProductInfo {
   videoStyle?: string;
   /** 用户编辑的 BGM 情绪（覆盖 analysis.bgm_mood） */
   bgmMood?: string;
+  /** 专业创作 Brief（用途、导演风格、叙事风格等） */
+  creativeBrief?: CreativeBrief;
 
   /** @deprecated use prompt */
   name?: string;
@@ -48,6 +55,14 @@ export type AnalysisSourceSnapshot =
       fileName: string;
       mimeType: string;
       size: number;
+    }
+  | {
+      type: 'prompt';
+      prompt: string;
+      pdfCacheUrl?: string;
+      pdfName?: string;
+      pdfMimeType?: string;
+      pdfSize?: number;
     };
 
 /** 将旧格式 ProductInfo 迁移为新格式（幂等） */
@@ -62,6 +77,7 @@ export function migrateProductInfo(raw: Partial<ProductInfo>, fallbackDuration: 
       videoSize: raw.videoSize,
       videoStyle: raw.videoStyle,
       bgmMood: raw.bgmMood,
+      creativeBrief: normalizeCreativeBrief(raw.creativeBrief),
     };
   }
   const parts: string[] = [];
@@ -77,6 +93,7 @@ export function migrateProductInfo(raw: Partial<ProductInfo>, fallbackDuration: 
     videoSize: raw.videoSize,
     videoStyle: raw.videoStyle,
     bgmMood: raw.bgmMood,
+    creativeBrief: normalizeCreativeBrief(raw.creativeBrief),
   };
 }
 
@@ -90,13 +107,17 @@ export interface ScriptVersion {
   prompt?: string;
   /** 该版本的镜头列表（深拷贝，各版本独立） */
   shots: VideoShot[];
+  /** 该版本同步生成的角色快照 */
+  characters?: VideoCharacter[];
+  /** 该版本同步生成的创作参数快照 */
+  productInfo?: ProductInfo;
 }
 
 /** 分析记录（持久化到 IndexedDB） */
 export interface AnalysisRecord {
   id: string;
   createdAt: number;
-  source: 'upload' | 'youtube';
+  source: 'upload' | 'youtube' | 'prompt';
   sourceLabel: string;
   sourceSnapshot?: AnalysisSourceSnapshot | null;
   model: string;
@@ -122,6 +143,8 @@ export interface AnalysisRecord {
   activeVersionId?: string;
   /** 最近一次生成/改编脚本的时间戳（用于过滤旧任务结果，防止污染新脚本） */
   storyboardGeneratedAt?: number;
+  /** 最近一次重置生成素材的时间戳（用于过滤旧图片/视频/角色参考图任务） */
+  generatedAssetsResetAt?: number;
 }
 
 /** 镜头类型颜色映射 */
@@ -171,8 +194,12 @@ export function formatShotsMarkdown(
   if (productInfo?.prompt) headerParts.push(`\n**提示词：** ${productInfo.prompt}`);
   const dur = productInfo?.targetDuration || analysis.totalDuration;
   headerParts.push(`\n**时长：** ${dur}s | **画面比例：** ${analysis.aspect_ratio || '16x9'}`);
-  if (analysis.video_style) headerParts.push(` | **风格：** ${analysis.video_style}`);
-  if (analysis.bgm_mood) headerParts.push(` | **BGM：** ${analysis.bgm_mood}`);
+  const videoStyle = productInfo?.videoStyle || analysis.video_style;
+  const bgmMood = productInfo?.bgmMood || analysis.bgm_mood;
+  if (videoStyle) headerParts.push(` | **风格：** ${videoStyle}`);
+  if (bgmMood) headerParts.push(` | **BGM：** ${bgmMood}`);
+  const creativeBrief = formatCreativeBriefSummary(productInfo?.creativeBrief);
+  if (creativeBrief) headerParts.push(`\n\n## 创作 Brief\n\n${creativeBrief}`);
   if (analysis.suggestion) headerParts.push(`\n\n> ${analysis.suggestion}`);
 
   return `${headerParts.join('')}\n\n${shotsMd}`;

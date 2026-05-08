@@ -13,6 +13,10 @@ import { MediaViewport } from './MediaViewport';
 import { ThumbnailQueue } from './ThumbnailQueue';
 import { ViewerToolbar } from './ViewerToolbar';
 import { ImageEditorContent, ImageEditorContentRef, ImageEditState } from './ImageEditorContent';
+import {
+  exitFullscreenIfActive,
+  requestFullscreenIfAllowed,
+} from '../../../utils/runtime-helpers';
 import './UnifiedMediaViewer.scss';
 
 export const UnifiedMediaViewer: React.FC<UnifiedMediaViewerProps> = ({
@@ -309,9 +313,11 @@ export const UnifiedMediaViewer: React.FC<UnifiedMediaViewerProps> = ({
     if (!containerRef.current) return;
 
     if (!isFullscreen) {
-      containerRef.current.requestFullscreen?.();
+      const request = requestFullscreenIfAllowed(containerRef.current);
+      request?.catch(() => undefined);
     } else {
-      document.exitFullscreen?.();
+      const request = exitFullscreenIfActive();
+      request?.catch(() => undefined);
     }
   }, [isFullscreen]);
 
@@ -577,7 +583,7 @@ export const UnifiedMediaViewer: React.FC<UnifiedMediaViewerProps> = ({
           panOffset={panOffset}
           videoAutoPlay={videoAutoPlay}
           videoLoop={videoLoop}
-          onZoomChange={(z) => actions.zoom(z - zoomLevel)}
+          onZoomChange={actions.setZoomLevel}
           onPanChange={() => {
             // 单图模式暂不同步 pan
           }}
@@ -629,7 +635,7 @@ export const UnifiedMediaViewer: React.FC<UnifiedMediaViewerProps> = ({
               videoAutoPlay={videoAutoPlay}
               videoLoop={videoLoop}
               onZoomChange={
-                syncMode ? (z) => actions.zoom(z - zoomLevel) : undefined
+                syncMode ? actions.setZoomLevel : undefined
               }
               onPanChange={syncMode ? actions.setPan : undefined}
               isCompareMode={true}

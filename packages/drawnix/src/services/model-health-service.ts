@@ -28,6 +28,7 @@ export interface ModelHealthResponse {
 export interface ModelHealthStatus {
     modelName: string;
     ruleName: string;
+    groupName: string;
     statusLabel: string;
     statusColor: string;
     errorRate: number;
@@ -35,6 +36,18 @@ export interface ModelHealthStatus {
     detectSaturated: boolean;
     totalCount: number;
     timeBucket: number;
+}
+
+export interface ModelHealthProviderSource {
+    id: string;
+    baseUrl?: string | null;
+    enabled?: boolean;
+}
+
+export interface ModelHealthSelection {
+    modelId?: string | null;
+    profileId?: string | null;
+    baseUrl?: string | null;
 }
 
 // API 端点
@@ -152,6 +165,28 @@ class ModelHealthFetcher {
 // 导出单例实例
 export const modelHealthFetcher = ModelHealthFetcher.getInstance();
 
+const DEFAULT_TUZI_HEALTH_GROUP = 'default';
+
+function normalizeHealthGroupName(groupName?: string | null): string {
+    const trimmed = typeof groupName === 'string' ? groupName.trim() : '';
+    return trimmed || DEFAULT_TUZI_HEALTH_GROUP;
+}
+
+export function parseHealthGroupName(ruleName: string): string {
+    const parts = ruleName.split('|');
+    if (parts.length < 2) {
+        return DEFAULT_TUZI_HEALTH_GROUP;
+    }
+    return normalizeHealthGroupName(parts.slice(1).join('|'));
+}
+
+export function buildModelHealthKey(
+    modelId: string,
+    groupName?: string | null
+): string {
+    return `${modelId}@@${normalizeHealthGroupName(groupName)}`;
+}
+
 /**
  * 根据模型 ID 匹配健康状态
  * 
@@ -160,21 +195,25 @@ export const modelHealthFetcher = ModelHealthFetcher.getInstance();
  */
 export function matchModelHealth(
     modelId: string,
-    healthData: ModelHealthResponse[]
+    healthData: ModelHealthResponse[],
+    groupName: string = DEFAULT_TUZI_HEALTH_GROUP
 ): ModelHealthStatus | undefined {
     // 从最新的数据开始查找（按 time_bucket 降序）
     const sortedData = [...healthData].sort((a, b) => b.time_bucket - a.time_bucket);
+    const targetGroupName = normalizeHealthGroupName(groupName);
 
     for (const item of sortedData) {
         const modelNames = Array.isArray(item.model_name)
             ? item.model_name
             : [item.model_name];
+        const itemGroupName = parseHealthGroupName(item.rule_name);
 
         // 检查是否匹配
-        if (modelNames.some(name => name === modelId)) {
+        if (itemGroupName === targetGroupName && modelNames.some(name => name === modelId)) {
             return {
                 modelName: modelId,
                 ruleName: item.rule_name,
+                groupName: itemGroupName,
                 statusLabel: item.status_label,
                 statusColor: item.status_color,
                 errorRate: item.error_rate,
@@ -204,13 +243,16 @@ export function buildHealthMap(
         const modelNames = Array.isArray(item.model_name)
             ? item.model_name
             : [item.model_name];
+        const groupName = parseHealthGroupName(item.rule_name);
 
         for (const modelName of modelNames) {
+            const healthKey = buildModelHealthKey(modelName, groupName);
             // 只保留每个模型的最新状态
-            if (!map.has(modelName)) {
-                map.set(modelName, {
+            if (!map.has(healthKey)) {
+                map.set(healthKey, {
                     modelName,
                     ruleName: item.rule_name,
+                    groupName,
                     statusLabel: item.status_label,
                     statusColor: item.status_color,
                     errorRate: item.error_rate,
@@ -230,5 +272,57 @@ export function buildHealthMap(
  * 检查 baseUrl 是否为 tu-zi.com
  */
 export function isTuziApiUrl(baseUrl: string): boolean {
-    return baseUrl.includes('api.tu-zi.com');
+    const trimmed = baseUrl.trim();
+    if (!trimmed) {
+        return false;
+    }
+
+    try {
+        const url = new URL(
+            /^[a-z][a-z\d+\-.]*:\/\//i.test(trimmed)
+                ? trimmed
+                : `https://${trimmed}`
+        );
+        const hostname = url.hostname.toLowerCase();
+        return hostname === 'tu-zi.com' || hostname.endsWith('.tu-zi.com');
+    } catch {
+        return false;
+    }
+}
+
+export function shouldFetchModelHealthForSelections(
+    selections: ModelHealthSelection[],
+    providers: ModelHealthProviderSource[],
+    legacyBaseUrl?: string | null
+): boolean {
+    if (selections.length === 0) {
+        return false;
+    }
+
+    const providerById = new Map(
+        providers
+            .filter((provider) => provider.enabled !== false)
+            .map((provider) => [provider.id, provider])
+    );
+
+    return selections.some((selection) => {
+        const modelId =
+            typeof selection.modelId === 'string' ? selection.modelId.trim() : '';
+        if (!modelId) {
+            return false;
+        }
+
+        const profileId =
+            typeof selection.profileId === 'string'
+                ? selection.profileId.trim()
+                : '';
+        const provider = profileId ? providerById.get(profileId) : null;
+        const baseUrl =
+            provider?.baseUrl ||
+            selection.baseUrl ||
+            (!profileId ? legacyBaseUrl : '') ||
+            '';
+
+        return isTuziApiUrl(baseUrl);
+    });
 }

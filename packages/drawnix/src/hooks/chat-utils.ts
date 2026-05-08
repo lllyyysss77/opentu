@@ -5,16 +5,33 @@
  */
 
 import type { ChatMessage, WorkflowMessageData } from '../types/chat.types';
-import type { Message, MessagePart } from '@llamaindex/chat-ui';
+import type { Message, MessagePart } from '../types/chat-ui.types';
 import { MessageStatus, MessageRole } from '../types/chat.types';
 import { geminiSettings } from '../utils/settings-manager';
-import { getModelType, IMAGE_MODELS } from '../constants/model-config';
+import {
+  getDefaultAudioModel,
+  getDefaultImageModel,
+  getDefaultVideoModel,
+} from '../constants/model-config';
+import {
+  applyMediaModelDefaultsToArgs,
+  getMediaTypeForTool,
+} from '../services/agent/media-model-routing';
 
 // 工作流消息的特殊标记前缀
 export const WORKFLOW_MESSAGE_PREFIX = '[[WORKFLOW_MESSAGE]]';
 
 // 生成类工具列表
-const GENERATION_TOOLS = ['generate_image', 'generate_video', 'generate_grid_image', 'generate_photo_wall'];
+const GENERATION_TOOLS = [
+  'generate_image',
+  'generate_video',
+  'generate_long_video',
+  'generate_audio',
+  'generate_grid_image',
+  'generate_photo_wall',
+  'generate_inspiration_board',
+  'generate_ppt',
+];
 
 /**
  * 工具调用接口（通用，id 可选）
@@ -30,41 +47,22 @@ export interface GenericToolCall {
  * 如果 AI 没有指定模型或指定了文本模型，使用默认的图片/视频模型
  */
 export function injectModelForGenerationTool<T extends GenericToolCall>(toolCall: T): T {
-  if (!GENERATION_TOOLS.includes(toolCall.name)) {
+  if (!GENERATION_TOOLS.includes(toolCall.name) || !getMediaTypeForTool(toolCall.name)) {
     return toolCall;
   }
 
-  const args = { ...toolCall.arguments };
-  const specifiedModel = args.model as string | undefined;
-
-  let needsInjection = false;
-
-  if (!specifiedModel) {
-    needsInjection = true;
-  } else {
-    const modelType = getModelType(specifiedModel);
-    const isVideoTool = toolCall.name === 'generate_video';
-
-    if (isVideoTool && modelType !== 'video') {
-      needsInjection = true;
-    } else if (!isVideoTool && modelType !== 'image') {
-      needsInjection = true;
+  const settings = geminiSettings.get();
+  const args = applyMediaModelDefaultsToArgs(
+    toolCall.name,
+    { ...toolCall.arguments },
+    {
+      fallbackModels: {
+        image: settings.imageModelName || getDefaultImageModel(),
+        video: settings.videoModelName || getDefaultVideoModel(),
+        audio: settings.audioModelName || getDefaultAudioModel(),
+      },
     }
-  }
-
-  if (needsInjection) {
-    const settings = geminiSettings.get();
-    const isVideoTool = toolCall.name === 'generate_video';
-
-    let targetModel: string;
-    if (isVideoTool) {
-      targetModel = settings.videoModelName || 'veo3';
-    } else {
-      targetModel = settings.imageModelName || IMAGE_MODELS[0]?.id || 'gemini-2.5-flash-image-vip';
-    }
-
-    args.model = targetModel;
-  }
+  );
 
   return { ...toolCall, arguments: args };
 }
@@ -123,7 +121,7 @@ export function serializeWorkflowToContext(workflow: WorkflowMessageData): strin
 }
 
 /**
- * Convert our ChatMessage to chat-ui Message format
+ * Convert our ChatMessage to lightweight UI Message format
  */
 export function toChatUIMessage(msg: ChatMessage): Message {
   const parts: MessagePart[] = [{ type: 'text', text: msg.content }];
@@ -149,7 +147,7 @@ export function toChatUIMessage(msg: ChatMessage): Message {
 }
 
 /**
- * Convert chat-ui Message to our ChatMessage format
+ * Convert lightweight UI Message to our ChatMessage format
  */
 export function fromChatUIMessage(msg: Message, sessionId: string): ChatMessage {
   const textParts = msg.parts.filter((p) => p.type === 'text');

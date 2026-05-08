@@ -21,6 +21,7 @@ import type { UploadedVideoImage } from '../../types/video.types';
 import type {
   AudioModelAdapter,
   AudioGenerationRequest,
+  AdapterContext,
   ImageModelAdapter,
   VideoModelAdapter,
   ImageGenerationRequest,
@@ -28,10 +29,17 @@ import type {
 } from './types';
 import { registerModelAdapter } from './registry';
 import { registerKlingAdapter } from './kling-adapter';
+import { registerHappyHorseAdapter } from './happyhorse-adapter';
 import { registerMJImageAdapter } from './mj-image-adapter';
 import { registerFluxAdapter } from './flux-adapter';
 import { registerSeedreamAdapter } from './seedream-adapter';
 import { registerSeedanceAdapter } from './seedance-adapter';
+import { registerGPTImageAdapter } from './gpt-image-adapter';
+import { registerTuziGPTImageAdapter } from './tuzi-gpt-image-adapter';
+import {
+  isGPTImage2Model,
+  resolveImageResolutionTier,
+} from './image-size-quality-resolver';
 
 const imageModelIds = [...IMAGE_MODEL_VIP_OPTIONS, ...IMAGE_MODEL_MORE_OPTIONS]
   .map((model) => model.id)
@@ -44,7 +52,10 @@ const imageModelIds = [...IMAGE_MODEL_VIP_OPTIONS, ...IMAGE_MODEL_MORE_OPTIONS]
   );
 
 const videoModelIds = VIDEO_MODELS.map((model) => model.id).filter(
-  (modelId) => !modelId.startsWith('kling') && !modelId.startsWith('seedance')
+  (modelId) =>
+    !modelId.startsWith('kling') &&
+    !modelId.startsWith('seedance') &&
+    !modelId.includes('happyhorse')
 );
 
 const audioModelIds = AUDIO_MODELS.map((model) => model.id);
@@ -112,6 +123,17 @@ const toUploadedVideoImages = (
   }));
 };
 
+function shouldUseAsyncImageEndpoint(
+  context: AdapterContext,
+  model: string
+): boolean {
+  return (
+    isAsyncImageModel(model) ||
+    context.binding?.protocol === 'openai.async.media' ||
+    context.binding?.requestSchema === 'openai.async.image.form'
+  );
+}
+
 export const geminiImageAdapter: ImageModelAdapter = {
   id: 'gemini-image-adapter',
   label: 'Gemini Image',
@@ -130,16 +152,18 @@ export const geminiImageAdapter: ImageModelAdapter = {
   matchVendors: [ModelVendor.GEMINI],
   supportedModels: imageModelIds,
   defaultModel: DEFAULT_IMAGE_MODEL_ID,
-  async generateImage(_context, request: ImageGenerationRequest) {
+  async generateImage(context, request: ImageGenerationRequest) {
     const model = request.model || DEFAULT_IMAGE_MODEL_ID;
 
-    if (isAsyncImageModel(model)) {
+    if (shouldUseAsyncImageEndpoint(context, model)) {
       const result = await asyncImageAPIService.generateWithPolling(
         {
           model,
           modelRef: request.modelRef || null,
           prompt: request.prompt,
           size: request.size,
+          referenceImages: request.referenceImages,
+          maskImage: request.maskImage,
         },
         {
           interval: 5000,
@@ -155,7 +179,9 @@ export const geminiImageAdapter: ImageModelAdapter = {
       return { url, format, raw: result };
     }
 
-    const quality = request.params?.quality as '1k' | '2k' | '4k' | undefined;
+    const quality =
+      resolveImageResolutionTier(request.params) ||
+      (isGPTImage2Model(model) ? '1k' : undefined);
     const responseFormat = request.params?.response_format as
       | 'url'
       | 'b64_json'
@@ -167,9 +193,7 @@ export const geminiImageAdapter: ImageModelAdapter = {
       response_format: responseFormat || 'url',
       quality,
       count:
-        typeof request.params?.n === 'number'
-          ? request.params.n
-          : undefined,
+        typeof request.params?.n === 'number' ? request.params.n : undefined,
       model,
       modelRef: request.modelRef || null,
     });
@@ -190,7 +214,11 @@ export const geminiVideoAdapter: VideoModelAdapter = {
       return false;
     }
     const lowerId = modelConfig.id.toLowerCase();
-    return !lowerId.includes('kling') && !lowerId.includes('seedance');
+    return (
+      !lowerId.includes('kling') &&
+      !lowerId.includes('seedance') &&
+      !lowerId.includes('happyhorse')
+    );
   },
   supportedModels: videoModelIds,
   defaultModel: DEFAULT_VIDEO_MODEL_ID,
@@ -295,7 +323,10 @@ export const sunoAudioAdapter: AudioModelAdapter = {
 };
 
 export function registerDefaultModelAdapters(): void {
+  registerGPTImageAdapter();
+  registerTuziGPTImageAdapter();
   registerModelAdapter(geminiImageAdapter);
+  registerHappyHorseAdapter();
   registerModelAdapter(geminiVideoAdapter);
   registerModelAdapter(sunoAudioAdapter);
   registerKlingAdapter();

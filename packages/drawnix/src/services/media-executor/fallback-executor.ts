@@ -43,7 +43,7 @@ import {
 } from '../../utils/gemini-api/apiCalls';
 import type { GeminiMessage as UnifiedGeminiMessage } from '../../utils/gemini-api/types';
 import {
-  isAuthError,
+  classifyApiCredentialError,
   dispatchApiAuthError,
 } from '../../utils/api-auth-error-event';
 import { extractTextContent, parseToolCalls } from '../agent/tool-parser';
@@ -61,10 +61,18 @@ import {
   cacheRemoteUrls,
 } from './fallback-utils';
 import { resolveAdapterForInvocation } from '../model-adapters';
+import { GPT_IMAGE_EDIT_REQUEST_SCHEMAS } from '../model-adapters';
 import {
   executeImageViaAdapter,
   executeVideoViaAdapter,
 } from './fallback-adapter-routes';
+import { IMAGE_GENERATION_TIMEOUT_MS } from '../../constants/TASK_CONSTANTS';
+import {
+  assertTaskInvocationRouteAvailable,
+  createTaskInvocationRouteSnapshot,
+  resolveLegacyTaskInvocationRouteModel,
+  shouldUseStrictTaskInvocationRoute,
+} from '../task-invocation-route';
 
 function inferAuthTypeFromRoute(
   route: ReturnType<typeof resolveInvocationRoute>
@@ -104,6 +112,43 @@ function extractUrlsFromUploadedImages(
     )
     .map((img) => img.url as string);
   return urls.length > 0 ? urls : undefined;
+}
+
+function getStringParam(
+  params: ImageGenerationParams,
+  keys: string[]
+): string | undefined {
+  const rawParams = params as unknown as Record<string, unknown>;
+  const nestedParams =
+    rawParams.params && typeof rawParams.params === 'object'
+      ? (rawParams.params as Record<string, unknown>)
+      : undefined;
+
+  for (const key of keys) {
+    const value = rawParams[key] ?? nestedParams?.[key];
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+  }
+
+  return undefined;
+}
+
+function isImageEditRequest(
+  params: ImageGenerationParams,
+  referenceImages?: string[]
+): boolean {
+  const generationMode = getStringParam(params, [
+    'generationMode',
+    'generation_mode',
+  ]);
+
+  return (
+    !!referenceImages?.length ||
+    generationMode === 'image_edit' ||
+    generationMode === 'image_to_image' ||
+    !!getStringParam(params, ['maskImage', 'mask_image'])
+  );
 }
 
 /**
@@ -149,6 +194,12 @@ export class FallbackMediaExecutor implements IMediaExecutor {
       (params.referenceImages && params.referenceImages.length > 0
         ? params.referenceImages
         : undefined) || extractUrlsFromUploadedImages(params.uploadedImages);
+    const shouldUseEditSchema = isImageEditRequest(params, referenceImages);
+    const invocationOptions = {
+      preferredRequestSchema: shouldUseEditSchema
+        ? GPT_IMAGE_EDIT_REQUEST_SCHEMAS
+        : undefined,
+    };
 
     const config = this.getConfig({ imageModel: modelRef || model });
 
@@ -163,7 +214,8 @@ export class FallbackMediaExecutor implements IMediaExecutor {
     const imageAdapter = resolveAdapterForInvocation(
       'image',
       modelName,
-      modelRef || null
+      modelRef || null,
+      invocationOptions
     );
     if (imageAdapter && imageAdapter.kind === 'image') {
       return executeImageViaAdapter(
@@ -174,10 +226,21 @@ export class FallbackMediaExecutor implements IMediaExecutor {
           model: modelName,
           modelRef: modelRef || null,
           size,
+          resolution: params.resolution,
           quality,
           count,
           referenceImages,
+          generationMode:
+            params.generationMode ||
+            (shouldUseEditSchema ? 'image_to_image' : 'text_to_image'),
+          maskImage: params.maskImage,
+          inputFidelity: params.inputFidelity,
+          background: params.background,
+          outputFormat: params.outputFormat,
+          outputCompression: params.outputCompression,
           params: params.params,
+          assetMetadata: params.assetMetadata,
+          preferredRequestSchema: invocationOptions.preferredRequestSchema,
         },
         options,
         startTime
@@ -188,7 +251,15 @@ export class FallbackMediaExecutor implements IMediaExecutor {
     if (isAsyncImageModel(modelName)) {
       return this.generateAsyncImageTask(
         taskId,
-        { prompt, model: modelName, size, referenceImages },
+        {
+          prompt,
+          model: modelName,
+          modelRef: modelRef || null,
+          size,
+          referenceImages,
+          maskImage: params.maskImage,
+          assetMetadata: params.assetMetadata,
+        },
         config,
         options,
         startTime
@@ -220,14 +291,6 @@ export class FallbackMediaExecutor implements IMediaExecutor {
             return ensureBase64ForAI(imageData, options?.signal);
           })
         );
-        console.debug(
-          '[FallbackMediaExecutor] generateImage: base64 conversion took',
-          Math.round(performance.now() - t0),
-          'ms for',
-          referenceImages.length,
-          'images, taskId:',
-          taskId
-        );
       }
 
       // 构建请求体
@@ -253,6 +316,7 @@ export class FallbackMediaExecutor implements IMediaExecutor {
           },
           body: JSON.stringify(requestBody),
           signal: options?.signal,
+          timeoutMs: IMAGE_GENERATION_TIMEOUT_MS,
         }
       );
 
@@ -281,14 +345,6 @@ export class FallbackMediaExecutor implements IMediaExecutor {
       const data = await response.json();
       const result = parseImageResponse(data);
       const duration = Date.now() - startTime;
-
-      console.debug(
-        '[FallbackMediaExecutor] generateImage: success, duration:',
-        duration,
-        'ms, taskId:',
-        taskId
-      );
-
       // 记录成功
       completeLLMApiLog(logId, {
         httpStatus: response.status,
@@ -330,8 +386,13 @@ export class FallbackMediaExecutor implements IMediaExecutor {
       );
 
       // 检测认证错误，触发设置弹窗
-      if (isAuthError(error)) {
-        dispatchApiAuthError({ message: errorMessage, source: 'image', reason: 'invalid' });
+      const credentialErrorKind = classifyApiCredentialError(error);
+      if (credentialErrorKind) {
+        dispatchApiAuthError({
+          message: errorMessage,
+          source: 'image',
+          reason: credentialErrorKind,
+        });
       }
 
       // 如果日志还未更新为失败，更新它
@@ -356,8 +417,11 @@ export class FallbackMediaExecutor implements IMediaExecutor {
     params: {
       prompt: string;
       model: string;
+      modelRef?: ImageGenerationParams['modelRef'];
       size?: string;
       referenceImages?: string[];
+      maskImage?: string;
+      assetMetadata?: ImageGenerationParams['assetMetadata'];
     },
     config: { imageConfig: GeminiConfig; videoConfig: VideoAPIConfig },
     options?: ExecutionOptions,
@@ -391,13 +455,15 @@ export class FallbackMediaExecutor implements IMediaExecutor {
             return ensureBase64ForAI(imageData, options?.signal);
           })
         );
-        console.debug(
-          '[FallbackMediaExecutor] generateAsyncImage: base64 conversion took',
-          Math.round(performance.now() - t0),
-          'ms for',
-          params.referenceImages.length,
-          'images, taskId:',
-          taskId
+      }
+      let processedMaskImage: string | undefined;
+      if (params.maskImage) {
+        const maskData = await unifiedCacheService.getImageForAI(
+          params.maskImage
+        );
+        processedMaskImage = await ensureBase64ForAI(
+          maskData,
+          options?.signal
         );
       }
 
@@ -408,6 +474,7 @@ export class FallbackMediaExecutor implements IMediaExecutor {
           model: params.model,
           size: params.size,
           referenceImages: processedImages,
+          maskImage: processedMaskImage,
         },
         config.imageConfig,
         {
@@ -419,7 +486,14 @@ export class FallbackMediaExecutor implements IMediaExecutor {
           },
           onSubmitted: async (remoteId) => {
             // 保存 remoteId，用于页面刷新后恢复轮询
-            await taskStorageWriter.updateRemoteId(taskId, remoteId);
+            await taskStorageWriter.updateRemoteId(
+              taskId,
+              remoteId,
+              createTaskInvocationRouteSnapshot(
+                'image',
+                params.modelRef || params.model
+              )
+            );
           },
           signal: options?.signal,
         }
@@ -443,7 +517,13 @@ export class FallbackMediaExecutor implements IMediaExecutor {
         result.url,
         taskId,
         'image',
-        result.format
+        result.format,
+        undefined,
+        {
+          extraMetadata: params.assetMetadata
+            ? { ...params.assetMetadata }
+            : undefined,
+        }
       );
 
       // 完成任务
@@ -457,11 +537,12 @@ export class FallbackMediaExecutor implements IMediaExecutor {
       const errorMessage = error.message || 'Async image generation failed';
 
       // 检测认证错误，触发设置弹窗
-      if (isAuthError(error)) {
+      const credentialErrorKind = classifyApiCredentialError(error);
+      if (credentialErrorKind) {
         dispatchApiAuthError({
           message: errorMessage,
           source: 'async-image',
-          reason: 'invalid',
+          reason: credentialErrorKind,
         });
       }
 
@@ -493,6 +574,10 @@ export class FallbackMediaExecutor implements IMediaExecutor {
       duration,
       size = '1280x720',
     } = params;
+    const invocationRoute = createTaskInvocationRouteSnapshot(
+      'video',
+      modelRef || model
+    );
     const config = this.getConfig({ videoModel: modelRef || model });
     const startTime = Date.now();
     const durationEncodedInModel = (m?: string | null) =>
@@ -569,18 +654,11 @@ export class FallbackMediaExecutor implements IMediaExecutor {
             return url;
           })
         );
-        console.debug(
-          '[FallbackMediaExecutor] generateVideo: ref image processing took',
-          Math.round(performance.now() - t0),
-          'ms for',
-          refUrls.length,
-          'images, taskId:',
-          taskId
-        );
       }
 
       const videoApiConfig = {
         ...config.videoConfig,
+        params: params.params,
         defaultModel: 'veo3' as const,
       };
       const videoId = await submitVideoGeneration(
@@ -612,7 +690,7 @@ export class FallbackMediaExecutor implements IMediaExecutor {
       });
 
       // 保存 remoteId，用于页面刷新后恢复轮询
-      await taskStorageWriter.updateRemoteId(taskId, videoId);
+      await taskStorageWriter.updateRemoteId(taskId, videoId, invocationRoute);
 
       options?.onProgress?.({ progress: 10, phase: 'polling' });
 
@@ -667,17 +745,19 @@ export class FallbackMediaExecutor implements IMediaExecutor {
           this.pollingTasks.delete(taskId);
         }
       } else {
-        console.log(
-          `[FallbackMediaExecutor] Task ${taskId} is already being polled, skipping duplicate request.`
-        );
       }
     } catch (error: any) {
       const elapsedTime = Date.now() - startTime;
       const errorMessage = error.message || 'Video generation failed';
 
       // 检测认证错误，触发设置弹窗
-      if (isAuthError(error)) {
-        dispatchApiAuthError({ message: errorMessage, source: 'video', reason: 'invalid' });
+      const credentialErrorKind = classifyApiCredentialError(error);
+      if (credentialErrorKind) {
+        dispatchApiAuthError({
+          message: errorMessage,
+          source: 'video',
+          reason: credentialErrorKind,
+        });
       }
 
       failLLMApiLog(logId, {
@@ -838,11 +918,12 @@ export class FallbackMediaExecutor implements IMediaExecutor {
       const errorMessage = error.message || 'AI analyze failed';
 
       // 检测认证错误，触发设置弹窗
-      if (isAuthError(error)) {
+      const credentialErrorKind = classifyApiCredentialError(error);
+      if (credentialErrorKind) {
         dispatchApiAuthError({
           message: errorMessage,
           source: 'ai-analyze',
-          reason: 'invalid',
+          reason: credentialErrorKind,
         });
       }
 
@@ -864,6 +945,7 @@ export class FallbackMediaExecutor implements IMediaExecutor {
       model,
       modelRef,
       referenceImages,
+      inlineDataParts,
       params: extraParams,
     } = params;
     const startTime = Date.now();
@@ -879,6 +961,7 @@ export class FallbackMediaExecutor implements IMediaExecutor {
           ...(normalizedPrompt
             ? [{ type: 'text' as const, text: normalizedPrompt }]
             : []),
+          ...((inlineDataParts || []).map((part) => part) || []),
           ...((referenceImages || []).map((url) => ({
             type: 'image_url' as const,
             image_url: { url },
@@ -935,35 +1018,39 @@ export class FallbackMediaExecutor implements IMediaExecutor {
                   : {}),
               },
             })
-          : await providerTransport.send(buildProviderContext(config.textConfig), {
-              path: '/chat/completions',
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                model: modelName,
-                messages,
-                stream: false,
-                ...(toNumber(extraParams?.temperature) !== undefined
-                  ? { temperature: toNumber(extraParams?.temperature) }
-                  : {}),
-                ...(toNumber(extraParams?.top_p) !== undefined
-                  ? { top_p: toNumber(extraParams?.top_p) }
-                  : {}),
-                ...(toNumber(extraParams?.max_tokens) !== undefined
-                  ? { max_tokens: toNumber(extraParams?.max_tokens) }
-                  : {}),
-              }),
-              signal: options?.signal,
-            }).then(async (response) => {
-              if (!response.ok) {
-                throw new Error(
-                  `HTTP ${response.status}: ${response.statusText || 'Text generation failed'}`
-                );
-              }
-              return response.json();
-            });
+          : await providerTransport
+              .send(buildProviderContext(config.textConfig), {
+                path: '/chat/completions',
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  model: modelName,
+                  messages,
+                  stream: false,
+                  ...(toNumber(extraParams?.temperature) !== undefined
+                    ? { temperature: toNumber(extraParams?.temperature) }
+                    : {}),
+                  ...(toNumber(extraParams?.top_p) !== undefined
+                    ? { top_p: toNumber(extraParams?.top_p) }
+                    : {}),
+                  ...(toNumber(extraParams?.max_tokens) !== undefined
+                    ? { max_tokens: toNumber(extraParams?.max_tokens) }
+                    : {}),
+                }),
+                signal: options?.signal,
+              })
+              .then(async (response) => {
+                if (!response.ok) {
+                  throw new Error(
+                    `HTTP ${response.status}: ${
+                      response.statusText || 'Text generation failed'
+                    }`
+                  );
+                }
+                return response.json();
+              });
 
       const fullResponse = data.choices?.[0]?.message?.content || '';
       options?.onProgress?.({ progress: 100 });
@@ -1062,11 +1149,6 @@ export class FallbackMediaExecutor implements IMediaExecutor {
         console.warn('[FallbackMediaExecutor] No video tasks to resume');
         return;
       }
-
-      console.log(
-        `[FallbackMediaExecutor] Resuming ${videoTasks.length} pending video tasks...`
-      );
-
       // 并行恢复
       await Promise.all(
         videoTasks.map((task) => this.resumeVideoTask(task, onTaskUpdate))
@@ -1092,25 +1174,21 @@ export class FallbackMediaExecutor implements IMediaExecutor {
   ): Promise<void> {
     // 如果任务已经在轮询中，直接跳过
     if (this.pollingTasks.has(task.id)) {
-      console.log(
-        `[FallbackMediaExecutor] Task ${task.id} is already being polled, skipping resume.`
-      );
       return;
     }
 
-    const config = this.getConfig();
+    if (shouldUseStrictTaskInvocationRoute(task)) {
+      assertTaskInvocationRouteAvailable('video', task);
+    }
+    const routeModel = resolveLegacyTaskInvocationRouteModel('video', task);
+    const config = this.getConfig({ videoModel: routeModel });
+    config.videoConfig.params = (task.params as any).params;
     const videoId = task.remoteId!;
 
     // 标记为正在轮询
     this.pollingTasks.add(task.id);
 
     try {
-      console.log(
-        `[FallbackMediaExecutor] Resuming video task: ${
-          task.id
-        } (remoteId: ${videoId}, model: ${task.params?.model || 'unknown'})`
-      );
-
       // 重新开始轮询
       const result = await pollVideoStatus(
         videoId,
@@ -1164,10 +1242,6 @@ export class FallbackMediaExecutor implements IMediaExecutor {
           completedAt: Date.now(),
         });
       }
-
-      console.log(
-        `[FallbackMediaExecutor] Resumed video task completed: ${task.id}`
-      );
     } catch (error: any) {
       console.error(
         `[FallbackMediaExecutor] Failed to resume task ${task.id}:`,
@@ -1186,9 +1260,6 @@ export class FallbackMediaExecutor implements IMediaExecutor {
 
       // 再通知内存状态同步
       if (onTaskUpdate) {
-        console.debug(
-          `[FallbackMediaExecutor] Calling onTaskUpdate for failed task ${task.id}`
-        );
         onTaskUpdate(task.id, TaskStatus.FAILED, { error: errorInfo });
       } else {
         console.warn(
@@ -1227,17 +1298,26 @@ export class FallbackMediaExecutor implements IMediaExecutor {
     const imageRoute = resolveInvocationRoute('image', models?.imageModel);
     const textRoute = resolveInvocationRoute('text', models?.textModel);
     const videoRoute = resolveInvocationRoute('video', models?.videoModel);
-    const imagePlan = resolveInvocationPlanFromRoute('image', models?.imageModel);
+    const imagePlan = resolveInvocationPlanFromRoute(
+      'image',
+      models?.imageModel
+    );
     const textPlan = resolveInvocationPlanFromRoute('text', models?.textModel);
-    const videoPlan = resolveInvocationPlanFromRoute('video', models?.videoModel);
+    const videoPlan = resolveInvocationPlanFromRoute(
+      'video',
+      models?.videoModel
+    );
     return {
       imageConfig: {
         apiKey: imageRoute.apiKey,
         baseUrl: imageRoute.baseUrl || 'https://api.tu-zi.com/v1',
         modelName: imageRoute.modelId,
-        authType: imagePlan?.provider.authType || inferAuthTypeFromRoute(imageRoute),
+        authType:
+          imagePlan?.provider.authType || inferAuthTypeFromRoute(imageRoute),
         providerType:
-          imagePlan?.provider.providerType || imageRoute.providerType || 'custom',
+          imagePlan?.provider.providerType ||
+          imageRoute.providerType ||
+          'custom',
         extraHeaders: imagePlan?.provider.extraHeaders,
         protocol: imagePlan?.binding.protocol || null,
         binding: imagePlan?.binding || null,
@@ -1247,7 +1327,8 @@ export class FallbackMediaExecutor implements IMediaExecutor {
         apiKey: textRoute.apiKey,
         baseUrl: textRoute.baseUrl || 'https://api.tu-zi.com/v1',
         modelName: textRoute.modelId,
-        authType: textPlan?.provider.authType || inferAuthTypeFromRoute(textRoute),
+        authType:
+          textPlan?.provider.authType || inferAuthTypeFromRoute(textRoute),
         providerType:
           textPlan?.provider.providerType || textRoute.providerType || 'custom',
         extraHeaders: textPlan?.provider.extraHeaders,
@@ -1261,9 +1342,12 @@ export class FallbackMediaExecutor implements IMediaExecutor {
         baseUrl: this.normalizeApiBase(
           videoRoute.baseUrl || 'https://api.tu-zi.com'
         ),
-        authType: videoPlan?.provider.authType || inferAuthTypeFromRoute(videoRoute),
+        authType:
+          videoPlan?.provider.authType || inferAuthTypeFromRoute(videoRoute),
         providerType:
-          videoPlan?.provider.providerType || videoRoute.providerType || 'custom',
+          videoPlan?.provider.providerType ||
+          videoRoute.providerType ||
+          'custom',
         extraHeaders: videoPlan?.provider.extraHeaders,
         binding: videoPlan?.binding || null,
         provider: videoPlan?.provider || null,

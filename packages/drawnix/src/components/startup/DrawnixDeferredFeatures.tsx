@@ -2,6 +2,7 @@ import React, { Suspense, lazy } from 'react';
 import type { PlaitElement } from '@plait/core';
 import type { DrawnixBoard } from '../../hooks/use-drawnix';
 import type { Board as WorkspaceBoard } from '../../types/workspace.types';
+import type { MediaLibraryConfig } from '../../types/asset.types';
 import { useDrawnix } from '../../hooks/use-drawnix';
 import './deferred-features.scss';
 
@@ -66,6 +67,9 @@ interface DrawnixDeferredFeaturesProps {
   projectDrawerOpen: boolean;
   toolboxDrawerOpen: boolean;
   mediaLibraryOpen: boolean;
+  mediaLibraryConfig?: Partial<MediaLibraryConfig> & {
+    selectButtonText?: string;
+  };
   backupRestoreOpen: boolean;
   cloudSyncOpen: boolean;
   onBoardSwitch?: (board: WorkspaceBoard) => void;
@@ -74,6 +78,11 @@ interface DrawnixDeferredFeaturesProps {
   setMediaLibraryOpen: React.Dispatch<React.SetStateAction<boolean>>;
   setBackupRestoreOpen: React.Dispatch<React.SetStateAction<boolean>>;
   setCloudSyncOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  handleOpenMediaLibrary: (
+    config?: Partial<MediaLibraryConfig> & {
+      selectButtonText?: string;
+    }
+  ) => void;
   handleBeforeSwitch: () => Promise<void>;
   onCreateProjectForMemory: () => Promise<void>;
 }
@@ -88,6 +97,7 @@ export function DrawnixDeferredFeatures({
   projectDrawerOpen,
   toolboxDrawerOpen,
   mediaLibraryOpen,
+  mediaLibraryConfig,
   backupRestoreOpen,
   cloudSyncOpen,
   onBoardSwitch,
@@ -96,6 +106,7 @@ export function DrawnixDeferredFeatures({
   setMediaLibraryOpen,
   setBackupRestoreOpen,
   setCloudSyncOpen,
+  handleOpenMediaLibrary,
   handleBeforeSwitch,
   onCreateProjectForMemory,
 }: DrawnixDeferredFeaturesProps) {
@@ -110,6 +121,10 @@ export function DrawnixDeferredFeatures({
           <MediaLibraryModal
             isOpen={mediaLibraryOpen}
             onClose={() => setMediaLibraryOpen(false)}
+            mode={mediaLibraryConfig?.mode}
+            filterType={mediaLibraryConfig?.filterType}
+            onSelect={mediaLibraryConfig?.onSelect}
+            selectButtonText={mediaLibraryConfig?.selectButtonText}
           />
         </Suspense>
       )}
@@ -200,6 +215,7 @@ export function DrawnixDeferredFeatures({
             onOpenChange={setProjectDrawerOpen}
             onBeforeSwitch={handleBeforeSwitch}
             onBoardSwitch={onBoardSwitch}
+            onOpenMediaLibrary={handleOpenMediaLibrary}
           />
         </Suspense>
       )}

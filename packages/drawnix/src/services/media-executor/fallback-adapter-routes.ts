@@ -6,8 +6,10 @@
  */
 
 import type { ModelRef } from '../../utils/settings-manager';
+import type { GenerationParams } from '../../types/shared/core.types';
 import type { ExecutionOptions } from './types';
 import { taskStorageWriter } from './task-storage-writer';
+import { createTaskInvocationRouteSnapshot } from '../task-invocation-route';
 import {
   startLLMApiLog,
   completeLLMApiLog,
@@ -15,17 +17,67 @@ import {
   LLMReferenceImage,
 } from './llm-api-logger';
 import {
-  isAuthError,
+  classifyApiCredentialError,
   dispatchApiAuthError,
 } from '../../utils/api-auth-error-event';
 import { unifiedCacheService } from '../unified-cache-service';
-import { getAdapterContextFromSettings } from '../model-adapters';
+import {
+  getAdapterContextFromSettings,
+  GPT_IMAGE_EDIT_REQUEST_SCHEMAS,
+  isGPTImageEditRequestSchema,
+} from '../model-adapters';
 import type { ImageModelAdapter, VideoModelAdapter } from '../model-adapters';
 import {
   ensureBase64ForAI,
   cacheRemoteUrl,
   cacheRemoteUrls,
 } from './fallback-utils';
+
+type ImageGenerationMode = 'text_to_image' | 'image_to_image' | 'image_edit';
+type ImageInputFidelity = 'high' | 'low';
+type ImageBackground = 'transparent' | 'opaque' | 'auto';
+type ImageOutputFormat = 'png' | 'jpeg' | 'webp';
+
+function getStringParam(
+  params: { params?: Record<string, unknown> },
+  keys: string[]
+): string | undefined {
+  const rawParams = params as unknown as Record<string, unknown>;
+  const nestedParams = params.params;
+
+  for (const key of keys) {
+    const value = rawParams[key] ?? nestedParams?.[key];
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+  }
+
+  return undefined;
+}
+
+function resolvePreferredRequestSchema(params: {
+  generationMode?: ImageGenerationMode;
+  maskImage?: string;
+  referenceImages?: string[];
+  params?: Record<string, unknown>;
+  preferredRequestSchema?: string | readonly string[];
+}): string | readonly string[] | undefined {
+  const generationMode =
+    params.generationMode ||
+    getStringParam(params, ['generationMode', 'generation_mode']);
+
+  if (
+    params.referenceImages?.length ||
+    generationMode === 'image_to_image' ||
+    generationMode === 'image_edit' ||
+    params.maskImage ||
+    getStringParam(params, ['maskImage', 'mask_image'])
+  ) {
+    return params.preferredRequestSchema || GPT_IMAGE_EDIT_REQUEST_SCHEMAS;
+  }
+
+  return params.preferredRequestSchema;
+}
 
 /**
  * 通过专用 adapter 生成图片（mj-imagine 等非 gemini 模型）
@@ -39,15 +91,25 @@ export async function executeImageViaAdapter(
     model: string;
     modelRef?: ModelRef | null;
     size?: string;
+    resolution?: '1k' | '2k' | '4k';
     quality?: string;
     count?: number;
     referenceImages?: string[];
+    generationMode?: ImageGenerationMode;
+    maskImage?: string;
+    inputFidelity?: ImageInputFidelity;
+    background?: ImageBackground;
+    outputFormat?: ImageOutputFormat;
+    outputCompression?: number;
     params?: Record<string, unknown>;
+    assetMetadata?: GenerationParams['assetMetadata'];
+    preferredRequestSchema?: string | readonly string[];
   },
   options?: ExecutionOptions,
   startTime?: number
 ): Promise<void> {
   const logStartTime = startTime || Date.now();
+  const preferredRequestSchema = resolvePreferredRequestSchema(params);
 
   const logId = startLLMApiLog({
     endpoint: `adapter:${adapter.id}`,
@@ -77,14 +139,31 @@ export async function executeImageViaAdapter(
     options?.onProgress?.({ progress: 10, phase: 'submitting' });
 
     const result = await adapter.generateImage(
-      getAdapterContextFromSettings('image', params.modelRef || params.model),
+      getAdapterContextFromSettings('image', params.modelRef || params.model, {
+        preferredRequestSchema,
+      }),
       {
         prompt: params.prompt,
         model: params.model,
         modelRef: params.modelRef || null,
         size: params.size,
+        generationMode:
+          params.generationMode ||
+          (isGPTImageEditRequestSchema(preferredRequestSchema)
+            ? 'image_to_image'
+            : 'text_to_image'),
         referenceImages: processedImages,
-        params: { quality: params.quality, n: params.count, ...params.params },
+        maskImage: params.maskImage,
+        inputFidelity: params.inputFidelity,
+        background: params.background,
+        outputFormat: params.outputFormat,
+        outputCompression: params.outputCompression,
+        params: {
+          resolution: params.resolution,
+          quality: params.quality,
+          n: params.count,
+          ...params.params,
+        },
       }
     );
 
@@ -103,7 +182,11 @@ export async function executeImageViaAdapter(
     // 缓存远程签名 URL 到本地，避免 Referer 校验导致 403
     const fmt = result.format || 'png';
     const allUrls = result.urls?.length ? result.urls : [result.url];
-    const cachedUrls = await cacheRemoteUrls(allUrls, taskId, 'image', fmt);
+    const cachedUrls = await cacheRemoteUrls(allUrls, taskId, 'image', fmt, {
+      extraMetadata: params.assetMetadata
+        ? { ...params.assetMetadata }
+        : undefined,
+    });
     const cachedPrimary = cachedUrls[0];
 
     await taskStorageWriter.completeTask(taskId, {
@@ -116,8 +199,13 @@ export async function executeImageViaAdapter(
     const duration = Date.now() - logStartTime;
     const errorMessage = error.message || 'Image generation failed (adapter)';
 
-    if (isAuthError(error)) {
-      dispatchApiAuthError({ message: errorMessage, source: 'image', reason: 'invalid' });
+    const credentialErrorKind = classifyApiCredentialError(error);
+    if (credentialErrorKind) {
+      dispatchApiAuthError({
+        message: errorMessage,
+        source: 'image',
+        reason: credentialErrorKind,
+      });
     }
 
     failLLMApiLog(logId, { duration, errorMessage });
@@ -202,7 +290,26 @@ export async function executeVideoViaAdapter(
         size: params.size,
         duration: durationNum,
         referenceImages: processedImages,
-        params: params.params,
+        params: {
+          ...params.params,
+          onProgress: (progress: number) => {
+            const safeProgress = Math.min(100, Math.max(10, progress));
+            options?.onProgress?.({
+              progress: safeProgress,
+              phase: safeProgress <= 10 ? 'submitting' : 'polling',
+            });
+          },
+          onSubmitted: (videoId: string) => {
+            void taskStorageWriter.updateRemoteId(
+              taskId,
+              videoId,
+              createTaskInvocationRouteSnapshot(
+                'video',
+                params.modelRef || params.model
+              )
+            );
+          },
+        },
       }
     );
 
@@ -237,8 +344,13 @@ export async function executeVideoViaAdapter(
     const duration = Date.now() - logStartTime;
     const errorMessage = error.message || 'Video generation failed (adapter)';
 
-    if (isAuthError(error)) {
-      dispatchApiAuthError({ message: errorMessage, source: 'video', reason: 'invalid' });
+    const credentialErrorKind = classifyApiCredentialError(error);
+    if (credentialErrorKind) {
+      dispatchApiAuthError({
+        message: errorMessage,
+        source: 'video',
+        reason: credentialErrorKind,
+      });
     }
 
     failLLMApiLog(logId, { duration, errorMessage });

@@ -5,6 +5,9 @@
  * 这是独立于工作流的底层大模型调用服务接口。
  */
 
+import type { ModelRef } from '../../utils/settings-manager';
+import type { GenerationParams } from '../../types/shared/core.types';
+
 // Re-export core types
 export { TaskStatus, TaskType } from '../../types/shared/core.types';
 export type {
@@ -13,8 +16,6 @@ export type {
   TaskError,
 } from '../../types/shared/core.types';
 
-import type { ModelRef } from '../../utils/settings-manager';
-
 /**
  * 图片生成选项
  */
@@ -22,12 +23,21 @@ export interface ImageGenerationOptions {
   model?: string;
   modelRef?: ModelRef | null;
   size?: string;
-  quality?: '1k' | '2k' | '4k';
+  resolution?: '1k' | '2k' | '4k';
+  quality?: 'auto' | 'low' | 'medium' | 'high' | '1k' | '2k' | '4k';
+  generationMode?: 'text_to_image' | 'image_to_image' | 'image_edit';
   referenceImages?: string[];
+  maskImage?: string;
+  inputFidelity?: 'high' | 'low';
+  background?: 'transparent' | 'opaque' | 'auto';
+  outputFormat?: 'png' | 'jpeg' | 'webp';
+  outputCompression?: number;
   uploadedImages?: Array<{ url?: string; base64?: string }>;
   count?: number;
   /** 透传给具体适配器的额外参数（如 seedream_quality、aspect_ratio） */
   params?: Record<string, unknown>;
+  assetMetadata?: GenerationParams['assetMetadata'];
+  promptMeta?: GenerationParams['promptMeta'];
   signal?: AbortSignal;
   /** 强制使用主线程（跳过 SW） */
   forceMainThread?: boolean;
@@ -48,6 +58,7 @@ export interface VideoGenerationOptions {
   referenceImages?: string[];
   /** 透传给具体适配器的额外参数（如 aspect_ratio） */
   params?: Record<string, unknown>;
+  promptMeta?: GenerationParams['promptMeta'];
   signal?: AbortSignal;
   forceMainThread?: boolean;
   /** 任务创建后立即回调，用于提前持久化 taskId 到工作流步骤 */

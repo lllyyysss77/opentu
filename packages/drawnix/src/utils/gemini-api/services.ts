@@ -32,6 +32,7 @@ import {
   type ResolvedProviderContext,
   type ProviderAuthStrategy,
 } from '../../services/provider-routing';
+import { IMAGE_GENERATION_TIMEOUT_MS } from '../../constants/TASK_CONSTANTS';
 import { validateAndEnsureConfig } from './auth';
 import {
   startLLMApiLog,
@@ -72,7 +73,9 @@ function buildRuntimeConfig(
   routeType: 'text' | 'image' | 'video',
   routeModel: string | ModelRef | null | undefined,
   fallbackModelName: string,
-  defaults: Partial<typeof DEFAULT_CONFIG> | Partial<typeof VIDEO_DEFAULT_CONFIG>
+  defaults:
+    | Partial<typeof DEFAULT_CONFIG>
+    | Partial<typeof VIDEO_DEFAULT_CONFIG>
 ) {
   const route = resolveInvocationRoute(routeType, routeModel);
   const plan = resolveInvocationPlanFromRoute(routeType, routeModel);
@@ -86,7 +89,8 @@ function buildRuntimeConfig(
       baseUrl: route.baseUrl,
       modelName: route.modelId || fallbackModelName,
       authType: plan?.provider.authType || inferAuthTypeFromRoute(route),
-      providerType: plan?.provider.providerType || route.providerType || 'custom',
+      providerType:
+        plan?.provider.providerType || route.providerType || 'custom',
       extraHeaders: plan?.provider.extraHeaders,
       protocol: plan?.binding.protocol || null,
       binding: plan?.binding || null,
@@ -156,9 +160,7 @@ function normalizeGoogleImageResult(content: string): {
   const base64Matches = Array.from(
     content.matchAll(/data:([^;]+);base64,([A-Za-z0-9+/=]+)/g)
   );
-  const urlMatches = Array.from(
-    content.matchAll(/https?:\/\/[^\s<>"')]+/g)
-  );
+  const urlMatches = Array.from(content.matchAll(/https?:\/\/[^\s<>"')]+/g));
 
   return {
     data: [
@@ -253,7 +255,7 @@ async function generateImageDirect(
           type: 'text' as const,
           text: prompt,
         },
-        ...((options.image
+        ...(options.image
           ? Array.isArray(options.image)
             ? options.image
             : [options.image]
@@ -263,7 +265,7 @@ async function generateImageDirect(
           image_url: {
             url,
           },
-        }))),
+        })),
       ];
 
       const response = await callGoogleGenerateContentRaw(
@@ -347,6 +349,7 @@ async function generateImageDirect(
         method: 'POST',
         headers,
         body: JSON.stringify(data),
+        timeoutMs: IMAGE_GENERATION_TIMEOUT_MS,
       }
     );
 
@@ -373,7 +376,9 @@ async function generateImageDirect(
     // 提取结果 URL
     const resultUrl = result.data?.[0]?.url || result.data?.[0]?.b64_json;
     const normalizedResultUrl =
-      typeof resultUrl === 'string' ? normalizeImageDataUrl(resultUrl) : undefined;
+      typeof resultUrl === 'string'
+        ? normalizeImageDataUrl(resultUrl)
+        : undefined;
 
     completeLLMApiLog(logId, {
       httpStatus: response.status,
@@ -585,36 +590,17 @@ export async function sendChatWithGemini(
   temporaryModel?: string | ModelRef | null,
   logMeta?: SendChatLogMeta
 ): Promise<GeminiResponse> {
-  console.log('[sendChatWithGemini] 开始, temporaryModel:', temporaryModel);
-
   // 等待设置管理器初始化完成
   const t0 = Date.now();
   await settingsManager.waitForInitialization();
-  console.log(
-    '[sendChatWithGemini] settingsManager 初始化完成, 耗时:',
-    Date.now() - t0,
-    'ms'
-  );
   const { config } = buildRuntimeConfig(
     'text',
     temporaryModel || null,
     'gpt-4o-mini',
     DEFAULT_CONFIG
   );
-  console.log('[sendChatWithGemini] 配置:', {
-    modelName: config.modelName,
-    hasApiKey: !!config.apiKey,
-    baseUrl: config.baseUrl,
-  });
-
   const t1 = Date.now();
   const validatedConfig = await validateAndEnsureConfig(config);
-  console.log(
-    '[sendChatWithGemini] validateAndEnsureConfig 完成, 耗时:',
-    Date.now() - t1,
-    'ms'
-  );
-
   // --- LLM API 日志 ---
   const firstTextContent = messages[0]?.content;
   const firstTextPart = Array.isArray(firstTextContent)
@@ -639,7 +625,6 @@ export async function sendChatWithGemini(
     // 结构化 JSON / 分析类场景应保持非流式以获得完整响应。
     let response: GeminiResponse;
     if (onChunk) {
-      console.log('[sendChatWithGemini] 使用流式调用 callApiStreamRaw');
       response = await callApiStreamRaw(
         validatedConfig,
         messages,
@@ -650,7 +635,6 @@ export async function sendChatWithGemini(
         signal
       );
     } else {
-      console.log('[sendChatWithGemini] 使用非流式调用 callApiWithRetry');
       response = await callApiWithRetry(validatedConfig, messages);
       resultText = response.choices?.[0]?.message?.content || '';
     }

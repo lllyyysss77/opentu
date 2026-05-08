@@ -1,16 +1,9 @@
 import React, { useCallback } from 'react';
-import {
-  ChatSection,
-  ChatMessages,
-  ChatMessage,
-  type ChatHandler,
-  type Message,
-} from '@llamaindex/chat-ui';
-import '@llamaindex/chat-ui/styles/pdf.css';
 import { WorkflowMessageBubble } from './WorkflowMessageBubble';
 import { UserMessageBubble } from './UserMessageBubble';
 import type { WorkflowMessageData } from '../../types/chat.types';
-import MarkdownEditor from '../MarkdownEditor';
+import type { ChatHandler, Message } from '../../types/chat-ui.types';
+import MarkdownReadonly from '../MarkdownReadonly';
 
 // 工作流消息的特殊标记前缀
 const WORKFLOW_MESSAGE_PREFIX = '[[WORKFLOW_MESSAGE]]';
@@ -52,16 +45,32 @@ export const ChatMessagesArea: React.FC<ChatMessagesAreaProps> = ({
   }, []);
 
   const getMessageMarkdown = useCallback((message: Message) => {
-    const parts = message.parts
-      .filter((part) => part.type === 'text' && 'text' in part)
-      .map((part) => (typeof (part as any).text === 'string' ? (part as any).text : String((part as any).text ?? '')));
-    return parts.join('');
+    let firstText: string | null = null;
+    let textParts: string[] | null = null;
+
+    for (const part of message.parts) {
+      if (part.type !== 'text') continue;
+      if (firstText === null) {
+        firstText = part.text;
+        continue;
+      }
+      if (!textParts) {
+        textParts = [firstText];
+      }
+      textParts.push(part.text);
+    }
+
+    return textParts ? textParts.join('') : firstText ?? '';
   }, []);
 
+  const showLoading =
+    handler.status === 'submitted' || handler.status === 'streaming';
+  const showEmpty = handler.messages.length === 0 && !showLoading;
+
   return (
-    <ChatSection handler={handler} className={className}>
-      <ChatMessages className="chat-messages">
-        <ChatMessages.List className="chat-messages-list">
+    <div className={className}>
+      <div className="chat-messages">
+        <div className="chat-messages-list">
           {handler.messages.map((message, index) => {
             // 检查是否为工作流消息
             const workflowMsgId = isWorkflowMessage(message);
@@ -101,40 +110,42 @@ export const ChatMessagesArea: React.FC<ChatMessagesAreaProps> = ({
             }
 
             return (
-              <ChatMessage
+              <div
                 key={message.id}
-                message={message}
-                isLast={index === handler.messages.length - 1}
                 className={messageClass}
+                data-message-id={message.id}
+                data-message-last={index === handler.messages.length - 1}
               >
-                <ChatMessage.Avatar className="chat-message-avatar" />
-                <ChatMessage.Content className="chat-message-content">
-                  <MarkdownEditor
+                <div className="chat-message-avatar">
+                  <span>{message.role === 'user' ? '👤' : '🤖'}</span>
+                </div>
+                <div className="chat-message-content">
+                  <MarkdownReadonly
                     markdown={getMessageMarkdown(message)}
-                    readOnly
-                    showModeSwitch={false}
-                    initialMode="wysiwyg"
                     className="chat-markdown"
                   />
-                </ChatMessage.Content>
+                </div>
                 {message.role === 'assistant' && !isError && (
-                  <ChatMessage.Actions className="chat-message-actions" />
+                  <div className="chat-message-actions" />
                 )}
-              </ChatMessage>
+              </div>
             );
           })}
-        </ChatMessages.List>
-        <ChatMessages.Loading className="chat-loading">
-          <div className="chat-loading__spinner" />
-          <span>思考中...</span>
-        </ChatMessages.Loading>
-        <ChatMessages.Empty
-          className="chat-empty"
-          heading="开始对话"
-          subheading="输入消息与AI助手交流"
-        />
-      </ChatMessages>
-    </ChatSection>
+          {showLoading && (
+            <div className="chat-loading">
+              <div className="chat-loading__spinner" />
+              <span>思考中...</span>
+            </div>
+          )}
+          {showEmpty && (
+            <div className="chat-empty">
+              <h3>开始对话</h3>
+              <p>输入消息与AI助手交流</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 };
 

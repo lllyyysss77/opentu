@@ -1,16 +1,21 @@
-import type { ModelConfig, ModelVendor } from '../../constants/model-config';
-import type { ModelRef } from '../../utils/settings-manager';
+import type {
+  ModelConfig,
+  ModelType,
+  ModelVendor,
+} from '../../constants/model-config';
+import type { ModelRef } from '../../utils/settings-types';
 import type {
   ProviderAuthStrategy,
   ProviderModelBinding,
   ProviderProtocol,
   ResolvedProviderContext,
-} from '../provider-routing';
+} from '../provider-routing/types';
 
 export type ModelKind = 'image' | 'video' | 'audio' | 'chat';
 
 export interface AdapterContext {
   baseUrl: string;
+  operation?: ModelType;
   apiKey?: string;
   authType?: ProviderAuthStrategy;
   extraHeaders?: Record<string, string>;
@@ -43,7 +48,13 @@ export interface ImageGenerationRequest {
   model?: string;
   modelRef?: ModelRef | null;
   size?: string;
+  generationMode?: 'text_to_image' | 'image_to_image' | 'image_edit';
   referenceImages?: string[];
+  maskImage?: string;
+  inputFidelity?: 'high' | 'low';
+  background?: 'transparent' | 'opaque' | 'auto';
+  outputFormat?: 'png' | 'jpeg' | 'webp';
+  outputCompression?: number;
   params?: Record<string, unknown>;
 }
 

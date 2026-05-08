@@ -1,7 +1,7 @@
 /**
  * Card 标签贴元素渲染生成器
  *
- * 使用 SVG foreignObject 嵌入 HTML，通过 React 渲染 MarkdownEditor（只读模式）
+ * 使用 SVG foreignObject 嵌入 HTML，通过 React 渲染 MarkdownReadonly（只读模式）
  */
 import { RectangleClient } from '@plait/core';
 import { PlaitCard } from '../../types/card.types';
@@ -16,6 +16,11 @@ export class CardGenerator {
   private reactRoot: Root | null = null;
   private resizeObserver: ResizeObserver | null = null;
   onHeightMeasured?: (height: number) => void;
+  private isEditing = false;
+
+  setEditing(editing: boolean): void {
+    this.isEditing = editing;
+  }
 
   processDrawing(element: PlaitCard, parentG: SVGGElement): SVGGElement {
     const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
@@ -120,12 +125,15 @@ export class CardGenerator {
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
     if (this.reactRoot) {
-      try {
-        this.reactRoot.unmount();
-      } catch {
-        // 忽略卸载错误
-      }
+      const root = this.reactRoot;
       this.reactRoot = null;
+      setTimeout(() => {
+        try {
+          root.unmount();
+        } catch {
+          // 忽略卸载错误
+        }
+      }, 0);
     }
     this.containerG = null;
     this.foreignObject = null;

@@ -3,17 +3,31 @@
  *
  * Provides type-safe event tracking for PostHog analytics.
  * Tracks model calls and API usage.
- * 
+ *
  * SECURITY: All event data is sanitized before being sent to PostHog
  * to prevent accidental leakage of API keys and other sensitive information.
  */
 
 import { sanitizeObject } from '@aitu/utils';
 
+declare const __APP_VERSION__: string;
+
+export interface AnalyticsReleaseContext {
+  version: string;
+  appVersion: string;
+  app_version: string;
+  deployment_env: 'local' | 'preview' | 'staging' | 'production';
+  release_channel: 'local' | 'preview' | 'staging' | 'production';
+  host: string;
+  hostname: string;
+  route_name: string;
+}
+
 declare global {
   interface Window {
     posthog?: {
       capture: (eventName: string, properties?: Record<string, any>) => void;
+      register?: (properties: Record<string, any>) => void;
     };
   }
 }
@@ -21,7 +35,45 @@ declare global {
 /** Event categories for analytics */
 enum AnalyticsCategory {
   AI_GENERATION = 'ai_generation',
+  PPT = 'ppt',
+  PROMPT = 'prompt',
   SYSTEM = 'system',
+  UI_INTERACTION = 'ui_interaction',
+}
+
+export interface UIInteractionEventParams {
+  area: string;
+  action: string;
+  control?: string;
+  value?: string | number | boolean | null;
+  source?: string;
+  metadata?: Record<string, any>;
+}
+
+export interface ProviderEndpointAnalytics {
+  origin: string;
+  host: string;
+  protocol: string;
+}
+
+export function getProviderEndpointAnalytics(
+  baseUrl?: string | null
+): ProviderEndpointAnalytics | null {
+  const trimmed = String(baseUrl || '').trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+    return {
+      origin: parsed.origin,
+      host: parsed.host,
+      protocol: parsed.protocol.replace(':', ''),
+    };
+  } catch {
+    return null;
+  }
 }
 
 /** Event names for AI generation */
@@ -49,6 +101,162 @@ enum APICallEvent {
   API_CALL_RETRY = 'api_call_retry',
 }
 
+type AnalyticsEventData = Record<string, any>;
+
+export type PromptAnalyticsType =
+  | 'image'
+  | 'video'
+  | 'audio'
+  | 'text'
+  | 'agent'
+  | 'ppt-common'
+  | 'ppt-slide';
+
+export interface PromptAnalyticsSummary {
+  has_prompt: boolean;
+  prompt_length: number;
+  prompt_length_bucket: string;
+  prompt_line_count: number;
+}
+
+function getTextLengthBucket(length: number): string {
+  if (length <= 0) return '0';
+  if (length <= 50) return '1-50';
+  if (length <= 200) return '51-200';
+  if (length <= 500) return '201-500';
+  if (length <= 1000) return '501-1000';
+  if (length <= 2000) return '1001-2000';
+  return '2000+';
+}
+
+export function getPromptAnalyticsSummary(
+  prompt?: string | null
+): PromptAnalyticsSummary {
+  const trimmed = String(prompt || '').trim();
+  return {
+    has_prompt: trimmed.length > 0,
+    prompt_length: trimmed.length,
+    prompt_length_bucket: getTextLengthBucket(trimmed.length),
+    prompt_line_count: trimmed ? trimmed.split(/\r?\n/).length : 0,
+  };
+}
+
+function inferDeploymentEnv(
+  hostname: string
+): 'local' | 'preview' | 'staging' | 'production' {
+  const normalized = hostname.toLowerCase();
+  if (
+    normalized === 'localhost' ||
+    normalized === '127.0.0.1' ||
+    normalized === '0.0.0.0' ||
+    normalized.endsWith('.local')
+  ) {
+    return 'local';
+  }
+  if (
+    normalized.includes('preview') ||
+    normalized.includes('vercel') ||
+    normalized.includes('netlify')
+  ) {
+    return 'preview';
+  }
+  if (
+    normalized.includes('staging') ||
+    normalized.includes('test') ||
+    normalized.includes('dev')
+  ) {
+    return 'staging';
+  }
+  return 'production';
+}
+
+function getAppVersion(): string {
+  if (typeof __APP_VERSION__ !== 'undefined' && __APP_VERSION__) {
+    return __APP_VERSION__;
+  }
+
+  if (typeof document !== 'undefined') {
+    return (
+      document
+        .querySelector('meta[name="app-version"]')
+        ?.getAttribute('content') || '0.0.0'
+    );
+  }
+
+  return '0.0.0';
+}
+
+export function getAnalyticsReleaseContext(): AnalyticsReleaseContext {
+  const appVersion = getAppVersion();
+  if (typeof window === 'undefined') {
+    return {
+      version: appVersion,
+      appVersion,
+      app_version: appVersion,
+      deployment_env: 'local',
+      release_channel: 'local',
+      host: '',
+      hostname: '',
+      route_name: '/',
+    };
+  }
+
+  const { hostname, pathname } = window.location;
+  const deploymentEnv = inferDeploymentEnv(hostname);
+  return {
+    version: appVersion,
+    appVersion,
+    app_version: appVersion,
+    host: window.location.host || hostname,
+    hostname,
+    route_name: pathname || '/',
+    deployment_env: deploymentEnv,
+    release_channel: deploymentEnv,
+  };
+}
+
+function getCommonEventProperties(): AnalyticsEventData {
+  return getAnalyticsReleaseContext();
+}
+
+export function registerAnalyticsSuperProperties(
+  properties?: Partial<AnalyticsReleaseContext>
+): void {
+  if (typeof window === 'undefined' || !window.posthog?.register) {
+    return;
+  }
+
+  try {
+    window.posthog.register({
+      ...getAnalyticsReleaseContext(),
+      ...(properties || {}),
+    });
+  } catch (error) {
+    void error;
+  }
+}
+
+function buildAICompatProperties(params: {
+  taskId: string;
+  taskType: 'image' | 'video' | 'audio' | 'chat';
+  model: string;
+  duration: number;
+  status: 'success' | 'failed';
+  error?: string;
+}): AnalyticsEventData {
+  return {
+    $ai_model: params.model,
+    $ai_latency: params.duration,
+    $ai_is_error: params.status === 'failed',
+    task_id: params.taskId,
+    task_type: params.taskType,
+    status: params.status,
+    model: params.model,
+    duration_ms: params.duration,
+    ...(params.error ? { error: params.error } : {}),
+  };
+}
+
 /** Analytics utility class */
 class PostHogAnalytics {
   /**
@@ -56,24 +264,123 @@ class PostHogAnalytics {
    * SECURITY: Event data is sanitized before being sent to PostHog
    */
   track(eventName: string, eventData?: Record<string, any>): void {
-    if (!window.posthog) {
+    if (typeof window === 'undefined' || !window.posthog) {
       return;
     }
     const doTrack = (): void => {
       try {
-        const sanitizedData = eventData
-          ? (sanitizeObject(eventData) as Record<string, any>)
-          : undefined;
+        const payload = {
+          ...getCommonEventProperties(),
+          ...(eventData || {}),
+        };
+        const sanitizedData =
+          Object.keys(payload).length > 0
+            ? (sanitizeObject(payload) as Record<string, any>)
+            : undefined;
         window.posthog!.capture(eventName, sanitizedData);
       } catch (error) {
-        console.debug('[Analytics] track failed', error);
+        void error;
       }
     };
-    if (typeof (globalThis as unknown as Window & { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number }).requestIdleCallback === 'function') {
-      (globalThis as unknown as Window & { requestIdleCallback: (cb: () => void, opts?: { timeout: number }) => number }).requestIdleCallback(doTrack, { timeout: 2000 });
+    if (
+      typeof (
+        globalThis as unknown as Window & {
+          requestIdleCallback?: (
+            cb: () => void,
+            opts?: { timeout: number }
+          ) => number;
+        }
+      ).requestIdleCallback === 'function'
+    ) {
+      (
+        globalThis as unknown as Window & {
+          requestIdleCallback: (
+            cb: () => void,
+            opts?: { timeout: number }
+          ) => number;
+        }
+      ).requestIdleCallback(doTrack, { timeout: 2000 });
     } else {
       setTimeout(doTrack, 0);
     }
+  }
+
+  /** Track low-frequency UI interactions without adding one-off event names. */
+  trackUIInteraction(params: UIInteractionEventParams): void {
+    const { metadata, ...coreParams } = params;
+    this.track('ui_interaction', {
+      category: AnalyticsCategory.UI_INTERACTION,
+      ...coreParams,
+      metadata: metadata || undefined,
+      timestamp: Date.now(),
+    });
+  }
+
+  /** Track PPT feature usage without sending raw prompt or slide text. */
+  trackPPTAction(params: {
+    action: string;
+    source?: string;
+    status?: 'start' | 'success' | 'failed' | 'cancelled';
+    pageCount?: number;
+    frameCount?: number;
+    selectedCount?: number;
+    successCount?: number;
+    failedCount?: number;
+    durationMs?: number;
+    serialMode?: boolean;
+    model?: string;
+    prompt?: string | null;
+    error?: string;
+    metadata?: Record<string, any>;
+  }): void {
+    const { prompt, metadata, ...coreParams } = params;
+    this.track('ppt_action', {
+      category: AnalyticsCategory.PPT,
+      ...coreParams,
+      ...(prompt !== undefined ? getPromptAnalyticsSummary(prompt) : {}),
+      metadata: metadata || undefined,
+      timestamp: Date.now(),
+    });
+  }
+
+  /** Track prompt library and optimization usage without sending raw prompt text. */
+  trackPromptAction(params: {
+    action: string;
+    surface: string;
+    promptType?: PromptAnalyticsType;
+    mode?: string;
+    source?: string;
+    status?: 'start' | 'success' | 'failed' | 'cancelled';
+    model?: string;
+    prompt?: string | null;
+    requirements?: string | null;
+    durationMs?: number;
+    itemCount?: number;
+    metadata?: Record<string, any>;
+  }): void {
+    const { prompt, requirements, metadata, ...coreParams } = params;
+    const promptSummary =
+      prompt !== undefined ? getPromptAnalyticsSummary(prompt) : undefined;
+    const requirementsSummary =
+      requirements !== undefined
+        ? getPromptAnalyticsSummary(requirements)
+        : undefined;
+    this.track('prompt_action', {
+      category: AnalyticsCategory.PROMPT,
+      ...coreParams,
+      ...(promptSummary || {}),
+      ...(requirementsSummary
+        ? {
+            has_requirements: requirementsSummary.has_prompt,
+            requirements_length: requirementsSummary.prompt_length,
+            requirements_length_bucket:
+              requirementsSummary.prompt_length_bucket,
+            requirements_line_count: requirementsSummary.prompt_line_count,
+          }
+        : {}),
+      metadata: metadata || undefined,
+      timestamp: Date.now(),
+    });
   }
 
   /** Check if analytics is enabled */
@@ -102,10 +409,10 @@ class PostHogAnalytics {
     hasUploadedImage: boolean;
     startTime: number;
     // Enhanced parameters for detailed analytics
-    aspectRatio?: string;       // 图片/视频比例 (e.g., "16:9", "1:1")
-    duration?: number;          // 视频时长（秒）
-    resolution?: string;        // 分辨率 (e.g., "1080p", "720p")
-    batchCount?: number;        // 批量生成数量
+    aspectRatio?: string; // 图片/视频比例 (e.g., "16:9", "1:1")
+    duration?: number; // 视频时长（秒）
+    resolution?: string; // 分辨率 (e.g., "1080p", "720p")
+    batchCount?: number; // 批量生成数量
     hasReferenceImage?: boolean; // 是否有参考图
   }): void {
     const eventMap = {
@@ -132,6 +439,16 @@ class PostHogAnalytics {
       chat: AIGenerationEvent.CHAT_GENERATION_SUCCESS,
     };
     this.trackAIGeneration(eventMap[params.taskType], params);
+    this.track(
+      '$ai_generation',
+      buildAICompatProperties({
+        taskId: params.taskId,
+        taskType: params.taskType,
+        model: params.model,
+        duration: params.duration,
+        status: 'success',
+      })
+    );
   }
 
   /** Track failed model call */
@@ -149,6 +466,17 @@ class PostHogAnalytics {
       chat: AIGenerationEvent.CHAT_GENERATION_FAILED,
     };
     this.trackAIGeneration(eventMap[params.taskType], params);
+    this.track(
+      '$ai_generation',
+      buildAICompatProperties({
+        taskId: params.taskId,
+        taskType: params.taskType,
+        model: params.model,
+        duration: params.duration,
+        status: 'failed',
+        error: params.error,
+      })
+    );
   }
 
   /** Track task cancellation */
@@ -161,12 +489,14 @@ class PostHogAnalytics {
   }
 
   /** Track API call start */
-  trackAPICallStart(params: {
-    endpoint: string;
-    model: string;
-    messageCount: number;
-    stream: boolean;
-  }): void {
+  trackAPICallStart(
+    params: {
+      endpoint: string;
+      model: string;
+      messageCount: number;
+      stream: boolean;
+    } & Record<string, unknown>
+  ): void {
     this.track(APICallEvent.API_CALL_START, {
       category: AnalyticsCategory.SYSTEM,
       ...params,
@@ -175,13 +505,15 @@ class PostHogAnalytics {
   }
 
   /** Track API call success */
-  trackAPICallSuccess(params: {
-    endpoint: string;
-    model: string;
-    duration: number;
-    responseLength?: number;
-    stream: boolean;
-  }): void {
+  trackAPICallSuccess(
+    params: {
+      endpoint: string;
+      model: string;
+      duration: number;
+      responseLength?: number;
+      stream: boolean;
+    } & Record<string, unknown>
+  ): void {
     this.track(APICallEvent.API_CALL_SUCCESS, {
       category: AnalyticsCategory.SYSTEM,
       ...params,
@@ -190,14 +522,16 @@ class PostHogAnalytics {
   }
 
   /** Track API call failure */
-  trackAPICallFailure(params: {
-    endpoint: string;
-    model: string;
-    duration: number;
-    error: string;
-    httpStatus?: number;
-    stream: boolean;
-  }): void {
+  trackAPICallFailure(
+    params: {
+      endpoint: string;
+      model: string;
+      duration: number;
+      error: string;
+      httpStatus?: number;
+      stream: boolean;
+    } & Record<string, unknown>
+  ): void {
     this.track(APICallEvent.API_CALL_FAILED, {
       category: AnalyticsCategory.SYSTEM,
       ...params,

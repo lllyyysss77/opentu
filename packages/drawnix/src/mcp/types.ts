@@ -6,18 +6,9 @@
 
 // 从公共配置导入模型相关定义
 export type { ModelType, ModelConfig } from '../constants/model-config';
-export {
-  IMAGE_MODELS,
-  VIDEO_MODELS,
-  ALL_MODELS,
-  getModelsByType,
-  getModelConfig,
-  getModelType,
-  getModelIds,
-  supportsTools,
-} from '../constants/model-config';
 import type { ModelRef } from '../utils/settings-manager';
 import type { GeminiMessagePart } from '../utils/gemini-api/types';
+import type { KnowledgeContextRef } from '../types/task.types';
 
 /**
  * JSON Schema 类型定义
@@ -240,11 +231,21 @@ export interface AgentExecutionContext {
   /** 系统配置的默认模型（用于 AI 分析时参考） */
   defaultModels?: {
     /** 默认图片模型 */
-    image: string;
+    image?: string;
     /** 默认视频模型 */
-    video: string;
+    video?: string;
     /** 默认音频模型 */
     audio?: string;
+  };
+
+  /** 系统配置的默认模型来源引用（用于多供应商路由） */
+  defaultModelRefs?: {
+    /** 默认图片模型来源 */
+    image?: ModelRef | null;
+    /** 默认视频模型来源 */
+    video?: ModelRef | null;
+    /** 默认音频模型来源 */
+    audio?: ModelRef | null;
   };
 
   /** 参数配置 */
@@ -273,6 +274,9 @@ export interface AgentExecutionContext {
 
   /** 最终生成用的 prompt */
   finalPrompt: string;
+
+  /** 本次 Agent 分析使用的知识库笔记轻量引用 */
+  knowledgeContextRefs?: KnowledgeContextRef[];
 }
 
 /**

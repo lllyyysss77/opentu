@@ -22,6 +22,7 @@ import {
   TaskResult,
   TaskError,
   TaskExecutionPhase,
+  TaskInvocationRouteSnapshot,
 } from '../../../../../packages/drawnix/src/types/shared/core.types';
 
 export * from '../../../../../packages/drawnix/src/types/shared/core.types';
@@ -75,6 +76,8 @@ export interface SWTask {
   progress?: number;
   /** Remote task ID from API (e.g., videoId for video generation) */
   remoteId?: string;
+  /** Provider/model route snapshot used to resume async tasks with the original supplier */
+  invocationRoute?: TaskInvocationRouteSnapshot;
   /** Current execution phase for recovery support */
   executionPhase?: TaskExecutionPhase;
   /** Whether the task result has been saved to the media library */
@@ -391,11 +394,11 @@ export interface TaskQueueConfig {
  */
 export const DEFAULT_TASK_QUEUE_CONFIG: TaskQueueConfig = {
   timeouts: {
-    [TaskType.IMAGE]: 10 * 60 * 1000, // 10 minutes for image
+    [TaskType.IMAGE]: 15 * 60 * 1000, // 15 minutes for image
     [TaskType.VIDEO]: 20 * 60 * 1000, // 20 minutes for video
     [TaskType.AUDIO]: 30 * 60 * 1000, // 30 minutes for audio
     [TaskType.CHARACTER]: 10 * 60 * 1000, // 10 minutes
-    [TaskType.INSPIRATION_BOARD]: 10 * 60 * 1000, // 10 minutes (same as image)
+    [TaskType.INSPIRATION_BOARD]: 15 * 60 * 1000, // 15 minutes (same as image)
     [TaskType.CHAT]: 10 * 60 * 1000, // 10 minutes
   },
 };

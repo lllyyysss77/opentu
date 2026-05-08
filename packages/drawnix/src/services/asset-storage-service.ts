@@ -8,6 +8,7 @@
  */
 
 import localforage from 'localforage';
+import { generateUUID } from '../utils/runtime-helpers';
 import { ASSET_CONSTANTS } from '../constants/ASSET_CONSTANTS';
 import {
   validateAssetName,
@@ -83,6 +84,19 @@ class AssetStorageService {
   }
 
   private getFileExtension(mimeType: string): string {
+    const normalizedMimeType = mimeType.toLowerCase();
+    const extensionByMimeType: Record<string, string> = {
+      'audio/mpeg': 'mp3',
+      'image/jpeg': 'jpg',
+      'image/svg+xml': 'svg',
+      'video/quicktime': 'mov',
+      'video/x-m4v': 'm4v',
+    };
+    const mappedExtension = extensionByMimeType[normalizedMimeType];
+    if (mappedExtension) {
+      return mappedExtension;
+    }
+
     const slashIndex = mimeType.indexOf('/');
     return slashIndex >= 0 ? mimeType.slice(slashIndex + 1) : 'bin';
   }
@@ -317,7 +331,7 @@ class AssetStorageService {
 
     try {
       // 生成稳定的素材 URL
-      const assetId = crypto.randomUUID();
+      const assetId = generateUUID();
       const assetUrl = this.generateAssetUrl(contentHash, data.mimeType);
       // console.log('[AssetStorageService] Generated asset URL:', assetUrl);
 
@@ -328,6 +342,9 @@ class AssetStorageService {
         taskId: assetId,
         prompt: data.prompt,
         model: data.modelName,
+        category: data.category,
+        characterName: data.characterMeta?.name,
+        characterPrompt: data.characterMeta?.prompt,
       });
       // console.log('[AssetStorageService] Media cached via unified cache service');
 
@@ -343,6 +360,8 @@ class AssetStorageService {
         contentHash,
         prompt: data.prompt,
         modelName: data.modelName,
+        category: data.category,
+        characterMeta: data.characterMeta,
       };
       // console.log('[AssetStorageService] Asset object created:', asset);
 
@@ -434,7 +453,6 @@ class AssetStorageService {
             if (stored.url.startsWith('/asset-library/')) {
               if (validCacheUrls.size > 0 && !validCacheUrls.has(stored.url)) {
                 // Cache Storage 中没有实际数据，跳过此素材
-                console.warn(`[AssetStorageService] Asset not in Cache Storage, skipping: ${stored.url}`);
                 return null;
               }
             }
@@ -513,6 +531,48 @@ class AssetStorageService {
       throw new AssetStorageError(
         `Failed to rename asset: ${error.message}`,
         'RENAME_FAILED',
+      );
+    }
+  }
+
+  /**
+   * Update Asset Metadata
+   * 更新素材轻量元数据
+   */
+  async updateAssetMetadata(
+    id: string,
+    patch: Pick<StoredAsset, 'category' | 'characterMeta'>
+  ): Promise<void> {
+    this.ensureInitialized();
+
+    try {
+      const stored = (await this.store!.getItem(id)) as StoredAsset | null;
+      if (!stored) {
+        throw new NotFoundError(id);
+      }
+
+      if (patch.category !== undefined) {
+        stored.category = patch.category;
+      }
+      if (patch.characterMeta !== undefined) {
+        stored.characterMeta = patch.characterMeta;
+      }
+
+      await this.store!.setItem(id, stored);
+      await unifiedCacheService.updateCachedMedia(stored.url, {
+        metadata: {
+          category: stored.category,
+          characterName: stored.characterMeta?.name,
+          characterPrompt: stored.characterMeta?.prompt,
+        },
+      });
+    } catch (error: any) {
+      if (error instanceof NotFoundError) {
+        throw error;
+      }
+      throw new AssetStorageError(
+        `Failed to update asset metadata: ${error.message}`,
+        'UPDATE_METADATA_FAILED',
       );
     }
   }

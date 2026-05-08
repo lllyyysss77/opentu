@@ -12,6 +12,7 @@ export interface Translations {
   'toolbar.mind': string;
   'toolbar.text': string;
   'toolbar.pen': string;
+  'toolbar.maskBrush': string;
   'toolbar.vectorPen': string;
   'toolbar.eraser': string;
   'toolbar.arrow': string;
@@ -47,6 +48,7 @@ export interface Translations {
   'zoom.out': string;
   'zoom.fit': string;
   'zoom.fitFrame': string;
+  'zoom.fitPPTGlobal': string;
   'zoom.100': string;
   
   // Themes
@@ -203,6 +205,7 @@ const translations: Record<Language, Translations> = {
     'toolbar.mind': '思维导图 — M',
     'toolbar.text': '文本 — T',
     'toolbar.pen': '画笔 — P',
+    'toolbar.maskBrush': '蒙版画笔 — Shift+M',
     'toolbar.vectorPen': '钢笔 — Shift+P',
     'toolbar.eraser': '橡皮擦 — E',
     'toolbar.anchorCorner': '角点',
@@ -219,16 +222,16 @@ const translations: Record<Language, Translations> = {
     'toolbar.theme': '主题色',
     'toolbar.stroke': '描边',
     'toolbar.strokeColor': '画笔颜色',
-    'toolbar.strokeWidth': '画笔大小',
+    'toolbar.strokeWidth': '画笔大小 — - / + / 方向键',
     'toolbar.pencilShape': '画笔形状',
     'toolbar.pencilShape.circle': '圆形',
     'toolbar.pencilShape.square': '方形',
-    'toolbar.eraserSize': '橡皮擦大小',
+    'toolbar.eraserSize': '橡皮擦大小 — - / + / 方向键',
     'toolbar.eraserShape': '橡皮擦形状',
     'toolbar.eraserShape.circle': '圆形',
     'toolbar.eraserShape.square': '方形',
     'toolbar.laserPointer': '激光笔 — L',
-    'toolbar.frame': 'Frame 容器 — F',
+    'toolbar.frame': 'PPT 页面 — F',
     'toolbar.fillColor': '填充颜色',
     'toolbar.fontColor': '字体颜色',
     'toolbar.fontSize': '字体样式',
@@ -237,7 +240,8 @@ const translations: Record<Language, Translations> = {
     'zoom.in': '放大 — Cmd++',
     'zoom.out': '缩小 — Cmd+-',
     'zoom.fit': '自适应',
-    'zoom.fitFrame': '自适应 Frame',
+    'zoom.fitFrame': '自适应 PPT 页面',
+    'zoom.fitPPTGlobal': 'PPT全局',
     'zoom.100': '缩放至 100%',
     
     // Themes
@@ -391,6 +395,7 @@ const translations: Record<Language, Translations> = {
     'toolbar.mind': 'Mind — M',
     'toolbar.text': 'Text — T',
     'toolbar.pen': 'Pen — P',
+    'toolbar.maskBrush': 'Mask Brush — Shift+M',
     'toolbar.vectorPen': 'Vector Pen — Shift+P',
     'toolbar.eraser': 'Eraser — E',
     'toolbar.anchorCorner': 'Corner',
@@ -407,16 +412,16 @@ const translations: Record<Language, Translations> = {
     'toolbar.theme': 'Theme',
     'toolbar.stroke': 'Stroke',
     'toolbar.strokeColor': 'Pen Color',
-    'toolbar.strokeWidth': 'Pen Size',
+    'toolbar.strokeWidth': 'Pen Size — - / + / Arrow Keys',
     'toolbar.pencilShape': 'Pen Shape',
     'toolbar.pencilShape.circle': 'Circle',
     'toolbar.pencilShape.square': 'Square',
-    'toolbar.eraserSize': 'Eraser Size',
+    'toolbar.eraserSize': 'Eraser Size — - / + / Arrow Keys',
     'toolbar.eraserShape': 'Eraser Shape',
     'toolbar.eraserShape.circle': 'Circle',
     'toolbar.eraserShape.square': 'Square',
     'toolbar.laserPointer': 'Laser Pointer — L',
-    'toolbar.frame': 'Frame Container — F',
+    'toolbar.frame': 'PPT Page — F',
     'toolbar.fillColor': 'Fill Color',
     'toolbar.fontColor': 'Font Color',
     'toolbar.fontSize': 'Font Style',
@@ -425,7 +430,8 @@ const translations: Record<Language, Translations> = {
     'zoom.in': 'Zoom In — Cmd++',
     'zoom.out': 'Zoom Out — Cmd+-',
     'zoom.fit': 'Fit to Screen',
-    'zoom.fitFrame': 'Fit Frame',
+    'zoom.fitFrame': 'Fit PPT Page',
+    'zoom.fitPPTGlobal': 'Fit All PPT Pages',
     'zoom.100': 'Zoom to 100%',
     
     // Themes

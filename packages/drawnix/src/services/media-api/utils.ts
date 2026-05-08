@@ -37,7 +37,10 @@ export function normalizeApiBase(url: string): string {
   return base;
 }
 
-function inferProviderType(baseUrl: string, explicitProviderType?: string): string {
+function inferProviderType(
+  baseUrl: string,
+  explicitProviderType?: string
+): string {
   if (explicitProviderType) {
     return explicitProviderType;
   }
@@ -53,14 +56,17 @@ function inferProviderType(baseUrl: string, explicitProviderType?: string): stri
     normalized.includes('/openai') ||
     normalized.endsWith('/v1') ||
     normalized.includes('api.openai.com') ||
-    normalized.includes('api.tu-zi.com')
+    normalized.includes('.tu-zi.com')
   ) {
     return 'openai-compatible';
   }
   return 'custom';
 }
 
-function inferAuthType(config: ApiConfig, providerType: string): ResolvedProviderContext['authType'] {
+function inferAuthType(
+  config: ApiConfig,
+  providerType: string
+): ResolvedProviderContext['authType'] {
   if (
     config.authType === 'bearer' ||
     config.authType === 'header' ||
@@ -209,7 +215,9 @@ export function extractPromptFromMessages(
  * @param sizeStr 尺寸字符串，格式为 'WIDTHxHEIGHT'，如 '1280x720'
  * @returns 解析后的宽高对象，如果格式无效返回 null
  */
-export function parseSize(sizeStr: string): { width: number; height: number } | null {
+export function parseSize(
+  sizeStr: string
+): { width: number; height: number } | null {
   if (!sizeStr) return null;
   const match = sizeStr.match(/^(\d+)x(\d+)$/);
   if (!match) return null;
@@ -265,7 +273,23 @@ export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 /**
  * 图片生成支持的宽高比列表（NxM 格式）
  */
-const VALID_IMAGE_SIZES = ['auto', '1x1', '1x4', '4x1', '1x8', '8x1', '16x9', '9x16', '3x2', '2x3', '4x3', '3x4', '5x4', '4x5', '21x9'];
+const VALID_IMAGE_SIZES = [
+  'auto',
+  '1x1',
+  '1x4',
+  '4x1',
+  '1x8',
+  '8x1',
+  '16x9',
+  '9x16',
+  '3x2',
+  '2x3',
+  '4x3',
+  '3x4',
+  '5x4',
+  '4x5',
+  '21x9',
+];
 
 /**
  * 将宽高比字符串解析为数值比例
@@ -302,15 +326,19 @@ function sizeTokenToRatio(sizeToken: string): number | null {
  *
  * 处理逻辑：
  * 1. 如果 size 已在可用列表中（精确匹配），直接返回
- * 2. 将 ':' 转为 'x' 后再次精确匹配
- * 3. 解析为宽高比数值，找到数值最接近的可用 size
- * 4. 都无法处理时返回默认值 'auto'
+ * 2. 如果 size 是具体像素尺寸，保留原值
+ * 3. 将 ':' 转为 'x' 后再次精确匹配
+ * 4. 解析为宽高比数值，找到数值最接近的可用 size
+ * 5. 都无法处理时返回默认值 'auto'
  *
  * @param size 原始 size 字符串，如 '2.35:1', '16:9', '1920x1080'
  * @param defaultSize 默认尺寸，当无法匹配时返回
  * @returns 最接近的可用图片 size
  */
-export function normalizeToClosestImageSize(size?: string, defaultSize: string = 'auto'): string {
+export function normalizeToClosestImageSize(
+  size?: string,
+  defaultSize: string = 'auto'
+): string {
   if (!size) return defaultSize;
 
   const trimmed = size.trim();
@@ -320,11 +348,21 @@ export function normalizeToClosestImageSize(size?: string, defaultSize: string =
   const lower = trimmed.toLowerCase();
   if (VALID_IMAGE_SIZES.includes(lower)) return lower;
 
-  // 2. ':' → 'x' 后再精确匹配
+  const pixelSize = parseSize(lower);
+  if (
+    pixelSize &&
+    pixelSize.width > 0 &&
+    pixelSize.height > 0 &&
+    (pixelSize.width > 32 || pixelSize.height > 32)
+  ) {
+    return lower;
+  }
+
+  // 3. ':' → 'x' 后再精确匹配
   const colonToX = lower.replace(':', 'x');
   if (VALID_IMAGE_SIZES.includes(colonToX)) return colonToX;
 
-  // 3. 解析为宽高比数值，找最接近的
+  // 4. 解析为宽高比数值，找最接近的
   const targetRatio = parseAspectRatioValue(trimmed);
   if (targetRatio === null) return defaultSize;
 
@@ -340,10 +378,6 @@ export function normalizeToClosestImageSize(size?: string, defaultSize: string =
       bestDiff = diff;
       bestMatch = candidate;
     }
-  }
-
-  if (bestMatch !== defaultSize) {
-    console.log(`[normalizeToClosestImageSize] "${trimmed}" → "${bestMatch}" (ratio: ${targetRatio.toFixed(3)} → ${sizeTokenToRatio(bestMatch)?.toFixed(3)})`);
   }
 
   return bestMatch;
@@ -392,10 +426,6 @@ export function normalizeToClosestVideoSize(
       bestDiff = diff;
       bestMatch = candidate;
     }
-  }
-
-  if (bestMatch !== defaultSize || bestDiff < Infinity) {
-    console.log(`[normalizeToClosestVideoSize] "${trimmed}" → "${bestMatch}" (ratio: ${targetRatio.toFixed(3)})`);
   }
 
   return bestMatch;

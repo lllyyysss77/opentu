@@ -5,14 +5,18 @@
  */
 
 import type { MCPExecuteOptions, MCPResult, MCPTool } from '../types';
-import { TaskType } from '../../types/task.types';
+import { TaskType, type KnowledgeContextRef } from '../../types/task.types';
 import { geminiSettings, type ModelRef } from '../../utils/settings-manager';
 import { getDefaultAudioModel } from '../../constants/model-config';
 import {
   audioAPIService,
   extractAudioGenerationResult,
 } from '../../services/audio-api-service';
-import { createQueueTask, validatePrompt } from './shared/queue-utils';
+import {
+  createQueueTask,
+  validatePrompt,
+  type PromptLineageMeta,
+} from './shared/queue-utils';
 
 export interface AudioGenerationParams {
   prompt: string;
@@ -36,6 +40,9 @@ export interface AudioGenerationParams {
   globalIndex?: number;
   autoInsertToCanvas?: boolean;
   params?: Record<string, unknown>;
+  promptMeta?: PromptLineageMeta;
+  /** 本次生成使用的知识库笔记轻量引用 */
+  knowledgeContextRefs?: KnowledgeContextRef[];
 }
 
 export function getCurrentAudioModel(): string {
@@ -121,6 +128,8 @@ function getAudioQueueConfig(params: AudioGenerationParams) {
       continueAt: params.continueAt,
       infillStartS: params.infillStartS,
       infillEndS: params.infillEndS,
+      promptMeta: params.promptMeta,
+      knowledgeContextRefs: params.knowledgeContextRefs,
       ...((params.params || params.continueSource)
         ? {
             params: {

@@ -4,6 +4,7 @@
  * 管理工具箱工具以弹窗形式打开的状态。
  * 支持多实例窗口、最小化、常驻工具栏、位置记忆等能力。
  */
+import { generateUUID } from '../utils/runtime-helpers';
 
 import { BehaviorSubject, Observable } from 'rxjs';
 import {
@@ -11,6 +12,9 @@ import {
   ToolWindowLaunchMode,
   ToolWindowState,
 } from '../types/toolbox.types';
+import { toolboxService } from './toolbox-service';
+import { analytics } from '../utils/posthog-analytics';
+import { isBuiltInToolId } from '../constants/built-in-tools';
 
 /** localStorage key for pinned tools */
 const PINNED_TOOLS_STORAGE_KEY = 'aitu-pinned-tools';
@@ -20,6 +24,45 @@ const INSTANCE_OFFSET_X = 36;
 const INSTANCE_OFFSET_Y = 28;
 const INSTANCE_BASE_X = 96;
 const INSTANCE_BASE_Y = 72;
+const PROMPT_HISTORY_TOOL_ID = 'prompt-history';
+
+function logPromptHistoryWindowDebug(
+  message: string,
+  details?: Record<string, unknown>
+): void {
+  console.info(`[ToolWindowService] ${message}`, details || {});
+}
+
+function buildToolAnalyticsPayload(
+  tool: ToolDefinition,
+  extras: Record<string, unknown> = {}
+): Record<string, unknown> {
+  const isCustomTool = !isBuiltInToolId(tool.id);
+  return {
+    toolId: tool.id,
+    tool_id: tool.id,
+    toolName: tool.name,
+    tool_name: tool.name,
+    category: tool.category,
+    isCustomTool,
+    is_custom_tool: isCustomTool,
+    ...extras,
+  };
+}
+
+function trackToolWindowAction(
+  action: string,
+  tool: ToolDefinition,
+  extras: Record<string, unknown> = {}
+): void {
+  analytics.trackUIInteraction({
+    area: 'toolbox_window',
+    action,
+    control: 'tool_window',
+    source: 'tool_window_service',
+    metadata: buildToolAnalyticsPayload(tool, extras),
+  });
+}
 
 /** 可序列化的工具信息 */
 interface SerializableToolInfo {
@@ -280,8 +323,25 @@ class ToolWindowService {
     return !!tool.url;
   }
 
-  openTool(tool: ToolDefinition, options?: OpenToolOptions): string | undefined {
+  openTool(
+    tool: ToolDefinition,
+    options?: OpenToolOptions
+  ): string | undefined {
     const launchMode = this.resolveLaunchMode(tool, options?.launchMode);
+    if (tool.id === PROMPT_HISTORY_TOOL_ID) {
+      logPromptHistoryWindowDebug('openTool:start', {
+        toolId: tool.id,
+        launchMode,
+        isPinned: this.pinnedToolIds.has(tool.id),
+        componentProps: options?.componentProps,
+        instances: this.getToolInstances(tool.id).map((state) => ({
+          instanceId: state.instanceId,
+          status: state.status,
+          isLauncher: state.isLauncher,
+          activationOrder: state.activationOrder,
+        })),
+      });
+    }
     this.applyAutoPinBehavior(tool, options);
 
     if (this.pinnedToolIds.has(tool.id)) {
@@ -292,13 +352,49 @@ class ToolWindowService {
     if (launchMode === 'reuse') {
       const reusableState = this.getPrimaryToolState(tool.id);
       if (reusableState) {
+        if (tool.id === PROMPT_HISTORY_TOOL_ID) {
+          logPromptHistoryWindowDebug('openTool:reuse', {
+            instanceId: reusableState.instanceId,
+            status: reusableState.status,
+            isLauncher: reusableState.isLauncher,
+          });
+        }
         this.applyOpenToExistingState(reusableState, tool, options);
+        trackToolWindowAction('open_reuse', tool, {
+          launchMode,
+          launch_mode: launchMode,
+          instanceId: reusableState.instanceId,
+          instance_id: reusableState.instanceId,
+          instanceIndex: reusableState.instanceIndex,
+          instance_index: reusableState.instanceIndex,
+          autoMaximize: Boolean(options?.autoMaximize),
+          auto_maximize: Boolean(options?.autoMaximize),
+          autoPin: Boolean(options?.autoPin),
+          auto_pin: Boolean(options?.autoPin),
+        });
         this.notify();
+        if (tool.id === PROMPT_HISTORY_TOOL_ID) {
+          logPromptHistoryWindowDebug('openTool:reused-after-notify', {
+            instanceId: reusableState.instanceId,
+            status: reusableState.status,
+            isLauncher: reusableState.isLauncher,
+            componentProps: reusableState.componentProps,
+          });
+        }
         return reusableState.instanceId;
       }
     }
 
     const instanceId = this.openNewToolInstance(tool, options);
+    if (tool.id === PROMPT_HISTORY_TOOL_ID) {
+      const state = this.getToolInstance(instanceId);
+      logPromptHistoryWindowDebug('openTool:new-instance', {
+        instanceId,
+        status: state?.status,
+        isLauncher: state?.isLauncher,
+        componentProps: state?.componentProps,
+      });
+    }
     return instanceId;
   }
 
@@ -331,6 +427,18 @@ class ToolWindowService {
 
     this.toolStates.set(instanceId, newState);
     this.notify();
+    trackToolWindowAction('open_new', tool, {
+      instanceId,
+      instance_id: instanceId,
+      instanceIndex,
+      instance_index: instanceIndex,
+      isPinned: newState.isPinned,
+      is_pinned: newState.isPinned,
+      autoMaximize: Boolean(options?.autoMaximize),
+      auto_maximize: Boolean(options?.autoMaximize),
+      autoPin: Boolean(options?.autoPin),
+      auto_pin: Boolean(options?.autoPin),
+    });
     return instanceId;
   }
 
@@ -340,6 +448,14 @@ class ToolWindowService {
       return;
     }
 
+    trackToolWindowAction('close', state.tool, {
+      instanceId: state.instanceId,
+      instance_id: state.instanceId,
+      instanceIndex: state.instanceIndex,
+      instance_index: state.instanceIndex,
+      previousStatus: state.status,
+      previous_status: state.status,
+    });
     this.toolStates.delete(state.instanceId);
     if (this.getToolInstances(state.toolId).length === 0) {
       this.instanceCounters.delete(state.toolId);
@@ -357,6 +473,14 @@ class ToolWindowService {
       return;
     }
 
+    trackToolWindowAction('minimize', state.tool, {
+      instanceId: state.instanceId,
+      instance_id: state.instanceId,
+      instanceIndex: state.instanceIndex,
+      instance_index: state.instanceIndex,
+      width: size?.width ?? state.size?.width,
+      height: size?.height ?? state.size?.height,
+    });
     state.status = 'minimized';
     if (position) {
       state.position = position;
@@ -373,6 +497,14 @@ class ToolWindowService {
       return;
     }
 
+    trackToolWindowAction('restore', state.tool, {
+      instanceId: state.instanceId,
+      instance_id: state.instanceId,
+      instanceIndex: state.instanceIndex,
+      instance_index: state.instanceIndex,
+      previousStatus: state.status,
+      previous_status: state.status,
+    });
     state.status = 'open';
     state.activationOrder = this.nextActivationOrder();
     this.notify();
@@ -402,6 +534,13 @@ class ToolWindowService {
       tool: state?.tool,
       persistPreference: true,
     });
+
+    if (state?.tool) {
+      trackToolWindowAction(pinned ? 'pin' : 'unpin', state.tool, {
+        isPinned: pinned,
+        is_pinned: pinned,
+      });
+    }
 
     this.getToolInstances(toolId).forEach((state) => {
       state.isPinned = pinned;
@@ -453,7 +592,9 @@ class ToolWindowService {
       return;
     }
 
-    if (state.activationOrder > this.getTopOpenActivationOrder(state.instanceId)) {
+    if (
+      state.activationOrder > this.getTopOpenActivationOrder(state.instanceId)
+    ) {
       return;
     }
 
@@ -462,7 +603,9 @@ class ToolWindowService {
   }
 
   isToolOpen(toolId: string): boolean {
-    return this.getToolInstances(toolId).some((state) => state.status === 'open');
+    return this.getToolInstances(toolId).some(
+      (state) => state.status === 'open'
+    );
   }
 
   isToolMinimized(toolId: string): boolean {
@@ -486,6 +629,8 @@ class ToolWindowService {
     tool: ToolDefinition,
     options?: Omit<OpenToolOptions, 'launchMode'>
   ): void {
+    const previousStatus = state.status;
+    const previousIsLauncher = state.isLauncher;
     state.tool = tool;
     state.toolId = tool.id;
     state.isPinned = this.pinnedToolIds.has(tool.id);
@@ -501,6 +646,16 @@ class ToolWindowService {
       if (options?.autoMaximize) {
         state.autoMaximize = true;
       }
+      if (tool.id === PROMPT_HISTORY_TOOL_ID) {
+        logPromptHistoryWindowDebug('applyOpenToExistingState:opened', {
+          instanceId: state.instanceId,
+          previousStatus,
+          nextStatus: state.status,
+          previousIsLauncher,
+          nextIsLauncher: state.isLauncher,
+          componentProps: state.componentProps,
+        });
+      }
       return;
     }
 
@@ -509,6 +664,16 @@ class ToolWindowService {
     }
 
     state.activationOrder = this.nextActivationOrder();
+    if (tool.id === PROMPT_HISTORY_TOOL_ID) {
+      logPromptHistoryWindowDebug('applyOpenToExistingState:already-open', {
+        instanceId: state.instanceId,
+        previousStatus,
+        nextStatus: state.status,
+        previousIsLauncher,
+        nextIsLauncher: state.isLauncher,
+        componentProps: state.componentProps,
+      });
+    }
   }
 
   private resolveState(target: string): ToolWindowState | undefined {
@@ -584,6 +749,20 @@ class ToolWindowService {
       return undefined;
     }
 
+    const fullTool = toolboxService.getToolById(toolId);
+    if (fullTool) {
+      return {
+        instanceId: `${LAUNCHER_INSTANCE_PREFIX}${toolId}`,
+        toolId,
+        instanceIndex: 0,
+        tool: fullTool,
+        status: 'closed',
+        activationOrder: 0,
+        isPinned: true,
+        isLauncher: true,
+      };
+    }
+
     const info = this.pinnedToolInfos.get(toolId);
     if (!info) {
       return undefined;
@@ -646,21 +825,18 @@ class ToolWindowService {
 
     return {
       x:
-        (latestState.position?.x ?? INSTANCE_BASE_X + fallbackOffset * INSTANCE_OFFSET_X) +
+        (latestState.position?.x ??
+          INSTANCE_BASE_X + fallbackOffset * INSTANCE_OFFSET_X) +
         INSTANCE_OFFSET_X,
       y:
-        (latestState.position?.y ?? INSTANCE_BASE_Y + fallbackOffset * INSTANCE_OFFSET_Y) +
+        (latestState.position?.y ??
+          INSTANCE_BASE_Y + fallbackOffset * INSTANCE_OFFSET_Y) +
         INSTANCE_OFFSET_Y,
     };
   }
 
   private generateInstanceId(toolId: string): string {
-    const suffix =
-      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-        ? crypto.randomUUID()
-        : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-
-    return `${toolId}:${suffix}`;
+    return `${toolId}:${generateUUID()}`;
   }
 
   private notify(): void {

@@ -4,6 +4,9 @@
  * TypeScript interfaces for the Chat Drawer feature.
  */
 
+import type { ModelRef } from '../utils/settings-manager';
+import type { KnowledgeContextRef } from './task.types';
+
 // ============================================================================
 // Enums
 // ============================================================================
@@ -214,10 +217,16 @@ export interface SelectedContentItem {
   type: 'image' | 'video' | 'graphics' | 'text';
   /** 媒体 URL（图片/视频/图形） */
   url?: string;
+  /** 局部编辑蒙版 URL */
+  maskImage?: string;
   /** 文字内容 */
   text?: string;
   /** 显示名称 */
   name: string;
+  /** 媒体自然宽度 */
+  width?: number;
+  /** 媒体自然高度 */
+  height?: number;
 }
 
 /** AI 输入上下文 - 完整的用户输入信息 */
@@ -235,6 +244,20 @@ export interface AIInputContext {
     type: 'image' | 'video' | 'audio' | 'text' | 'agent';
     /** 是否为用户显式选择 */
     isExplicit: boolean;
+  };
+  /** 模型来源引用 */
+  modelRef?: ModelRef | null;
+  /** Agent/Skill 后续媒体生成默认模型 */
+  defaultModels?: {
+    image?: string;
+    video?: string;
+    audio?: string;
+  };
+  /** Agent/Skill 后续媒体生成默认模型来源 */
+  defaultModelRefs?: {
+    image?: ModelRef | null;
+    video?: ModelRef | null;
+    audio?: ModelRef | null;
   };
 
   /** 选中的参数 */
@@ -261,10 +284,14 @@ export interface AIInputContext {
     videos: string[];
     /** 选中的图形转换为的图片 URL */
     graphics: string[];
+    /** 单张普通图片自动识别出的局部编辑蒙版 URL */
+    maskImage?: string;
   };
 
   /** 合并后的最终 prompt（文本元素 + 默认 prompt） */
   finalPrompt: string;
+  /** 本次生成使用的知识库笔记轻量引用 */
+  knowledgeContextRefs?: KnowledgeContextRef[];
 }
 
 /** 工作流消息参数 */

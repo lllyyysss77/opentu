@@ -4,6 +4,9 @@
  * 任务相关类型定义，包括任务状态、类型、参数和事件
  */
 
+import type { CacheWarning } from '../../../types/cache-warning.types';
+import type { TaskInvocationRouteSnapshot } from '../../../types/task.types';
+
 // ============================================================================
 // 基础类型
 // ============================================================================
@@ -56,6 +59,7 @@ export interface TaskResult {
   height?: number;
   duration?: number;
   thumbnailUrl?: string;
+  cacheWarning?: CacheWarning;
 }
 
 /**
@@ -85,6 +89,7 @@ export interface SWTask {
   error?: TaskError;
   progress?: number;
   remoteId?: string;
+  invocationRoute?: TaskInvocationRouteSnapshot;
   executionPhase?: TaskExecutionPhase;
   insertedToCanvas?: boolean;
 }

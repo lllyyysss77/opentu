@@ -30,17 +30,25 @@ import { taskStorageReader } from './task-storage-reader';
 import { executorFactory, waitForTaskCompletion } from './media-executor';
 import { hasInvocationRouteCredentials } from '../utils/settings-manager';
 import { DEFAULT_AUDIO_MODEL_ID } from '../constants/model-config';
+import { analytics } from '../utils/posthog-analytics';
 import {
   getAdapterContextFromSettings,
   resolveAdapterForInvocation,
 } from './model-adapters';
 import { cacheRemoteUrl } from './media-executor/fallback-utils';
-import { STORAGE_LIMITS } from '../constants/TASK_CONSTANTS';
+import {
+  IMAGE_GENERATION_TIMEOUT_MS,
+  STORAGE_LIMITS,
+} from '../constants/TASK_CONSTANTS';
 import { sendChatWithGemini } from '../utils/gemini-api/services';
 import type { GeminiMessage } from '../utils/gemini-api/types';
 import { buildInlineDataPart } from '../utils/gemini-api/message-utils';
 import { unifiedCacheService } from './unified-cache-service';
 import { buildGenerateContentConfig } from './analysis-core';
+import {
+  createTaskInvocationRouteSnapshotFromTask,
+  mergeTaskInvocationRoute,
+} from './task-invocation-route';
 import { callGoogleGenerateContentWithLog } from '../utils/gemini-api/logged-calls';
 import { executeVideoAnalysis } from './video-analysis-service';
 import {
@@ -49,8 +57,8 @@ import {
 } from '../components/video-analyzer/types';
 import { loadRecords } from '../components/video-analyzer/storage';
 import {
-  applyRewriteShotUpdates,
-  parseRewriteShotUpdates,
+  parseVideoPromptGenerationResponse,
+  parseScriptRewriteResponse,
 } from '../components/video-analyzer/utils';
 import {
   DEFAULT_MUSIC_ANALYSIS_PROMPT,
@@ -61,6 +69,11 @@ import {
 import { formatMusicAnalysisMarkdown } from '../components/music-analyzer/types';
 import { loadRecords as loadMusicRecords } from '../components/music-analyzer/storage';
 import { parseLyricsRewriteResult } from '../components/music-analyzer/utils';
+import {
+  buildPromptWithKnowledgeContext,
+  normalizeGenerationParamsKnowledgeContext,
+} from './generation-context-service';
+import { MAX_VIDEO_GENERATION_PROMPT_LENGTH } from '../components/shared/workflow/prompt-builders';
 
 const VIDEO_ANALYZER_SIMULATED_DURATION_MS = 10 * 60 * 1000;
 const VIDEO_ANALYZER_SIMULATED_INTERVAL_MS = 5000;
@@ -70,6 +83,10 @@ const VIDEO_REWRITE_SIMULATED_DURATION_MS = 2 * 60 * 1000;
 const VIDEO_REWRITE_SIMULATED_INTERVAL_MS = 2000;
 const VIDEO_REWRITE_SIMULATED_START_PROGRESS = 20;
 const VIDEO_REWRITE_SIMULATED_END_PROGRESS = 95;
+const VIDEO_PROMPT_SIMULATED_DURATION_MS = 2 * 60 * 1000;
+const VIDEO_PROMPT_SIMULATED_INTERVAL_MS = 2000;
+const VIDEO_PROMPT_SIMULATED_START_PROGRESS = 20;
+const VIDEO_PROMPT_SIMULATED_END_PROGRESS = 95;
 const MUSIC_ANALYZER_SIMULATED_DURATION_MS = 4 * 60 * 1000;
 const MUSIC_ANALYZER_SIMULATED_INTERVAL_MS = 3000;
 const MUSIC_ANALYZER_SIMULATED_START_PROGRESS = 12;
@@ -78,8 +95,203 @@ const MUSIC_REWRITE_SIMULATED_DURATION_MS = 2 * 60 * 1000;
 const MUSIC_REWRITE_SIMULATED_INTERVAL_MS = 2000;
 const MUSIC_REWRITE_SIMULATED_START_PROGRESS = 20;
 const MUSIC_REWRITE_SIMULATED_END_PROGRESS = 95;
+const STRIPPED_TASK_PARAM_KEYS = [
+  'referenceImages',
+  'uploadedImages',
+  'videoData',
+  'audioData',
+  'pdfData',
+] as const;
 
-function normalizeImageDataUrl(value: string, fallbackMimeType = 'image/png'): string {
+type InsertionSource = 'manual' | 'auto_insert';
+type StrippedTaskParamKey = (typeof STRIPPED_TASK_PARAM_KEYS)[number];
+const STORAGE_SYNC_FIELDS = [
+  'status',
+  'progress',
+  'result',
+  'error',
+  'completedAt',
+  'startedAt',
+  'remoteId',
+  'invocationRoute',
+  'insertedToCanvas',
+  'executionPhase',
+  'savedToLibrary',
+] as const satisfies readonly (keyof Task)[];
+
+function stableStringify(value: unknown): string | undefined {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return undefined;
+  }
+}
+
+function areStorageSyncValuesEqual(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) {
+    return true;
+  }
+
+  if (
+    left &&
+    right &&
+    typeof left === 'object' &&
+    typeof right === 'object'
+  ) {
+    const leftJson = stableStringify(left);
+    const rightJson = stableStringify(right);
+    return leftJson !== undefined && leftJson === rightJson;
+  }
+
+  return false;
+}
+
+function hasStorageTaskChanges(task: Task, storageTask: Partial<Task>): boolean {
+  return STORAGE_SYNC_FIELDS.some((field) => {
+    if (!(field in storageTask)) {
+      return false;
+    }
+    return !areStorageSyncValuesEqual(task[field], storageTask[field]);
+  });
+}
+
+function getTaskResultCount(task: Task): number {
+  if (Array.isArray(task.result?.urls) && task.result.urls.length > 0) {
+    return task.result.urls.length;
+  }
+  if (
+    task.result?.url ||
+    task.result?.chatResponse ||
+    task.result?.lyricsText
+  ) {
+    return 1;
+  }
+  return 0;
+}
+
+function buildTaskAnalyticsPayload(task: Task): Record<string, unknown> {
+  const model =
+    typeof task.params.model === 'string' && task.params.model.trim()
+      ? task.params.model
+      : undefined;
+  const modelRef = task.params.modelRef || null;
+  const resultCount = getTaskResultCount(task) || undefined;
+  const hasReferenceImage = Boolean(
+    task.params.referenceImages?.length ||
+      task.params.uploadedImages?.length ||
+      task.params.uploadedImage
+  );
+  const promptLength =
+    typeof task.params.prompt === 'string' ? task.params.prompt.length : 0;
+
+  return {
+    taskId: task.id,
+    task_id: task.id,
+    taskType: task.type,
+    task_type: task.type,
+    taskStatus: task.status,
+    task_status: task.status,
+    model,
+    profileId: modelRef?.profileId || undefined,
+    profile_id: modelRef?.profileId || undefined,
+    modelRefModelId: modelRef?.modelId || undefined,
+    model_ref_model_id: modelRef?.modelId || undefined,
+    executionPhase: task.executionPhase,
+    execution_phase: task.executionPhase,
+    hasRemoteId: Boolean(task.remoteId),
+    has_remote_id: Boolean(task.remoteId),
+    providerProfileId: task.invocationRoute?.providerProfileId || undefined,
+    provider_profile_id: task.invocationRoute?.providerProfileId || undefined,
+    bindingId: task.invocationRoute?.binding?.id || undefined,
+    binding_id: task.invocationRoute?.binding?.id || undefined,
+    resultCount,
+    result_count: resultCount,
+    hasReferenceImage,
+    has_reference_image: hasReferenceImage,
+    promptLength,
+    prompt_length: promptLength,
+    source: task.params.source,
+    taskSource: task.params.source,
+    task_source: task.params.source,
+    generationMode: task.params.generationMode,
+    generation_mode: task.params.generationMode,
+    size: task.params.size,
+    duration: task.params.duration,
+    resultKind: task.result?.resultKind,
+    result_kind: task.result?.resultKind,
+  };
+}
+
+function trackTaskAnalytics(
+  eventName: string,
+  task: Task,
+  extras?: Record<string, unknown>
+): void {
+  analytics.track(eventName, {
+    ...buildTaskAnalyticsPayload(task),
+    ...(extras || {}),
+  });
+}
+
+function isTrackedTerminalTaskStatus(
+  status: TaskStatus
+): status is
+  | TaskStatus.COMPLETED
+  | TaskStatus.FAILED
+  | TaskStatus.CANCELLED {
+  return (
+    status === TaskStatus.COMPLETED ||
+    status === TaskStatus.FAILED ||
+    status === TaskStatus.CANCELLED
+  );
+}
+
+function getTerminalTaskEventName(status: TaskStatus): string {
+  if (status === TaskStatus.COMPLETED) {
+    return 'generation_task_completed';
+  }
+  if (status === TaskStatus.FAILED) {
+    return 'generation_task_failed';
+  }
+  return 'generation_task_cancelled';
+}
+
+function getTaskDurationMs(task: Task): number | undefined {
+  if (!task.startedAt) {
+    return undefined;
+  }
+  const endedAt = task.completedAt || task.updatedAt || Date.now();
+  return Math.max(0, endedAt - task.startedAt);
+}
+
+function trackTerminalTaskAnalytics(
+  task: Task,
+  previousStatus?: TaskStatus,
+  extras?: Record<string, unknown>
+): void {
+  if (
+    !isTrackedTerminalTaskStatus(task.status) ||
+    previousStatus === task.status
+  ) {
+    return;
+  }
+
+  const durationMs = getTaskDurationMs(task);
+  trackTaskAnalytics(getTerminalTaskEventName(task.status), task, {
+    durationMs,
+    duration_ms: durationMs,
+    errorCode: task.error?.code,
+    error_code: task.error?.code,
+    errorMessage: task.error?.message,
+    error_message: task.error?.message,
+    ...(extras || {}),
+  });
+}
+
+function normalizeImageDataUrl(
+  value: string,
+  fallbackMimeType = 'image/png'
+): string {
   const trimmed = value.trim();
 
   if (
@@ -103,6 +315,83 @@ function normalizeImageDataUrl(value: string, fallbackMimeType = 'image/png'): s
   return `data:${fallbackMimeType};base64,${normalized}`;
 }
 
+function normalizeComparableMediaUrl(value: string): string {
+  const normalized = normalizeImageDataUrl(value);
+
+  if (typeof window === 'undefined') {
+    return normalized;
+  }
+
+  try {
+    const parsed = new URL(normalized, window.location.origin);
+    if (parsed.origin !== window.location.origin) {
+      return parsed.toString();
+    }
+
+    parsed.searchParams.delete('_retry');
+    parsed.searchParams.delete('bypass_sw');
+    return `${parsed.pathname}${parsed.search}`;
+  } catch {
+    return normalized.trim();
+  }
+}
+
+function getTaskResultUrls(task: Task): string[] {
+  const urls = new Set<string>();
+  if (task.result?.url) {
+    urls.add(task.result.url);
+  }
+  task.result?.urls?.forEach((url) => {
+    if (url) {
+      urls.add(url);
+    }
+  });
+  return Array.from(urls);
+}
+
+function imageTaskMatchesUrl(task: Task, imageUrl: string): boolean {
+  if (task.type !== TaskType.IMAGE) {
+    return false;
+  }
+
+  const targetUrl = normalizeComparableMediaUrl(imageUrl);
+  return getTaskResultUrls(task).some(
+    (url) => normalizeComparableMediaUrl(url) === targetUrl
+  );
+}
+
+function hasAnyPersistedLargeTaskParams(
+  params?: Record<string, unknown> | null
+): boolean {
+  if (!params) {
+    return false;
+  }
+
+  return STRIPPED_TASK_PARAM_KEYS.some((key) => params[key] !== undefined);
+}
+
+function mergePersistedLargeTaskParams(
+  params: GenerationParams,
+  persistedParams?: Record<string, unknown> | null
+): GenerationParams {
+  if (!persistedParams) {
+    return params;
+  }
+
+  let nextParams: GenerationParams | null = null;
+
+  STRIPPED_TASK_PARAM_KEYS.forEach((key: StrippedTaskParamKey) => {
+    if (params[key] === undefined && persistedParams[key] !== undefined) {
+      if (!nextParams) {
+        nextParams = { ...params };
+      }
+      nextParams[key] = persistedParams[key];
+    }
+  });
+
+  return nextParams || params;
+}
+
 async function cacheAudioCoverUrl(
   coverUrl: string | undefined,
   taskId: string,
@@ -122,7 +411,10 @@ async function cacheAudioCoverUrl(
       { forceRemoteCache: true }
     );
   } catch (error) {
-    console.warn('[TaskQueueService] Audio cover cache failed, using original URL:', error);
+    console.warn(
+      '[TaskQueueService] Audio cover cache failed, using original URL:',
+      error
+    );
     return coverUrl;
   }
 }
@@ -136,7 +428,9 @@ class TaskQueueService {
   private tasks: Map<string, Task>;
   private taskUpdates$: Subject<TaskEvent>;
   private executingTasks = new Set<string>();
+  private taskAbortControllers = new Map<string, AbortController>();
   private blockedTaskIds = new Set<string>();
+  private tasksWithStrippedParams = new Set<string>();
 
   private constructor() {
     this.tasks = new Map();
@@ -160,6 +454,7 @@ class TaskQueueService {
       error: task.error as any,
       progress: task.progress,
       remoteId: task.remoteId,
+      invocationRoute: task.invocationRoute,
       executionPhase: task.executionPhase,
       savedToLibrary: task.savedToLibrary,
       insertedToCanvas: task.insertedToCanvas,
@@ -170,12 +465,122 @@ class TaskQueueService {
    * Persist task to IndexedDB (async, fire-and-forget)
    */
   private persistTask(task: Task): void {
-    const swTask = this.convertToSWTask(task);
-    taskStorageWriter.saveTask(swTask).catch((error) => {
+    this.persistTaskInternal(task).catch((error) => {
       console.error('[TaskQueueService] Failed to persist task:', error);
     });
+  }
+
+  private async persistTaskInternal(task: Task): Promise<void> {
+    const persistableTask = await this.restoreStrippedTaskParams(task);
+    const swTask = this.convertToSWTask(persistableTask);
+    await taskStorageWriter.saveTask(swTask);
     // Invalidate reader cache after write
     taskStorageReader.invalidateCache();
+  }
+
+  private shouldSkipExecutionWriteback(taskId: string): boolean {
+    const task = this.tasks.get(taskId);
+    return (
+      !task ||
+      task.status === TaskStatus.CANCELLED ||
+      this.blockedTaskIds.has(taskId)
+    );
+  }
+
+  private repersistCancelledTask(taskId: string): void {
+    const task = this.tasks.get(taskId);
+    if (task?.status === TaskStatus.CANCELLED) {
+      this.persistTask(task);
+    }
+  }
+
+  private async resolveTaskKnowledgeContext(task: Task): Promise<Task> {
+    const refs = task.params.knowledgeContextRefs;
+    if (!refs?.length) {
+      return task;
+    }
+
+    const specializedPromptKey = [
+      'videoAnalyzerPrompt',
+      'musicAnalyzerPrompt',
+    ].find((key) => {
+      const value = task.params[key];
+      return typeof value === 'string' && value.trim().length > 0;
+    });
+    const basePrompt = specializedPromptKey
+      ? task.params[specializedPromptKey]
+      : task.params.prompt;
+    const result = await buildPromptWithKnowledgeContext(
+      basePrompt,
+      refs,
+      task.type === TaskType.VIDEO
+        ? { maxPromptLength: MAX_VIDEO_GENERATION_PROMPT_LENGTH }
+        : undefined
+    );
+    if (!result.contextBlock) {
+      return task;
+    }
+
+    return {
+      ...task,
+      params: {
+        ...task.params,
+        ...(specializedPromptKey
+          ? { [specializedPromptKey]: result.prompt }
+          : { prompt: result.prompt }),
+        promptMeta: {
+          ...task.params.promptMeta,
+          knowledgeContextRefs: result.includedRefs,
+        },
+      },
+    };
+  }
+
+  private async buildChatInlineDataParts(
+    task: Task
+  ): Promise<GeminiMessage['content']> {
+    const params = task.params as {
+      pdfCacheUrl?: unknown;
+      pdfData?: unknown;
+      pdfMimeType?: unknown;
+      pdfName?: unknown;
+    };
+    const parts: GeminiMessage['content'] = [];
+    const mimeType =
+      typeof params.pdfMimeType === 'string' && params.pdfMimeType.trim()
+        ? params.pdfMimeType.trim()
+        : 'application/pdf';
+
+    if (typeof params.pdfData === 'string' && params.pdfData.trim()) {
+      parts.push({
+        type: 'inline_data',
+        mimeType,
+        data: params.pdfData.replace(/^data:application\/pdf;base64,/i, ''),
+      });
+    }
+
+    if (typeof params.pdfCacheUrl === 'string' && params.pdfCacheUrl.trim()) {
+      const blob = await unifiedCacheService.getCachedBlob(
+        params.pdfCacheUrl.trim()
+      );
+      if (!blob) {
+        throw new Error('无法读取已上传的 PDF 文件');
+      }
+
+      const file = new File(
+        [blob],
+        typeof params.pdfName === 'string' && params.pdfName.trim()
+          ? params.pdfName.trim()
+          : 'comic-source.pdf',
+        { type: blob.type || mimeType }
+      );
+      const part = await buildInlineDataPart(file);
+      if (part.type === 'inline_data') {
+        parts.push(part);
+      }
+    }
+
+    return parts;
   }
 
   /**
@@ -199,11 +604,20 @@ class TaskQueueService {
   private async executeTask(task: Task): Promise<void> {
     // 防止同一任务被重复执行（双重调用防护）
     if (this.executingTasks.has(task.id)) {
-      console.warn(`[TaskQueueService] Task ${task.id} is already executing, skipping duplicate`);
+      console.warn(
+        `[TaskQueueService] Task ${task.id} is already executing, skipping duplicate`
+      );
       return;
     }
     this.executingTasks.add(task.id);
+    const abortController = new AbortController();
+    this.taskAbortControllers.set(task.id, abortController);
+    const { signal } = abortController;
     try {
+      if (this.shouldSkipExecutionWriteback(task.id)) {
+        return;
+      }
+
       // Check API configuration
       const routeType =
         task.type === TaskType.VIDEO
@@ -227,6 +641,10 @@ class TaskQueueService {
         });
         return;
       }
+
+      task = await this.resolveTaskKnowledgeContext(
+        await this.restoreStrippedTaskParams(task)
+      );
 
       if (task.type === TaskType.AUDIO) {
         const requestedModel = task.params.model as string | undefined;
@@ -262,6 +680,7 @@ class TaskQueueService {
             infillEndS: task.params.infillEndS,
             params: {
               ...(task.params as any).params,
+              signal,
               onProgress: (progress: number) => {
                 this.updateTaskProgress(task.id, progress);
                 this.updateTaskStatus(task.id, TaskStatus.PROCESSING, {
@@ -271,6 +690,10 @@ class TaskQueueService {
               onSubmitted: (remoteId: string) => {
                 this.updateTaskStatus(task.id, TaskStatus.PROCESSING, {
                   remoteId,
+                  invocationRoute: mergeTaskInvocationRoute(
+                    task.invocationRoute,
+                    createTaskInvocationRouteSnapshotFromTask(task, 'audio')
+                  ),
                   executionPhase: TaskExecutionPhase.POLLING,
                 });
               },
@@ -278,8 +701,13 @@ class TaskQueueService {
           }
         );
 
+        if (this.shouldSkipExecutionWriteback(task.id)) {
+          return;
+        }
+
         // 缓存音频 URL 到 Cache Storage，防止远程链接过期
-        const fmt = result.format || (result.resultKind === 'lyrics' ? 'lyrics' : 'mp3');
+        const fmt =
+          result.format || (result.resultKind === 'lyrics' ? 'lyrics' : 'mp3');
         let cachedUrl = result.url;
         let cachedUrls = result.urls;
         let cachedPreviewImageUrl = result.imageUrl;
@@ -289,12 +717,26 @@ class TaskQueueService {
           try {
             const audioMeta = {
               extraMetadata: {
-                name: result.title || task.params.title || task.params.prompt?.substring(0, 30) || 'AI音频',
+                name:
+                  result.title ||
+                  task.params.title ||
+                  task.params.prompt?.substring(0, 30) ||
+                  'AI音频',
                 providerTaskId: result.providerTaskId || task.remoteId,
-                duration: typeof result.duration === 'number' ? result.duration : undefined,
+                duration:
+                  typeof result.duration === 'number'
+                    ? result.duration
+                    : undefined,
               },
             };
-            cachedUrl = await cacheRemoteUrl(result.url, task.id, 'audio', fmt, undefined, audioMeta);
+            cachedUrl = await cacheRemoteUrl(
+              result.url,
+              task.id,
+              'audio',
+              fmt,
+              undefined,
+              audioMeta
+            );
             if (result.imageUrl) {
               cachedPreviewImageUrl = await cacheAudioCoverUrl(
                 result.imageUrl,
@@ -306,10 +748,18 @@ class TaskQueueService {
                 result.clips.map(async (clip, index) => {
                   const clipMeta = {
                     extraMetadata: {
-                      name: clip.title || result.title || task.params.title || task.params.prompt?.substring(0, 30) || 'AI音频',
+                      name:
+                        clip.title ||
+                        result.title ||
+                        task.params.title ||
+                        task.params.prompt?.substring(0, 30) ||
+                        'AI音频',
                       clipId: clip.clipId || clip.id,
                       providerTaskId: result.providerTaskId || task.remoteId,
-                      duration: typeof clip.duration === 'number' ? clip.duration : undefined,
+                      duration:
+                        typeof clip.duration === 'number'
+                          ? clip.duration
+                          : undefined,
                     },
                   };
                   const cachedAudioUrl = await cacheRemoteUrl(
@@ -366,17 +816,20 @@ class TaskQueueService {
             }
             if (!cachedPreviewImageUrl) {
               cachedPreviewImageUrl =
-                cachedClips?.[0]?.imageLargeUrl ||
-                cachedClips?.[0]?.imageUrl;
+                cachedClips?.[0]?.imageLargeUrl || cachedClips?.[0]?.imageUrl;
             }
           } catch (cacheError) {
-            console.warn('[TaskQueueService] Audio cache failed, using original URLs:', cacheError);
+            console.warn(
+              '[TaskQueueService] Audio cache failed, using original URLs:',
+              cacheError
+            );
           }
         }
 
         const now = Date.now();
+        const previousTask = this.tasks.get(task.id) || task;
         const completedTask: Task = {
-          ...(this.tasks.get(task.id) || task),
+          ...previousTask,
           status: TaskStatus.COMPLETED,
           progress: 100,
           result: {
@@ -401,6 +854,7 @@ class TaskQueueService {
           completedAt: now,
           updatedAt: now,
         };
+        trackTerminalTaskAnalytics(completedTask, previousTask.status);
         this.tasks.set(task.id, completedTask);
         this.persistTask(completedTask);
         this.emitEvent('taskUpdated', completedTask);
@@ -415,7 +869,12 @@ class TaskQueueService {
       // 否则 useTaskQueue 通过 getAllTasks() 获取的对象引用不变，
       // React.memo 比较 prev.task.progress === next.task.progress 时永远相等
       const executionOptions = {
+        signal,
         onProgress: (progress: { progress: number; phase?: string }) => {
+          if (this.shouldSkipExecutionWriteback(task.id)) {
+            return;
+          }
+
           const localTask = this.tasks.get(task.id);
           if (localTask) {
             const updatedTask: Task = {
@@ -435,8 +894,26 @@ class TaskQueueService {
       // Execute based on task type
       switch (task.type) {
         case TaskType.IMAGE: {
-          // 从 params.params 中提取额外参数（如 quality）
-          const extraParams = (task.params as any).params || {};
+          // 从 params.params 中提取额外参数，并补齐新图像契约字段
+          const extraParams = {
+            ...(((task.params as any).params || {}) as Record<string, unknown>),
+          };
+          if (task.params.resolution !== undefined) {
+            extraParams.resolution = task.params.resolution;
+          }
+          if (
+            task.params.quality !== undefined &&
+            extraParams.quality === undefined
+          ) {
+            extraParams.quality = task.params.quality;
+          }
+          if (
+            typeof task.params.count === 'number' &&
+            Number.isFinite(task.params.count) &&
+            extraParams.n === undefined
+          ) {
+            extraParams.n = task.params.count;
+          }
           await executor.generateImage(
             {
               taskId: task.id,
@@ -444,15 +921,52 @@ class TaskQueueService {
               model: task.params.model,
               modelRef: task.params.modelRef || null,
               size: task.params.size,
+              resolution: task.params.resolution as
+                | '1k'
+                | '2k'
+                | '4k'
+                | undefined,
+              generationMode: task.params.generationMode as
+                | 'text_to_image'
+                | 'image_to_image'
+                | 'image_edit'
+                | undefined,
               referenceImages: task.params.referenceImages as
                 | string[]
+                | undefined,
+              maskImage: task.params.maskImage as string | undefined,
+              inputFidelity: task.params.inputFidelity as
+                | 'high'
+                | 'low'
+                | undefined,
+              background: task.params.background as
+                | 'transparent'
+                | 'opaque'
+                | 'auto'
+                | undefined,
+              outputFormat: task.params.outputFormat as
+                | 'png'
+                | 'jpeg'
+                | 'webp'
+                | undefined,
+              outputCompression: task.params.outputCompression as
+                | number
                 | undefined,
               count: task.params.count as number | undefined,
               uploadedImages: task.params.uploadedImages as
                 | Array<{ url?: string }>
                 | undefined,
-              quality: extraParams.quality as '1k' | '2k' | '4k' | undefined,
+              quality: (task.params.quality ?? extraParams.quality) as
+                | 'auto'
+                | 'low'
+                | 'medium'
+                | 'high'
+                | '1k'
+                | '2k'
+                | '4k'
+                | undefined,
               params: extraParams,
+              assetMetadata: task.params.assetMetadata,
             },
             executionOptions
           );
@@ -496,32 +1010,64 @@ class TaskQueueService {
           break;
         }
         case TaskType.CHAT: {
-          if ((task.params as { videoAnalyzerAction?: string }).videoAnalyzerAction === 'analyze') {
+          if (
+            (task.params as { videoAnalyzerAction?: string })
+              .videoAnalyzerAction === 'analyze'
+          ) {
             await this.executeVideoAnalyzerAnalyzeTask(task);
             break;
           }
 
-          if ((task.params as { videoAnalyzerAction?: string }).videoAnalyzerAction === 'rewrite') {
+          if (
+            (task.params as { videoAnalyzerAction?: string })
+              .videoAnalyzerAction === 'rewrite'
+          ) {
             await this.executeVideoAnalyzerRewriteTask(task, executionOptions);
             break;
           }
 
-          if ((task.params as { musicAnalyzerAction?: string }).musicAnalyzerAction === 'analyze') {
+          if (
+            (task.params as { videoAnalyzerAction?: string })
+              .videoAnalyzerAction === 'prompt-generate'
+          ) {
+            await this.executeVideoAnalyzerPromptGenerateTask(
+              task,
+              executionOptions
+            );
+            break;
+          }
+
+          if (
+            (task.params as { musicAnalyzerAction?: string })
+              .musicAnalyzerAction === 'analyze'
+          ) {
             await this.executeMusicAnalyzerAnalyzeTask(task);
             break;
           }
 
-          if ((task.params as { musicAnalyzerAction?: string }).musicAnalyzerAction === 'rewrite') {
+          if (
+            (task.params as { musicAnalyzerAction?: string })
+              .musicAnalyzerAction === 'rewrite'
+          ) {
             await this.executeMusicAnalyzerRewriteTask(task, executionOptions);
             break;
           }
 
-          if ((task.params as { musicAnalyzerAction?: string }).musicAnalyzerAction === 'lyrics-gen') {
-            await this.executeMusicAnalyzerLyricsGenTask(task, executionOptions);
+          if (
+            (task.params as { musicAnalyzerAction?: string })
+              .musicAnalyzerAction === 'lyrics-gen'
+          ) {
+            await this.executeMusicAnalyzerLyricsGenTask(
+              task,
+              executionOptions
+            );
             break;
           }
 
-          if ((task.params as { mvCreatorAction?: string }).mvCreatorAction === 'storyboard') {
+          if (
+            (task.params as { mvCreatorAction?: string }).mvCreatorAction ===
+            'storyboard'
+          ) {
             await this.executeMVStoryboardTask(task, executionOptions);
             break;
           }
@@ -535,6 +1081,7 @@ class TaskQueueService {
               referenceImages: task.params.referenceImages as
                 | string[]
                 | undefined,
+              inlineDataParts: await this.buildChatInlineDataParts(task),
               params: (task.params as any).params,
             },
             executionOptions
@@ -545,10 +1092,19 @@ class TaskQueueService {
           throw new Error(`Unsupported task type: ${task.type}`);
       }
 
+      if (this.shouldSkipExecutionWriteback(task.id)) {
+        return;
+      }
+
       // Poll for task completion (executor 已完成，此处主要是从 IndexedDB 读取最终结果)
       const result = await waitForTaskCompletion(task.id, {
-        timeout: 10 * 60 * 1000, // 10 minutes
+        timeout: IMAGE_GENERATION_TIMEOUT_MS,
+        signal,
         onProgress: (updatedTask) => {
+          if (this.shouldSkipExecutionWriteback(task.id)) {
+            return;
+          }
+
           // Update local state with progress
           // 注意：同时同步 result/error/completedAt，避免 status=completed 但 result 为空的中间状态
           // 创建新对象存入 Map，确保 React 能检测到引用变化
@@ -565,6 +1121,7 @@ class TaskQueueService {
                 completedAt: updatedTask.completedAt,
               }),
             };
+            trackTerminalTaskAnalytics(newTask, localTask.status);
             this.tasks.set(task.id, newTask);
             this.emitEvent('taskUpdated', newTask);
           }
@@ -573,7 +1130,11 @@ class TaskQueueService {
 
       // Update final state & persist
       const localTask = this.tasks.get(task.id);
-      if (localTask && result.task) {
+      if (
+        localTask &&
+        result.task &&
+        !this.shouldSkipExecutionWriteback(task.id)
+      ) {
         const finalTask: Task = {
           ...localTask,
           status: result.task.status as TaskStatus,
@@ -582,6 +1143,7 @@ class TaskQueueService {
           completedAt: result.task.completedAt,
           updatedAt: Date.now(),
         };
+        trackTerminalTaskAnalytics(finalTask, localTask.status);
         this.tasks.set(task.id, finalTask);
 
         // Persist final state
@@ -589,6 +1151,10 @@ class TaskQueueService {
         this.emitEvent('taskUpdated', finalTask);
       }
     } catch (error: any) {
+      if (this.shouldSkipExecutionWriteback(task.id)) {
+        return;
+      }
+
       console.error('[TaskQueueService] Task execution failed:', error);
       const localTask = this.tasks.get(task.id);
       if (localTask) {
@@ -604,11 +1170,16 @@ class TaskQueueService {
           completedAt: now,
           progress: undefined,
         };
+        trackTerminalTaskAnalytics(failedTask, localTask.status);
         this.tasks.set(task.id, failedTask);
         this.persistTask(failedTask);
         this.emitEvent('taskUpdated', failedTask);
       }
     } finally {
+      if (this.taskAbortControllers.get(task.id) === abortController) {
+        this.taskAbortControllers.delete(task.id);
+      }
+      this.repersistCancelledTask(task.id);
       this.executingTasks.delete(task.id);
     }
   }
@@ -622,6 +1193,10 @@ class TaskQueueService {
       resultExtras?: Partial<NonNullable<Task['result']>>;
     }
   ): Promise<void> {
+    if (this.shouldSkipExecutionWriteback(task.id)) {
+      return;
+    }
+
     const result: NonNullable<Task['result']> = {
       url: '',
       format: payload.format || 'json',
@@ -634,9 +1209,14 @@ class TaskQueueService {
 
     await taskStorageWriter.completeTask(task.id, result);
 
+    if (this.shouldSkipExecutionWriteback(task.id)) {
+      return;
+    }
+
     const now = Date.now();
+    const previousTask = this.tasks.get(task.id) || task;
     const completedTask: Task = {
-      ...(this.tasks.get(task.id) || task),
+      ...previousTask,
       status: TaskStatus.COMPLETED,
       progress: 100,
       result,
@@ -644,6 +1224,7 @@ class TaskQueueService {
       completedAt: now,
       updatedAt: now,
     };
+    trackTerminalTaskAnalytics(completedTask, previousTask.status);
     this.tasks.set(task.id, completedTask);
     this.persistTask(completedTask);
     this.emitEvent('taskUpdated', completedTask);
@@ -718,7 +1299,8 @@ class TaskQueueService {
         throw new Error(result.error || '视频分析失败');
       }
 
-      const analysis = (result.data as { analysis: VideoAnalysisData }).analysis;
+      const analysis = (result.data as { analysis: VideoAnalysisData })
+        .analysis;
       const formattedText = formatShotsMarkdown(analysis.shots || [], analysis);
       await this.finalizeChatTask(task, {
         title: '视频分析结果',
@@ -792,12 +1374,13 @@ class TaskQueueService {
 
       const recordId = String(params.videoAnalyzerRecordId || '').trim();
       const targetRecord = recordId
-        ? (await loadRecords()).find(record => record.id === recordId) || null
+        ? (await loadRecords()).find((record) => record.id === recordId) || null
         : null;
 
-      const updates = parseRewriteShotUpdates(text);
-      const baseShots = targetRecord?.editedShots || targetRecord?.analysis.shots || [];
-      const editedShots = applyRewriteShotUpdates(baseShots, updates);
+      const baseShots =
+        targetRecord?.editedShots || targetRecord?.analysis.shots || [];
+      const rewriteResult = parseScriptRewriteResponse(text, baseShots);
+      const editedShots = rewriteResult.shots;
       const formattedText =
         targetRecord && editedShots.length > 0
           ? formatShotsMarkdown(
@@ -810,13 +1393,99 @@ class TaskQueueService {
       options.onProgress({ progress: 100 });
       await this.finalizeChatTask(task, {
         title: '脚本改编结果',
-        chatResponse: formattedText,
+        chatResponse: text,
         format: 'md',
         resultExtras: {
           analysisData: {
             editedShots,
+            shots: editedShots,
+            characters: rewriteResult.hasCharacters
+              ? rewriteResult.characters || []
+              : undefined,
+            video_style: rewriteResult.videoStyle,
+            bgm_mood: rewriteResult.bgmMood,
+            formattedText,
             rawResponse: text,
           },
+        },
+      });
+    } finally {
+      window.clearInterval(progressTimer);
+    }
+  }
+
+  private async executeVideoAnalyzerPromptGenerateTask(
+    task: Task,
+    options: {
+      onProgress: (progress: { progress: number; phase?: string }) => void;
+    }
+  ): Promise<void> {
+    const params = task.params as {
+      model?: string;
+      modelRef?: Task['params']['modelRef'];
+      videoAnalyzerPrompt?: string;
+      prompt?: string;
+    };
+    const actualPrompt = String(params.videoAnalyzerPrompt || '').trim();
+    if (!actualPrompt) {
+      throw new Error('缺少提示词生成内容');
+    }
+
+    await taskStorageWriter.updateStatus(task.id, 'processing');
+    options.onProgress({
+      progress: VIDEO_PROMPT_SIMULATED_START_PROGRESS,
+      phase: 'submitting',
+    });
+    await taskStorageWriter.updateProgress(
+      task.id,
+      VIDEO_PROMPT_SIMULATED_START_PROGRESS,
+      'submitting'
+    );
+
+    const startedAt = Date.now();
+    const progressTimer = window.setInterval(() => {
+      const elapsed = Date.now() - startedAt;
+      const ratio = Math.min(elapsed / VIDEO_PROMPT_SIMULATED_DURATION_MS, 1);
+      const nextProgress =
+        VIDEO_PROMPT_SIMULATED_START_PROGRESS +
+        (VIDEO_PROMPT_SIMULATED_END_PROGRESS -
+          VIDEO_PROMPT_SIMULATED_START_PROGRESS) *
+          ratio;
+      this.updateTaskProgress(task.id, Math.floor(nextProgress));
+    }, VIDEO_PROMPT_SIMULATED_INTERVAL_MS);
+
+    try {
+      const messages: GeminiMessage[] = [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: actualPrompt },
+            ...(await this.buildChatInlineDataParts(task)),
+          ],
+        },
+      ];
+      const response = await sendChatWithGemini(
+        messages,
+        undefined,
+        undefined,
+        (params.modelRef as any) || params.model,
+        { taskType: 'video', taskId: task.id, prompt: actualPrompt }
+      );
+      const text = response.choices?.[0]?.message?.content;
+      if (!text) {
+        throw new Error('AI 未返回有效响应');
+      }
+
+      const analysis = parseVideoPromptGenerationResponse(text);
+      const formattedText = formatShotsMarkdown(analysis.shots || [], analysis);
+
+      options.onProgress({ progress: 100 });
+      await this.finalizeChatTask(task, {
+        title: '提示词生成结果',
+        chatResponse: formattedText,
+        format: 'md',
+        resultExtras: {
+          analysisData: analysis,
         },
       });
     } finally {
@@ -884,7 +1553,10 @@ class TaskQueueService {
       const result = await executeMusicAnalysis({
         audioData,
         mimeType,
-        prompt: params.musicAnalyzerPrompt || params.prompt || DEFAULT_MUSIC_ANALYSIS_PROMPT,
+        prompt:
+          params.musicAnalyzerPrompt ||
+          params.prompt ||
+          DEFAULT_MUSIC_ANALYSIS_PROMPT,
         model: params.model,
         modelRef: params.modelRef || null,
       });
@@ -893,7 +1565,8 @@ class TaskQueueService {
         throw new Error(result.error || '音频分析失败');
       }
 
-      const analysis = (result.data as { analysis: MusicAnalysisData }).analysis;
+      const analysis = (result.data as { analysis: MusicAnalysisData })
+        .analysis;
       const formattedText = formatMusicAnalysisMarkdown(analysis);
       await this.finalizeChatTask(task, {
         title: '音频分析结果',
@@ -967,7 +1640,8 @@ class TaskQueueService {
 
       const recordId = String(params.musicAnalyzerRecordId || '').trim();
       const targetRecord = recordId
-        ? (await loadMusicRecords()).find((record) => record.id === recordId) || null
+        ? (await loadMusicRecords()).find((record) => record.id === recordId) ||
+          null
         : null;
       const rewriteResult = parseLyricsRewriteResult(text);
       const formattedText =
@@ -1062,7 +1736,8 @@ class TaskQueueService {
 
       const recordId = String(params.musicAnalyzerRecordId || '').trim();
       const targetRecord = recordId
-        ? (await loadMusicRecords()).find((record) => record.id === recordId) || null
+        ? (await loadMusicRecords()).find((record) => record.id === recordId) ||
+          null
         : null;
       const lyricsResult = parseLyricsRewriteResult(text);
       const formattedText =
@@ -1133,7 +1808,9 @@ class TaskQueueService {
     if (params.audioCacheUrl) {
       const blob =
         (await unifiedCacheService.getCachedBlob(params.audioCacheUrl)) ||
-        (await fetch(params.audioCacheUrl).then(r => r.ok ? r.blob() : null));
+        (await fetch(params.audioCacheUrl).then((r) =>
+          r.ok ? r.blob() : null
+        ));
       if (blob) {
         const file = new File([blob], 'mv-audio.mp3', {
           type: blob.type || audioMimeType,
@@ -1227,7 +1904,9 @@ class TaskQueueService {
     }
 
     // Sanitize parameters
-    const sanitizedParams = sanitizeGenerationParams(params);
+    const sanitizedParams = normalizeGenerationParamsKnowledgeContext(
+      sanitizeGenerationParams(params)
+    );
 
     // Create new task - starts as PROCESSING since it will be executed immediately
     const now = Date.now();
@@ -1249,6 +1928,10 @@ class TaskQueueService {
         progress: 0,
       }),
     };
+    const invocationRoute = createTaskInvocationRouteSnapshotFromTask(task);
+    if (invocationRoute) {
+      task.invocationRoute = invocationRoute;
+    }
 
     this.blockedTaskIds.delete(task.id);
 
@@ -1260,6 +1943,7 @@ class TaskQueueService {
 
     // Emit event
     this.emitEvent('taskCreated', task);
+    trackTaskAnalytics('generation_task_created', task);
 
     // 归档超出限制的旧任务
     this.enforceRetentionLimit();
@@ -1289,9 +1973,6 @@ class TaskQueueService {
     updates?: Partial<Task>
   ): void {
     if (this.blockedTaskIds.has(taskId) && status !== TaskStatus.CANCELLED) {
-      console.debug(
-        `[TaskQueueService] Ignoring blocked task update: ${taskId} → ${status}`
-      );
       return;
     }
 
@@ -1340,10 +2021,10 @@ class TaskQueueService {
     this.emitEvent('taskUpdated', updatedTask);
 
     // console.log(`[TaskQueueService] Updated task ${taskId} to ${status}`);
-    if (status === TaskStatus.FAILED || status === TaskStatus.COMPLETED) {
-      console.debug(
-        `[TaskQueueService] Task ${taskId} → ${status}, event emitted`
-      );
+    const enteredTerminalStatus =
+      isTrackedTerminalTaskStatus(status) && task.status !== status;
+    if (enteredTerminalStatus) {
+      trackTerminalTaskAnalytics(updatedTask, task.status);
       // 任务进入终态后检查是否需要归档旧任务
       this.enforceRetentionLimit();
     }
@@ -1357,9 +2038,6 @@ class TaskQueueService {
    */
   updateTaskProgress(taskId: string, progress: number): void {
     if (this.blockedTaskIds.has(taskId)) {
-      console.debug(
-        `[TaskQueueService] Ignoring blocked task progress update: ${taskId}`
-      );
       return;
     }
 
@@ -1391,6 +2069,34 @@ class TaskQueueService {
    */
   getTask(taskId: string): Task | undefined {
     return this.tasks.get(taskId);
+  }
+
+  async getCompleteTask(taskId: string): Promise<Task | undefined> {
+    const storedTask = await taskStorageReader.getTask(taskId);
+    if (storedTask) {
+      return storedTask;
+    }
+
+    const memoryTask = this.tasks.get(taskId);
+    return memoryTask ? this.restoreStrippedTaskParams(memoryTask) : undefined;
+  }
+
+  async findImageTaskByResultUrl(imageUrl: string): Promise<Task | undefined> {
+    const memoryMatch = this
+      .getAllTasks()
+      .find((task) => imageTaskMatchesUrl(task, imageUrl));
+    if (memoryMatch) {
+      return this.getCompleteTask(memoryMatch.id);
+    }
+
+    const storedTaskId = await taskStorageReader.findImageTaskIdByResultUrl(
+      imageUrl,
+      {
+        includeArchived: true,
+        limit: STORAGE_LIMITS.MAX_RETAINED_TASKS * 10,
+      }
+    );
+    return storedTaskId ? this.getCompleteTask(storedTaskId) : undefined;
   }
 
   /**
@@ -1441,6 +2147,7 @@ class TaskQueueService {
     }
 
     this.blockedTaskIds.add(taskId);
+    this.taskAbortControllers.get(taskId)?.abort();
     this.updateTaskStatus(taskId, TaskStatus.CANCELLED);
     // console.log(`[TaskQueueService] Cancelled task ${taskId}`);
   }
@@ -1450,32 +2157,45 @@ class TaskQueueService {
    *
    * @param taskId - The task ID to retry
    */
-  retryTask(taskId: string): void {
+  retryTask(
+    taskId: string,
+    options: { allowCompleted?: boolean } = {}
+  ): void {
     const task = this.tasks.get(taskId);
     if (!task) {
       console.warn(`[TaskQueueService] Task ${taskId} not found`);
       return;
     }
 
+    const canRetryCompleted =
+      options.allowCompleted && task.status === TaskStatus.COMPLETED;
     if (
       task.status !== TaskStatus.FAILED &&
-      task.status !== TaskStatus.CANCELLED
+      task.status !== TaskStatus.CANCELLED &&
+      !canRetryCompleted
     ) {
       console.warn(
-        `[TaskQueueService] Task ${taskId} is not failed or cancelled, cannot retry`
+        `[TaskQueueService] Task ${taskId} is not failed, cancelled, or explicitly retryable, cannot retry`
       );
       return;
     }
 
     // Reset task for retry - set to PROCESSING for immediate execution
     const now = Date.now();
+    trackTaskAnalytics('generation_retry_after_failure', task, {
+      previousStatus: task.status,
+      previousErrorCode: task.error?.code,
+      previousErrorMessage: task.error?.message,
+    });
     this.blockedTaskIds.delete(taskId);
     this.updateTaskStatus(taskId, TaskStatus.PROCESSING, {
       error: undefined,
+      result: undefined,
       startedAt: now, // Set new start time
       completedAt: undefined, // Clear completion time
       remoteId: undefined, // Clear remote ID for fresh submission
       executionPhase: TaskExecutionPhase.SUBMITTING,
+      insertedToCanvas: false,
       progress:
         task.type === TaskType.VIDEO ||
         task.type === TaskType.AUDIO ||
@@ -1511,6 +2231,7 @@ class TaskQueueService {
 
     this.blockedTaskIds.add(taskId);
     this.tasks.delete(taskId);
+    this.tasksWithStrippedParams.delete(taskId);
 
     // Delete from IndexedDB
     this.persistDelete(taskId);
@@ -1547,9 +2268,18 @@ class TaskQueueService {
   trackExternalTask(task: Task): void {
     this.blockedTaskIds.delete(task.id);
     if (this.tasks.has(task.id)) return;
-    this.tasks.set(task.id, task);
-    this.persistTask(task);
-    this.emitEvent('taskCreated', task);
+    const trackedTask: Task = task.invocationRoute
+      ? task
+      : {
+          ...task,
+          invocationRoute: createTaskInvocationRouteSnapshotFromTask(task),
+        };
+    this.tasks.set(task.id, trackedTask);
+    this.persistTask(trackedTask);
+    this.emitEvent('taskCreated', trackedTask);
+    trackTaskAnalytics('generation_task_created', trackedTask, {
+      source: 'external_task',
+    });
   }
 
   /**
@@ -1559,19 +2289,14 @@ class TaskQueueService {
    */
   syncTaskFromStorage(taskId: string, storageTask: Partial<Task>): void {
     if (this.blockedTaskIds.has(taskId)) {
-      console.debug(
-        `[TaskQueueService] Ignoring blocked storage sync for task ${taskId}`
-      );
       return;
     }
 
     const task = this.tasks.get(taskId);
     if (!task) return;
-    if (
-      task.status === storageTask.status &&
-      task.progress === storageTask.progress
-    )
+    if (!hasStorageTaskChanges(task, storageTask)) {
       return;
+    }
 
     const updatedTask: Task = {
       ...task,
@@ -1615,19 +2340,35 @@ class TaskQueueService {
           : { ...task };
 
       // 剥离大字段（base64 参考图等），减少内存占用
-      if (restoredTask.params?.referenceImages || restoredTask.params?.uploadedImages) {
+      if (
+        restoredTask.params?.referenceImages ||
+        restoredTask.params?.uploadedImages ||
+        restoredTask.params?.videoData ||
+        restoredTask.params?.audioData
+      ) {
+        this.tasksWithStrippedParams.add(restoredTask.id);
         restoredTask = {
           ...restoredTask,
           params: {
             ...restoredTask.params,
             referenceImages: undefined,
             uploadedImages: undefined,
+            videoData: undefined,
+            audioData: undefined,
           },
         };
       }
 
       this.blockedTaskIds.delete(restoredTask.id);
       this.tasks.set(restoredTask.id, restoredTask);
+      if (
+        restoredTask.status === TaskStatus.PENDING ||
+        restoredTask.status === TaskStatus.PROCESSING
+      ) {
+        trackTaskAnalytics('task_recovered_after_reload', restoredTask, {
+          restoredAgeMs: Math.max(0, Date.now() - restoredTask.createdAt),
+        });
+      }
       restoredCount++;
     });
 
@@ -1680,12 +2421,24 @@ class TaskQueueService {
    * Marks a task as inserted to canvas
    * @param taskId - The task ID to mark as inserted
    */
-  markAsInserted(taskId: string): void {
+  markAsInserted(taskId: string, source: InsertionSource = 'manual'): void {
     const task = this.tasks.get(taskId);
     if (!task) {
       console.warn(`[TaskQueueService] Task ${taskId} not found`);
       return;
     }
+
+    if (task.insertedToCanvas) {
+      return;
+    }
+
+    trackTaskAnalytics('generation_result_insert_canvas', task, {
+      source,
+      insertSource: source,
+      insert_source: source,
+      insertedToCanvas: true,
+      inserted_to_canvas: true,
+    });
 
     this.updateTaskStatus(taskId, task.status, {
       insertedToCanvas: true,
@@ -1721,18 +2474,14 @@ class TaskQueueService {
     for (let i = 0; i < Math.min(toArchiveCount, terminalTasks.length); i++) {
       const task = terminalTasks[i];
       this.tasks.delete(task.id);
+      this.tasksWithStrippedParams.delete(task.id);
       archiveIds.push(task.id);
     }
 
     // 异步批量归档到 IndexedDB（fire-and-forget）
     if (archiveIds.length > 0) {
-      taskStorageWriter.archiveTasks(archiveIds).catch((err) => {
-        console.debug('[TaskQueueService] Archive tasks failed:', err);
-      });
+      taskStorageWriter.archiveTasks(archiveIds).catch((err) => {});
       taskStorageReader.invalidateCache();
-      console.debug(
-        `[TaskQueueService] Archived ${archiveIds.length} tasks, active: ${this.tasks.size}`
-      );
     }
   }
 
@@ -1744,7 +2493,13 @@ class TaskQueueService {
     const task = this.tasks.get(taskId);
     if (!task?.params) return;
     const params = task.params as Record<string, unknown>;
-    if (params.referenceImages || params.uploadedImages || params.videoData || params.audioData) {
+    if (
+      params.referenceImages ||
+      params.uploadedImages ||
+      params.videoData ||
+      params.audioData
+    ) {
+      this.tasksWithStrippedParams.add(taskId);
       this.tasks.set(taskId, {
         ...task,
         params: {
@@ -1756,6 +2511,37 @@ class TaskQueueService {
         },
       });
     }
+  }
+
+  private async restoreStrippedTaskParams(task: Task): Promise<Task> {
+    if (!this.tasksWithStrippedParams.has(task.id)) {
+      return task;
+    }
+
+    const storedTask = await taskStorageWriter
+      .getTask(task.id)
+      .catch(() => null);
+    const persistedParams = storedTask?.params as Record<
+      string,
+      unknown
+    > | null;
+
+    if (!hasAnyPersistedLargeTaskParams(persistedParams)) {
+      return task;
+    }
+
+    const mergedParams = mergePersistedLargeTaskParams(
+      task.params,
+      persistedParams
+    );
+    if (mergedParams === task.params) {
+      return task;
+    }
+
+    return {
+      ...task,
+      params: mergedParams,
+    };
   }
 
   /**

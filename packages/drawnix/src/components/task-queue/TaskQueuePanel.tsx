@@ -6,6 +6,7 @@
  */
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import { copyToClipboard } from '../../utils/runtime-helpers';
 import { Button, Tabs, MessagePlugin, Input, Checkbox } from 'tdesign-react';
 import {
   DeleteIcon,
@@ -25,6 +26,7 @@ import { useTaskQueue } from '../../hooks/useTaskQueue';
 import { Task, TaskType, TaskStatus } from '../../types/task.types';
 import { unifiedCacheService } from '../../services/unified-cache-service';
 import { taskStorageReader } from '../../services/task-storage-reader';
+import { taskQueueService } from '../../services/task-queue';
 import { useDrawnix, DialogType } from '../../hooks/use-drawnix';
 import { insertImageFromUrl } from '../../data/image';
 import { insertVideoFromUrl } from '../../data/video';
@@ -59,6 +61,13 @@ import {
 } from '../../utils/lyrics-task-utils';
 import { resolveAudioResultUrls } from '../../services/audio-task-result-utils';
 import { ConfirmDialog } from '../dialog/ConfirmDialog';
+import { analytics } from '../../utils/posthog-analytics';
+import { DRAWER_PIN_KEYS } from '../../utils/drawer-pin';
+import {
+  buildImageTaskAIInputPrefillData,
+  buildImageTaskPrefillInitialData,
+} from '../../utils/image-task-prefill';
+import { requestAIInputPrefill } from '../../services/ai-input-ui-events';
 import './task-queue.scss';
 import { HoverTip } from '../shared';
 
@@ -74,6 +83,31 @@ export interface TaskQueuePanelProps {
   onClose?: () => void;
   /** Callback when a task action is performed */
   onTaskAction?: (action: string, taskId: string) => void;
+}
+
+function getTaskResultCount(task: Task): number {
+  if (Array.isArray(task.result?.urls) && task.result.urls.length > 0) {
+    return task.result.urls.length;
+  }
+  if (task.result?.url || task.result?.chatResponse || isLyricsTask(task)) {
+    return 1;
+  }
+  return 0;
+}
+
+function buildTaskAnalyticsPayload(task: Task): Record<string, unknown> {
+  const resultCount = getTaskResultCount(task);
+  return {
+    taskId: task.id,
+    taskType: task.type,
+    taskStatus: task.status,
+    model:
+      typeof task.params.model === 'string' && task.params.model.trim()
+        ? task.params.model
+        : undefined,
+    resultCount: resultCount || undefined,
+    hasMultipleResults: resultCount > 1,
+  };
 }
 
 /**
@@ -445,8 +479,6 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
           setSyncProgress(Math.round((current / total) * 100));
         }
       );
-
-      console.log('[TaskQueuePanel] Batch sync result:', result);
       setSyncProgress(100);
 
       if (result.succeeded > 0) {
@@ -494,6 +526,11 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
             : '下载成功'
         );
       }
+      analytics.track('generation_result_download', {
+        ...buildTaskAnalyticsPayload(task),
+        downloadedCount: result.downloadedCount,
+        openedCount: result.openedCount,
+      });
       onTaskAction?.('download', taskId);
     } catch (error) {
       console.error('Download failed:', error);
@@ -514,13 +551,8 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
       return;
     }
 
-    if (!navigator.clipboard?.writeText) {
-      MessagePlugin.warning('当前环境不支持复制');
-      return;
-    }
-
     try {
-      await navigator.clipboard.writeText(text);
+      await copyToClipboard(text);
       MessagePlugin.success('歌词已复制');
       onTaskAction?.('copy', taskId);
     } catch (error) {
@@ -556,6 +588,7 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
           ],
         });
         MessagePlugin.success('文本已插入到白板');
+        taskQueueService.markAsInserted(taskId, 'manual');
         onTaskAction?.('insert', taskId);
         return;
       }
@@ -607,6 +640,7 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
             ],
           });
           MessagePlugin.success('歌词已插入到白板');
+          taskQueueService.markAsInserted(taskId, 'manual');
           onTaskAction?.('insert', taskId);
           return;
         }
@@ -686,6 +720,7 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
         });
         MessagePlugin.success('文本已插入到白板');
       }
+      taskQueueService.markAsInserted(taskId, 'manual');
       onTaskAction?.('insert', taskId);
     } catch (error) {
       console.error('Failed to insert to board:', error);
@@ -693,6 +728,23 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
         `插入失败: ${error instanceof Error ? error.message : '未知错误'}`
       );
     }
+  };
+
+  const handleRegenerate = async (taskId: string) => {
+    const task =
+      (await taskStorageReader.getTask(taskId)) ||
+      taskQueueService.getTask(taskId) ||
+      tasks.find((item) => item.id === taskId);
+    if (!task || task.type !== TaskType.IMAGE) {
+      MessagePlugin.warning('未找到可回填的图片任务');
+      return;
+    }
+
+    requestAIInputPrefill({
+      ...buildImageTaskAIInputPrefillData(task),
+      source: 'task-queue',
+    });
+    onTaskAction?.('regenerate', taskId);
   };
 
   const handleEdit = (taskId: string) => {
@@ -705,15 +757,10 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
     // 根据任务类型打开对应的对话框
     if (task.type === TaskType.IMAGE) {
       // 准备图片生成初始数据
-      const initialData = {
-        initialPrompt: task.params.prompt,
-        initialWidth: task.params.width,
-        initialHeight: task.params.height,
-        initialImages: task.params.uploadedImages, // 传递上传的参考图片(数组)
-        initialResultUrl: task.result?.url, // 传递结果URL用于预览
-        initialResultUrls: task.result?.urls, // 多图结果
-      };
-      openDialog(DialogType.aiImageGeneration, initialData);
+      openDialog(
+        DialogType.aiImageGeneration,
+        buildImageTaskPrefillInitialData(task)
+      );
     } else if (task.type === TaskType.VIDEO) {
       // 准备视频生成初始数据
       const initialData = {
@@ -1208,6 +1255,7 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
         position="toolbar-right"
         width="responsive"
         storageKey={TASK_DRAWER_WIDTH_KEY}
+        pinStorageKey={DRAWER_PIN_KEYS.task}
         showBackdrop={false}
         closeOnEsc={false}
         showCloseButton={true}
@@ -1241,6 +1289,7 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
             onInsert={handleInsert}
             onCopy={handleCopy}
             onEdit={handleEdit}
+            onRegenerate={handleRegenerate}
             onPreviewOpen={handlePreviewOpen}
             onExtractCharacter={handleExtractCharacter}
             hasMore={hasMore}

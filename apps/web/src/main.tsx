@@ -1,8 +1,10 @@
 import { StrictMode } from 'react';
 import * as ReactDOM from 'react-dom/client';
-import * as Sentry from '@sentry/react';
 import App from './app/app';
-import { ErrorBoundary } from './app/ErrorBoundary';
+import {
+  ErrorBoundary,
+  tryRecoverDynamicImportError,
+} from './app/ErrorBoundary';
 import { initCrashLogger } from './crash-logger';
 import './utils/permissions-policy-fix';
 import {
@@ -18,12 +20,72 @@ import {
   swChannelClient,
   safeReload,
 } from '@drawnix/drawnix/runtime';
-import { sanitizeObject, sanitizeUrl } from '@aitu/utils';
+import {
+  getAnalyticsReleaseContext,
+  registerAnalyticsSuperProperties,
+} from '@drawnix/drawnix';
 import { initSWConsoleCapture } from './utils/sw-console-capture';
+
+const isLocalDev =
+  typeof window !== 'undefined' &&
+  (window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1');
+const swQueryParam =
+  typeof window !== 'undefined'
+    ? new URLSearchParams(window.location.search).get('sw')
+    : null;
+const isServiceWorkerExplicitlyDisabled = swQueryParam === '0';
+const hasServiceWorkerSupport =
+  typeof navigator !== 'undefined' && 'serviceWorker' in navigator;
+const shouldUseServiceWorker =
+  hasServiceWorkerSupport && !isServiceWorkerExplicitlyDisabled;
+
+function setupLazyAssetRecoveryListeners(): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  const stopRecoveredEvent = (event: Event) => {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  };
+
+  window.addEventListener(
+    'vite:preloadError',
+    (event) => {
+      if (tryRecoverDynamicImportError(event)) {
+        stopRecoveredEvent(event);
+      }
+    },
+    true
+  );
+
+  window.addEventListener(
+    'unhandledrejection',
+    (event) => {
+      if (tryRecoverDynamicImportError(event)) {
+        stopRecoveredEvent(event);
+      }
+    },
+    true
+  );
+
+  window.addEventListener(
+    'error',
+    (event) => {
+      if (tryRecoverDynamicImportError(event)) {
+        stopRecoveredEvent(event);
+      }
+    },
+    true
+  );
+}
+
+setupLazyAssetRecoveryListeners();
 
 // ===== 控制台日志捕获（尽早初始化，确保默认 console 被改写） =====
 // 必须在其他业务代码之前执行，否则后续工具（如 rrweb）可能先改写 console 导致捕获失效
-if ('serviceWorker' in navigator) {
+if (shouldUseServiceWorker) {
   initSWConsoleCapture();
 }
 
@@ -36,25 +98,13 @@ crashRecoveryService.checkUrlSafeMode();
 // 必须尽早初始化，以捕获启动阶段的内存状态和错误
 initCrashLogger();
 
-// ===== 初始化 Sentry 错误监控 =====
-// 必须在其他代码之前初始化，以捕获所有错误
-
-// 判断是否应该启用上报：
-// - 本地开发环境（localhost/127.0.0.1）默认不上报，除非 URL 带 report=1 参数
-// - 生产环境始终上报
-const isLocalDev =
-  typeof window !== 'undefined' &&
-  (window.location.hostname === 'localhost' ||
-    window.location.hostname === '127.0.0.1');
-const forceReport =
-  typeof window !== 'undefined' &&
-  new URLSearchParams(window.location.search).get('report') === '1';
-const shouldEnableReporting =
-  forceReport || (!isLocalDev && import.meta.env.PROD);
 const APP_VERSION =
   import.meta.env.VITE_APP_VERSION ||
   document.querySelector('meta[name="app-version"]')?.getAttribute('content') ||
   '0.0.0';
+const RELEASE_CONTEXT = getAnalyticsReleaseContext();
+const LAZY_CHUNK_RETRY_PARAM = '_lazy_chunk_retry';
+const LAZY_CHUNK_RETRY_TS_PARAM = '_t';
 
 type CDNName = 'jsdelivr' | 'unpkg' | 'local';
 
@@ -73,36 +123,13 @@ interface BootProgressOptions {
   tip?: string;
   note?: string;
   source?: 'phase' | 'sw';
+  progress?: number;
 }
 
 interface BootController {
   markReady: () => void;
   markError: (message?: string) => void;
-  setProgress?: (
-    progress?: number,
-    options?: BootProgressOptions
-  ) => void;
-}
-
-type SWBootProgressPhase =
-  | 'idle'
-  | 'installing'
-  | 'precache'
-  | 'activating'
-  | 'activated'
-  | 'development'
-  | 'error';
-
-interface SWBootProgressMessage {
-  type: 'SW_BOOT_PROGRESS';
-  phase: SWBootProgressPhase;
-  percent: number;
-  completed: number;
-  total: number;
-  failed: number;
-  message?: string;
-  version: string;
-  updatedAt: number;
+  setProgress?: (progress?: number, options?: BootProgressOptions) => void;
 }
 
 declare global {
@@ -112,8 +139,31 @@ declare global {
     __OPENTU_CDN_API__?: RuntimeCDNApi;
     __AITU_CDN_API__?: RuntimeCDNApi;
     __OPENTU_BOOT__?: BootController;
+    __OPENTU_SW_REGISTRATION_PROMISE__?: Promise<ServiceWorkerRegistration | null>;
   }
 }
+
+function cleanupLazyChunkRecoveryParams(): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has(LAZY_CHUNK_RETRY_PARAM)) {
+    return;
+  }
+
+  url.searchParams.delete(LAZY_CHUNK_RETRY_PARAM);
+  url.searchParams.delete(LAZY_CHUNK_RETRY_TS_PARAM);
+
+  try {
+    window.history.replaceState(window.history.state, '', url.toString());
+  } catch {
+    // ignore URL cleanup failures and continue booting
+  }
+}
+
+cleanupLazyChunkRecoveryParams();
 
 function isValidCDNName(value: unknown): value is CDNName {
   return value === 'jsdelivr' || value === 'unpkg' || value === 'local';
@@ -123,81 +173,16 @@ function getBootController(): BootController | null {
   return window.__OPENTU_BOOT__ || null;
 }
 
-function updateBootProgress(
-  progress: number,
-  options?: BootProgressOptions
-): void {
-  getBootController()?.setProgress?.(progress, options);
-}
-
 function updateBootStatus(options?: BootProgressOptions): void {
-  getBootController()?.setProgress?.(undefined, options);
+  getBootController()?.setProgress?.(options?.progress, options);
 }
 
-function isSWBootProgressMessage(
-  value: unknown
-): value is SWBootProgressMessage {
-  if (!value || typeof value !== 'object') {
-    return false;
-  }
-
-  const message = value as Partial<SWBootProgressMessage>;
-  return (
-    message.type === 'SW_BOOT_PROGRESS' &&
-    typeof message.phase === 'string' &&
-    typeof message.percent === 'number' &&
-    typeof message.completed === 'number' &&
-    typeof message.total === 'number' &&
-    typeof message.failed === 'number'
-  );
-}
-
-function formatSWBootTip(payload: SWBootProgressMessage): string {
-  if (payload.phase === 'precache' && payload.total > 0) {
-    const failureText =
-      payload.failed > 0 ? `，${payload.failed} 项回退` : '';
-    return `正在预热启动资源（${Math.min(
-      payload.completed,
-      payload.total
-    )}/${payload.total}${failureText}）...`;
-  }
-
-  if (payload.phase === 'activating') {
-    return '启动缓存服务已完成，正在接管页面...';
-  }
-
-  if (payload.phase === 'activated') {
-    return '启动资源已就绪，正在进入工作台...';
-  }
-
-  if (payload.phase === 'development') {
-    return '开发模式下跳过静态预缓存，正在继续启动...';
-  }
-
-  if (payload.phase === 'error') {
-    return payload.message || '启动缓存预热失败，正在直接启动工作台...';
-  }
-
-  return payload.message || '正在准备启动资源...';
-}
-
-function mapSWBootProgressToPercent(payload: SWBootProgressMessage): number {
-  switch (payload.phase) {
-    case 'installing':
-      return 52;
-    case 'precache':
-      return 55 + payload.percent * 0.35;
-    case 'activating':
-      return 93;
-    case 'activated':
-      return 96;
-    case 'development':
-      return 72;
-    case 'error':
-      return 68;
-    default:
-      return 50;
-  }
+interface RuntimeSWVersionState {
+  committedVersion: string;
+  pendingVersion: string | null;
+  pendingReadyAt: number | null;
+  upgradeState: 'idle' | 'prewarming' | 'ready' | 'committing';
+  swVersion: string;
 }
 
 function getRuntimeCDNPreference(): RuntimeCDNPreference | null {
@@ -252,32 +237,6 @@ function postCDNPreferenceToServiceWorker(
   });
 }
 
-function requestSWBootProgress(
-  registration: ServiceWorkerRegistration | null
-): void {
-  const payload = {
-    type: 'SW_BOOT_PROGRESS_GET' as const,
-  };
-
-  const targets = new Set<ServiceWorker>();
-  const maybeWorkers = [
-    navigator.serviceWorker.controller,
-    registration?.active,
-    registration?.waiting,
-    registration?.installing,
-  ];
-
-  for (const worker of maybeWorkers) {
-    if (worker) {
-      targets.add(worker);
-    }
-  }
-
-  targets.forEach((worker) => {
-    worker.postMessage(payload);
-  });
-}
-
 function scheduleCDNPreferenceSync(
   registration: ServiceWorkerRegistration | null
 ): void {
@@ -300,6 +259,15 @@ function scheduleCDNPreferenceSync(
         );
       });
   }
+}
+
+function cleanupDisabledServiceWorker(): void {
+  navigator.serviceWorker
+    .getRegistration()
+    .then((registration) => registration?.unregister())
+    .catch((error) => {
+      console.warn('[Main] Disabled service worker cleanup failed:', error);
+    });
 }
 
 function scheduleAfterFirstFrameIdle(
@@ -342,69 +310,31 @@ function scheduleAfterFirstFrameIdle(
   });
 }
 
-Sentry.init({
-  dsn: 'https://a18e755345995baaa0e1972c4cf24497@o4510700882296832.ingest.us.sentry.io/4510700883869696',
-  // 本地开发环境默认不启用，除非 URL 带 report=1 参数
-  enabled: shouldEnableReporting,
-  // 禁用自动 PII 收集，保护用户隐私
-  sendDefaultPii: false,
-  // 性能监控采样率（降低以减少数据量）
-  tracesSampleRate: 0.1,
-  // beforeSend 钩子：过滤敏感数据
-  beforeSend(event) {
-    // 过滤 extra 数据中的敏感信息
-    if (event.extra) {
-      event.extra = sanitizeObject(event.extra) as Record<string, unknown>;
-    }
-
-    // 过滤 contexts 中的敏感信息
-    if (event.contexts) {
-      event.contexts = sanitizeObject(event.contexts) as typeof event.contexts;
-    }
-
-    // 过滤 breadcrumbs 中的敏感信息
-    if (event.breadcrumbs) {
-      event.breadcrumbs = event.breadcrumbs.map((breadcrumb) => ({
-        ...breadcrumb,
-        data: breadcrumb.data
-          ? (sanitizeObject(breadcrumb.data) as Record<string, unknown>)
-          : undefined,
-        message: breadcrumb.message
-          ? String(sanitizeObject(breadcrumb.message))
-          : undefined,
-      }));
-    }
-
-    // 过滤请求数据中的敏感信息
-    if (event.request) {
-      if (event.request.headers) {
-        event.request.headers = sanitizeObject(event.request.headers) as Record<
-          string,
-          string
-        >;
-      }
-      if (event.request.data) {
-        event.request.data = sanitizeObject(event.request.data);
-      }
-      // 清理 URL 中可能的敏感参数
-      if (event.request.url) {
-        event.request.url = sanitizeUrl(event.request.url);
-      }
-    }
-
-    return event;
-  },
-});
-
 updateBootStatus({
   tip: '正在初始化启动服务...',
   source: 'phase',
+  progress: 12,
 });
 
 // ===== 立即初始化防止双指缩放 =====
 // 必须在任何其他代码之前执行，确保事件监听器最先注册
 if (typeof window !== 'undefined') {
   initPreventPinchZoom();
+
+  const initPostHogContext = () => {
+    if (window.posthog) {
+      registerAnalyticsSuperProperties(RELEASE_CONTEXT);
+      initPageReport();
+      return;
+    }
+
+    setTimeout(initPostHogContext, 300);
+  };
+
+  scheduleAfterFirstFrameIdle(initPostHogContext, {
+    delay: 0,
+    timeout: 1000,
+  });
 
   scheduleAfterFirstFrameIdle(
     () => {
@@ -441,11 +371,10 @@ if (typeof window !== 'undefined') {
     }
   );
 
-  // 统计上报为旁路逻辑：在空闲时初始化，不占首屏主流程
+  // 统计上报为旁路逻辑：page view 尽早初始化，性能指标继续延迟
   const initMonitoring = () => {
     if (window.posthog) {
       initWebVitals();
-      initPageReport();
     } else {
       setTimeout(initMonitoring, 500);
     }
@@ -457,49 +386,173 @@ if (typeof window !== 'undefined') {
   });
 }
 
-// 注册Service Worker来处理CORS问题和PWA功能
-if ('serviceWorker' in navigator) {
-  const isDevelopment =
-    window.location.hostname === 'localhost' ||
-    window.location.hostname === '127.0.0.1';
+if (
+  hasServiceWorkerSupport &&
+  isServiceWorkerExplicitlyDisabled
+) {
+  cleanupDisabledServiceWorker();
+}
 
-  // 新版本是否已准备好
-  let newVersionReady = false;
+// 注册Service Worker来处理CORS问题和PWA功能
+if (shouldUseServiceWorker) {
+  const isDevelopment = isLocalDev;
+
   // 等待中的新 Worker
   let pendingWorker: ServiceWorker | null = null;
   // 用户是否已确认升级（只有用户确认后才触发刷新）
   let userConfirmedUpgrade = false;
+  let upgradeReloadScheduled = false;
+  let lastPendingVersionNotified: string | null = null;
 
   // Global reference to service worker registration
   let swRegistration: ServiceWorkerRegistration | null = null;
 
-  updateBootStatus({
-    tip: '正在连接启动缓存服务...',
-    source: 'phase',
-  });
+  const notifyUpdateReady = (version: string) => {
+    if (lastPendingVersionNotified === version) {
+      return;
+    }
+    lastPendingVersionNotified = version;
+    window.dispatchEvent(
+      new CustomEvent('sw-update-available', {
+        detail: { version },
+      })
+    );
+  };
 
-  navigator.serviceWorker.addEventListener('message', (event) => {
-    if (!isSWBootProgressMessage(event.data)) {
+  const handleRuntimeVersionState = (state: RuntimeSWVersionState) => {
+    if (
+      state.pendingVersion &&
+      state.pendingVersion !== state.committedVersion &&
+      (state.upgradeState === 'ready' || state.upgradeState === 'committing')
+    ) {
+      notifyUpdateReady(state.pendingVersion);
       return;
     }
 
-    updateBootProgress(mapSWBootProgressToPercent(event.data), {
-      tip: formatSWBootTip(event.data),
-      source: 'sw',
-    });
-  });
+    if (!state.pendingVersion) {
+      lastPendingVersionNotified = null;
+    }
+  };
 
-  // Register immediately for faster activation
-  navigator.serviceWorker
-    .register('/sw.js')
+  const requestSWVersionState = (target?: ServiceWorker | null) => {
+    const worker =
+      target ||
+      pendingWorker ||
+      swRegistration?.waiting ||
+      navigator.serviceWorker.controller ||
+      swRegistration?.active ||
+      null;
+
+    if (!worker) {
+      return;
+    }
+
+    worker.postMessage({ type: 'GET_VERSION_STATE' });
+  };
+
+  const claimCurrentClientIfNeeded = (
+    registration?: ServiceWorkerRegistration | null
+  ) => {
+    if (navigator.serviceWorker.controller || !registration?.active) {
+      return;
+    }
+
+    registration.active.postMessage({ type: 'CLAIM_CLIENTS' });
+  };
+
+  const scheduleConfirmedUpgradeReload = (reason: string) => {
+    if (!userConfirmedUpgrade || upgradeReloadScheduled) {
+      return;
+    }
+
+    upgradeReloadScheduled = true;
+    // 延迟一点，给新 SW 留出接管后收尾时间
+    setTimeout(() => {
+      void safeReload();
+    }, 1000);
+  };
+
+  const resolvePendingUpgradeWorker =
+    async (): Promise<ServiceWorker | null> => {
+      const candidates: Array<ServiceWorker | null | undefined> = [
+        pendingWorker,
+        swRegistration?.waiting,
+      ];
+
+      try {
+        const liveRegistration =
+          (await navigator.serviceWorker.getRegistration()) || null;
+        if (liveRegistration) {
+          swRegistration = liveRegistration;
+          candidates.push(liveRegistration.waiting);
+        }
+      } catch (error) {
+        console.warn(
+          '[Main] Failed to get live service worker registration:',
+          error
+        );
+      }
+
+      try {
+        const readyRegistration = await navigator.serviceWorker.ready;
+        candidates.push(readyRegistration.waiting);
+      } catch (error) {
+        console.warn(
+          '[Main] Failed to inspect ready service worker registration:',
+          error
+        );
+      }
+
+      for (const worker of candidates) {
+        if (!worker || worker.state === 'redundant') {
+          continue;
+        }
+
+        // staged update only commits the waiting/installed worker, never the old controller
+        if (worker === navigator.serviceWorker.controller) {
+          continue;
+        }
+
+        pendingWorker = worker;
+        return worker;
+      }
+
+      return null;
+    };
+
+  const swRegistrationPromise =
+    window.__OPENTU_SW_REGISTRATION_PROMISE__ ||
+    navigator.serviceWorker.register('./sw.js').catch((error) => {
+      console.warn('[Main] Service worker registration failed:', error);
+      return null;
+    });
+
+  window.__OPENTU_SW_REGISTRATION_PROMISE__ = swRegistrationPromise;
+
+  swRegistrationPromise
     .then((registration) => {
+      if (!registration) {
+        updateBootStatus({
+          tip: '离线加速未启用，正在直接启动工作台...',
+          source: 'phase',
+          progress: 70,
+        });
+        return;
+      }
+
       swRegistration = registration;
+      claimCurrentClientIfNeeded(registration);
+      navigator.serviceWorker.ready
+        .then(claimCurrentClientIfNeeded)
+        .catch((error) => {
+          console.warn('[Main] Service worker ready check failed:', error);
+        });
       updateBootStatus({
         tip: '启动缓存服务已连接，正在准备资源清单...',
         source: 'phase',
+        progress: 72,
       });
       scheduleCDNPreferenceSync(registration);
-      requestSWBootProgress(registration);
 
       // 在开发模式下，强制检查更新并处理等待中的Worker
       if (isDevelopment) {
@@ -508,17 +561,18 @@ if ('serviceWorker' in navigator) {
           .catch((err) => console.warn('Forced update check failed:', err));
 
         if (registration.waiting) {
-          registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+          registration.waiting.postMessage({ type: 'FORCE_UPGRADE' });
         }
+      } else if (registration.waiting && navigator.serviceWorker.controller) {
+        pendingWorker = registration.waiting;
+        requestSWVersionState(registration.waiting);
       }
 
       // 监听Service Worker更新
       registration.addEventListener('updatefound', () => {
         const newWorker = registration.installing;
         if (newWorker) {
-          requestSWBootProgress(registration);
           newWorker.addEventListener('statechange', () => {
-            requestSWBootProgress(registration);
             if (
               newWorker.state === 'installed' &&
               navigator.serviceWorker.controller
@@ -527,39 +581,30 @@ if ('serviceWorker' in navigator) {
 
               // 在开发模式下自动激活新的Service Worker
               if (isDevelopment) {
-                newWorker.postMessage({ type: 'SKIP_WAITING' });
+                newWorker.postMessage({ type: 'FORCE_UPGRADE' });
               } else {
-                // 生产模式：新版本已安装，通知 UI 显示升级提示
-                newVersionReady = true;
-                // 尝试获取新版本号，用于更新提示
-                fetch(`/version.json?t=${Date.now()}`)
-                  .then((res) => (res.ok ? res.json() : null))
-                  .then((data) => {
-                    window.dispatchEvent(
-                      new CustomEvent('sw-update-available', {
-                        detail: { version: data?.version || 'new' },
-                      })
-                    );
-                  })
-                  .catch(() => {
-                    window.dispatchEvent(
-                      new CustomEvent('sw-update-available', {
-                        detail: { version: 'new' },
-                      })
-                    );
-                  });
+                requestSWVersionState(newWorker);
+                // 重试：覆盖 SW 仍在预缓存、首次响应丢失的情况
+                setTimeout(() => requestSWVersionState(newWorker), 5000);
               }
             }
           });
         }
       });
 
-      if (registration.active && !registration.installing && !registration.waiting) {
+      if (
+        registration.active &&
+        !registration.installing &&
+        !registration.waiting
+      ) {
         updateBootStatus({
           tip: '启动缓存服务已就绪，正在恢复工作台状态...',
           source: 'phase',
+          progress: 78,
         });
       }
+
+      requestSWVersionState();
 
       // 定期检查更新（每 5 分钟检查一次）
       setInterval(() => {
@@ -567,11 +612,19 @@ if ('serviceWorker' in navigator) {
           console.warn('Update check failed:', error);
         });
       }, 5 * 60 * 1000);
+
+      // 页面重新可见时检查版本状态，捕获 tab 切走期间错过的升级通知
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          requestSWVersionState();
+        }
+      });
     })
     .catch((error) => {
       updateBootStatus({
         tip: '离线加速未启用，正在直接启动工作台...',
         source: 'phase',
+        progress: 70,
       });
     });
 
@@ -583,33 +636,32 @@ if ('serviceWorker' in navigator) {
     }
 
     swChannelClient.setEventHandlers({
-      onSWUpdated: (event) => {
-        // 只有用户主动确认升级后才刷新页面
-        if (!userConfirmedUpgrade) {
-          return;
-        }
-        // 等待一小段时间，确保新的Service Worker已经完全接管
-        setTimeout(() => {
-          void safeReload();
-        }, 1000);
+      onSWUpdated: (_event) => {
+        // sw:updated 在 skipWaiting() 后立即发出，早于 activate/claim。
+        // 这里只同步一次状态，真正刷新等待 sw:activated / controllerchange。
+        requestSWVersionState();
       },
       onSWNewVersionReady: (event) => {
-        newVersionReady = true;
-        window.dispatchEvent(
-          new CustomEvent('sw-update-available', {
-            detail: { version: event.version },
-          })
-        );
+        notifyUpdateReady(event.version);
+        requestSWVersionState();
       },
-      onSWActivated: (event) => {
-        // 新 SW 已自动激活并接管页面
-        window.dispatchEvent(
-          new CustomEvent('sw-update-available', {
-            detail: { version: event.version, autoActivated: true },
-          })
-        );
+      onSWActivated: (_event) => {
+        if (userConfirmedUpgrade) {
+          scheduleConfirmedUpgradeReload('sw:activated');
+          return;
+        }
+
+        // 老版本页面关闭后，waiting worker 可能在后台自然转为 active。
+        // 这时不再重复弹升级提示，只更新运行时状态。
+        pendingWorker = null;
+        requestSWVersionState();
       },
     });
+
+    if (swRegistration?.waiting && navigator.serviceWorker.controller) {
+      pendingWorker = swRegistration.waiting;
+      requestSWVersionState(swRegistration.waiting);
+    }
   };
 
   // 延迟初始化 SW 事件处理器，等待 swChannelClient 就绪
@@ -681,57 +733,42 @@ if ('serviceWorker' in navigator) {
 
   setupVideoThumbnailHandler();
 
+  navigator.serviceWorker.addEventListener('message', (event: MessageEvent) => {
+    if (event.data?.type === 'SW_VERSION_STATE') {
+      handleRuntimeVersionState(event.data as RuntimeSWVersionState);
+    }
+  });
+
   // 监听controller变化（新的Service Worker接管）
   // 只有用户主动确认升级后才刷新页面
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     scheduleCDNPreferenceSync(swRegistration);
-
-    // 只有用户主动确认升级后才刷新页面
-    if (!userConfirmedUpgrade) {
-      return;
-    }
-
-    // 延迟刷新，确保新Service Worker的缓存已准备好
-    setTimeout(() => {
-      void safeReload();
-    }, 1000);
+    requestSWVersionState();
+    scheduleConfirmedUpgradeReload('controllerchange');
   });
 
   // 监听用户确认升级事件
   window.addEventListener('user-confirmed-upgrade', () => {
-    // 标记用户已确认升级，允许后续的 reload
-    userConfirmedUpgrade = true;
-
-    // 优先使用 pendingWorker
-    if (pendingWorker) {
-      pendingWorker.postMessage({ type: 'SKIP_WAITING' });
-      return;
-    }
-
-    // 如果没有 pendingWorker，尝试查找 waiting 状态的 worker
-    if (swRegistration && swRegistration.waiting) {
-      swRegistration.waiting.postMessage({ type: 'SKIP_WAITING' });
-      return;
-    }
-
-    // 如果都没有 waiting worker，说明 SW 已经是最新的 active 状态
-    // 这种情况通常发生在首次安装后，SW 直接 activate 了
-    // 清除缓存并强制刷新
-
-    // 清除旧的静态资源缓存以确保获取最新资源
-    caches
-      .keys()
-      .then((cacheNames) => {
-        const staticCaches = cacheNames.filter((name) =>
-          name.startsWith('drawnix-static-v')
+    void (async () => {
+      const worker = await resolvePendingUpgradeWorker();
+      if (!worker) {
+        console.warn(
+          '[Main] No waiting service worker available for COMMIT_UPGRADE'
         );
-        return Promise.all(staticCaches.map((name) => caches.delete(name)));
-      })
-      .finally(() => {
-        // 强制硬刷新（绕过缓存）
-        window.location.href =
-          window.location.href.split('?')[0] + '?_t=' + Date.now();
-      });
+        requestSWVersionState();
+        swRegistration?.update().catch((error) => {
+          console.warn(
+            '[Main] Update check after missing waiting worker failed:',
+            error
+          );
+        });
+        return;
+      }
+
+      // 标记用户已确认升级，允许后续的 reload
+      userConfirmedUpgrade = true;
+      worker.postMessage({ type: 'COMMIT_UPGRADE' });
+    })();
   });
 
   // 页面卸载前，不再自动触发升级，必须用户手动确认
@@ -754,6 +791,7 @@ if ('serviceWorker' in navigator) {
 updateBootStatus({
   tip: '正在挂载工作台界面...',
   source: 'phase',
+  progress: 88,
 });
 
 const root = ReactDOM.createRoot(

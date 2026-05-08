@@ -53,6 +53,10 @@ export default defineConfig({
     __VUE_PROD_HYDRATION_MISMATCH_DETAILS__: JSON.stringify(false),
   },
 
+  resolve: {
+    dedupe: ['react', 'react-dom'],
+  },
+
   // Uncomment this if you are using workers.
   // worker: {
   //  plugins: [ nxViteTsPaths() ],
@@ -88,7 +92,6 @@ export default defineConfig({
         '@plait-board/mermaid-to-drawnix',
         'classnames',
         'open-color',
-        'mobile-detect',
         '@floating-ui/react',
         '@plait/core',
         '@plait/common',

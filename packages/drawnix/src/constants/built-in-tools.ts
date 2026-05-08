@@ -1,7 +1,17 @@
 import { ToolCategory, ToolDefinition } from '../types/toolbox.types';
-import { toolRegistry } from '../tools/registry';
+import { BUILT_IN_TOOL_MANIFESTS } from '../tools/built-in-manifests';
 
-export const BUILT_IN_TOOLS: ToolDefinition[] = toolRegistry.getBuiltInTools();
+export const BUILT_IN_TOOLS: ToolDefinition[] = BUILT_IN_TOOL_MANIFESTS.map(
+  (tool) => ({ ...tool })
+);
+
+export const BUILT_IN_TOOL_IDS = new Set(
+  BUILT_IN_TOOL_MANIFESTS.map((tool) => tool.id)
+);
+
+export function isBuiltInToolId(toolId: string): boolean {
+  return BUILT_IN_TOOL_IDS.has(toolId);
+}
 
 /**
  * 默认工具配置
@@ -32,3 +42,22 @@ export const TOOL_CATEGORY_LABELS: Record<string, string> = {
   [ToolCategory.UTILITIES]: '实用工具',
   [ToolCategory.CUSTOM]: '自定义工具',
 };
+
+export const TOOL_CATEGORY_ORDER = [
+  ToolCategory.AI_TOOLS,
+  ToolCategory.CONTENT_TOOLS,
+  ToolCategory.UTILITIES,
+  ToolCategory.CUSTOM,
+] as const;
+
+export function getToolCategoryOrder(category?: string): number {
+  const index = TOOL_CATEGORY_ORDER.findIndex((item) => item === category);
+  return index >= 0 ? index : TOOL_CATEGORY_ORDER.length;
+}
+
+export function sortToolCategories(categories: string[]): string[] {
+  return [...categories].sort((left, right) => {
+    const orderDiff = getToolCategoryOrder(left) - getToolCategoryOrder(right);
+    return orderDiff || left.localeCompare(right);
+  });
+}

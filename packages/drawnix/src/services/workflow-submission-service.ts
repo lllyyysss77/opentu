@@ -116,12 +116,22 @@ export interface WorkflowFailedEvent {
 export interface CanvasInsertEvent {
   type: 'canvas_insert';
   requestId: string;
-  operation: 'insert_image' | 'insert_video' | 'insert_audio' | 'insert_text' | 'canvas_insert';
+  operation:
+    | 'insert_image'
+    | 'insert_video'
+    | 'insert_audio'
+    | 'insert_text'
+    | 'canvas_insert';
   params: {
     url?: string;
     content?: string;
     position?: { x: number; y: number };
-    items?: Array<{ type: string; url?: string; content?: string; [key: string]: unknown }>;
+    items?: Array<{
+      type: string;
+      url?: string;
+      content?: string;
+      [key: string]: unknown;
+    }>;
     [key: string]: unknown;
   };
 }
@@ -439,7 +449,21 @@ class WorkflowSubmissionService {
       args.count = parsedInput.count;
     if (parsedInput.duration) args.seconds = parsedInput.duration;
     if (referenceImages.length > 0) args.referenceImages = referenceImages;
-    if (parsedInput.extraParams) args.params = parsedInput.extraParams;
+    const extraParams = parsedInput.extraParams
+      ? { ...parsedInput.extraParams }
+      : undefined;
+    if (
+      parsedInput.modelId === 'happyhorse-1.0-video-edit' &&
+      parsedInput.selection?.videos?.[0]
+    ) {
+      args.params = {
+        ...(extraParams || {}),
+        input_video:
+          extraParams?.input_video || parsedInput.selection.videos[0],
+      };
+    } else if (extraParams) {
+      args.params = extraParams;
+    }
 
     // Create steps based on count
     const steps: WorkflowStep[] = [];
@@ -486,11 +510,6 @@ class WorkflowSubmissionService {
    * 始终使用主线程工作流引擎（不再依赖 SW）
    */
   async submit(workflow: WorkflowDefinition): Promise<void> {
-    console.log(
-      '[WorkflowSubmissionService][submit] 入口 workflowId:',
-      workflow.id
-    );
-
     // Store locally
     this.workflows.set(workflow.id, workflow);
 
@@ -528,10 +547,6 @@ class WorkflowSubmissionService {
         );
         return false;
       }
-      console.log(
-        '[WorkflowSubmissionService] tryFallbackEngine: 使用降级执行器'
-      );
-
       // 创建或获取主线程工作流引擎
       if (!this.fallbackEngine) {
         this.fallbackEngine = new MainThreadWorkflowEngine({
@@ -590,15 +605,7 @@ class WorkflowSubmissionService {
         error: workflow.error,
         context: workflow.context,
       };
-
-      // 提交到主线程引擎
-      console.log(
-        '[WorkflowSubmissionService] tryFallbackEngine: 提交到主线程引擎, steps:',
-        engineWorkflow.steps.length
-      );
       await this.fallbackEngine.submitWorkflow(engineWorkflow);
-      console.log('[WorkflowSubmissionService] tryFallbackEngine: 引擎已启动');
-
       return true;
     } catch (error) {
       console.error(

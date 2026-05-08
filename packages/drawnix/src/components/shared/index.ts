@@ -1,9 +1,21 @@
 export { PromptListItem, type PromptListItemProps } from './PromptListItem';
 export {
+  PromptOptimizeButton,
+  type PromptOptimizeButtonProps,
+} from './PromptOptimizeButton';
+export {
+  PromptOptimizeDialog,
+  type PromptOptimizeDialogProps,
+} from './PromptOptimizeDialog';
+export {
   PromptListPanel,
   type PromptListPanelProps,
   type PromptItem,
 } from './PromptListPanel';
+export {
+  KnowledgeNoteContextSelector,
+  type KnowledgeNoteContextSelectorProps,
+} from './KnowledgeNoteContextSelector';
 export {
   MediaViewer,
   type MediaViewerProps,
@@ -25,6 +37,7 @@ export {
   type ContextMenuSubmenuEntry,
   type ContextMenuDividerEntry,
 } from './ContextMenu';
+export { RetryImage, type RetryImageProps } from '../retry-image';
 
 // 统一媒体预览系统
 export {

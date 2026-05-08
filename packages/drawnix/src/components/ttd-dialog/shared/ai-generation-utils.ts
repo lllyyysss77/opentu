@@ -158,84 +158,8 @@ export const getPromptExample = (
   }
 };
 
-export interface PromptOptimizationRequestOptions {
-  originalPrompt: string;
-  optimizationRequirements?: string;
-  language: 'zh' | 'en';
-  type: 'image' | 'video';
-}
-
-export const buildPromptOptimizationRequest = ({
-  originalPrompt,
-  optimizationRequirements,
-  language,
-  type,
-}: PromptOptimizationRequestOptions): string => {
-  const trimmedPrompt = originalPrompt.trim();
-  const trimmedRequirements = optimizationRequirements?.trim() || '';
-  const modalityLabel =
-    language === 'zh'
-      ? type === 'image'
-        ? '图片生成'
-        : '视频生成'
-      : type === 'image'
-      ? 'image generation'
-      : 'video generation';
-  const domainFocus =
-    language === 'zh'
-      ? type === 'image'
-        ? '重点补足主体、构图、风格、光线、材质与画面细节。'
-        : '重点补足主体动作、镜头语言、运镜、时序、转场与画面连续性。'
-      : type === 'image'
-      ? 'Improve subject detail, composition, style, lighting, materials, and visual detail.'
-      : 'Improve subject motion, camera language, camera movement, timing, transitions, and continuity.';
-
-  if (language === 'zh') {
-    return [
-      `你是一名专业的${modalityLabel}提示词优化助手。`,
-      '请基于原始提示词和优化要求，输出一版可直接用于生成的最终提示词。',
-      '',
-      '要求：',
-      '1. 保持原始提示词的核心意图，不要偏题。',
-      '2. 优先满足优化要求；如果优化要求为空，仅做必要润色与结构优化。',
-      '3. 保持与原始提示词相同的语言风格；原文中英混合时，尽量沿用原表达。',
-      '4. 如果原始提示词已经较完整，只做轻量优化，避免无意义堆砌。',
-      `5. ${domainFocus}`,
-      '6. 只输出最终优化后的提示词，不要解释、不要加标题、不要用代码块。',
-      '',
-      '【原始提示词】',
-      trimmedPrompt,
-      '',
-      '【优化要求】',
-      trimmedRequirements || '无，做通顺、准确、可执行的轻量优化。',
-    ].join('\n');
-  }
-
-  return [
-    `You are a professional ${modalityLabel} prompt optimizer.`,
-    'Based on the original prompt and refinement requirements, output one final prompt that can be used directly.',
-    '',
-    'Requirements:',
-    '1. Preserve the core intent of the original prompt.',
-    '2. Prioritize the refinement requirements; if they are empty, only do light polishing and restructuring.',
-    '3. Keep the same language style as the original prompt. If the original is mixed-language, preserve that style when possible.',
-    '4. If the original prompt is already detailed, only refine lightly and avoid unnecessary expansion.',
-    `5. ${domainFocus}`,
-    '6. Output only the final optimized prompt. No explanation, no title, no code block.',
-    '',
-    '[Original Prompt]',
-    trimmedPrompt,
-    '',
-    '[Refinement Requirements]',
-    trimmedRequirements || 'None. Apply light polishing for clarity and execution quality.',
-  ].join('\n');
-};
-
-export const normalizeOptimizedPromptResult = (value: string): string => {
-  const trimmed = value.trim();
-  const codeFenceMatch = trimmed.match(/^```[\w-]*\n?([\s\S]*?)\n?```$/);
-  if (codeFenceMatch) {
-    return codeFenceMatch[1].trim();
-  }
-  return trimmed;
-};
+export {
+  buildPromptOptimizationRequest,
+  normalizeOptimizedPromptResult,
+  type PromptOptimizationRequestOptions,
+} from '../../../services/prompt-optimization-service';

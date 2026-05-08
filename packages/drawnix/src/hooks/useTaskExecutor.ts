@@ -17,9 +17,17 @@ import { characterStorageService } from '../services/character-storage-service';
 import { unifiedCacheService } from '../services/unified-cache-service';
 import { Task, TaskStatus, TaskType } from '../types/task.types';
 import { CharacterStatus } from '../types/character.types';
-import { isTaskTimeout } from '../utils/task-utils';
-import { isAsyncImageModel } from '../constants/model-config';
+import {
+  isResumableAsyncImageTask,
+  isTaskTimeout,
+} from '../utils/task-utils';
+import { AI_GENERATION_CONCURRENCY_LIMIT } from '../constants/TASK_CONSTANTS';
 import { classifyApiCredentialError } from '../utils/api-auth-error-event';
+import {
+  assertTaskInvocationRouteAvailable,
+  resolveTaskInvocationRouteModel,
+  shouldUseStrictTaskInvocationRoute,
+} from '../services/task-invocation-route';
 
 /**
  * 从 API 错误体中提取原始错误消息
@@ -183,7 +191,7 @@ function getFriendlyErrorMessage(error: any): string {
  * }
  */
 // 最大并发任务数，防止页面加载时大量任务同时执行导致 OOM
-const MAX_CONCURRENT_TASKS = 3;
+const MAX_CONCURRENT_TASKS = AI_GENERATION_CONCURRENCY_LIMIT;
 // 页面加载后延迟执行积压任务，避免与页面初始化竞争资源
 const STARTUP_DELAY_MS = 2000;
 
@@ -230,10 +238,13 @@ export function useTaskExecutor(): void {
       executingTasksRef.current.add(taskId);
 
       try {
+        if (shouldUseStrictTaskInvocationRoute(task)) {
+          assertTaskInvocationRouteAvailable('audio', task);
+        }
         const result = await generationAPIService.resumeAudioGeneration(
           taskId,
           remoteId,
-          task.params.modelRef || task.params.model || null
+          resolveTaskInvocationRouteModel(task)
         );
 
         if (!isActive) return;
@@ -281,10 +292,13 @@ export function useTaskExecutor(): void {
       executingTasksRef.current.add(taskId);
 
       try {
+        if (shouldUseStrictTaskInvocationRoute(task)) {
+          assertTaskInvocationRouteAvailable('image', task);
+        }
         const result = await generationAPIService.resumeAsyncImageGeneration(
           taskId,
           remoteId,
-          task.params.modelRef || task.params.model || null
+          resolveTaskInvocationRouteModel(task)
         );
 
         if (!isActive) return;
@@ -447,10 +461,8 @@ export function useTaskExecutor(): void {
 
       // Check if this is a resumable async image task
       if (
-        task.type === TaskType.IMAGE &&
-        task.remoteId &&
         task.status === TaskStatus.PROCESSING &&
-        isAsyncImageModel(task.params.model)
+        isResumableAsyncImageTask(task)
       ) {
         return resumeAsyncImageTask(task);
       }
@@ -577,10 +589,8 @@ export function useTaskExecutor(): void {
       // Process resumable tasks (processing with remoteId) — video tasks excluded, handled by FallbackMediaExecutor
       const resumableTasks = tasks.filter(
         (task) =>
-          task.type === TaskType.IMAGE &&
-          task.remoteId &&
           task.status === TaskStatus.PROCESSING &&
-          isAsyncImageModel(task.params.model)
+          isResumableAsyncImageTask(task)
       );
       const resumableAudioTasks = tasks.filter(
         (task) =>
@@ -654,9 +664,8 @@ export function useTaskExecutor(): void {
           else if (
             !executingTasksRef.current.has(task.id) &&
             task.remoteId &&
-            task.type === TaskType.IMAGE &&
             task.status === TaskStatus.PROCESSING &&
-            isAsyncImageModel(task.params.model)
+            isResumableAsyncImageTask(task)
           ) {
             enqueueTask(task);
           } else if (

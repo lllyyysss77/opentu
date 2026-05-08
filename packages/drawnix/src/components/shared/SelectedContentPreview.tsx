@@ -13,6 +13,7 @@ import React, { useState, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import { Video, Play, Type, X } from 'lucide-react';
 import type { SelectedContentItem } from '../../types/chat.types';
+import { HoverTip } from './hover';
 import './selected-content-preview.scss';
 
 export interface SelectedContentPreviewProps {
@@ -33,9 +34,40 @@ export interface SelectedContentPreviewProps {
 interface HoveredContent {
   type: SelectedContentItem['type'];
   url?: string;
+  maskImage?: string;
+  width?: number;
+  height?: number;
   text?: string;
   x: number;
   y: number;
+}
+
+function renderImageWithMask(
+  item: Pick<SelectedContentItem, 'url' | 'maskImage' | 'name' | 'width' | 'height'>,
+  className: string
+) {
+  if (!item.url) {
+    return null;
+  }
+
+  if (!item.maskImage) {
+    return <img src={item.url} alt={item.name} />;
+  }
+  const mediaPairStyle =
+    item.width && item.height && item.width > 0 && item.height > 0
+      ? ({
+          '--mask-pair-aspect': String((item.width * 2) / item.height),
+        } as React.CSSProperties)
+      : undefined;
+
+  return (
+    <div className={`${className}__media-pair`} style={mediaPairStyle}>
+      <img src={item.url} alt={item.name} />
+      <div className={`${className}__mask-thumb`}>
+        <img src={item.maskImage} alt={`${item.name} mask`} />
+      </div>
+    </div>
+  );
 }
 
 export const SelectedContentPreview: React.FC<SelectedContentPreviewProps> = ({
@@ -57,6 +89,9 @@ export const SelectedContentPreview: React.FC<SelectedContentPreviewProps> = ({
     setHoveredContent({
       type: item.type,
       url: item.url,
+      maskImage: item.maskImage,
+      width: item.width,
+      height: item.height,
       text: item.text,
       x: centerX,
       y: topY,
@@ -83,7 +118,16 @@ export const SelectedContentPreview: React.FC<SelectedContentPreviewProps> = ({
         >
           {/* Image or graphics preview */}
           {(hoveredContent.type === 'image' || hoveredContent.type === 'graphics') && hoveredContent.url && (
-            <img src={hoveredContent.url} alt="Preview" />
+            renderImageWithMask(
+              {
+                url: hoveredContent.url,
+                maskImage: hoveredContent.maskImage,
+                width: hoveredContent.width,
+                height: hoveredContent.height,
+                name: 'Preview',
+              },
+              'selected-content-preview'
+            )
           )}
 
           {/* Video preview */}
@@ -152,7 +196,13 @@ export const SelectedContentPreview: React.FC<SelectedContentPreviewProps> = ({
                 </>
               ) : (
                 // Image or graphics preview
-                <img src={item.url} alt={item.name} />
+                renderImageWithMask(item, 'selected-content-preview')
+              )}
+
+              {item.type === 'image' && item.maskImage && (
+                <span className="selected-content-preview__label selected-content-preview__label--mask">
+                  Mask
+                </span>
               )}
 
               {/* Type label for graphics */}
@@ -171,17 +221,21 @@ export const SelectedContentPreview: React.FC<SelectedContentPreviewProps> = ({
 
               {/* 删除按钮（仅上传内容显示） */}
               {canRemove && (
-                <button
-                  className="selected-content-preview__remove-btn"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onRemove(index);
-                  }}
-                  onMouseDown={(e) => e.preventDefault()}
-                  title={language === 'zh' ? '移除' : 'Remove'}
+                <HoverTip
+                  content={language === 'zh' ? '移除' : 'Remove'}
+                  showArrow={false}
                 >
-                  <X size={12} />
-                </button>
+                  <button
+                    className="selected-content-preview__remove-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onRemove(index);
+                    }}
+                    onMouseDown={(e) => e.preventDefault()}
+                  >
+                    <X size={12} />
+                  </button>
+                </HoverTip>
               )}
             </div>
           );

@@ -4,6 +4,7 @@
 
 import React from 'react';
 import type { VideoShot } from '../../../services/video-analysis-service';
+import { RetryImage } from '../../retry-image';
 
 const SHOT_TYPE_COLORS: Record<string, string> = {
   opening: '#3B82F6',
@@ -29,11 +30,16 @@ const TRANSITION_LABELS: Record<string, string> = {
 };
 
 export interface ShotCardProps {
-  shot: VideoShot;
+  shot?: VideoShot | null;
   index: number;
   compact?: boolean;
   actions?: React.ReactNode;
   children?: React.ReactNode;
+}
+
+function getShotTypeColor(shot?: VideoShot | null): string {
+  const shotType = shot?.type;
+  return (shotType && SHOT_TYPE_COLORS[shotType]) || SHOT_TYPE_COLORS.other;
 }
 
 export const ShotCard: React.FC<ShotCardProps> = ({
@@ -42,27 +48,33 @@ export const ShotCard: React.FC<ShotCardProps> = ({
   compact,
   actions,
   children,
-}) => (
-  <div className="va-shot-card">
-    {!actions && !compact && shot.generated_first_frame_url && (
+}) => {
+  if (!shot) {
+    return null;
+  }
+
+  return (
+    <div className="va-shot-card">
+      {!actions && !compact && shot.generated_first_frame_url && (
       <div className="va-shot-frame-row">
-        <img
+        <RetryImage
           src={shot.generated_first_frame_url}
           alt="首帧"
           className="va-shot-frame-img"
-          referrerPolicy="no-referrer"
+          showSkeleton={false}
+          eager
         />
       </div>
     )}
     <div className="va-shot-header">
       <span
         className="va-shot-badge"
-        style={{ backgroundColor: SHOT_TYPE_COLORS[shot.type] || SHOT_TYPE_COLORS.other }}
+        style={{ backgroundColor: getShotTypeColor(shot) }}
       >
-        {shot.label}
+        {shot.label || '未命名镜头'}
       </span>
       <span className="va-shot-time">
-        #{index + 1} · {shot.startTime}s - {shot.endTime}s
+        #{index + 1} · {shot.startTime ?? 0}s - {shot.endTime ?? 0}s
       </span>
       {shot.transition_hint && (
         <span className="va-shot-transition">
@@ -99,4 +111,5 @@ export const ShotCard: React.FC<ShotCardProps> = ({
     {children}
     {actions && <div className="va-shot-actions">{actions}</div>}
   </div>
-);
+  );
+};

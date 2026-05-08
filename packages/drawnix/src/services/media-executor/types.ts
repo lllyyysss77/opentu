@@ -1,5 +1,6 @@
 import type { ModelRef } from '../../utils/settings-manager';
 import type { GeminiMessagePart } from '../../utils/gemini-api/types';
+import type { GenerationParams as TaskGenerationParams } from '../../types/shared/core.types';
 import type {
   ProviderAuthStrategy,
   ProviderModelBinding,
@@ -28,16 +29,32 @@ export interface ImageGenerationParams {
   modelRef?: ModelRef | null;
   /** 图片尺寸 (如 "1024x1024", "16:9") */
   size?: string;
+  /** 图片生成模式：文生图、图生图或编辑 */
+  generationMode?: 'text_to_image' | 'image_to_image' | 'image_edit';
   /** 参考图片 URL 列表 */
   referenceImages?: string[];
+  /** 编辑蒙版图片 URL 或 data URL */
+  maskImage?: string;
+  /** GPT Image 输入保真度 */
+  inputFidelity?: 'high' | 'low';
+  /** GPT Image 背景模式 */
+  background?: 'transparent' | 'opaque' | 'auto';
+  /** GPT Image 输出格式 */
+  outputFormat?: 'png' | 'jpeg' | 'webp';
+  /** GPT Image 输出压缩率 */
+  outputCompression?: number;
   /** 上传图片列表（与 SW 一致，fallback 会从中提取 URL） */
   uploadedImages?: Array<{ url?: string }>;
-  /** 生成质量 */
-  quality?: '1k' | '2k' | '4k';
+  /** 分辨率档位 */
+  resolution?: '1k' | '2k' | '4k';
+  /** 官方画质（GPT）或兼容旧值 */
+  quality?: 'auto' | 'low' | 'medium' | 'high' | '1k' | '2k' | '4k';
   /** 生成数量 (1-10) */
   count?: number;
   /** 额外参数（如 seedream_quality），透传给 adapter */
   params?: Record<string, unknown>;
+  /** 素材库轻量元数据 */
+  assetMetadata?: TaskGenerationParams['assetMetadata'];
 }
 
 // ============================================================================
@@ -104,6 +121,7 @@ export interface TextGenerationParams {
   model?: string;
   modelRef?: ModelRef | null;
   referenceImages?: string[];
+  inlineDataParts?: GeminiMessagePart[];
   params?: Record<string, unknown>;
 }
 
@@ -248,6 +266,7 @@ export interface VideoAPIConfig {
   apiKey: string;
   baseUrl: string;
   model?: string;
+  params?: Record<string, unknown>;
   authType?: ProviderAuthStrategy;
   providerType?: string;
   extraHeaders?: Record<string, string>;

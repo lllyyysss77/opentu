@@ -31,7 +31,6 @@ import React, {
 import { withGroup } from '@plait/common';
 import { withDraw, BasicShapes, DrawTransforms } from '@plait/draw';
 import { MindThemeColors, withMind } from '@plait/mind';
-import MobileDetect from 'mobile-detect';
 import { withMindExtend } from './plugins/with-mind-extend';
 import { withCommonPlugin } from './plugins/with-common';
 import { PopupToolbar } from './components/toolbar/popup-toolbar/popup-toolbar';
@@ -46,6 +45,7 @@ import {
   DrawnixBoard,
   DrawnixContext,
   DrawnixState,
+  DialogType,
   useDrawnix,
 } from './hooks/use-drawnix';
 import { ClosePencilToolbar } from './components/toolbar/pencil-mode-toolbar';
@@ -112,10 +112,12 @@ import { withLockedElement } from './plugins/with-locked-element';
 import {
   API_AUTH_ERROR_EVENT,
   ApiAuthErrorDetail,
+  classifyApiCredentialError,
 } from './utils/api-auth-error-event';
-import { MessagePlugin } from 'tdesign-react';
+import { MessagePlugin } from './utils/message-plugin';
 import { calculateEditedImagePoints } from './utils/image';
 import { isCardElement } from './types/card.types';
+import { isFrameElement } from './types/frame.types';
 import { openCardInKnowledgeBase } from './utils/card-actions';
 import { useI18n } from './i18n';
 import { safeReload } from './utils/active-tasks';
@@ -127,8 +129,41 @@ import {
   requestServiceWorkerIdlePrefetch,
   type IdlePrefetchGroup,
 } from './utils/startup-prefetch';
-import { DeferredAIInputBar } from './components/startup/DeferredAIInputBar';
-import { ChatDrawer } from './components/chat-drawer';
+import { DRAWER_PIN_KEYS, getDrawerPinned } from './utils/drawer-pin';
+import {
+  PPT_EDITOR_OPEN_EVENT,
+  requestOpenPPTEditor,
+} from './services/ppt/ppt-ui-events';
+import { syncEditedPPTSlideImage } from './utils/frame-insertion-utils';
+import type { MediaLibraryModalProps } from './types/asset.types';
+import { SelectionMode } from './types/asset.types';
+const DeferredAIInputBar = lazy(() =>
+  import('./components/startup/DeferredAIInputBar').then((module) => ({
+    default: module.DeferredAIInputBar,
+  }))
+);
+const ChatDrawer = lazy(() =>
+  import('./components/chat-drawer/ChatDrawer').then((module) => ({
+    default: module.ChatDrawer,
+  }))
+);
+
+type MediaLibraryOpenConfig = Pick<
+  MediaLibraryModalProps,
+  'mode' | 'filterType' | 'onSelect' | 'selectButtonText'
+> & {
+  keepProjectDrawerOpen?: boolean;
+};
+
+interface SWIdlePrefetchStatusMessage {
+  type: 'SW_IDLE_PREFETCH_STATUS';
+  completedGroups?: string[];
+}
+
+const TOOL_WINDOW_GROUPS: IdlePrefetchGroup[] = [
+  'tool-windows',
+  'runtime-static-assets',
+];
 
 const DrawnixDeferredFeatures = lazy(() =>
   import('./components/startup/DrawnixDeferredFeatures').then((module) => ({
@@ -186,6 +221,45 @@ export type DrawnixProps = {
 } & Omit<React.HTMLAttributes<HTMLDivElement>, 'onChange'>;
 
 const DEFAULT_IDLE_PREFETCH_GROUPS: IdlePrefetchGroup[] = [];
+const PROJECT_DRAWER_ACTIVE_TAB_KEY = 'project-drawer-active-tab';
+const PROJECT_DRAWER_PPT_EDIT_TAB = 'frames';
+
+const isProjectDrawerInPPTEditMode = (): boolean => {
+  try {
+    return (
+      localStorage.getItem(PROJECT_DRAWER_ACTIVE_TAB_KEY) ===
+      PROJECT_DRAWER_PPT_EDIT_TAB
+    );
+  } catch {
+    return false;
+  }
+};
+
+const shouldAutoCloseProjectDrawer = (): boolean => {
+  return !getDrawerPinned(DRAWER_PIN_KEYS.project);
+};
+
+const shouldAutoCloseProjectDrawerOnCanvasClick = (): boolean =>
+  shouldAutoCloseProjectDrawer() && !isProjectDrawerInPPTEditMode();
+
+const shouldAutoCloseToolboxDrawer = (): boolean =>
+  !getDrawerPinned(DRAWER_PIN_KEYS.toolbox);
+
+const shouldAutoCloseTaskDrawer = (): boolean =>
+  !getDrawerPinned(DRAWER_PIN_KEYS.task);
+
+function detectMobileViewport(): boolean {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  const coarsePointer = window.matchMedia?.('(pointer: coarse)').matches ?? false;
+  const compactViewport = window.matchMedia?.('(max-width: 768px)').matches ?? false;
+  const touchCapable =
+    navigator.maxTouchPoints > 0 || 'ontouchstart' in window;
+
+  return compactViewport || (coarsePointer && touchCapable);
+}
 
 export const Drawnix: React.FC<DrawnixProps> = ({
   value,
@@ -211,10 +285,9 @@ export const Drawnix: React.FC<DrawnixProps> = ({
 
   const [appState, setAppState] = useState<DrawnixState>(() => {
     // TODO: need to consider how to maintenance the pointer state in future
-    const md = new MobileDetect(window.navigator.userAgent);
     return {
       pointer: PlaitPointerType.hand,
-      isMobile: md.mobile() !== null,
+      isMobile: detectMobileViewport(),
       isPencilMode: false,
       openDialogTypes: new Set(),
       dialogInitialData: null,
@@ -229,6 +302,10 @@ export const Drawnix: React.FC<DrawnixProps> = ({
   const [toolboxDrawerOpen, setToolboxDrawerOpen] = useState(false);
   const [taskPanelExpanded, setTaskPanelExpanded] = useState(false);
   const [mediaLibraryOpen, setMediaLibraryOpen] = useState(false);
+  const [mediaLibraryConfig, setMediaLibraryConfig] =
+    useState<MediaLibraryOpenConfig>({
+      mode: SelectionMode.BROWSE,
+    });
   const [backupRestoreOpen, setBackupRestoreOpen] = useState(false);
   const [cloudSyncOpen, setCloudSyncOpen] = useState(false);
   const [deferredRuntimeEnabled, setDeferredRuntimeEnabled] = useState(false);
@@ -236,15 +313,23 @@ export const Drawnix: React.FC<DrawnixProps> = ({
   const [performancePanelEnabled, setPerformancePanelEnabled] = useState(false);
   const [toolWindowManagerEnabled, setToolWindowManagerEnabled] =
     useState(false);
+  const [minimizedToolsBarEnabled, setMinimizedToolsBarEnabled] =
+    useState(false);
 
   // 使用 ref 来保存 board 的最新引用,避免 useCallback 依赖问题
   const boardRef = useRef<DrawnixBoard | null>(null);
 
   // 关闭所有抄屉
   const closeAllDrawers = useCallback(() => {
-    setProjectDrawerOpen(false);
-    setToolboxDrawerOpen(false);
-    setTaskPanelExpanded(false);
+    if (shouldAutoCloseProjectDrawer()) {
+      setProjectDrawerOpen(false);
+    }
+    if (shouldAutoCloseToolboxDrawer()) {
+      setToolboxDrawerOpen(false);
+    }
+    if (shouldAutoCloseTaskDrawer()) {
+      setTaskPanelExpanded(false);
+    }
     setMediaLibraryOpen(false);
   }, []);
 
@@ -257,16 +342,30 @@ export const Drawnix: React.FC<DrawnixProps> = ({
   );
 
   const enableToolWindows = useCallback(
-    (groups: IdlePrefetchGroup[] = ['tool-windows']) => {
+    (groups: IdlePrefetchGroup[] = TOOL_WINDOW_GROUPS) => {
       enableDeferredRuntime(groups);
+      setMinimizedToolsBarEnabled(true);
       setToolWindowManagerEnabled(true);
     },
     [enableDeferredRuntime]
   );
 
+  const enableGenerationRuntime = useCallback(() => {
+    enableDeferredRuntime(TOOL_WINDOW_GROUPS);
+  }, [enableDeferredRuntime]);
+
+  useEffect(() => {
+    if (
+      appState.openDialogTypes.has(DialogType.aiImageGeneration) ||
+      appState.openDialogTypes.has(DialogType.aiVideoGeneration)
+    ) {
+      enableGenerationRuntime();
+    }
+  }, [appState.openDialogTypes, enableGenerationRuntime]);
+
   // 处理知识库切换（通过 WinBox 打开）
   const handleKnowledgeBaseToggle = useCallback(() => {
-    enableToolWindows(['tool-windows']);
+    enableToolWindows(TOOL_WINDOW_GROUPS);
     void Promise.all([
       import('./services/tool-window-service'),
       import('./constants/built-in-tools'),
@@ -291,7 +390,7 @@ export const Drawnix: React.FC<DrawnixProps> = ({
   useEffect(() => {
     const handleKBOpen = (e: Event) => {
       const { noteId } = (e as CustomEvent<{ noteId?: string }>).detail;
-      enableToolWindows(['tool-windows']);
+      enableToolWindows(TOOL_WINDOW_GROUPS);
       void Promise.all([
         import('./services/tool-window-service'),
         import('./constants/built-in-tools'),
@@ -323,60 +422,108 @@ export const Drawnix: React.FC<DrawnixProps> = ({
 
   // 处理项目抽屉切换（互斥逻辑）
   const handleProjectDrawerToggle = useCallback(() => {
-    enableToolWindows(['tool-windows']);
+    enableToolWindows(TOOL_WINDOW_GROUPS);
     if (projectDrawerOpen) {
       setProjectDrawerOpen(false);
       return;
     }
 
-    setToolboxDrawerOpen(false);
-    setTaskPanelExpanded(false);
+    if (shouldAutoCloseToolboxDrawer()) {
+      setToolboxDrawerOpen(false);
+    }
+    if (shouldAutoCloseTaskDrawer()) {
+      setTaskPanelExpanded(false);
+    }
     setMediaLibraryOpen(false);
     setProjectDrawerOpen(true);
   }, [enableToolWindows, projectDrawerOpen]);
 
+  useEffect(() => {
+    const handleOpenPPTEditor = () => {
+      enableToolWindows(TOOL_WINDOW_GROUPS);
+      if (shouldAutoCloseToolboxDrawer()) {
+        setToolboxDrawerOpen(false);
+      }
+      if (shouldAutoCloseTaskDrawer()) {
+        setTaskPanelExpanded(false);
+      }
+      setMediaLibraryOpen(false);
+      setProjectDrawerOpen(true);
+    };
+
+    window.addEventListener(PPT_EDITOR_OPEN_EVENT, handleOpenPPTEditor);
+    return () =>
+      window.removeEventListener(PPT_EDITOR_OPEN_EVENT, handleOpenPPTEditor);
+  }, [enableToolWindows]);
+
   // 处理工具箱抽屉切换（互斥逻辑）
   const handleToolboxDrawerToggle = useCallback(() => {
-    enableToolWindows(['tool-windows']);
+    enableToolWindows(TOOL_WINDOW_GROUPS);
     if (toolboxDrawerOpen) {
       setToolboxDrawerOpen(false);
       return;
     }
 
-    setProjectDrawerOpen(false);
-    setTaskPanelExpanded(false);
+    if (shouldAutoCloseProjectDrawer()) {
+      setProjectDrawerOpen(false);
+    }
+    if (shouldAutoCloseTaskDrawer()) {
+      setTaskPanelExpanded(false);
+    }
     setMediaLibraryOpen(false);
     setToolboxDrawerOpen(true);
   }, [enableToolWindows, toolboxDrawerOpen]);
 
   // 处理任务面板切换（互斥逻辑）
   const handleTaskPanelToggle = useCallback(() => {
-    enableDeferredRuntime(['tool-windows']);
+    enableDeferredRuntime(TOOL_WINDOW_GROUPS);
     if (taskPanelExpanded) {
       setTaskPanelExpanded(false);
       return;
     }
 
-    setProjectDrawerOpen(false);
-    setToolboxDrawerOpen(false);
+    if (shouldAutoCloseProjectDrawer()) {
+      setProjectDrawerOpen(false);
+    }
+    if (shouldAutoCloseToolboxDrawer()) {
+      setToolboxDrawerOpen(false);
+    }
     setMediaLibraryOpen(false);
     setTaskPanelExpanded(true);
   }, [enableDeferredRuntime, taskPanelExpanded]);
 
   // 打开素材库（用于缓存满提示）
-  const handleOpenMediaLibrary = useCallback(() => {
-    enableToolWindows(['tool-windows']);
-    closeAllDrawers();
-    setMediaLibraryOpen(true);
-  }, [closeAllDrawers, enableToolWindows]);
+  const handleOpenMediaLibrary = useCallback(
+    (config?: MediaLibraryOpenConfig) => {
+      enableToolWindows(TOOL_WINDOW_GROUPS);
+      const { keepProjectDrawerOpen, ...mediaLibraryConfig } = config || {};
+      if (keepProjectDrawerOpen) {
+        if (shouldAutoCloseToolboxDrawer()) {
+          setToolboxDrawerOpen(false);
+        }
+        if (shouldAutoCloseTaskDrawer()) {
+          setTaskPanelExpanded(false);
+        }
+        setMediaLibraryOpen(false);
+      } else {
+        closeAllDrawers();
+      }
+      setMediaLibraryConfig({
+        mode: SelectionMode.BROWSE,
+        ...mediaLibraryConfig,
+      });
+      setMediaLibraryOpen(true);
+    },
+    [closeAllDrawers, enableToolWindows]
+  );
 
   const handleOpenBackupRestore = useCallback(() => {
-    enableDeferredRuntime(['tool-windows']);
+    enableDeferredRuntime(TOOL_WINDOW_GROUPS);
     setBackupRestoreOpen(true);
   }, [enableDeferredRuntime]);
 
   const handleOpenCloudSync = useCallback(() => {
-    enableDeferredRuntime(['tool-windows']);
+    enableDeferredRuntime(TOOL_WINDOW_GROUPS);
     setCloudSyncOpen(true);
   }, [enableDeferredRuntime]);
 
@@ -409,54 +556,90 @@ export const Drawnix: React.FC<DrawnixProps> = ({
   }, [board, appState, stableSetAppState]);
 
   useEffect(() => {
-    let disposed = false;
     const shouldLoadImmediately = new URLSearchParams(
       window.location.search
     ).has('tool');
 
-    const startDeferredRuntime = () => {
-      if (!disposed) {
-        enableDeferredRuntime(
-          shouldLoadImmediately
-            ? ['tool-windows']
-            : DEFAULT_IDLE_PREFETCH_GROUPS
-        );
-      }
-    };
-
     if (shouldLoadImmediately) {
-      enableToolWindows(['tool-windows']);
+      enableToolWindows(TOOL_WINDOW_GROUPS);
       return;
     }
 
-    const idleCallback = (
-      window as Window & {
-        requestIdleCallback?: (
-          callback: () => void,
-          options?: { timeout: number }
-        ) => number;
-        cancelIdleCallback?: (id: number) => void;
-      }
-    ).requestIdleCallback;
+    // 默认不在首屏主动拉起工具运行时/工具面板分组，避免与首屏关键资源抢占带宽。
+    // 真正需要时再由用户交互路径触发 enableToolWindows / enableDeferredRuntime。
+  }, [enableToolWindows]);
 
-    if (typeof idleCallback === 'function') {
-      const id = idleCallback(startDeferredRuntime, { timeout: 1800 });
-      return () => {
-        disposed = true;
-        (
-          window as Window & {
-            cancelIdleCallback?: (callbackId: number) => void;
-          }
-        ).cancelIdleCallback?.(id);
-      };
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
+      return;
     }
 
-    const timer = window.setTimeout(startDeferredRuntime, 700);
-    return () => {
-      disposed = true;
-      window.clearTimeout(timer);
+    let resolvedBySW = false;
+    const isLocalDevHost =
+      window.location.hostname === 'localhost' ||
+      window.location.hostname === '127.0.0.1';
+
+    const handleIdlePrefetchStatus = (
+      event: MessageEvent<SWIdlePrefetchStatusMessage>
+    ) => {
+      if (event.data?.type !== 'SW_IDLE_PREFETCH_STATUS') {
+        return;
+      }
+
+      if (
+        !TOOL_WINDOW_GROUPS.every((group) =>
+          event.data.completedGroups?.includes(group)
+        )
+      ) {
+        return;
+      }
+
+      resolvedBySW = true;
+      setMinimizedToolsBarEnabled(true);
     };
-  }, [enableDeferredRuntime, enableToolWindows]);
+
+    navigator.serviceWorker.addEventListener(
+      'message',
+      handleIdlePrefetchStatus
+    );
+
+    const message = { type: 'SW_IDLE_PREFETCH_STATUS_GET' as const };
+    const controller = navigator.serviceWorker.controller;
+    if (controller) {
+      controller.postMessage(message);
+    } else {
+      navigator.serviceWorker.ready
+        .then((registration) => {
+          registration.active?.postMessage(message);
+        })
+        .catch(() => {
+          // Ignore status sync failures; runtime still loads on direct interaction.
+        });
+    }
+
+    const fallbackTimer = window.setTimeout(() => {
+      if (resolvedBySW || minimizedToolsBarEnabled) {
+        return;
+      }
+
+      // idle prefetch 只是优化项，不应阻塞常驻工具条显示。
+      // 开发态或 manifest 缺失时，超时后直接放行显示，点击工具时再按需启完整运行时。
+      if (!isLocalDevHost) {
+        console.warn(
+          '[Drawnix] SW idle prefetch status unresolved, enabling minimized tools bar fallback'
+        );
+      }
+      setMinimizedToolsBarEnabled(true);
+    }, 2200);
+
+    return () => {
+      window.clearTimeout(fallbackTimer);
+      navigator.serviceWorker.removeEventListener(
+        'message',
+        handleIdlePrefetchStatus
+      );
+    };
+  }, [minimizedToolsBarEnabled]);
 
   useEffect(() => {
     const idleCallback = (
@@ -482,7 +665,7 @@ export const Drawnix: React.FC<DrawnixProps> = ({
       }
 
       enableNonCriticalUi();
-    }, 1200);
+    }, 5000);
 
     return () => {
       window.clearTimeout(timer);
@@ -500,11 +683,15 @@ export const Drawnix: React.FC<DrawnixProps> = ({
   useEffect(() => {
     const handleApiAuthError = (event: Event) => {
       const customEvent = event as CustomEvent<ApiAuthErrorDetail>;
-      const { message } = customEvent.detail;
+      const { message, reason } = customEvent.detail;
+      const credentialReason = reason || classifyApiCredentialError(message);
 
       // 显示错误提示
       MessagePlugin.error({
-        content: 'API Key 无效或已过期，请重新配置',
+        content:
+          credentialReason === 'missing'
+            ? '缺少 API Key，请先在设置中配置'
+            : 'API Key 无效或已过期，请重新配置',
         duration: 5000,
       });
 
@@ -606,6 +793,13 @@ export const Drawnix: React.FC<DrawnixProps> = ({
           .map((el: any) => el.id)
           .filter(Boolean);
 
+        if (
+          selectedElements.some(isFrameElement) &&
+          (!projectDrawerOpen || !isProjectDrawerInPPTEditMode())
+        ) {
+          requestOpenPPTEditor();
+        }
+
         // 更新lastSelectedElementIds（包括清空的情况）
         // console.log('Selection changed, saving element IDs:', elementIds);
         updateAppState({ lastSelectedElementIds: elementIds });
@@ -614,7 +808,7 @@ export const Drawnix: React.FC<DrawnixProps> = ({
       // 调用外部的onSelectionChange回调
       onSelectionChange && onSelectionChange(selection);
     },
-    [onSelectionChange, updateAppState]
+    [onSelectionChange, projectDrawerOpen, updateAppState]
   );
 
   // 使用 useMemo 稳定 DrawnixContext.Provider 的 value
@@ -662,6 +856,7 @@ export const Drawnix: React.FC<DrawnixProps> = ({
                       toolboxDrawerOpen={toolboxDrawerOpen}
                       taskPanelExpanded={taskPanelExpanded}
                       mediaLibraryOpen={mediaLibraryOpen}
+                      mediaLibraryConfig={mediaLibraryConfig}
                       backupRestoreOpen={backupRestoreOpen}
                       onChange={onChange}
                       onSelectionChange={handleSelectionChange}
@@ -680,6 +875,7 @@ export const Drawnix: React.FC<DrawnixProps> = ({
                       handleOpenCloudSync={handleOpenCloudSync}
                       setProjectDrawerOpen={setProjectDrawerOpen}
                       setToolboxDrawerOpen={setToolboxDrawerOpen}
+                      setTaskPanelExpanded={setTaskPanelExpanded}
                       setMediaLibraryOpen={setMediaLibraryOpen}
                       setBackupRestoreOpen={setBackupRestoreOpen}
                       cloudSyncOpen={cloudSyncOpen}
@@ -689,10 +885,15 @@ export const Drawnix: React.FC<DrawnixProps> = ({
                       onCreateProjectForMemory={handleCreateProjectForMemory}
                       currentBoardId={currentBoardId}
                       deferredRuntimeEnabled={deferredRuntimeEnabled}
-                      shouldRenderDeferredFeatures={shouldRenderDeferredFeatures}
+                      shouldRenderDeferredFeatures={
+                        shouldRenderDeferredFeatures
+                      }
                       versionUpdateEnabled={versionUpdateEnabled}
                       performancePanelEnabled={performancePanelEnabled}
                       toolWindowManagerEnabled={toolWindowManagerEnabled}
+                      minimizedToolsBarEnabled={minimizedToolsBarEnabled}
+                      enableToolWindows={enableToolWindows}
+                      enableGenerationRuntime={enableGenerationRuntime}
                     />
                   </DrawnixContext.Provider>
                 </ChatDrawerProvider>
@@ -720,12 +921,16 @@ interface DrawnixContentProps {
   toolboxDrawerOpen: boolean;
   taskPanelExpanded: boolean;
   mediaLibraryOpen: boolean;
+  mediaLibraryConfig: MediaLibraryOpenConfig;
   backupRestoreOpen: boolean;
   deferredRuntimeEnabled: boolean;
   shouldRenderDeferredFeatures: boolean;
   versionUpdateEnabled: boolean;
   performancePanelEnabled: boolean;
   toolWindowManagerEnabled: boolean;
+  minimizedToolsBarEnabled: boolean;
+  enableToolWindows: () => void;
+  enableGenerationRuntime: () => void;
   onChange?: (value: BoardChangeData) => void;
   onSelectionChange: (selection: Selection | null) => void;
   onViewportChange?: (value: Viewport) => void;
@@ -738,11 +943,12 @@ interface DrawnixContentProps {
   handleToolboxDrawerToggle: () => void;
   handleKnowledgeBaseToggle: () => void;
   handleTaskPanelToggle: () => void;
-  handleOpenMediaLibrary: () => void;
+  handleOpenMediaLibrary: (config?: MediaLibraryOpenConfig) => void;
   handleOpenBackupRestore: () => void;
   handleOpenCloudSync: () => void;
   setProjectDrawerOpen: React.Dispatch<React.SetStateAction<boolean>>;
   setToolboxDrawerOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  setTaskPanelExpanded: React.Dispatch<React.SetStateAction<boolean>>;
   setMediaLibraryOpen: React.Dispatch<React.SetStateAction<boolean>>;
   setBackupRestoreOpen: React.Dispatch<React.SetStateAction<boolean>>;
   cloudSyncOpen: boolean;
@@ -767,12 +973,16 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
   toolboxDrawerOpen,
   taskPanelExpanded,
   mediaLibraryOpen,
+  mediaLibraryConfig,
   backupRestoreOpen,
   deferredRuntimeEnabled,
   shouldRenderDeferredFeatures,
   versionUpdateEnabled,
   performancePanelEnabled,
   toolWindowManagerEnabled,
+  minimizedToolsBarEnabled,
+  enableToolWindows,
+  enableGenerationRuntime,
   cloudSyncOpen,
   onChange,
   onSelectionChange,
@@ -791,6 +1001,7 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
   handleOpenCloudSync,
   setProjectDrawerOpen,
   setToolboxDrawerOpen,
+  setTaskPanelExpanded,
   setMediaLibraryOpen,
   setBackupRestoreOpen,
   setCloudSyncOpen,
@@ -1012,6 +1223,7 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
             } as any,
             [elementIndex]
           );
+          syncEditedPPTSlideImage(board, elementId, stableUrl);
         }
       } catch (error) {
         console.error('Failed to update image:', error);
@@ -1099,16 +1311,30 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
     const text = inlineTextRef.current.innerText || '';
     if (text.trim()) {
       DrawTransforms.insertText(board, inlineTextInput.worldPoint, text);
+      const insertedTextElement = board.children[board.children.length - 1];
+      const insertedTextElementId =
+        insertedTextElement && PlaitDrawElement.isText(insertedTextElement)
+          ? insertedTextElement.id
+          : null;
 
       // 修正可能的 Infinity 高度问题
       requestAnimationFrame(() => {
-        const lastElement = board.children[board.children.length - 1];
-        if (PlaitDrawElement.isText(lastElement)) {
-          const textEl = lastElement as any;
+        if (!insertedTextElementId) {
+          return;
+        }
+        const textElementIndex = board.children.findIndex(
+          (element) => element.id === insertedTextElementId
+        );
+        if (textElementIndex === -1) {
+          return;
+        }
+        const textElement = board.children[textElementIndex];
+        if (PlaitDrawElement.isText(textElement)) {
+          const textEl = textElement as any;
           if (!isFinite(textEl.textHeight)) {
             const rect = RectangleClient.getRectangleByPoints(textEl.points);
             Transforms.setNode(board, { textHeight: rect.height }, [
-              board.children.length - 1,
+              textElementIndex,
             ]);
           }
         }
@@ -1132,6 +1358,12 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
         target.closest('.plait-board-container');
 
       if (!isInsideCanvas) {
+        return;
+      }
+
+      if (document.documentElement.classList.contains('slideshow-active')) {
+        event.preventDefault();
+        event.stopPropagation();
         return;
       }
 
@@ -1212,6 +1444,10 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
     const handleClick = (event: MouseEvent) => {
       const target = event.target as HTMLElement;
 
+      if (target.closest('.side-drawer') || target.closest('.project-drawer')) {
+        return;
+      }
+
       // 只处理画布区域内的点击
       const isInsideCanvas =
         target.closest('.board-host-svg') ||
@@ -1275,12 +1511,15 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
         }
       }
 
-      // 关闭项目抽屉和工具箱抽屉
-      if (projectDrawerOpen) {
+      // 关闭未固定的自动收起抽屉
+      if (projectDrawerOpen && shouldAutoCloseProjectDrawerOnCanvasClick()) {
         setProjectDrawerOpen(false);
       }
-      if (toolboxDrawerOpen) {
+      if (toolboxDrawerOpen && shouldAutoCloseToolboxDrawer()) {
         setToolboxDrawerOpen(false);
+      }
+      if (taskPanelExpanded && shouldAutoCloseTaskDrawer()) {
+        setTaskPanelExpanded(false);
       }
     };
 
@@ -1299,8 +1538,10 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
     containerRef,
     projectDrawerOpen,
     toolboxDrawerOpen,
+    taskPanelExpanded,
     setProjectDrawerOpen,
     setToolboxDrawerOpen,
+    setTaskPanelExpanded,
   ]);
 
   return (
@@ -1360,6 +1601,8 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
             onKnowledgeBaseToggle={handleKnowledgeBaseToggle}
             onOpenMediaLibrary={handleOpenMediaLibrary}
             deferredFeaturesEnabled={toolWindowManagerEnabled}
+            minimizedToolsBarEnabled={minimizedToolsBarEnabled}
+            onEnableToolWindows={enableToolWindows}
           />
           {canvasAudioPlayerEnabled && (
             <Suspense fallback={null}>
@@ -1384,7 +1627,14 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
             </Suspense>
           )}
           <CleanConfirm container={containerRef.current}></CleanConfirm>
-          <DeferredAIInputBar isDataReady={isDataReady} activationKey={0} />
+          <Suspense fallback={null}>
+            <DeferredAIInputBar
+              isDataReady={isDataReady}
+              activationKey={0}
+              onEnableToolWindows={enableToolWindows}
+              onEnableRuntime={enableGenerationRuntime}
+            />
+          </Suspense>
           {/* Quick Creation Toolbar - 双击空白区域显示的快捷工具栏 */}
           <QuickCreationToolbar
             position={quickToolbarPosition}
@@ -1452,7 +1702,9 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
           {/* ViewNavigation - 视图导航（缩放 + 小地图） */}
           <ViewNavigation />
         </Wrapper>
-        <ChatDrawer ref={chatDrawerRef} />
+        <Suspense fallback={null}>
+          <ChatDrawer ref={chatDrawerRef} />
+        </Suspense>
         {deferredRuntimeEnabled && (
           <Suspense fallback={null}>
             <DrawnixDeferredRuntime board={board} value={value} />
@@ -1470,6 +1722,7 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
               projectDrawerOpen={projectDrawerOpen}
               toolboxDrawerOpen={toolboxDrawerOpen}
               mediaLibraryOpen={mediaLibraryOpen}
+              mediaLibraryConfig={mediaLibraryConfig}
               backupRestoreOpen={backupRestoreOpen}
               cloudSyncOpen={cloudSyncOpen}
               onBoardSwitch={onBoardSwitch}
@@ -1478,6 +1731,7 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
               setMediaLibraryOpen={setMediaLibraryOpen}
               setBackupRestoreOpen={setBackupRestoreOpen}
               setCloudSyncOpen={setCloudSyncOpen}
+              handleOpenMediaLibrary={handleOpenMediaLibrary}
               handleBeforeSwitch={handleBeforeSwitch}
               onCreateProjectForMemory={onCreateProjectForMemory}
             />

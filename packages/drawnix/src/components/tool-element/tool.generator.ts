@@ -10,8 +10,8 @@ import { PlaitTool, ToolDefinition } from '../../types/toolbox.types';
 import { ToolLoadState, ToolErrorType, ToolErrorEventDetail } from '../../types/tool-error.types';
 import { createRoot, Root } from 'react-dom/client';
 import React, { Suspense } from 'react';
-import { ToolProviderWrapper } from '../toolbox-drawer/ToolProviderWrapper';
-import { ToolTransforms } from '../../plugins/with-tool';
+import { ToolProviderWrapper } from '../startup/ToolProviderWrapper';
+import { ToolTransforms } from './tool.transforms';
 import { toolWindowService } from '../../services/tool-window-service';
 import { BUILT_IN_TOOLS } from '../../constants/built-in-tools';
 import { processToolUrl, hasTemplateVariables } from '../../utils/url-template';
@@ -31,6 +31,16 @@ export class ToolGenerator {
 
   // 加载超时时间（毫秒）
   private static readonly LOAD_TIMEOUT = 10000; // 10 秒
+
+  private scheduleRootUnmount(root: Root): void {
+    setTimeout(() => {
+      try {
+        root.unmount();
+      } catch {
+        // Ignore unmount failures during teardown.
+      }
+    }, 0);
+  }
 
   constructor(board: PlaitBoard) {
     this.board = board;
@@ -172,8 +182,8 @@ export class ToolGenerator {
     // 清理旧的 React Root
     const oldRoot = this.reactRoots.get(element.id);
     if (oldRoot) {
-      oldRoot.unmount();
       this.reactRoots.delete(element.id);
+      this.scheduleRootUnmount(oldRoot);
     }
 
     nodeG.innerHTML = '';
@@ -384,7 +394,8 @@ export class ToolGenerator {
       const refreshBtn = this.createTitleButton('↻', '刷新', () => {
         const iframe = this.iframeCache.get(element.id);
         if (iframe) {
-          iframe.src = iframe.src; // 重新加载
+          const { src } = iframe;
+          iframe.src = src; // 重新加载
         }
       });
       titleRight.appendChild(refreshBtn);
@@ -891,7 +902,7 @@ export class ToolGenerator {
 
     // 清理所有 React Roots
     this.reactRoots.forEach((root) => {
-      root.unmount();
+      this.scheduleRootUnmount(root);
     });
     this.reactRoots.clear();
 

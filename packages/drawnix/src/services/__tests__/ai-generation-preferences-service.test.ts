@@ -35,10 +35,9 @@ describe('ai-generation-preferences-service', () => {
   });
 
   it('保存并恢复文本生成模式偏好', async () => {
-    const {
-      loadAIInputPreferences,
-      saveAIInputPreferences,
-    } = await import('../ai-generation-preferences-service');
+    const { loadAIInputPreferences, saveAIInputPreferences } = await import(
+      '../ai-generation-preferences-service'
+    );
 
     saveAIInputPreferences({
       generationType: 'agent',
@@ -64,10 +63,8 @@ describe('ai-generation-preferences-service', () => {
   });
 
   it('按 selectionKey 为 AI 输入栏隔离模型参数', async () => {
-    const {
-      loadScopedAIInputModelParams,
-      saveScopedAIInputModelParams,
-    } = await import('../ai-generation-preferences-service');
+    const { loadScopedAIInputModelParams, saveScopedAIInputModelParams } =
+      await import('../ai-generation-preferences-service');
 
     saveScopedAIInputModelParams(
       'audio',
@@ -99,10 +96,8 @@ describe('ai-generation-preferences-service', () => {
   });
 
   it('按模型作用域恢复图片工具偏好', async () => {
-    const {
-      loadScopedAIImageToolPreferences,
-      saveAIImageToolPreferences,
-    } = await import('../ai-generation-preferences-service');
+    const { loadScopedAIImageToolPreferences, saveAIImageToolPreferences } =
+      await import('../ai-generation-preferences-service');
 
     saveAIImageToolPreferences({
       currentModel: 'doubao-seedream-4-5-251128',
@@ -117,31 +112,274 @@ describe('ai-generation-preferences-service', () => {
         'provider-a::doubao-seedream-4-5-251128'
       )
     ).toMatchObject({
-      extraParams: { seedream_quality: '4k' },
+      extraParams: { size: '16x9', seedream_quality: '4k' },
       aspectRatio: '16:9',
     });
   });
 
-  it('按模型作用域恢复视频工具偏好', async () => {
+  it('将 GPT Image 的旧 quality 档位偏好迁移到 resolution', async () => {
+    localStorage.setItem(
+      'aitu_ai_image_tool_preferences',
+      JSON.stringify({
+        value: {
+          currentModel: 'gpt-image-2',
+          currentSelectionKey: 'provider-a::gpt-image-2',
+          extraParams: {
+            quality: '2k',
+          },
+          aspectRatio: '16:9',
+          scopedPreferences: {
+            'provider-a::gpt-image-2': {
+              modelId: 'gpt-image-2',
+              selectionKey: 'provider-a::gpt-image-2',
+              extraParams: {
+                quality: '2k',
+              },
+              aspectRatio: '16:9',
+            },
+          },
+        },
+        updatedAt: Date.now(),
+      })
+    );
+
+    const { loadScopedAIImageToolPreferences } = await import(
+      '../ai-generation-preferences-service'
+    );
+
+    expect(
+      loadScopedAIImageToolPreferences('gpt-image-2', 'provider-a::gpt-image-2')
+    ).toMatchObject({
+      extraParams: {
+        size: '16x9',
+        resolution: '2k',
+        quality: 'auto',
+      },
+      aspectRatio: '16:9',
+    });
+  });
+
+  it('AI 图片工具优先对齐 AI 输入栏的图片模型参数', async () => {
     const {
-      loadScopedAIVideoToolPreferences,
-      saveAIVideoToolPreferences,
+      loadScopedAIImageToolPreferences,
+      saveAIImageToolPreferences,
+      saveScopedAIInputModelParams,
     } = await import('../ai-generation-preferences-service');
 
-    saveAIVideoToolPreferences({
-      currentModel: 'veo3',
-      currentSelectionKey: 'provider-a::veo3',
-      extraParams: { aspect_ratio: '16:9' },
-      duration: '8',
-      size: '1280x720',
+    saveAIImageToolPreferences({
+      currentModel: 'gpt-image-2',
+      currentSelectionKey: 'provider-a::gpt-image-2',
+      extraParams: {
+        resolution: '1k',
+        quality: 'auto',
+      },
+      aspectRatio: '16:9',
+    });
+    saveScopedAIInputModelParams(
+      'image',
+      'gpt-image-2',
+      {
+        size: '16x9',
+        resolution: '4k',
+        quality: 'high',
+      },
+      'provider-a::gpt-image-2'
+    );
+
+    expect(
+      loadScopedAIImageToolPreferences('gpt-image-2', 'provider-a::gpt-image-2')
+    ).toMatchObject({
+      extraParams: {
+        size: '16x9',
+        resolution: '4k',
+        quality: 'high',
+      },
+      aspectRatio: '16:9',
+    });
+  });
+
+  it('AI 图片工具保存参数时同步回 AI 输入栏并更新尺寸参数', async () => {
+    const {
+      loadScopedAIInputModelParams,
+      saveAIImageToolPreferences,
+      saveScopedAIInputModelParams,
+    } = await import('../ai-generation-preferences-service');
+
+    saveScopedAIInputModelParams(
+      'image',
+      'gpt-image-2',
+      {
+        size: '3x4',
+        resolution: '1k',
+        quality: 'auto',
+      },
+      'provider-a::gpt-image-2'
+    );
+    saveAIImageToolPreferences({
+      currentModel: 'gpt-image-2',
+      currentSelectionKey: 'provider-a::gpt-image-2',
+      extraParams: {
+        resolution: '2k',
+        quality: 'medium',
+      },
+      aspectRatio: '16:9',
     });
 
     expect(
-      loadScopedAIVideoToolPreferences('veo3', 'provider-a::veo3')
+      loadScopedAIInputModelParams(
+        'image',
+        'gpt-image-2',
+        'provider-a::gpt-image-2'
+      )
     ).toMatchObject({
-      extraParams: { aspect_ratio: '16:9' },
-      duration: '8',
+      size: '16x9',
+      resolution: '2k',
+      quality: 'medium',
+    });
+  });
+
+  it('保留 Gemini preview 的旧 quality 档位语义', async () => {
+    localStorage.setItem(
+      'aitu_ai_image_tool_preferences',
+      JSON.stringify({
+        value: {
+          currentModel: 'gemini-3-pro-image-preview',
+          currentSelectionKey: 'provider-a::gemini-3-pro-image-preview',
+          extraParams: {
+            quality: '4k',
+          },
+          aspectRatio: '1:1',
+          scopedPreferences: {
+            'provider-a::gemini-3-pro-image-preview': {
+              modelId: 'gemini-3-pro-image-preview',
+              selectionKey: 'provider-a::gemini-3-pro-image-preview',
+              extraParams: {
+                quality: '4k',
+              },
+              aspectRatio: '1:1',
+            },
+          },
+        },
+        updatedAt: Date.now(),
+      })
+    );
+
+    const { loadScopedAIImageToolPreferences } = await import(
+      '../ai-generation-preferences-service'
+    );
+
+    expect(
+      loadScopedAIImageToolPreferences(
+        'gemini-3-pro-image-preview',
+        'provider-a::gemini-3-pro-image-preview'
+      )
+    ).toMatchObject({
+      extraParams: {
+        size: '1x1',
+        quality: '4k',
+      },
+      aspectRatio: '1:1',
+    });
+  });
+
+  it('按模型作用域恢复视频工具偏好', async () => {
+    const { loadScopedAIVideoToolPreferences, saveAIVideoToolPreferences } =
+      await import('../ai-generation-preferences-service');
+
+    saveAIVideoToolPreferences({
+      currentModel: 'kling_video',
+      currentSelectionKey: 'provider-a::kling_video',
+      extraParams: { model_name: 'kling-v3' },
+      duration: '10',
+      size: '1024x1024',
+    });
+
+    expect(
+      loadScopedAIVideoToolPreferences('kling_video', 'provider-a::kling_video')
+    ).toMatchObject({
+      extraParams: { model_name: 'kling-v3' },
+      duration: '10',
+      size: '1024x1024',
+    });
+  });
+
+  it('AI 视频工具优先对齐 AI 输入栏的视频模型参数', async () => {
+    const {
+      loadScopedAIVideoToolPreferences,
+      saveAIVideoToolPreferences,
+      saveScopedAIInputModelParams,
+    } = await import('../ai-generation-preferences-service');
+
+    saveAIVideoToolPreferences({
+      currentModel: 'kling_video',
+      currentSelectionKey: 'provider-a::kling_video',
+      extraParams: { model_name: 'kling-v1-6' },
+      duration: '5',
       size: '1280x720',
+    });
+    saveScopedAIInputModelParams(
+      'video',
+      'kling_video',
+      {
+        duration: '10',
+        size: '1024x1024',
+        model_name: 'kling-v3',
+        klingAction2: 'text2video',
+      },
+      'provider-a::kling_video'
+    );
+
+    expect(
+      loadScopedAIVideoToolPreferences('kling_video', 'provider-a::kling_video')
+    ).toMatchObject({
+      extraParams: {
+        model_name: 'kling-v3',
+        klingAction2: 'text2video',
+      },
+      duration: '10',
+      size: '1024x1024',
+    });
+  });
+
+  it('AI 视频工具保存参数时同步回 AI 输入栏', async () => {
+    const {
+      loadScopedAIInputModelParams,
+      saveAIVideoToolPreferences,
+      saveScopedAIInputModelParams,
+    } = await import('../ai-generation-preferences-service');
+
+    saveScopedAIInputModelParams(
+      'video',
+      'kling_video',
+      {
+        duration: '5',
+        size: '1280x720',
+        model_name: 'kling-v1-6',
+      },
+      'provider-a::kling_video'
+    );
+    saveAIVideoToolPreferences({
+      currentModel: 'kling_video',
+      currentSelectionKey: 'provider-a::kling_video',
+      extraParams: {
+        model_name: 'kling-v3',
+        klingAction2: 'text2video',
+      },
+      duration: '10',
+      size: '1024x1024',
+    });
+
+    expect(
+      loadScopedAIInputModelParams(
+        'video',
+        'kling_video',
+        'provider-a::kling_video'
+      )
+    ).toMatchObject({
+      duration: '10',
+      size: '1024x1024',
+      model_name: 'kling-v3',
+      klingAction2: 'text2video',
     });
   });
 });

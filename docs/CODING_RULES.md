@@ -25,6 +25,28 @@
 
 ## 架构与重构规范
 
+### 循环依赖防回归
+
+**场景**: 新增共享类型、服务单例、插件 transform、通用 UI、工具 registry 或 barrel export 时
+
+**核心原则**:
+- 类型、常量、元数据只能依赖更底层的纯模块
+- 通用 UI 不直接 import 全量业务服务，优先接收回调或使用窄 helper
+- service 之间需要互访时，优先用 runtime bridge，而不是静态双向 import
+- 插件的纯 transforms/API 与 React 渲染组件分离
+- 从 barrel import 前先确认 barrel 没有注册副作用或重组件 re-export
+
+提交前至少跑：
+
+```bash
+NPM_TOKEN=${NPM_TOKEN:-dummy} pnpm check:cycles
+NPM_TOKEN=${NPM_TOKEN:-dummy} pnpm check:cycles:types
+```
+
+详细经验见 `docs/CYCLE_DEPENDENCY_LESSONS.md`。
+
+---
+
 ### 避免过度设计和不必要的抽象层
 
 **场景**: 在重构或添加新功能时，避免引入不必要的架构模式
@@ -736,8 +758,13 @@ import { generateId, sanitizeObject } from '@aitu/utils';  // ✅ 直接导入
 // 正确：只保留业务特有的函数
 import { IS_APPLE, PlaitBoard, toImage } from '@plait/core';
 
-export const boardToImage = (board: PlaitBoard) => {  // ✅ Plait 特有
-  return toImage(board, { fillStyle: 'transparent' });
+export const safeToImage = async (board: PlaitBoard, options = {}) => {
+  // ✅ Plait 导出特有兜底：临时保护内部图片 fetch 失败
+  return toImage(board, options);
+};
+
+export const boardToImage = (board: PlaitBoard) => {
+  return safeToImage(board, { fillStyle: 'transparent' });
 };
 ```
 
@@ -2323,6 +2350,54 @@ const restored =
 ```
 
 **原因**: 运行时模型发现后，同名模型可能来自不同供应商，参数能力并不完全相同。只按 `modelId` 记忆会让用户在切换供应商后看到错误回填，最终演变成隐蔽状态 bug。
+
+### 模型默认值与选择器排序的三层配置
+
+**场景**: 修改默认模型或调整模型选择器中的厂商/模型排序。
+
+**三层配置**:
+1. **`DEFAULT_*_MODEL_ID`**（`model-config.ts`）：代码级默认模型 ID，影响无用户设置时的兜底值
+2. **`DEFAULT_SETTINGS`**（`settings-manager.ts`）：设置面板"默认方案"的预设值，新用户首次看到的默认模型，文本模型优先复用 `getDefaultTextModel()`，避免默认值双写漂移
+3. **`BUILT_IN_MODEL_RECOMMENDATION_SCORES`**（`model-config.ts`）：模型在选择器内的排序权重，分数越高排越前
+
+**厂商 Tab 排序**: 由 `DISCOVERY_VENDOR_ORDER`（`ModelVendorBrand.tsx`）控制，与模型数组顺序无关。
+
+**下线内置模型**: 注释或移除 `TEXT_MODELS` / `CHAT_MODELS` 中的模型时，同步处理 `BUILT_IN_MODEL_RECOMMENDATION_SCORES` 和默认模型常量；否则模型可能仍通过排序权重、旧聊天清单或默认设置入口残留。
+
+**隐藏模型**: 不在选择器默认展示但保留参数定义的模型放入 `HIDDEN_VIDEO_MODELS`，`ALL_MODELS` 不包含它们，`getStaticModelConfig` 单独兜底查找。
+
+❌ **错误示例**:
+```typescript
+// 只改了常量，忘了改 settings-manager 的默认方案
+export const DEFAULT_VIDEO_MODEL_ID = 'seedance-1.5-pro';
+// settings-manager.ts 里仍然是 videoModelName: 'veo3.1'
+// → 设置面板"默认方案"显示旧模型
+
+// 只改了数组顺序，以为能影响选择器排序
+const BUILT_IN_VIDEO_MODELS = [kling, seedance, veo, ...];
+// → 实际排序由 recommendedScore 和 DISCOVERY_VENDOR_ORDER 决定
+```
+
+✅ **正确示例**:
+```typescript
+// 1. 改常量
+export const DEFAULT_VIDEO_MODEL_ID = 'seedance-1.5-pro';
+// 2. 同步改 settings-manager 默认方案
+const DEFAULT_SETTINGS = {
+  gemini: {
+    videoModelName: 'seedance-1.5-pro',
+    textModelName: getDefaultTextModel(),
+  },
+};
+// 3. 给模型加 recommendedScore 控制选择器内排序
+'seedance-1.5-pro': 97,
+// 4. 调整 DISCOVERY_VENDOR_ORDER 控制厂商 Tab 顺序
+// OpenAI 要在 DeepSeek 前面时，把 ModelVendor.GPT 放到 ModelVendor.DEEPSEEK 前
+export const DISCOVERY_VENDOR_ORDER = [ModelVendor.GPT, ModelVendor.DEEPSEEK];
+
+// 5. 更新默认文本模型时，让默认设置引用统一默认函数
+export const DEFAULT_TEXT_MODEL_ID = 'gpt-5.5';
+```
 
 ### 中断任务延迟判定
 
@@ -3992,6 +4067,43 @@ export function useTaskQueue() {
 - `apps/web/src/sw/task-queue/channel-manager.ts` - SW 端的通道管理器
 - `apps/web/public/sw-debug/duplex-client.js` - 调试页面的 duplex 客户端
 
+### 任务队列入口红点需区分状态与未读
+
+**场景**: 工具栏任务队列图标需要提示失败任务或生成中任务时
+
+❌ **错误示例**:
+```typescript
+// 错误：把历史失败任务当成红点条件，失败任务不清理就会永久亮
+const showFailedDot =
+  failedTasks.length > 0 && activeTasks.length === 0;
+```
+
+✅ **正确示例**:
+```typescript
+// 正确：生成中是实时状态；失败红点是未查看通知
+const latestFailedAt = failedTasks.reduce(
+  (latest, task) =>
+    Math.max(latest, task.completedAt || task.updatedAt || task.createdAt || 0),
+  0
+);
+const showFailedDot =
+  latestFailedAt > acknowledgedFailedAt && activeTasks.length === 0;
+
+useEffect(() => {
+  if (taskPanelExpanded && latestFailedAt > acknowledgedFailedAt) {
+    setAcknowledgedFailedAt(latestFailedAt);
+  }
+}, [acknowledgedFailedAt, latestFailedAt, taskPanelExpanded]);
+```
+
+**原因**:
+- `failed` 是任务终态，可能长期保留在 IndexedDB/队列历史中，不能直接等价于“未读”
+- 用户打开任务队列已经完成查看动作，应清除红点；之后只有新失败或失败任务更新时间晚于确认点才重新提示
+- 数字 Badge/绿色点可表达“正在生成”这种持续状态；红点更适合表达“有新情况待查看”
+
+**相关文件**:
+- `packages/drawnix/src/components/toolbar/bottom-actions-section.tsx` - 任务队列入口图标和红点逻辑
+
 ### 降级模式（?sw=0）下任务必须自动执行
 
 **场景**: 用户通过 `?sw=0` URL 参数禁用 Service Worker，使用降级模式
@@ -4054,6 +4166,42 @@ class TaskQueueService {
 - `packages/drawnix/src/services/task-queue-service.ts` - 降级模式任务服务
 - `packages/drawnix/src/services/media-executor/factory.ts` - 执行器工厂
 - `packages/drawnix/src/services/media-executor/fallback-executor.ts` - 降级执行器
+
+### 画布生成锚点重试必须区分生成失败和后处理失败
+
+**场景**: 画布上的图片生成锚点显示“生成失败 / Failed to fetch”，用户第一次点击“重试”。
+
+❌ **错误示例**:
+```typescript
+// 错误：任务已 completed，但后处理失败；只重新插入旧结果，不会重新发生成请求
+if (task.status === TaskStatus.COMPLETED) {
+  workflowCompletionService.clearTask(task.id);
+  handleTaskCompleted(task);
+}
+```
+
+✅ **正确示例**:
+```typescript
+// 正确：后处理失败但按钮语义是“重试生成”时，显式允许 completed 任务重新生成
+const shouldRegenerateCompletedTask =
+  task.status === TaskStatus.COMPLETED &&
+  postProcessingStatus === 'failed';
+
+if (task.status === TaskStatus.FAILED || shouldRegenerateCompletedTask) {
+  workflowCompletionService.clearTask(task.id);
+  taskQueueService.retryTask(task.id, { allowCompleted: shouldRegenerateCompletedTask });
+}
+```
+
+**原因**:
+- 生成锚点的 `failed` 可能来自任务失败，也可能来自取图、显影、插入画布等后处理失败
+- “重试”按钮承诺重新触发生成时，不能只清理后处理状态或复用旧结果
+- 对 `COMPLETED` 任务开放重试必须显式传参，并清空旧 `result / insertedToCanvas / completedAt`，避免 UI 继续读取旧失败态
+
+**相关文件**:
+- `packages/drawnix/src/hooks/useAutoInsertToCanvas.ts` - 生成锚点重试事件处理
+- `packages/drawnix/src/services/task-queue-service.ts` - 任务重试状态重置与执行
+- `packages/drawnix/src/components/image-generation-anchor/ImageGenerationAnchorContent.tsx` - 生成锚点重试入口
 
 ### 创建图片/视频任务及执行时须传递 referenceImages
 

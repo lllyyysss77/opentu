@@ -1,57 +1,10 @@
 import {
   PlaitBoard,
   Point,
-  getRectangleByElements,
 } from '@plait/core';
 import { getInsertionPointForSelectedElements, getInsertionPointBelowBottommostElement, scrollToPointIfNeeded } from '../utils/selection-utils';
 import { analytics } from '../utils/posthog-analytics';
-
-/**
- * 从保存的选中元素IDs计算插入点
- * @param board - PlaitBoard实例
- * @param videoWidth - 视频宽度,用于调整X坐标使视频居中
- * @returns 插入点坐标,如果没有保存的选中元素则返回undefined
- */
-const getInsertionPointFromSavedSelection = (
-  board: PlaitBoard,
-  videoWidth: number
-): Point | undefined => {
-  const appState = (board as any).appState;
-  const savedElementIds = appState?.lastSelectedElementIds || [];
-
-  if (savedElementIds.length === 0) {
-    return undefined;
-  }
-
-  // 查找对应的元素
-  const elements = savedElementIds
-    .map((id: string) => board.children.find((el: any) => el.id === id))
-    .filter(Boolean);
-
-  if (elements.length === 0) {
-    console.warn('getInsertionPointFromSavedSelection (video): No elements found for saved IDs:', savedElementIds);
-    return undefined;
-  }
-
-  try {
-    const boundingRect = getRectangleByElements(board, elements, false);
-    const centerX = boundingRect.x + boundingRect.width / 2;
-    const insertionY = boundingRect.y + boundingRect.height + 50;
-
-    // console.log('getInsertionPointFromSavedSelection (video): Calculated insertion point:', {
-    //   centerX,
-    //   insertionY,
-    //   boundingRect,
-    //   videoWidth
-    // });
-
-    // 将X坐标向左偏移视频宽度的一半，让视频以中心点对齐
-    return [centerX - videoWidth / 2, insertionY] as Point;
-  } catch (error) {
-    console.warn('getInsertionPointFromSavedSelection (video): Error calculating insertion point:', error);
-    return undefined;
-  }
-};
+import { getInsertionPointFromSavedSelection } from '../utils/canvas-insertion-layout';
 
 /**
  * 获取视频真实尺寸的接口
@@ -237,6 +190,7 @@ const calculateDisplayDimensions = (
  * @param referenceDimensions 参考尺寸（可选，用于适应选中元素的大小）
  * @param skipScroll 是否跳过滚动
  * @param skipCentering 是否跳过自动居中（当 startPoint 已经是左上角坐标时使用）
+ * @param lockReferenceDimensions 是否直接使用参考尺寸作为最终尺寸
  */
 export const insertVideoFromUrl = async (
   board: PlaitBoard | null,
@@ -245,24 +199,40 @@ export const insertVideoFromUrl = async (
   isDrop?: boolean,
   referenceDimensions?: { width: number; height: number },
   skipScroll?: boolean,
-  skipCentering?: boolean
+  skipCentering?: boolean,
+  lockReferenceDimensions?: boolean
 ) => {
   if (!board) {
     throw new Error('Board is required for video insertion');
   }
 
   try {
+    if (!startPoint && !isDrop && !referenceDimensions) {
+      const { insertMediaIntoSelectedFrame } = await import(
+        '../utils/frame-insertion-utils'
+      );
+      const inserted = await insertMediaIntoSelectedFrame(
+        board,
+        videoUrl,
+        'video'
+      );
+      if (inserted) return;
+    }
+
     // 使用默认尺寸立即插入，不等待获取视频真实尺寸
     // 这样可以让视频立刻出现在画布上，提升用户体验
     // 默认使用 16:9 比例的尺寸
     const defaultDimensions: VideoDimensions = { width: 400, height: 225 };
 
     // 计算适合画板显示的尺寸（保持比例但使用参考尺寸或限制大小）
-    const displayDimensions = calculateDisplayDimensions(
-      defaultDimensions.width,
-      defaultDimensions.height,
-      referenceDimensions
-    );
+    const displayDimensions =
+      lockReferenceDimensions && referenceDimensions
+        ? referenceDimensions
+        : calculateDisplayDimensions(
+            defaultDimensions.width,
+            defaultDimensions.height,
+            referenceDimensions
+          );
     // console.log('Using default dimensions for immediate insertion:', displayDimensions);
 
     // 注意：合并视频已在 video-merge-webcodecs.ts 中通过 cacheMediaFromBlob 缓存
@@ -280,7 +250,11 @@ export const insertVideoFromUrl = async (
       // console.log('insertVideoFromUrl: Adjusted insertion point for video centering:', insertionPoint);
     } else if (!startPoint && !isDrop) {
       // 没有提供起始点时,优先使用保存的选中元素IDs计算插入位置
-      insertionPoint = getInsertionPointFromSavedSelection(board, displayDimensions.width);
+      insertionPoint = getInsertionPointFromSavedSelection(board, {
+        align: 'center',
+        targetWidth: displayDimensions.width,
+        logPrefix: 'video',
+      });
 
       // 如果没有保存的选中元素,回退到使用当前选中元素(向后兼容)
       if (!insertionPoint) {
@@ -310,6 +284,8 @@ export const insertVideoFromUrl = async (
       url: videoWithFragment,
       width: displayDimensions.width,
       height: displayDimensions.height,
+      isVideo: true,
+      videoType: 'video',
     };
 
     // console.log('[insertVideoFromUrl] Creating video as image element:', {

@@ -11,7 +11,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from 'react';
-import { MessagePlugin, Switch } from 'tdesign-react';
+import { Switch } from 'tdesign-react';
 import { InfoCircleIcon } from 'tdesign-icons-react';
 import {
   AlertTriangle,
@@ -19,6 +19,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Copy,
+  Eye,
+  EyeOff,
   FlaskConical,
   Loader2,
   Search,
@@ -29,7 +31,7 @@ import { LS_KEYS } from '../../constants/storage-keys';
 import { ModelDiscoveryDialog } from './model-discovery-dialog';
 import { PricingFieldGroup } from './pricing-field-group';
 import {
-  useFormattedModelPrice,
+  useModelPriceText,
   useModelMeta,
 } from '../../hooks/use-model-pricing';
 import {
@@ -53,17 +55,21 @@ import { compareModelsByDisplayPriority } from '../../utils/model-sort';
 import {
   createModelRef,
   createRouteConfig,
+  DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY,
   DEFAULT_INVOCATION_PRESET_ID,
   geminiSettings,
   getRouteModelId,
   getRouteProfileId,
   invocationPresetsSettings,
   LEGACY_DEFAULT_PROVIDER_PROFILE_ID,
-  providerCatalogsSettings,
   providerProfilesSettings,
+  TUZI_BUSINESS_PROVIDER_PROFILE_ID,
+  settingsManager,
   TUZI_MIX_PROVIDER_PROFILE_ID,
+  TUZI_CODEX_PROVIDER_PROFILE_ID,
   TUZI_ORIGINAL_PROVIDER_PROFILE_ID,
   TUZI_PROVIDER_DEFAULT_BASE_URL,
+  type ImageApiCompatibility,
   type InvocationPreset,
   type ModelRef,
   type ProviderProfile,
@@ -85,8 +91,14 @@ import { ModelDropdown } from '../ai-input-bar/ModelDropdown';
 import { WinBoxWindow } from '../winbox';
 import { TtsSettingsPanel } from '../project-drawer/TtsSettingsPanel';
 import { openModelBenchmarkTool } from '../../services/model-benchmark-launcher';
+import {
+  analytics,
+  getProviderEndpointAnalytics,
+} from '../../utils/posthog-analytics';
 import { modelBenchmarkService } from '../../services/model-benchmark-service';
-import { HoverTip } from '../shared';
+import { HoverTip } from '../shared/hover';
+import { createProviderProfileDraft } from './provider-profile-draft';
+import { MessagePlugin } from '../../utils/message-plugin';
 
 export { IMAGE_MODEL_GROUPED_SELECT_OPTIONS as IMAGE_MODEL_GROUPED_OPTIONS } from '../../constants/model-config';
 export { VIDEO_MODEL_SELECT_OPTIONS as VIDEO_MODEL_OPTIONS } from '../../constants/model-config';
@@ -120,6 +132,13 @@ const AUTH_TYPE_OPTIONS: ProviderProfile['authType'][] = [
   'custom',
 ];
 
+const IMAGE_API_COMPATIBILITY_OPTIONS: ImageApiCompatibility[] = [
+  'auto',
+  'openai-gpt-image',
+  'tuzi-gpt-image',
+  'openai-compatible-basic',
+];
+
 const ROUTE_LABELS: Record<ModelType, string> = {
   image: '图片',
   video: '视频',
@@ -141,9 +160,13 @@ const ModelPriceLabel = memo(function ModelPriceLabel({
   profileId: string;
   modelId: string;
 }) {
-  const priceText = useFormattedModelPrice(profileId, modelId);
-  if (!priceText) return null;
-  return <span className="settings-dialog__model-price">{priceText}</span>;
+  const { summary, detail } = useModelPriceText(profileId, modelId);
+  if (!summary) return null;
+  return (
+    <HoverTip content={detail} placement="top" disabled={detail === summary}>
+      <span className="settings-dialog__model-price">{summary}</span>
+    </HoverTip>
+  );
 });
 
 const ModelIdWithDesc = memo(function ModelIdWithDesc({
@@ -227,6 +250,79 @@ const AUTH_TYPE_META: Record<ProviderProfile['authType'], { label: string }> = {
     label: '手动拼装',
   },
 };
+
+const IMAGE_API_COMPATIBILITY_META: Record<
+  ImageApiCompatibility,
+  { label: string }
+> = {
+  auto: {
+    label: '自动',
+  },
+  'openai-gpt-image': {
+    label: 'OpenAI GPT Image',
+  },
+  'tuzi-gpt-image': {
+    label: 'Tuzi GPT 兼容',
+  },
+  'openai-compatible-basic': {
+    label: 'OpenAI-compatible 通用兼容（兜底）',
+  },
+};
+
+function normalizeImageApiCompatibilityForDisplay(
+  value?: ImageApiCompatibility | string | null
+): ImageApiCompatibility {
+  if (
+    value === 'auto' ||
+    value === 'openai-gpt-image' ||
+    value === 'tuzi-gpt-image' ||
+    value === 'openai-compatible-basic'
+  ) {
+    return value;
+  }
+
+  if (value === 'tuzi-compatible') {
+    return 'tuzi-gpt-image';
+  }
+
+  return 'auto';
+}
+
+function resolveAutoImageApiCompatibilityForDisplay(
+  profile: Pick<ProviderProfile, 'baseUrl'>
+): Exclude<ImageApiCompatibility, 'auto'> {
+  const normalizedBaseUrl = profile.baseUrl.trim().toLowerCase();
+
+  if (normalizedBaseUrl.includes('api.openai.com')) {
+    return 'openai-gpt-image';
+  }
+
+  if (normalizedBaseUrl.includes('.tu-zi.com')) {
+    return 'tuzi-gpt-image';
+  }
+
+  return 'openai-compatible-basic';
+}
+
+function getImageApiCompatibilityHint(
+  profile: Pick<ProviderProfile, 'baseUrl' | 'imageApiCompatibility'>
+): string {
+  const storedCompatibility = normalizeImageApiCompatibilityForDisplay(
+    profile.imageApiCompatibility
+  );
+
+  if (storedCompatibility === 'auto') {
+    const resolvedCompatibility =
+      resolveAutoImageApiCompatibilityForDisplay(profile);
+    return `默认推荐显式选择 OpenAI GPT Image；如果保留自动模式，GPT Image 模型当前会解析为 ${IMAGE_API_COMPATIBILITY_META[resolvedCompatibility].label}。`;
+  }
+
+  if (storedCompatibility === 'openai-gpt-image') {
+    return '默认推荐模式。适用于官方 GPT Image 请求格式，也便于后续继续扩展官方图生图能力。';
+  }
+
+  return `同一个图片模型在不同 API Key 或网关下可能需要不同接口格式；当前已固定为 ${IMAGE_API_COMPATIBILITY_META[storedCompatibility].label}。`;
+}
 
 const PROVIDER_AVATAR_THEMES = [
   'amber',
@@ -328,6 +424,38 @@ function getProviderIconUrl(
   return trimmed || null;
 }
 
+function getProviderHomepageUrl(
+  profile: Pick<ProviderProfile, 'homepageUrl' | 'baseUrl'>
+): string | null {
+  const homepageUrl = normalizeOpenableUrl(profile.homepageUrl);
+  if (homepageUrl) {
+    return homepageUrl;
+  }
+
+  try {
+    const baseUrl = normalizeOpenableUrl(profile.baseUrl);
+    return baseUrl ? new URL(baseUrl).origin : null;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeOpenableUrl(value?: string | null): string | null {
+  const trimmed = typeof value === 'string' ? value.trim() : '';
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    const url = new URL(
+      /^[a-z][a-z\d+\-.]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`
+    );
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
 function getProviderAvatarLabel(name: string): string {
   const trimmed = name.trim();
   if (!trimmed) {
@@ -361,25 +489,7 @@ function createId(prefix: string): string {
 }
 
 function createProfile(index: number): ProviderProfile {
-  const providerType: ProviderProfile['providerType'] = 'openai-compatible';
-  return {
-    id: createId('profile'),
-    name: `供应商 ${index}`,
-    iconUrl: '',
-    providerType,
-    baseUrl: '',
-    apiKey: '',
-    authType: inferAuthTypeForProviderType(providerType),
-    enabled: true,
-    capabilities: {
-      supportsModelsEndpoint: true,
-      supportsText: true,
-      supportsImage: true,
-      supportsVideo: true,
-      supportsAudio: true,
-      supportsTools: true,
-    },
-  };
+  return createProviderProfileDraft(index, createId('profile'));
 }
 
 function readPendingProviderNavigationIntent(): ProviderNavigationIntent | null {
@@ -413,7 +523,9 @@ function isManagedProviderProfile(profileId: string): boolean {
   return (
     profileId === LEGACY_DEFAULT_PROVIDER_PROFILE_ID ||
     profileId === TUZI_ORIGINAL_PROVIDER_PROFILE_ID ||
-    profileId === TUZI_MIX_PROVIDER_PROFILE_ID
+    profileId === TUZI_MIX_PROVIDER_PROFILE_ID ||
+    profileId === TUZI_CODEX_PROVIDER_PROFILE_ID ||
+    profileId === TUZI_BUSINESS_PROVIDER_PROFILE_ID
   );
 }
 
@@ -576,6 +688,7 @@ export const SettingsDialog = ({
   const [collapsedGroups, setCollapsedGroups] = useState<Set<ModelType>>(
     new Set()
   );
+  const [isApiKeyVisible, setIsApiKeyVisible] = useState(false);
 
   const toggleGroupCollapse = (type: ModelType) => {
     setCollapsedGroups((prev) => {
@@ -593,6 +706,9 @@ export const SettingsDialog = ({
     profilesDraft.find((profile) => profile.id === selectedProfileId) ||
     profilesDraft[0] ||
     null;
+  const selectedImageApiCompatibilityHint = selectedProfile
+    ? getImageApiCompatibilityHint(selectedProfile)
+    : '同一个图片模型在不同 API Key 或网关下可能需要不同接口格式；不确定时使用自动。';
   const selectedPreset =
     presetsDraft.find((preset) => preset.id === selectedPresetId) ||
     presetsDraft[0] ||
@@ -642,6 +758,10 @@ export const SettingsDialog = ({
     appState.openSettings && currentDraftSignature !== initialDraftSignature;
 
   useEffect(() => {
+    setIsApiKeyVisible(false);
+  }, [selectedProfile?.id]);
+
+  useEffect(() => {
     const target = dialogRef.current;
 
     if (!target || typeof ResizeObserver === 'undefined') {
@@ -665,6 +785,13 @@ export const SettingsDialog = ({
   }, [appState.openSettings]);
 
   const handleViewChange = (nextView: SettingsView) => {
+    analytics.trackUIInteraction({
+      area: 'settings',
+      action: 'view_changed',
+      control: 'settings_nav',
+      value: nextView,
+      source: 'settings_dialog',
+    });
     setActiveView(nextView);
 
     if (!isCompactLayout) {
@@ -681,6 +808,16 @@ export const SettingsDialog = ({
   };
 
   const handleSelectProfile = (profileId: string) => {
+    analytics.trackUIInteraction({
+      area: 'settings',
+      action: 'provider_selected',
+      control: 'provider_list',
+      source: 'settings_dialog',
+      metadata: {
+        profileId,
+        isManagedProfile: isManagedProviderProfile(profileId),
+      },
+    });
     setSelectedProfileId(profileId);
 
     if (isCompactLayout) {
@@ -689,6 +826,13 @@ export const SettingsDialog = ({
   };
 
   const handleSelectPreset = (presetId: string) => {
+    analytics.trackUIInteraction({
+      area: 'settings',
+      action: 'preset_selected',
+      control: 'preset_list',
+      source: 'settings_dialog',
+      metadata: { presetId },
+    });
     setSelectedPresetId(presetId);
 
     if (isCompactLayout) {
@@ -736,6 +880,7 @@ export const SettingsDialog = ({
       return;
     }
 
+    setIsApiKeyVisible(false);
     const nextProfiles = cloneValue(providerProfilesSettings.get());
     const nextPresets = cloneValue(invocationPresetsSettings.get());
     const nextActivePresetId =
@@ -926,6 +1071,17 @@ export const SettingsDialog = ({
     profileId: string,
     enabled: boolean
   ) => {
+    analytics.trackUIInteraction({
+      area: 'settings',
+      action: 'provider_enabled_changed',
+      control: 'provider_enabled_switch',
+      value: enabled,
+      source: 'settings_dialog',
+      metadata: {
+        profileId,
+        isManagedProfile: isManagedProviderProfile(profileId),
+      },
+    });
     setProfilesDraft((current) =>
       current.map((profile) =>
         profile.id === profileId ? { ...profile, enabled } : profile
@@ -955,6 +1111,13 @@ export const SettingsDialog = ({
   };
 
   const handleCanvasVisibilityChange = async (checked: boolean) => {
+    analytics.trackUIInteraction({
+      area: 'settings',
+      action: 'workzone_card_visibility_changed',
+      control: 'workzone_card_switch',
+      value: checked,
+      source: 'settings_dialog',
+    });
     setShowWorkZoneCard(checked);
 
     try {
@@ -999,6 +1162,13 @@ export const SettingsDialog = ({
 
   const handleAddProfile = () => {
     const nextProfile = createProfile(profilesDraft.length + 1);
+    analytics.trackUIInteraction({
+      area: 'settings',
+      action: 'provider_added',
+      control: 'add_provider',
+      source: 'settings_dialog',
+      metadata: { profilesCount: profilesDraft.length + 1 },
+    });
     setProfilesDraft((current) => [...current, nextProfile]);
     setSelectedProfileId(nextProfile.id);
     setActiveView('providers');
@@ -1054,6 +1224,17 @@ export const SettingsDialog = ({
       return;
     }
 
+    analytics.trackUIInteraction({
+      area: 'settings',
+      action: 'provider_deleted',
+      control: 'delete_provider',
+      source: 'settings_dialog',
+      metadata: {
+        profileId,
+        profilesCount: Math.max(0, profilesDraft.length - 1),
+      },
+    });
+
     const remainingProfiles = profilesDraft.filter(
       (profile) => profile.id !== profileId
     );
@@ -1082,6 +1263,17 @@ export const SettingsDialog = ({
         name: `${source.name} (副本)`,
       };
       setProfilesDraft((current) => [...current, cloned]);
+      analytics.trackUIInteraction({
+        area: 'settings',
+        action: 'provider_cloned',
+        control: 'clone_provider',
+        source: 'settings_dialog',
+        metadata: {
+          profileId,
+          clonedProfileId: cloned.id,
+          profilesCount: profilesDraft.length + 1,
+        },
+      });
       setSelectedProfileId(cloned.id);
       setActiveView('providers');
       if (isCompactLayout) {
@@ -1129,6 +1321,17 @@ export const SettingsDialog = ({
       text: textModelName || getDefaultTextModel(),
     });
     setPresetsDraft((current) => [...current, nextPreset]);
+    analytics.trackUIInteraction({
+      area: 'settings',
+      action: 'preset_added',
+      control: 'add_preset',
+      source: 'settings_dialog',
+      metadata: {
+        presetId: nextPreset.id,
+        presetsCount: presetsDraft.length + 1,
+        hasFallbackProfile: !!fallbackProfileId,
+      },
+    });
     setSelectedPresetId(nextPreset.id);
     setActiveView('presets');
 
@@ -1156,6 +1359,17 @@ export const SettingsDialog = ({
     if (!confirmed) {
       return;
     }
+
+    analytics.trackUIInteraction({
+      area: 'settings',
+      action: 'preset_deleted',
+      control: 'delete_preset',
+      source: 'settings_dialog',
+      metadata: {
+        presetId,
+        presetsCount: Math.max(0, presetsDraft.length - 1),
+      },
+    });
 
     const remainingPresets = presetsDraft.filter(
       (preset) => preset.id !== presetId
@@ -1195,6 +1409,19 @@ export const SettingsDialog = ({
     );
 
     setPresetsDraft(nextPresets);
+    analytics.trackUIInteraction({
+      area: 'settings',
+      action: 'route_model_changed',
+      control: 'route_model_dropdown',
+      value: routeType,
+      source: 'settings_dialog',
+      metadata: {
+        presetId: selectedPreset.id,
+        routeType,
+        hasModel: !!nextModelRef?.modelId,
+        hasProfile: !!nextModelRef?.profileId,
+      },
+    });
     void persistPresetConfiguration(nextPresets, activePresetIdDraft);
   };
 
@@ -1205,9 +1432,7 @@ export const SettingsDialog = ({
     }
 
     if (hasPendingChanges) {
-      const savingMessage = MessagePlugin.loading('正在保存当前配置...', 0);
       const saved = await persistDrafts(false);
-      MessagePlugin.close(savingMessage);
       if (!saved) {
         return;
       }
@@ -1224,14 +1449,38 @@ export const SettingsDialog = ({
     }
 
     try {
+      analytics.trackUIInteraction({
+        area: 'settings',
+        action: 'model_discovery_started',
+        control: 'fetch_models',
+        source: 'settings_dialog',
+        metadata: { profileId: selectedProfile.id },
+      });
       await runtimeModelDiscovery.discover(
         selectedProfile.id,
         normalizedBaseUrl,
         trimmedApiKey
       );
+      analytics.trackUIInteraction({
+        area: 'settings',
+        action: 'model_discovery_succeeded',
+        control: 'fetch_models',
+        source: 'settings_dialog',
+        metadata: { profileId: selectedProfile.id },
+      });
       setDiscoveryDialogOpen(true);
     } catch (error) {
       const message = error instanceof Error ? error.message : '模型同步失败';
+      analytics.trackUIInteraction({
+        area: 'settings',
+        action: 'model_discovery_failed',
+        control: 'fetch_models',
+        source: 'settings_dialog',
+        metadata: {
+          profileId: selectedProfile.id,
+          error: message,
+        },
+      });
       runtimeModelDiscovery.setError(selectedProfile.id, message);
       MessagePlugin.error({
         content: message,
@@ -1308,6 +1557,18 @@ export const SettingsDialog = ({
     if (successMessage) {
       MessagePlugin.success(successMessage);
     }
+    analytics.trackUIInteraction({
+      area: 'settings',
+      action: 'discovered_models_applied',
+      control: 'model_discovery_dialog',
+      source: 'settings_dialog',
+      metadata: {
+        profileId: selectedProfile.id,
+        selectedCount: selectedModels.length,
+        addedCount: selectionChange.addedModelIds.length,
+        removedCount: selectionChange.removedModelIds.length,
+      },
+    });
     setDiscoveryDialogOpen(false);
   };
 
@@ -1343,6 +1604,7 @@ export const SettingsDialog = ({
           ...profile,
           name: profile.name.trim() || '未命名供应商',
           iconUrl: profile.iconUrl?.trim() || undefined,
+          homepageUrl: profile.homepageUrl?.trim() || undefined,
           baseUrl: normalizedBaseUrl,
           apiKey: profile.apiKey.trim(),
         };
@@ -1435,24 +1697,23 @@ export const SettingsDialog = ({
         );
       });
 
-      await geminiSettings.update({
-        apiKey: legacyProfile?.apiKey || '',
-        baseUrl: normalizedLegacyBaseUrl,
-        audioModelName: normalizedActiveAudioModel,
-        imageModelName: normalizedActiveImageModel,
-        videoModelName: normalizedActiveVideoModel,
-        textModelName: normalizedActiveTextModel,
-      });
-      await providerProfilesSettings.update(normalizedProfiles);
-      await providerCatalogsSettings.update(
-        runtimeModelDiscovery
+      await settingsManager.updateSettings({
+        gemini: {
+          ...geminiSettings.get(),
+          apiKey: legacyProfile?.apiKey || '',
+          baseUrl: normalizedLegacyBaseUrl,
+          audioModelName: normalizedActiveAudioModel,
+          imageModelName: normalizedActiveImageModel,
+          videoModelName: normalizedActiveVideoModel,
+          textModelName: normalizedActiveTextModel,
+        },
+        providerProfiles: normalizedProfiles,
+        providerCatalogs: runtimeModelDiscovery
           .getCatalogs()
-          .filter((catalog) => profileIds.has(catalog.profileId))
-      );
-      await invocationPresetsSettings.update(normalizedPresets);
-      await invocationPresetsSettings.setActivePresetId(
-        normalizedActivePresetId
-      );
+          .filter((catalog) => profileIds.has(catalog.profileId)),
+        invocationPresets: normalizedPresets,
+        activePresetId: normalizedActivePresetId,
+      });
 
       try {
         localStorage.setItem(
@@ -1489,9 +1750,51 @@ export const SettingsDialog = ({
         closeSettingsDialog();
       }
 
+      analytics.trackUIInteraction({
+        area: 'settings',
+        action: 'settings_saved',
+        control: 'save_settings',
+        source: 'settings_dialog',
+        metadata: {
+          closeAfterSave,
+          profilesCount: normalizedProfiles.length,
+          presetsCount: normalizedPresets.length,
+          enabledProfilesCount: normalizedProfiles.filter((profile) => profile.enabled).length,
+        },
+      });
+
+      normalizedProfiles.forEach((profile) => {
+        const endpoint = getProviderEndpointAnalytics(profile.baseUrl);
+        analytics.track('provider_endpoint_configured', {
+          profileId: profile.id,
+          providerType: profile.providerType,
+          providerOrigin: endpoint?.origin,
+          providerHost: endpoint?.host,
+          providerProtocol: endpoint?.protocol,
+          enabled: profile.enabled,
+          authType: profile.authType,
+          supportsText: profile.capabilities.supportsText,
+          supportsImage: profile.capabilities.supportsImage,
+          supportsVideo: profile.capabilities.supportsVideo,
+          supportsAudio: profile.capabilities.supportsAudio,
+          supportsTools: profile.capabilities.supportsTools,
+          hasApiKey: Boolean(profile.apiKey),
+        });
+      });
+
       return true;
     } catch (error) {
       console.error('Failed to persist settings drafts:', error);
+      analytics.trackUIInteraction({
+        area: 'settings',
+        action: 'settings_save_failed',
+        control: 'save_settings',
+        source: 'settings_dialog',
+        metadata: {
+          closeAfterSave,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
       MessagePlugin.error('设置保存失败，请稍后重试');
       return false;
     } finally {
@@ -1506,9 +1809,7 @@ export const SettingsDialog = ({
     }
 
     void (async () => {
-      const savingMessage = MessagePlugin.loading('正在保存设置...', 0);
       const saved = await persistDrafts(true);
-      MessagePlugin.close(savingMessage);
 
       if (!saved) {
         MessagePlugin.warning('设置尚未保存，请检查后重试');
@@ -1745,6 +2046,7 @@ export const SettingsDialog = ({
     const draftState = getProviderDraftState(selectedProfile, initialProfiles);
     const totalModels =
       selectedCounts.image + selectedCounts.video + selectedCounts.text;
+    const selectedProfileHomepageUrl = getProviderHomepageUrl(selectedProfile);
 
     return (
       <div
@@ -1775,7 +2077,26 @@ export const SettingsDialog = ({
         ) : null}
         <div className="settings-dialog__section settings-dialog__section--compact">
           <div className="settings-dialog__panel-header">
-            <div className="settings-dialog__profile-hero">
+            <a
+              className={`settings-dialog__profile-hero ${
+                selectedProfileHomepageUrl
+                  ? 'settings-dialog__profile-hero--link'
+                  : ''
+              }`}
+              href={selectedProfileHomepageUrl || undefined}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={
+                selectedProfileHomepageUrl
+                  ? `打开 ${selectedProfile.name} 域名页面`
+                  : undefined
+              }
+              onClick={(event) => {
+                if (!selectedProfileHomepageUrl) {
+                  event.preventDefault();
+                }
+              }}
+            >
               <ProviderAvatar profile={selectedProfile} size="large" />
               <div>
                 <h3 className="settings-dialog__section-title">
@@ -1790,7 +2111,7 @@ export const SettingsDialog = ({
                   <span>{draftState === 'saved' ? '已保存' : '未保存'}</span>
                 </div>
               </div>
-            </div>
+            </a>
             {!isManagedProviderProfile(selectedProfile.id) ? (
               <button
                 type="button"
@@ -1862,6 +2183,35 @@ export const SettingsDialog = ({
                   </option>
                 ))}
               </select>
+            </div>
+
+            <div className="settings-dialog__field settings-dialog__field--column settings-dialog__field--full">
+              <label className="settings-dialog__label settings-dialog__label--stacked">
+                图片接口格式
+              </label>
+              <select
+                className="settings-dialog__select"
+                value={
+                  selectedProfile.imageApiCompatibility ||
+                  DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY
+                }
+                onChange={(event) =>
+                  updateProfile(selectedProfile.id, (profile) => ({
+                    ...profile,
+                    imageApiCompatibility: event.target
+                      .value as ImageApiCompatibility,
+                  }))
+                }
+              >
+                {IMAGE_API_COMPATIBILITY_OPTIONS.map((compatibility) => (
+                  <option key={compatibility} value={compatibility}>
+                    {IMAGE_API_COMPATIBILITY_META[compatibility].label}
+                  </option>
+                ))}
+              </select>
+              <span className="settings-dialog__field-hint">
+                {selectedImageApiCompatibilityHint}
+              </span>
             </div>
 
             <div className="settings-dialog__field settings-dialog__field--column settings-dialog__field--full">
@@ -1971,19 +2321,39 @@ export const SettingsDialog = ({
                   flexDirection: isCompactLayout ? 'column' : 'row',
                 }}
               >
-                <input
-                  type="password"
-                  className="settings-dialog__input"
-                  style={{ flex: isCompactLayout ? 'none' : 1, width: '100%' }}
-                  value={selectedProfile.apiKey}
-                  onChange={(event) =>
-                    updateProfile(selectedProfile.id, (profile) => ({
-                      ...profile,
-                      apiKey: event.target.value,
-                    }))
-                  }
-                  autoComplete="off"
-                />
+                <div
+                  className="settings-dialog__secret-input-wrap"
+                  style={{ flex: isCompactLayout ? 'none' : 1 }}
+                >
+                  <input
+                    type={isApiKeyVisible ? 'text' : 'password'}
+                    className="settings-dialog__input settings-dialog__secret-input"
+                    value={selectedProfile.apiKey}
+                    onChange={(event) =>
+                      updateProfile(selectedProfile.id, (profile) => ({
+                        ...profile,
+                        apiKey: event.target.value,
+                      }))
+                    }
+                    autoComplete="off"
+                  />
+                  <HoverTip
+                    content={isApiKeyVisible ? '隐藏 API Key' : '查看 API Key'}
+                    showArrow={false}
+                  >
+                    <button
+                      type="button"
+                      className="settings-dialog__secret-toggle"
+                      aria-label={
+                        isApiKeyVisible ? '隐藏 API Key' : '查看 API Key'
+                      }
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => setIsApiKeyVisible((visible) => !visible)}
+                    >
+                      {isApiKeyVisible ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </HoverTip>
+                </div>
                 <button
                   type="button"
                   className="settings-dialog__button settings-dialog__button--fetch"
@@ -2055,6 +2425,18 @@ export const SettingsDialog = ({
         modelId: payload.modelId,
         modality: payload.modality,
         compareMode: payload.compareMode,
+      });
+      analytics.trackUIInteraction({
+        area: 'settings',
+        action: 'model_benchmark_launched',
+        control: 'model_benchmark',
+        source: 'settings_dialog',
+        metadata: {
+          profileId: payload.profileId,
+          modality: payload.modality,
+          compareMode: payload.compareMode,
+          hasModel: !!payload.modelId,
+        },
       });
     },
     [setAppState]
@@ -2186,27 +2568,31 @@ export const SettingsDialog = ({
                         {models.length}
                       </span>
                     </div>
-                    <button
-                      type="button"
-                      className="settings-dialog__model-group-test"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        if (!selectedProfile) return;
-                        handleLaunchModelBenchmark({
-                          profileId: selectedProfile.id,
-                          modality: type,
-                          compareMode: 'cross-model',
-                        });
-                      }}
-                      disabled={!canLaunchBenchmark}
-                      title={
+                    <HoverTip
+                      content={
                         canLaunchBenchmark
                           ? '测试当前供应商这一组模型'
                           : '请先保存供应商配置并确保 API Key 可用'
                       }
+                      showArrow={false}
                     >
-                      测试本组
-                    </button>
+                      <button
+                        type="button"
+                        className="settings-dialog__model-group-test"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          if (!selectedProfile) return;
+                          handleLaunchModelBenchmark({
+                            profileId: selectedProfile.id,
+                            modality: type,
+                            compareMode: 'cross-model',
+                          });
+                        }}
+                        disabled={!canLaunchBenchmark}
+                      >
+                        测试本组
+                      </button>
+                    </HoverTip>
                   </div>
                   {!isCollapsed && (
                     <div className="settings-dialog__model-type-list">

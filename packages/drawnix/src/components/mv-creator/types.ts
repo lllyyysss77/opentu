@@ -5,6 +5,7 @@
 import type { VideoShot, VideoCharacter } from '../../services/video-analysis-service';
 import type { GeneratedClip } from '../music-analyzer/types';
 import type { ModelRef } from '../../utils/settings-manager';
+import type { CreativeBrief } from '../shared/workflow';
 
 export type { VideoShot, VideoCharacter, GeneratedClip };
 
@@ -17,14 +18,18 @@ export interface StoryboardVersion {
   label: string;
   prompt?: string;
   shots: VideoShot[];
+  /** 该版本同步生成的角色快照 */
+  characters?: VideoCharacter[];
+  /** 该版本同步生成的画面风格快照 */
+  videoStyle?: string;
 }
 
 /** MV 创作记录 */
 export interface MVRecord {
   id: string;
   createdAt: number;
-  /** 用户创意描述 */
-  creationPrompt: string;
+  /** @deprecated 旧版用户创意描述，仅用于兼容历史记录 */
+  creationPrompt?: string;
   sourceLabel: string;
   starred: boolean;
 
@@ -49,6 +54,8 @@ export interface MVRecord {
   segmentDuration?: number;
   videoSize?: string;
   videoStyle?: string;
+  /** 专业创作 Brief（用途、导演风格、叙事风格等） */
+  creativeBrief?: CreativeBrief;
   aspectRatio?: string;
   /** 脚本页改编提示词（持久化） */
   rewritePrompt?: string;
@@ -70,4 +77,6 @@ export interface MVRecord {
   characterReferenceUrls?: string[];
   /** 最近一次生成分镜的时间戳（用于过滤旧任务结果，防止污染新脚本） */
   storyboardGeneratedAt?: number;
+  /** 最近一次重置生成素材的时间戳（用于过滤旧图片/视频/角色参考图任务） */
+  generatedAssetsResetAt?: number;
 }

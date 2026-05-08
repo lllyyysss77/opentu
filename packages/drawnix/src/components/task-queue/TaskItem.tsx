@@ -5,7 +5,7 @@
  * Shows input parameters (prompt) and output results when completed.
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Button, Tag, Checkbox } from 'tdesign-react';
 import {
   ImageIcon,
@@ -17,6 +17,7 @@ import {
   PlayCircleIcon,
   CloseCircleIcon,
   CopyIcon,
+  RefreshIcon,
 } from 'tdesign-icons-react';
 import { normalizeImageDataUrl } from '@aitu/utils';
 import { Task, TaskStatus, TaskType } from '../../types/task.types';
@@ -129,6 +130,19 @@ function getVideoAnalyzerTypeTag(task: Task): string | null {
   return null;
 }
 
+function getTaskBatchDisplayIndex(task: Task): number | null {
+  const rawIndex = task.params.batchIndex;
+  if (typeof rawIndex !== 'number' || !Number.isFinite(rawIndex)) {
+    return null;
+  }
+
+  if (task.type === TaskType.AUDIO) {
+    return rawIndex + 1;
+  }
+
+  return rawIndex >= 1 ? rawIndex : rawIndex + 1;
+}
+
 export interface TaskItemProps {
   /** The task to display */
   task: Task;
@@ -154,6 +168,8 @@ export interface TaskItemProps {
   onPreviewOpen?: () => void;
   /** Callback when edit button is clicked */
   onEdit?: (taskId: string) => void;
+  /** Callback when reusing image task input */
+  onRegenerate?: (taskId: string) => void;
   /** Callback when extract character button is clicked */
   onExtractCharacter?: (taskId: string) => void;
 }
@@ -217,6 +233,7 @@ export const TaskItem: React.FC<TaskItemProps> = React.memo(
     onCopy,
     onPreviewOpen,
     onEdit,
+    onRegenerate,
     onExtractCharacter,
   }) => {
     const [imageDimensions, setImageDimensions] = useState<{
@@ -267,6 +284,7 @@ export const TaskItem: React.FC<TaskItemProps> = React.memo(
     const isAudioTask = task.type === TaskType.AUDIO;
     const isChatTask = task.type === TaskType.CHAT;
     const isLyricsTask = isAudioTask && isLyricsResult(task.result);
+    const canRegenerateTask = task.type === TaskType.IMAGE;
     const isPreviewableTask =
       task.type === TaskType.IMAGE ||
       task.type === TaskType.VIDEO ||
@@ -281,6 +299,7 @@ export const TaskItem: React.FC<TaskItemProps> = React.memo(
     const videoAnalyzerAction = getVideoAnalyzerAction(task);
     const videoAnalyzerSubtitle = getVideoAnalyzerSubtitle(task);
     const videoAnalyzerTypeTag = getVideoAnalyzerTypeTag(task);
+    const batchDisplayIndex = getTaskBatchDisplayIndex(task);
     const displayPrompt = isCharacterTask
       ? isCompleted && task.result?.characterUsername
         ? `@${task.result.characterUsername}`
@@ -321,14 +340,31 @@ export const TaskItem: React.FC<TaskItemProps> = React.memo(
         ? normalizeImageDataUrl(rawMediaUrl)
         : rawMediaUrl;
 
-    const { isCached } = useUnifiedCache(
+    const { isCached, cacheWarning: detectedCacheWarning } = useUnifiedCache(
       isCharacterTask || isAudioTask ? undefined : mediaUrl
     );
+    const cacheWarning =
+      isPreviewableTask && !isAudioTask && !isCached
+        ? detectedCacheWarning || task.result?.cacheWarning
+        : undefined;
+    const cacheWarningTip = cacheWarning
+      ? `${cacheWarning.message}${cacheWarning.expiresHint ? `\n${cacheWarning.expiresHint}` : ''}`
+      : '';
 
     // Use original URL or cached URL (Service Worker handles caching automatically)
     const mediaCount = isLyricsTask
       ? 0
       : task.result?.urls?.length || (task.result?.url ? 1 : 0);
+    const actionTrackParams = useMemo(
+      () =>
+        JSON.stringify({
+          taskId: task.id,
+          taskType: task.type,
+          taskStatus: task.status,
+          hasMultipleResults: mediaCount > 1,
+        }),
+      [mediaCount, task.id, task.status, task.type]
+    );
     const previewMediaUrl = isAudioTask
       ? isLyricsTask
         ? undefined
@@ -426,11 +462,11 @@ export const TaskItem: React.FC<TaskItemProps> = React.memo(
             </div>
           )}
           {task.params.batchId &&
-            typeof task.params.batchIndex === 'number' &&
+            batchDisplayIndex !== null &&
             typeof task.params.batchTotal === 'number' && (
               <div>
                 <strong>批量：</strong>
-                {task.params.batchIndex + 1}/{task.params.batchTotal}
+                {batchDisplayIndex}/{task.params.batchTotal}
               </div>
             )}
           <div>
@@ -644,6 +680,11 @@ export const TaskItem: React.FC<TaskItemProps> = React.memo(
                         )}
                       </div>
                     )}
+                    {cacheWarning && (
+                      <HoverTip content={cacheWarningTip} showArrow={false}>
+                        <span className="task-item__cache-warning-badge">需下载</span>
+                      </HoverTip>
+                    )}
                   </>
                 )}
               </div>
@@ -725,11 +766,10 @@ export const TaskItem: React.FC<TaskItemProps> = React.memo(
                     <Tag variant="outline">{lyricsTags[0]}</Tag>
                   )}
                   {task.params.batchId &&
-                    typeof task.params.batchIndex === 'number' &&
+                    batchDisplayIndex !== null &&
                     typeof task.params.batchTotal === 'number' && (
                       <Tag variant="outline">
-                        批量 {task.params.batchIndex + 1}/
-                        {task.params.batchTotal}
+                        批量 {batchDisplayIndex}/{task.params.batchTotal}
                       </Tag>
                     )}
                 </div>
@@ -811,6 +851,8 @@ export const TaskItem: React.FC<TaskItemProps> = React.memo(
                         size="small"
                         variant="text"
                         icon={<DownloadIcon />}
+                        data-track="task_click_download"
+                        data-track-params={actionTrackParams}
                         onClick={(e) => {
                           e.stopPropagation();
                           onDownload?.(task.id);
@@ -842,6 +884,23 @@ export const TaskItem: React.FC<TaskItemProps> = React.memo(
                         onClick={(e) => {
                           e.stopPropagation();
                           onEdit?.(task.id);
+                        }}
+                      />
+                    </HoverTip>
+                  )}
+
+                  {canRegenerateTask && (
+                    <HoverTip content="以当前提示词再次生成">
+                      <Button
+                        size="small"
+                        variant="text"
+                        icon={<RefreshIcon />}
+                        aria-label="再次生成"
+                        data-track="task_click_regenerate_prefill"
+                        data-track-params={actionTrackParams}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onRegenerate?.(task.id);
                         }}
                       />
                     </HoverTip>
@@ -885,6 +944,7 @@ export const TaskItem: React.FC<TaskItemProps> = React.memo(
                       theme="primary"
                       className="task-item__primary-action"
                       data-track="task_click_insert"
+                      data-track-params={actionTrackParams}
                       onClick={(e) => {
                         e.stopPropagation();
                         onInsert?.(task.id);
@@ -900,6 +960,7 @@ export const TaskItem: React.FC<TaskItemProps> = React.memo(
                     theme="primary"
                     className="task-item__primary-action"
                     data-track="task_click_retry"
+                    data-track-params={actionTrackParams}
                     onClick={(e) => {
                       e.stopPropagation();
                       onRetry?.(task.id);
@@ -957,7 +1018,8 @@ export const TaskItem: React.FC<TaskItemProps> = React.memo(
       prev.task.result === next.task.result &&
       prev.isSelected === next.isSelected &&
       prev.selectionMode === next.selectionMode &&
-      prev.isCompact === next.isCompact
+      prev.isCompact === next.isCompact &&
+      prev.onRegenerate === next.onRegenerate
     );
   }
 );

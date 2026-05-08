@@ -16,8 +16,20 @@ export interface EndpointBindingHint {
 }
 
 interface PathPattern {
-  test: (path: string) => boolean;
-  hint: (path: string) => EndpointBindingHint;
+  test: (path: string, endpoint: PricingEndpointInfo) => boolean;
+  hint: (path: string, endpoint: PricingEndpointInfo) => EndpointBindingHint;
+}
+
+function normalizeEndpointPath(path: string): string {
+  try {
+    return new URL(path).pathname.replace(/\/+$/, '');
+  } catch {
+    return path.split('?')[0].replace(/\/+$/, '');
+  }
+}
+
+function isPostEndpoint(endpoint: PricingEndpointInfo): boolean {
+  return !endpoint.method || endpoint.method.toUpperCase() === 'POST';
 }
 
 /**
@@ -94,8 +106,8 @@ const PATH_PATTERNS: PathPattern[] = [
   {
     test: (p) => /\/images\/edits/i.test(p),
     hint: () => ({
-      protocol: 'openai.images.generations',
-      requestSchema: 'openai.image.basic-json',
+      protocol: 'openai.images.edits',
+      requestSchema: 'openai.image.gpt-edit-form',
       responseSchema: 'openai.image.data',
       submitPath: '/images/edits',
     }),
@@ -108,6 +120,25 @@ const PATH_PATTERNS: PathPattern[] = [
       requestSchema: 'openai.image.basic-json',
       responseSchema: 'openai.image.data',
       submitPath: '/images/generations',
+    }),
+  },
+  // OpenAI async image task via unified /v1/videos endpoint
+  {
+    test: (p, ep) =>
+      normalizeEndpointPath(p) === '/v1/videos' &&
+      isPostEndpoint(ep) &&
+      ep.scenario === 'async-image',
+    hint: () => ({
+      protocol: 'openai.async.media',
+      requestSchema: 'openai.async.image.form',
+      responseSchema: 'openai.async.task',
+      submitPath: '/videos',
+      pollPathTemplate: '/videos/{taskId}',
+      metadata: {
+        image: {
+          action: 'generation',
+        },
+      },
     }),
   },
   // OpenAI async video（排除 kling 路径）
@@ -144,8 +175,8 @@ export function inferBindingHintFromEndpoints(
     if (!ep.path) continue;
     const path = ep.path.trim();
     for (const pattern of PATH_PATTERNS) {
-      if (pattern.test(path)) {
-        return pattern.hint(path);
+      if (pattern.test(path, ep)) {
+        return pattern.hint(path, ep);
       }
     }
   }
@@ -164,8 +195,8 @@ export function inferAllBindingHintsFromEndpoints(
     if (!ep.path) continue;
     const path = ep.path.trim();
     for (const pattern of PATH_PATTERNS) {
-      if (pattern.test(path)) {
-        const hint = pattern.hint(path);
+      if (pattern.test(path, ep)) {
+        const hint = pattern.hint(path, ep);
         if (!seen.has(hint.protocol)) {
           seen.add(hint.protocol);
           hints.push(hint);

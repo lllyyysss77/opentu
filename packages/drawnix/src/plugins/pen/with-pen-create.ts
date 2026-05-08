@@ -14,6 +14,7 @@ import { createPenPath, isHitStartAnchor, updatePenPathPoints } from './utils';
 import { createSymmetricHandles, distanceBetweenPoints } from './bezier-utils';
 import { drawPenPreview } from './pen.generator';
 import { getPenSettings } from './pen-settings';
+import { shouldDelegateToHandPointer } from '../hand-mode';
 
 /** 最小拖拽距离，小于此值视为点击 */
 const MIN_DRAG_DISTANCE = 3;
@@ -295,9 +296,77 @@ function checkAndFinishOnToolSwitch(board: PlaitBoard) {
  * 扩展钢笔工具创建功能
  */
 export const withPenCreate = (board: PlaitBoard) => {
-  const { pointerDown, pointerMove, pointerUp, globalPointerUp, keyDown } = board;
+  const { pointerDown, pointerMove, pointerUp, globalPointerUp, keyDown, globalKeyDown } = board;
+  let isTemporaryHandPanning = false;
+
+  const isEditableTarget = (target: EventTarget | null): boolean => {
+    return (
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLTextAreaElement ||
+      (target instanceof HTMLElement && target.isContentEditable)
+    );
+  };
+
+  const handlePenShortcut = (event: KeyboardEvent): boolean => {
+    if (event.defaultPrevented || !isPenPointerType(board) || isEditableTarget(event.target)) {
+      return false;
+    }
+
+    const state = getPenState(board);
+    if (!state.isCreating) {
+      return false;
+    }
+
+    // Enter 键完成路径
+    if (event.key === 'Enter') {
+      finishPath(board, false);
+      event.preventDefault();
+      return true;
+    }
+
+    // Escape 键取消创建
+    if (event.key === 'Escape') {
+      resetPenState(board);
+      event.preventDefault();
+      return true;
+    }
+
+    // Cmd+Z / Ctrl+Z 撤销上一个锚点（在钢笔创建过程中）
+    if (isHotkey(['mod+z'], { byKey: true })(event)) {
+      if (state.anchors.length > 0) {
+        state.anchors.pop();
+        updatePreview(board);
+      }
+      if (state.anchors.length === 0) {
+        resetPenState(board);
+      }
+      event.preventDefault();
+      return true;
+    }
+
+    // Backspace/Delete 删除最后一个锚点
+    if (event.key === 'Backspace' || event.key === 'Delete') {
+      if (state.anchors.length > 0) {
+        state.anchors.pop();
+        updatePreview(board);
+      }
+      if (state.anchors.length === 0) {
+        resetPenState(board);
+      }
+      event.preventDefault();
+      return true;
+    }
+
+    return false;
+  };
 
   board.pointerDown = (event: PointerEvent) => {
+    if (shouldDelegateToHandPointer(board, event)) {
+      isTemporaryHandPanning = true;
+      pointerDown(event);
+      return;
+    }
+
     // 检测工具切换，如果正在创建路径且切换到其他工具，完成或取消
     checkAndFinishOnToolSwitch(board);
     
@@ -347,6 +416,11 @@ export const withPenCreate = (board: PlaitBoard) => {
   };
 
   board.pointerMove = (event: PointerEvent) => {
+    if (isTemporaryHandPanning) {
+      pointerMove(event);
+      return;
+    }
+
     if (!isPenPointerType(board)) {
       pointerMove(event);
       return;
@@ -399,6 +473,12 @@ export const withPenCreate = (board: PlaitBoard) => {
   };
 
   board.pointerUp = (event: PointerEvent) => {
+    if (isTemporaryHandPanning) {
+      isTemporaryHandPanning = false;
+      pointerUp(event);
+      return;
+    }
+
     if (!isPenPointerType(board)) {
       pointerUp(event);
       return;
@@ -415,57 +495,21 @@ export const withPenCreate = (board: PlaitBoard) => {
   };
 
   board.globalPointerUp = (event: PointerEvent) => {
+    isTemporaryHandPanning = false;
     globalPointerUp(event);
   };
 
+  board.globalKeyDown = (event: KeyboardEvent) => {
+    if (handlePenShortcut(event)) {
+      return;
+    }
+    globalKeyDown(event);
+  };
+
   board.keyDown = (event: KeyboardEvent) => {
-    if (!isPenPointerType(board)) {
-      keyDown(event);
+    if (handlePenShortcut(event)) {
       return;
     }
-
-    const state = getPenState(board);
-
-    // Enter 键完成路径
-    if (event.key === 'Enter' && state.isCreating) {
-      finishPath(board, false);
-      event.preventDefault();
-      return;
-    }
-
-    // Escape 键取消创建
-    if (event.key === 'Escape' && state.isCreating) {
-      resetPenState(board);
-      event.preventDefault();
-      return;
-    }
-
-    // Cmd+Z / Ctrl+Z 撤销上一个锚点（在钢笔创建过程中）
-    if (isHotkey(['mod+z'], { byKey: true })(event) && state.isCreating) {
-      if (state.anchors.length > 0) {
-        state.anchors.pop();
-        updatePreview(board);
-      }
-      if (state.anchors.length === 0) {
-        resetPenState(board);
-      }
-      event.preventDefault();
-      return;
-    }
-
-    // Backspace/Delete 删除最后一个锚点
-    if ((event.key === 'Backspace' || event.key === 'Delete') && state.isCreating) {
-      if (state.anchors.length > 0) {
-        state.anchors.pop();
-        updatePreview(board);
-      }
-      if (state.anchors.length === 0) {
-        resetPenState(board);
-      }
-      event.preventDefault();
-      return;
-    }
-
     keyDown(event);
   };
 

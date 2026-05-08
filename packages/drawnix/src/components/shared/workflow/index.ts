@@ -11,7 +11,52 @@ export {
   type CharacterDescriptionListProps,
 } from './CharacterDescriptionList';
 export { ShotCard, type ShotCardProps } from './ShotCard';
-export { buildVideoPrompt, buildFramePrompt } from './prompt-builders';
+export {
+  WorkflowStepBar,
+  type WorkflowStepBarProps,
+  type WorkflowStepConfig,
+} from './WorkflowStepBar';
+export { WorkflowNavBar, type WorkflowNavBarProps } from './WorkflowNavBar';
+export {
+  useWorkflowRecords,
+  type UseWorkflowRecordsOptions,
+  type UseWorkflowRecordsResult,
+  type WorkflowRecordBase,
+  type WorkflowSyncRecordResult,
+} from './useWorkflowRecords';
+export {
+  useWorkflowNavigation,
+  type UseWorkflowNavigationOptions,
+  type UseWorkflowNavigationResult,
+} from './useWorkflowNavigation';
+export {
+  buildVideoPrompt,
+  buildFramePrompt,
+  buildCharacterReferencePrompt,
+  buildVideoReferenceImageDescriptions,
+} from './prompt-builders';
+export {
+  CreativeBriefEditor,
+  type CreativeBriefEditorProps,
+} from './CreativeBriefEditor';
+export {
+  VideoParametersRow,
+  type VideoDurationOption,
+  type VideoParametersRowProps,
+} from './VideoParametersRow';
+export {
+  type CreativeBrief,
+  normalizeCreativeBrief,
+  hasCreativeBrief,
+  formatCreativeBriefSummary,
+  formatCreativeBriefPromptBlock,
+  CREATIVE_PURPOSE_OPTIONS,
+  DIRECTOR_STYLE_OPTIONS,
+  NARRATIVE_STYLE_OPTIONS,
+  TARGET_PLATFORM_OPTIONS,
+  AUDIENCE_OPTIONS,
+  PACING_OPTIONS,
+} from './creative-brief';
 export {
   useWorkflowAssetActions,
   type UseWorkflowAssetActionsOptions,

@@ -11,6 +11,8 @@ import {
   safeReload,
   useDocumentTitle,
   markTabSyncVersion,
+  requestServiceWorkerIdlePrefetch,
+  MessagePlugin,
 } from '@drawnix/drawnix/runtime';
 import {
   PlaitBoard,
@@ -21,7 +23,6 @@ import {
   initializeViewBox,
   updateViewportOffset,
 } from '@plait/core';
-import { MessagePlugin } from 'tdesign-react';
 import { ErrorFallbackUI, safeModeReload, goToDebug } from './ErrorBoundary';
 import { collectAndDownloadErrorLog } from '../utils/error-log-exporter';
 
@@ -30,9 +31,21 @@ const VIEWPORT_SAVE_DEBOUNCE = 500;
 
 // URL 参数名
 const BOARD_URL_PARAM = 'board';
+const BOARD_CLOSE_SNAPSHOT_KEY = 'aitu_board_close_snapshot_v1';
 
 // Global flag to prevent duplicate initialization in StrictMode
 let appInitialized = false;
+
+type BoardPersistencePayload = {
+  children: PlaitElement[];
+  viewport?: Viewport;
+  theme?: PlaitTheme;
+};
+
+type BoardCloseSnapshot = BoardPersistencePayload & {
+  boardId: string;
+  updatedAt: number;
+};
 
 type BootController = {
   markReady: () => void;
@@ -80,6 +93,50 @@ function updateBoardIdInUrl(
   }
 }
 
+function saveBoardCloseSnapshot(snapshot: BoardCloseSnapshot): void {
+  try {
+    localStorage.setItem(BOARD_CLOSE_SNAPSHOT_KEY, JSON.stringify(snapshot));
+  } catch (error) {
+    console.warn('[App] Failed to save board close snapshot:', error);
+  }
+}
+
+function loadBoardCloseSnapshot(): BoardCloseSnapshot | null {
+  try {
+    const raw = localStorage.getItem(BOARD_CLOSE_SNAPSHOT_KEY);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw) as Partial<BoardCloseSnapshot>;
+    if (
+      !parsed ||
+      typeof parsed.boardId !== 'string' ||
+      typeof parsed.updatedAt !== 'number' ||
+      !Array.isArray(parsed.children)
+    ) {
+      return null;
+    }
+    return parsed as BoardCloseSnapshot;
+  } catch (error) {
+    console.warn('[App] Failed to load board close snapshot:', error);
+    return null;
+  }
+}
+
+function clearBoardCloseSnapshot(boardId?: string | null): void {
+  try {
+    const existing = loadBoardCloseSnapshot();
+    if (!existing) {
+      return;
+    }
+    if (!boardId || existing.boardId === boardId) {
+      localStorage.removeItem(BOARD_CLOSE_SNAPSHOT_KEY);
+    }
+  } catch (error) {
+    console.warn('[App] Failed to clear board close snapshot:', error);
+  }
+}
+
 export function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [isDataReady, setIsDataReady] = useState(false);
@@ -96,9 +153,11 @@ export function App() {
   }>({ children: [] });
   // 当前画板 ID，用于更新页面标题
   const [currentBoardId, setCurrentBoardId] = useState<string | null>(null);
+  const currentBoardIdRef = useRef<string | null>(null);
 
   // 存储最新的 viewport，用于页面关闭前保存
   const latestViewportRef = useRef<Viewport | undefined>();
+  const latestBoardDataRef = useRef<BoardCloseSnapshot | null>(null);
   // 防抖定时器
   const viewportSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
   // 标记是否正在处理浏览器前进后退
@@ -109,9 +168,64 @@ export function App() {
   const isSyncingRef = useRef<boolean>(false);
   // 标记本标签页是否有用户主动修改（只有用户修改过才在 visibilitychange 时保存）
   const localDirtyRef = useRef<boolean>(false);
+  // 标记当前标签页是否还有未落盘的本地变更（含元素与 viewport）
+  const hasPendingPersistenceRef = useRef<boolean>(false);
 
   // 使用 useDocumentTitle hook 管理页面标题
   useDocumentTitle(currentBoardId);
+
+  useEffect(() => {
+    currentBoardIdRef.current = currentBoardId;
+  }, [currentBoardId]);
+
+  const updateLatestBoardData = useCallback(
+    (
+      boardId: string,
+      payload: BoardPersistencePayload,
+      updatedAt: number = Date.now()
+    ) => {
+      latestViewportRef.current = payload.viewport;
+      latestBoardDataRef.current = {
+        boardId,
+        children: payload.children,
+        viewport: payload.viewport,
+        theme: payload.theme,
+        updatedAt,
+      };
+    },
+    []
+  );
+
+  const persistCloseSnapshot = useCallback(
+    (reason: 'visibilitychange' | 'pagehide' | 'beforeunload') => {
+      const snapshot = latestBoardDataRef.current;
+      const boardId = currentBoardIdRef.current;
+      if (
+        !snapshot ||
+        !boardId ||
+        snapshot.boardId !== boardId ||
+        !hasPendingPersistenceRef.current
+      ) {
+        return;
+      }
+      saveBoardCloseSnapshot({
+        ...snapshot,
+        updatedAt: Date.now(),
+      });
+
+      const workspaceService = WorkspaceService.getInstance();
+      workspaceService
+        .saveCurrentBoard({
+          children: snapshot.children,
+          viewport: snapshot.viewport,
+          theme: snapshot.theme,
+        })
+        .catch((error: Error) => {
+          console.warn(`[App] Failed to flush board on ${reason}:`, error);
+        });
+    },
+    []
+  );
 
   useEffect(() => {
     const bootController = getBootController();
@@ -122,6 +236,14 @@ export function App() {
     if (showCrashDialog || initError || !isLoading) {
       bootController.markReady();
     }
+  }, [initError, isLoading, showCrashDialog]);
+
+  useEffect(() => {
+    if (showCrashDialog || initError || isLoading) {
+      return;
+    }
+
+    requestServiceWorkerIdlePrefetch(['offline-static-assets']);
   }, [initError, isLoading, showCrashDialog]);
 
   // Initialize workspace and handle migration
@@ -141,6 +263,8 @@ export function App() {
       if (appInitialized) {
         // 等待 workspaceService 完全初始化
         const workspaceService = WorkspaceService.getInstance();
+        // 首屏壳子已可挂载，不再等待工作区数据恢复完成才结束启动遮罩。
+        setIsLoading(false);
         await workspaceService.waitForInitialization();
         // 使用 switchBoard 确保加载完整数据
         const currentBoardId = workspaceService.getState().currentBoardId;
@@ -153,11 +277,18 @@ export function App() {
           const currentBoard = await workspaceService.switchBoard(
             currentBoardId
           );
-          setValue({
+          const nextData = {
             children: currentBoard.elements || [],
             viewport: currentBoard.viewport,
             theme: currentBoard.theme,
-          });
+          };
+          updateLatestBoardData(
+            currentBoard.id,
+            nextData,
+            currentBoard.updatedAt
+          );
+          hasPendingPersistenceRef.current = false;
+          setValue(nextData);
         }
         setIsLoading(false);
         // 标记加载完成
@@ -168,6 +299,8 @@ export function App() {
 
       try {
         const workspaceService = WorkspaceService.getInstance();
+        // boot loading 只覆盖首屏壳子资源，不阻塞后续工作区初始化与缓存预热。
+        setIsLoading(false);
         await workspaceService.initialize();
 
         // Check and perform migration if needed
@@ -178,8 +311,6 @@ export function App() {
 
         // 安全模式：优先复用已有的空白安全模式画板，否则创建新的
         if (crashRecoveryService.isSafeMode()) {
-          console.log('[App] Safe mode: looking for existing safe mode board');
-
           // 查找已有的安全模式画板（名称以 "安全模式" 开头且元素为空）
           const allBoards = workspaceService.getAllBoards();
           const safeModeBoard = allBoards.find(
@@ -189,14 +320,9 @@ export function App() {
           );
 
           if (safeModeBoard) {
-            console.log(
-              '[App] Safe mode: reusing existing board:',
-              safeModeBoard.name
-            );
             await workspaceService.switchBoard(safeModeBoard.id);
             setCurrentBoardId(safeModeBoard.id);
           } else {
-            console.log('[App] Safe mode: creating new blank board');
             // 使用时间戳生成唯一名称，避免名称冲突
             const timestamp = new Date()
               .toLocaleString('zh-CN', {
@@ -216,7 +342,11 @@ export function App() {
             }
           }
 
-          setValue({ children: [] });
+          const safeModeData = { children: [] as PlaitElement[] };
+          const safeModeBoardId =
+            safeModeBoard?.id || currentBoardIdRef.current || 'safe-mode';
+          updateLatestBoardData(safeModeBoardId, safeModeData, Date.now());
+          setValue(safeModeData);
           isDataReadyRef.current = true;
           setIsDataReady(true);
           setIsLoading(false);
@@ -282,27 +412,79 @@ export function App() {
           setCurrentBoardId(currentBoard.id);
           // 持久化到 sessionStorage，确保标签页隔离
           workspaceService.persistCurrentBoardId(currentBoard.id);
+          hasPendingPersistenceRef.current = false;
         }
 
         if (currentBoard) {
-          const elements = currentBoard.elements || [];
-
-          // 先设置原始元素，让页面先渲染
-          setValue({
-            children: elements,
+          const closeSnapshot = loadBoardCloseSnapshot();
+          let initialData: BoardPersistencePayload = {
+            children: currentBoard.elements || [],
             viewport: currentBoard.viewport,
             theme: currentBoard.theme,
-          });
+          };
+
+          if (
+            closeSnapshot &&
+            closeSnapshot.boardId === currentBoard.id &&
+            closeSnapshot.updatedAt > currentBoard.updatedAt
+          ) {
+            initialData = {
+              children: closeSnapshot.children,
+              viewport: closeSnapshot.viewport,
+              theme: closeSnapshot.theme,
+            };
+            currentBoard = {
+              ...currentBoard,
+              ...initialData,
+              updatedAt: closeSnapshot.updatedAt,
+            };
+            const restoredBoardId = currentBoard.id;
+            void workspaceService
+              .saveBoard(restoredBoardId, initialData)
+              .then(() => {
+                hasPendingPersistenceRef.current = false;
+                clearBoardCloseSnapshot(restoredBoardId);
+              })
+              .catch((error: Error) => {
+                console.warn(
+                  '[App] Failed to rehydrate board from close snapshot:',
+                  error
+                );
+              });
+            MessagePlugin.warning({
+              content: '检测到上次关闭前的未落盘画布，已自动恢复',
+              duration: 5000,
+              closeBtn: true,
+            });
+          } else if (
+            closeSnapshot &&
+            closeSnapshot.boardId &&
+            !workspaceService.getBoardMetadata(closeSnapshot.boardId)
+          ) {
+            clearBoardCloseSnapshot(closeSnapshot.boardId);
+          }
+
+          updateLatestBoardData(
+            currentBoard.id,
+            initialData,
+            currentBoard.updatedAt
+          );
+          hasPendingPersistenceRef.current = false;
+
+          // 先设置原始元素，让页面先渲染
+          setValue(initialData);
 
           // 异步恢复视频 URL，不阻塞页面加载
-          recoverVideoUrlsInElements(elements)
+          recoverVideoUrlsInElements(initialData.children)
             .then((recoveredElements) => {
               // 只有当有元素被恢复时才更新
-              if (recoveredElements !== elements) {
-                setValue((prev) => ({
-                  ...prev,
+              if (recoveredElements !== initialData.children) {
+                const nextData = {
+                  ...initialData,
                   children: recoveredElements,
-                }));
+                };
+                updateLatestBoardData(currentBoard!.id, nextData, Date.now());
+                setValue(nextData);
               }
             })
             .catch((error) => {
@@ -322,7 +504,7 @@ export function App() {
     };
 
     initialize();
-  }, []);
+  }, [updateLatestBoardData]);
 
   // Handle board switching
   const handleBoardSwitch = useCallback(
@@ -339,15 +521,18 @@ export function App() {
 
         // 切换画布时重置脏标志，新画布的初始数据不需要保存
         localDirtyRef.current = false;
+        hasPendingPersistenceRef.current = false;
 
         // 在设置 state 之前，预先恢复失效的视频 URL
         const elements = await recoverVideoUrlsInElements(board.elements || []);
-
-        setValue({
+        const nextData = {
           children: elements,
           viewport: board.viewport,
           theme: board.theme,
-        });
+        };
+        updateLatestBoardData(board.id, nextData, board.updatedAt);
+
+        setValue(nextData);
 
         // 等待 React 更新完成后，手动触发画布边界更新
         // 使用 setTimeout 而不是 queueMicrotask，给 React 更多时间完成 DOM 更新
@@ -370,7 +555,7 @@ export function App() {
         });
       }
     },
-    []
+    [updateLatestBoardData]
   );
 
   // Handle browser back/forward navigation
@@ -457,13 +642,20 @@ export function App() {
         const elements = await recoverVideoUrlsInElements(
           updatedBoard.elements || []
         );
-
-        // 更新 React 状态，触发重新渲染
-        setValue({
+        const nextData = {
           children: elements,
           viewport: updatedBoard.viewport,
           theme: updatedBoard.theme,
-        });
+        };
+        updateLatestBoardData(
+          updatedBoard.id,
+          nextData,
+          updatedBoard.updatedAt
+        );
+        hasPendingPersistenceRef.current = false;
+
+        // 更新 React 状态，触发重新渲染
+        setValue(nextData);
       }
     } catch (error) {
       console.error('[App] Failed to sync board data:', error);
@@ -476,92 +668,118 @@ export function App() {
         isSyncingRef.current = false;
       }, 100);
     }
-  }, []);
+  }, [updateLatestBoardData]);
 
   // Handle board changes (auto-save)
-  const handleBoardChange = useCallback((data: BoardChangeData) => {
-    setValue(data);
-    // 同步更新最新 viewport
-    latestViewportRef.current = data.viewport;
+  const handleBoardChange = useCallback(
+    (data: BoardChangeData) => {
+      setValue(data);
+      // 同步更新最新 viewport
+      latestViewportRef.current = data.viewport;
 
-    // 只在数据准备好之后才保存，避免在初始化时保存空数据
-    // 使用 ref 而非 state，避免闭包捕获旧值（Wrapper 中 BOARD_TO_AFTER_CHANGE 不会因 onChange 变化而更新）
-    if (!isDataReadyRef.current) {
-      return;
-    }
+      // 只在数据准备好之后才保存，避免在初始化时保存空数据
+      // 使用 ref 而非 state，避免闭包捕获旧值（Wrapper 中 BOARD_TO_AFTER_CHANGE 不会因 onChange 变化而更新）
+      if (!isDataReadyRef.current) {
+        return;
+      }
 
-    // 同步期间不保存，防止用旧数据覆盖其他标签页保存的新数据
-    if (isSyncingRef.current) {
-      return;
-    }
-
-    // 标记本标签页有用户主动修改
-    localDirtyRef.current = true;
-
-    // Save to current board
-    const workspaceService = WorkspaceService.getInstance();
-
-    // 额外安全检查：确保当前画板已经完全加载
-    const currentBoard = workspaceService.getCurrentBoard();
-    if (!currentBoard) {
-      console.warn(
-        '[App] handleBoardChange: board not fully loaded, skipping save'
-      );
-      return;
-    }
-
-    workspaceService
-      .saveCurrentBoard(data)
-      .then(() => {
-        // 通知其他标签页数据已更新
-        markTabSyncVersion(currentBoard.id);
-      })
-      .catch((err: Error) => {
-        console.error('[App] Failed to save board:', err);
-      });
-  }, []);
-
-  // Handle viewport changes (pan/zoom) - 单独保存 viewport
-  const handleViewportChange = useCallback((viewport: Viewport) => {
-    // 更新最新 viewport
-    latestViewportRef.current = viewport;
-
-    // 同步期间不保存 viewport，防止用旧数据覆盖
-    if (isSyncingRef.current) {
-      return;
-    }
-
-    // 防抖保存
-    if (viewportSaveTimerRef.current) {
-      clearTimeout(viewportSaveTimerRef.current);
-    }
-    viewportSaveTimerRef.current = setTimeout(() => {
-      // 再次检查同步状态
+      // 同步期间不保存，防止用旧数据覆盖其他标签页保存的新数据
       if (isSyncingRef.current) {
         return;
       }
 
-      const workspaceService = WorkspaceService.getInstance();
-      const currentBoard = workspaceService.getCurrentBoard();
-      if (currentBoard) {
-        // 只保存 viewport，不影响其他数据
-        workspaceService
-          .saveCurrentBoard({
-            children: currentBoard.elements,
-            viewport: viewport,
-            theme: currentBoard.theme,
-          })
-          .catch((err: Error) => {
-            console.error('[App] Failed to save viewport:', err);
-          });
-      }
-    }, VIEWPORT_SAVE_DEBOUNCE);
-  }, []);
+      // 标记本标签页有用户主动修改
+      localDirtyRef.current = true;
+      hasPendingPersistenceRef.current = true;
 
-  // 页面关闭/隐藏前保存 viewport
+      // Save to current board
+      const workspaceService = WorkspaceService.getInstance();
+
+      // 额外安全检查：确保当前画板已经完全加载
+      const currentBoard = workspaceService.getCurrentBoard();
+      if (!currentBoard) {
+        console.warn(
+          '[App] handleBoardChange: board not fully loaded, skipping save'
+        );
+        return;
+      }
+
+      updateLatestBoardData(currentBoard.id, data);
+
+      workspaceService
+        .saveCurrentBoard(data)
+        .then(() => {
+          hasPendingPersistenceRef.current = false;
+          clearBoardCloseSnapshot(currentBoard.id);
+          // 通知其他标签页数据已更新
+          markTabSyncVersion(currentBoard.id);
+        })
+        .catch((err: Error) => {
+          console.error('[App] Failed to save board:', err);
+        });
+    },
+    [updateLatestBoardData]
+  );
+
+  // Handle viewport changes (pan/zoom) - 单独保存 viewport
+  const handleViewportChange = useCallback(
+    (viewport: Viewport) => {
+      // 更新最新 viewport
+      latestViewportRef.current = viewport;
+      const latestSnapshot = latestBoardDataRef.current;
+      if (latestSnapshot) {
+        latestBoardDataRef.current = {
+          ...latestSnapshot,
+          viewport,
+          updatedAt: Date.now(),
+        };
+      }
+
+      // 同步期间不保存 viewport，防止用旧数据覆盖
+      if (isSyncingRef.current) {
+        return;
+      }
+
+      hasPendingPersistenceRef.current = true;
+
+      // 防抖保存
+      if (viewportSaveTimerRef.current) {
+        clearTimeout(viewportSaveTimerRef.current);
+      }
+      viewportSaveTimerRef.current = setTimeout(() => {
+        // 再次检查同步状态
+        if (isSyncingRef.current) {
+          return;
+        }
+
+        const workspaceService = WorkspaceService.getInstance();
+        const currentBoard = workspaceService.getCurrentBoard();
+        if (currentBoard) {
+          // 只保存 viewport，不影响其他数据
+          workspaceService
+            .saveCurrentBoard({
+              children: currentBoard.elements,
+              viewport: viewport,
+              theme: currentBoard.theme,
+            })
+            .then(() => {
+              hasPendingPersistenceRef.current = false;
+              clearBoardCloseSnapshot(currentBoard.id);
+            })
+            .catch((err: Error) => {
+              console.error('[App] Failed to save viewport:', err);
+            });
+        }
+      }, VIEWPORT_SAVE_DEBOUNCE);
+    },
+    [updateLatestBoardData]
+  );
+
+  // 页面关闭/隐藏前保存当前画布快照，并尽量 flush 到 IndexedDB
   useEffect(() => {
-    // 立即保存 viewport 的函数
-    const saveViewportImmediately = () => {
+    const flushBoardBeforeLeave = (
+      reason: 'visibilitychange' | 'pagehide' | 'beforeunload'
+    ) => {
       // 清除防抖定时器
       if (viewportSaveTimerRef.current) {
         clearTimeout(viewportSaveTimerRef.current);
@@ -573,51 +791,64 @@ export function App() {
         return;
       }
 
-      // 如果本标签页没有任何用户修改，不保存（避免用缓存中的旧数据覆盖其他标签页的修改）
-      // 丢失 viewport 变化是可接受的，因为 viewport 保存也会携带 elements
+      const workspaceService = WorkspaceService.getInstance();
+      const currentBoard = workspaceService.getCurrentBoard();
+      const latestSnapshot = latestBoardDataRef.current;
       const viewport = latestViewportRef.current;
-      if (viewport && localDirtyRef.current) {
-        const workspaceService = WorkspaceService.getInstance();
-        const currentBoard = workspaceService.getCurrentBoard();
-        if (currentBoard) {
-          // 直接更新内存中的 viewport
-          currentBoard.viewport = viewport;
-          workspaceService
-            .saveCurrentBoard({
-              children: currentBoard.elements,
-              viewport: viewport,
-              theme: currentBoard.theme,
-            })
-            .catch(() => {
-              // 忽略错误
-            });
-        }
+      const boardId = currentBoardIdRef.current;
+
+      if (
+        currentBoard &&
+        boardId &&
+        (!latestSnapshot || latestSnapshot.boardId !== boardId)
+      ) {
+        updateLatestBoardData(
+          currentBoard.id,
+          {
+            children: currentBoard.elements,
+            viewport: viewport ?? currentBoard.viewport,
+            theme: currentBoard.theme,
+          },
+          Date.now()
+        );
       }
+
+      if (reason === 'visibilitychange' && !localDirtyRef.current) {
+        return;
+      }
+
+      persistCloseSnapshot(reason);
     };
 
     const handleBeforeUnload = () => {
-      saveViewportImmediately();
+      flushBoardBeforeLeave('beforeunload');
     };
 
     // 页面隐藏时也保存（处理移动端和标签页切换）
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
-        saveViewportImmediately();
+        flushBoardBeforeLeave('visibilitychange');
       }
     };
 
+    const handlePageHide = () => {
+      flushBoardBeforeLeave('pagehide');
+    };
+
     window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('pagehide', handlePageHide);
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('pagehide', handlePageHide);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       // 清理定时器
       if (viewportSaveTimerRef.current) {
         clearTimeout(viewportSaveTimerRef.current);
       }
     };
-  }, []);
+  }, [persistCloseSnapshot, updateLatestBoardData]);
 
   // 处理安全模式选择
   const handleSafeModeChoice = useCallback((useSafeMode: boolean) => {

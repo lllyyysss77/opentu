@@ -6,11 +6,18 @@
  */
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { geminiSettings } from '../utils/settings-manager';
 import {
+    geminiSettings,
+    providerProfilesSettings,
+    type ProviderProfile,
+} from '../utils/settings-manager';
+import {
+    buildModelHealthKey,
     modelHealthFetcher,
     buildHealthMap,
     isTuziApiUrl,
+    shouldFetchModelHealthForSelections,
+    type ModelHealthSelection,
     type ModelHealthStatus,
 } from '../services/model-health-service';
 
@@ -23,10 +30,12 @@ export interface ModelHealthContextValue {
     error: string | null;
     /** 是否应该显示健康状态（baseUrl 为 tu-zi.com 时为 true） */
     shouldShowHealth: boolean;
+    /** 更新当前已选择的模型，用于决定是否请求健康状态 */
+    setActiveSelections: (selections: ModelHealthSelection[]) => void;
     /** 手动刷新数据 */
     refresh: () => Promise<void>;
-    /** 根据模型 ID 获取健康状态 */
-    getHealthStatus: (modelId: string) => ModelHealthStatus | undefined;
+    /** 根据模型 ID 和供应商获取健康状态 */
+    getHealthStatus: (modelId: string, profileId?: string | null) => ModelHealthStatus | undefined;
 }
 
 const ModelHealthContext = createContext<ModelHealthContextValue | null>(null);
@@ -43,11 +52,21 @@ export const ModelHealthProvider: React.FC<{ children: React.ReactNode }> = ({ c
     const [error, setError] = useState<string | null>(null);
     const [shouldShowHealth, setShouldShowHealth] = useState(false);
     const intervalRef = useRef<NodeJS.Timeout | null>(null);
+    const [providerProfiles, setProviderProfiles] = useState<ProviderProfile[]>(
+        () => providerProfilesSettings.get()
+    );
+    const activeSelectionsRef = useRef<ModelHealthSelection[]>([]);
 
     const checkShouldShow = useCallback(() => {
         const settings = geminiSettings.get();
-        const show = isTuziApiUrl(settings.baseUrl || '');
+        const profiles = providerProfilesSettings.get();
+        const show = shouldFetchModelHealthForSelections(
+            activeSelectionsRef.current,
+            profiles,
+            settings.baseUrl || ''
+        );
         setShouldShowHealth(show);
+        setProviderProfiles(profiles);
         return show;
     }, []);
 
@@ -76,9 +95,50 @@ export const ModelHealthProvider: React.FC<{ children: React.ReactNode }> = ({ c
         await fetchData(true);
     }, [fetchData]);
 
-    const getHealthStatus = useCallback((modelId: string): ModelHealthStatus | undefined => {
-        return healthMap.get(modelId);
-    }, [healthMap]);
+    const setActiveSelections = useCallback(
+        (selections: ModelHealthSelection[]) => {
+            activeSelectionsRef.current = selections;
+            const show = checkShouldShow();
+
+            if (show && !intervalRef.current) {
+                fetchData();
+                intervalRef.current = setInterval(() => {
+                    fetchData(true);
+                }, UI_REFRESH_INTERVAL);
+            } else if (!show && intervalRef.current) {
+                clearInterval(intervalRef.current);
+                intervalRef.current = null;
+                setHealthMap(new Map());
+            } else if (!show) {
+                setHealthMap(new Map());
+            }
+        },
+        [checkShouldShow, fetchData]
+    );
+
+    const getHealthStatus = useCallback((modelId: string, profileId?: string | null): ModelHealthStatus | undefined => {
+        const profile =
+            typeof profileId === 'string' && profileId
+                ? providerProfiles.find((item) => item.id === profileId) || null
+                : null;
+
+        if (profile) {
+            if (!isTuziApiUrl(profile.baseUrl || '')) {
+                return undefined;
+            }
+
+            return healthMap.get(
+                buildModelHealthKey(modelId, profile.pricingGroup || 'default')
+            );
+        }
+
+        const settings = geminiSettings.get();
+        if (!isTuziApiUrl(settings.baseUrl || '')) {
+            return undefined;
+        }
+
+        return healthMap.get(buildModelHealthKey(modelId, 'default'));
+    }, [healthMap, providerProfiles]);
 
     useEffect(() => {
         const show = checkShouldShow();
@@ -106,9 +166,11 @@ export const ModelHealthProvider: React.FC<{ children: React.ReactNode }> = ({ c
         };
 
         geminiSettings.addListener(handleSettingsChange);
+        providerProfilesSettings.addListener(handleSettingsChange);
 
         return () => {
             geminiSettings.removeListener(handleSettingsChange);
+            providerProfilesSettings.removeListener(handleSettingsChange);
             if (intervalRef.current) {
                 clearInterval(intervalRef.current);
             }
@@ -122,6 +184,7 @@ export const ModelHealthProvider: React.FC<{ children: React.ReactNode }> = ({ c
                 loading,
                 error,
                 shouldShowHealth,
+                setActiveSelections,
                 refresh,
                 getHealthStatus,
             }}
@@ -143,6 +206,7 @@ export function useModelHealthContext(): ModelHealthContextValue {
             loading: false,
             error: null,
             shouldShowHealth: false,
+            setActiveSelections: () => {},
             refresh: async () => {},
             getHealthStatus: () => undefined,
         };

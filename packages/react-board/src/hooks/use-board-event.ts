@@ -1,5 +1,4 @@
 import {
-  BoardTransforms,
   PlaitBoard,
   ZOOM_STEP,
   initializeViewBox,
@@ -9,8 +8,13 @@ import {
   updateViewportByScrolling,
   updateViewportOffset,
 } from '@plait/core';
-import { useEventListener } from 'ahooks';
 import { useEffect, useRef } from 'react';
+import {
+  consumeIgnoredViewportScroll,
+  refreshSelectedElementActiveSectionsForViewportChange,
+  updateZoomFromCurrentViewport,
+} from '../utils/viewport';
+import { useEventListener } from './use-event-listener';
 
 const useBoardEvent = (
   board: PlaitBoard,
@@ -19,7 +23,7 @@ const useBoardEvent = (
   useEventListener(
     'scroll',
     (event) => {
-      if (isFromViewportChange(board)) {
+      if (consumeIgnoredViewportScroll(board) || isFromViewportChange(board)) {
         setIsFromViewportChange(board, false);
       } else {
         const target = event.target as HTMLElement;
@@ -62,7 +66,7 @@ const useBoardEvent = (
           -sign *
           // reduced amplification for small deltas (small movements on a trackpad)
           Math.min(1, absDelta / 20);
-        BoardTransforms.updateZoom(
+        updateZoomFromCurrentViewport(
           board,
           newZoom,
           PlaitBoard.getMovingPointInBoard(board)
@@ -83,6 +87,7 @@ const useBoardEvent = (
       initializeViewportContainer(board);
       initializeViewBox(board);
       updateViewportOffset(board);
+      refreshSelectedElementActiveSectionsForViewportChange(board);
     });
     resizeObserver.observe(PlaitBoard.getBoardContainer(board));
     return () => {

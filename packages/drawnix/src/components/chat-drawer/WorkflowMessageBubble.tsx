@@ -4,12 +4,23 @@
  * 在对话消息中展示工作流执行过程
  */
 
-import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { ChatMessage } from '@llamaindex/chat-ui';
-import type { Message } from '@llamaindex/chat-ui';
+import React, {
+  Suspense,
+  lazy,
+  useState,
+  useMemo,
+  useRef,
+  useEffect,
+} from 'react';
 import type { WorkflowMessageData, AgentLogEntry } from '../../types/chat.types';
-import { MermaidRenderer } from './MermaidRenderer';
+import MarkdownReadonly from '../MarkdownReadonly';
 import './workflow-message-bubble.scss';
+
+const MermaidRenderer = lazy(() =>
+  import('./MermaidRenderer').then((module) => ({
+    default: module.MermaidRenderer,
+  }))
+);
 
 // ============ 状态图标映射 ============
 
@@ -30,6 +41,35 @@ const STATUS_LABELS: Record<StepStatus, string> = {
   failed: '失败',
   skipped: '已跳过',
 };
+
+function renderWorkflowCodeBlock(
+  code: string,
+  language: string,
+  key: string
+): React.ReactNode | undefined {
+  if (language !== 'mermaid') {
+    return undefined;
+  }
+
+  return (
+    <Suspense key={key} fallback={null}>
+      <MermaidRenderer
+        code={code.trim()}
+        className="chat-markdown__mermaid"
+      />
+    </Suspense>
+  );
+}
+
+function renderMarkdownWithMermaid(markdown: string): React.ReactNode {
+  return (
+    <MarkdownReadonly
+      markdown={markdown}
+      className="chat-markdown"
+      renderCodeBlock={renderWorkflowCodeBlock}
+    />
+  );
+}
 
 // ============ 单个步骤项组件 ============
 
@@ -453,14 +493,10 @@ export const WorkflowMessageBubble: React.FC<WorkflowMessageBubbleProps> = ({
     return { variant: 'info' as const, icon: 'ℹ️', text: '未生成任何内容' };
   }, [isCompleted, isFailed, lastContent, hasMediaGeneration]);
 
-  const markdownMessage: Message | null = useMemo(() => {
+  const markdownSummary = useMemo(() => {
     if (!summaryView || summaryView.variant !== 'markdown') return null;
-    return {
-      id: `workflow_${workflow.id}_result`,
-      role: 'assistant',
-      parts: [{ type: 'text', text: summaryView.markdown }],
-    };
-  }, [summaryView, workflow.id]);
+    return summaryView.markdown;
+  }, [summaryView]);
 
   // 获取当前执行步骤的索引
   const currentStepIndex = useMemo(() => {
@@ -584,18 +620,15 @@ export const WorkflowMessageBubble: React.FC<WorkflowMessageBubbleProps> = ({
           </div>
         )}
 
-        {summaryView && summaryView.variant === 'markdown' && markdownMessage && (
+        {summaryView && summaryView.variant === 'markdown' && markdownSummary && (
           <div className="workflow-bubble__summary workflow-bubble__summary--success workflow-bubble__summary--markdown">
             <span className="workflow-bubble__summary-icon">{summaryView.icon}</span>
             <div className="workflow-bubble__summary-markdown">
-              <ChatMessage message={markdownMessage} isLast={false} className="workflow-bubble__markdown-message">
-                <ChatMessage.Content className="workflow-bubble__markdown-content">
-                  <ChatMessage.Content.Markdown
-                    className="chat-markdown"
-                    languageRenderers={{ mermaid: MermaidRenderer }}
-                  />
-                </ChatMessage.Content>
-              </ChatMessage>
+              <div className="workflow-bubble__markdown-message">
+                <div className="workflow-bubble__markdown-content">
+                  {renderMarkdownWithMermaid(markdownSummary)}
+                </div>
+              </div>
             </div>
           </div>
         )}

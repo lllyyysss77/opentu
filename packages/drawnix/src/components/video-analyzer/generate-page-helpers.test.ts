@@ -36,6 +36,10 @@ describe('video-analyzer generate helpers', () => {
         prompt: '卖点提示词',
         videoStyle: '电影感',
         bgmMood: '鼓舞',
+        creativeBrief: {
+          purpose: '种草带货',
+          narrativeStyle: '痛点-解决-转化',
+        },
       },
       starred: false,
     };
@@ -54,10 +58,12 @@ describe('video-analyzer generate helpers', () => {
       aspectRatio: '9x16',
       videoStyle: '电影感',
       bgmMood: '鼓舞',
+      creativeBriefSummary: expect.stringContaining('视频用途/场景：种草带货'),
       shotCount: 1,
     });
     expect(options.scriptMarkdown).toContain('# 视频脚本');
     expect(options.scriptMarkdown).toContain('卖点提示词');
+    expect(options.scriptMarkdown).toContain('## 创作 Brief');
   });
 
   it('prefers persisted characters when building reset payload', () => {
@@ -93,6 +99,7 @@ describe('video-analyzer generate helpers', () => {
     );
 
     expect(payload.shots[0].generated_video_url).toBeUndefined();
+    expect(payload.shots[0].suppressed_generated_urls?.video).toBe('video-url');
     expect(payload.characters[0].description).toBe('persisted');
     expect(payload.characters[0].referenceImageUrl).toBeUndefined();
   });

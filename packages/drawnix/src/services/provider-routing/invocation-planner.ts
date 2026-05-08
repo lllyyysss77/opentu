@@ -56,6 +56,20 @@ function compareBindings(
   return left.id.localeCompare(right.id, 'en');
 }
 
+function normalizePreferredRequestSchemas(
+  preferredRequestSchema?: string | readonly string[] | null
+): string[] {
+  const rawValues = Array.isArray(preferredRequestSchema)
+    ? preferredRequestSchema
+    : preferredRequestSchema
+    ? [preferredRequestSchema]
+    : [];
+
+  return rawValues
+    .map((schema) => schema.trim())
+    .filter((schema) => schema.length > 0);
+}
+
 function buildProviderContext(
   profile: ProviderProfileSnapshot
 ): ResolvedProviderContext {
@@ -68,6 +82,17 @@ function buildProviderContext(
     authType: profile.authType,
     extraHeaders: profile.extraHeaders,
   };
+}
+
+function findPriorityBinding(
+  bindings: ProviderModelBinding[]
+): ProviderModelBinding | undefined {
+  return bindings.find(
+    (candidate) =>
+      candidate.operation === 'image' &&
+      candidate.protocol === 'openai.async.media' &&
+      candidate.requestSchema === 'openai.async.image.form'
+  );
 }
 
 export class InvocationPlanningError extends Error {
@@ -97,7 +122,9 @@ export class InvocationPlanner {
       );
     }
 
-    const profile = this.repositories.getProviderProfile(targetModelRef.profileId);
+    const profile = this.repositories.getProviderProfile(
+      targetModelRef.profileId
+    );
     if (!profile) {
       throw new InvocationPlanningError(
         `Provider profile not found: ${targetModelRef.profileId}`
@@ -120,8 +147,20 @@ export class InvocationPlanner {
       );
     }
 
+    const preferredSchemas = normalizePreferredRequestSchemas(
+      request.preferredRequestSchema
+    );
+    const priorityBinding = request.bindingId
+      ? undefined
+      : findPriorityBinding(bindings);
     const binding = request.bindingId
       ? bindings.find((candidate) => candidate.id === request.bindingId)
+      : priorityBinding
+      ? priorityBinding
+      : preferredSchemas.length > 0
+      ? bindings.find((candidate) =>
+          preferredSchemas.includes(candidate.requestSchema)
+        ) || bindings[0]
       : bindings[0];
 
     if (!binding) {

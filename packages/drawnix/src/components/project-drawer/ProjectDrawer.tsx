@@ -13,6 +13,7 @@ import React, {
   useEffect,
   DragEvent,
 } from 'react';
+import { Presentation } from 'lucide-react';
 import {
   Button,
   Input,
@@ -36,7 +37,6 @@ import {
   MoveIcon,
   DownloadIcon,
   UploadIcon,
-  ViewListIcon,
   LayersIcon,
 } from 'tdesign-icons-react';
 import { useWorkspace } from '../../hooks/useWorkspace';
@@ -58,6 +58,13 @@ import {
 import { ConfirmDialog } from '../dialog/ConfirmDialog';
 import { FramePanel } from './FramePanel';
 import { LayerPanel } from './LayerPanel';
+import { DRAWER_PIN_KEYS } from '../../utils/drawer-pin';
+import type { MediaLibraryConfig } from '../../types/asset.types';
+import {
+  PPT_EDITOR_OPEN_EVENT,
+  type PPTEditorOpenEventDetail,
+} from '../../services/ppt/ppt-ui-events';
+import { analytics } from '../../utils/posthog-analytics';
 import './project-drawer.scss';
 
 export interface ProjectDrawerProps {
@@ -69,10 +76,67 @@ export interface ProjectDrawerProps {
   onBeforeSwitch?: () => Promise<void>;
   /** Called after board is switched */
   onBoardSwitch?: (board: Board) => void;
+  /** Called when a child panel wants to open the global media library */
+  onOpenMediaLibrary?: (
+    config?: Partial<MediaLibraryConfig> & {
+      selectButtonText?: string;
+    }
+  ) => void;
 }
 
 // Storage key for drawer width
 export const PROJECT_DRAWER_WIDTH_KEY = 'project-drawer-width';
+export const PROJECT_DRAWER_ACTIVE_TAB_KEY = 'project-drawer-active-tab';
+
+type ProjectDrawerTab = 'boards' | 'frames' | 'layers';
+
+function getFileSizeBucket(size: number): string {
+  if (size <= 0) return '0';
+  if (size < 1024 * 1024) return '<1MB';
+  if (size < 10 * 1024 * 1024) return '1-10MB';
+  if (size < 50 * 1024 * 1024) return '10-50MB';
+  if (size < 200 * 1024 * 1024) return '50-200MB';
+  return '200MB+';
+}
+
+function trackProjectDrawerAction(
+  action: string,
+  params: Record<string, unknown> = {}
+): void {
+  analytics.trackUIInteraction({
+    area: 'project_drawer',
+    action,
+    control: 'workspace_manager',
+    source: 'project_drawer',
+    metadata: params,
+  });
+}
+
+const PROJECT_DRAWER_TABS: readonly ProjectDrawerTab[] = [
+  'boards',
+  'frames',
+  'layers',
+];
+
+const isProjectDrawerTab = (value: string | null): value is ProjectDrawerTab =>
+  PROJECT_DRAWER_TABS.includes(value as ProjectDrawerTab);
+
+const getInitialProjectDrawerTab = (): ProjectDrawerTab => {
+  try {
+    const cached = localStorage.getItem(PROJECT_DRAWER_ACTIVE_TAB_KEY);
+    return isProjectDrawerTab(cached) ? cached : 'boards';
+  } catch {
+    return 'boards';
+  }
+};
+
+const saveProjectDrawerTab = (tab: ProjectDrawerTab) => {
+  try {
+    localStorage.setItem(PROJECT_DRAWER_ACTIVE_TAB_KEY, tab);
+  } catch {
+    // 忽略 localStorage 错误
+  }
+};
 
 // Drag data interface
 interface DragData {
@@ -319,9 +383,7 @@ const ProjectDrawerContent: React.FC<{
         // 重命名成功，关闭编辑状态
         setEditingId(null);
       } catch (error: any) {
-        // 重命名失败（如验证错误），保持编辑状态让用户修改
-        // 错误提示已在 handleRename 中显示
-        console.log('Rename failed, keeping edit mode active');
+        void error;
       }
     },
     [editingName, onRename]
@@ -340,7 +402,7 @@ const ProjectDrawerContent: React.FC<{
         { content: '根目录', value: 'root' },
       ];
 
-      const addFolderOptions = (nodes: TreeNode[], prefix: string = '') => {
+      const addFolderOptions = (nodes: TreeNode[], prefix = '') => {
         nodes.forEach((node) => {
           if (node.type === 'folder') {
             const folder = (node as FolderTreeNode).data;
@@ -484,7 +546,7 @@ const ProjectDrawerContent: React.FC<{
   // Render folder node
   const renderFolderNode = (
     node: FolderTreeNode,
-    level: number = 0
+    level = 0
   ): React.ReactNode => {
     const { data: folder, children } = node;
     const isExpanded = folder.isExpanded;
@@ -642,10 +704,7 @@ const ProjectDrawerContent: React.FC<{
   };
 
   // Render board node
-  const renderBoardNode = (
-    node: BoardTreeNode,
-    level: number = 0
-  ): React.ReactNode => {
+  const renderBoardNode = (node: BoardTreeNode, level = 0): React.ReactNode => {
     const { data: board } = node;
     const isActive = board.id === currentBoard?.id;
     const isEditing = editingId === board.id;
@@ -691,8 +750,6 @@ const ProjectDrawerContent: React.FC<{
             handleContextMenu(e, 'board', board.id, board.name, board.folderId)
           }
         >
-          <span className="project-drawer-node__expand"></span>
-
           <span className="project-drawer-node__icon">
             <ArtboardIcon />
           </span>
@@ -975,6 +1032,7 @@ export const ProjectDrawer: React.FC<ProjectDrawerProps> = ({
   onOpenChange,
   onBeforeSwitch,
   onBoardSwitch,
+  onOpenMediaLibrary,
 }) => {
   const {
     isLoading,
@@ -994,8 +1052,8 @@ export const ProjectDrawer: React.FC<ProjectDrawerProps> = ({
     switchBoard,
   } = useWorkspace();
 
-  const [activeTab, setActiveTab] = useState<'boards' | 'frames' | 'layers'>(
-    'boards'
+  const [activeTab, setActiveTab] = useState<ProjectDrawerTab>(
+    getInitialProjectDrawerTab
   );
   const [searchQuery, setSearchQuery] = useState('');
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -1034,6 +1092,28 @@ export const ProjectDrawer: React.FC<ProjectDrawerProps> = ({
   const handleClose = useCallback(() => {
     onOpenChange?.(false);
   }, [onOpenChange]);
+
+  const handleTabChange = useCallback((tab: ProjectDrawerTab) => {
+    setActiveTab(tab);
+    saveProjectDrawerTab(tab);
+  }, []);
+
+  useEffect(() => {
+    const handleOpenPPTEditor = (
+      event: Event | CustomEvent<PPTEditorOpenEventDetail>
+    ) => {
+      const detail = (event as CustomEvent<PPTEditorOpenEventDetail>).detail;
+      if (detail?.viewMode === 'outline' || detail?.viewMode === 'slides') {
+        handleTabChange('frames');
+      } else {
+        handleTabChange('frames');
+      }
+    };
+
+    window.addEventListener(PPT_EDITOR_OPEN_EVENT, handleOpenPPTEditor);
+    return () =>
+      window.removeEventListener(PPT_EDITOR_OPEN_EVENT, handleOpenPPTEditor);
+  }, [handleTabChange]);
 
   // Handle creating new board
   const handleCreateBoard = useCallback(
@@ -1314,8 +1394,12 @@ export const ProjectDrawer: React.FC<ProjectDrawerProps> = ({
   // Handle export
   const handleExport = useCallback(async () => {
     if (isExporting) return;
+    const startedAt = Date.now();
 
     try {
+      trackProjectDrawerAction('workspace_export', {
+        status: 'start',
+      });
       setIsExporting(true);
       setShowExportDialog(true);
       setExportProgress({ progress: 0, message: '准备导出...' });
@@ -1331,9 +1415,24 @@ export const ProjectDrawer: React.FC<ProjectDrawerProps> = ({
         },
       });
       workspaceExportService.downloadZip(blob);
+      trackProjectDrawerAction('workspace_export', {
+        status: 'success',
+        durationMs: Date.now() - startedAt,
+        duration_ms: Date.now() - startedAt,
+        fileSize: blob.size,
+        file_size: blob.size,
+        fileSizeBucket: getFileSizeBucket(blob.size),
+        file_size_bucket: getFileSizeBucket(blob.size),
+      });
       MessagePlugin.success('导出成功');
     } catch (error: any) {
       console.error('[ProjectDrawer] Export failed:', error);
+      trackProjectDrawerAction('workspace_export', {
+        status: 'failed',
+        durationMs: Date.now() - startedAt,
+        duration_ms: Date.now() - startedAt,
+        error: error.message || 'export_failed',
+      });
       MessagePlugin.error(`导出失败: ${error.message}`);
     } finally {
       setIsExporting(false);
@@ -1343,6 +1442,9 @@ export const ProjectDrawer: React.FC<ProjectDrawerProps> = ({
 
   // Handle import button click
   const handleImportClick = useCallback(() => {
+    trackProjectDrawerAction('workspace_import_file_picker', {
+      status: 'start',
+    });
     fileInputRef.current?.click();
   }, []);
 
@@ -1351,16 +1453,32 @@ export const ProjectDrawer: React.FC<ProjectDrawerProps> = ({
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
+      const startedAt = Date.now();
 
       // Reset input
       e.target.value = '';
 
       // Validate file type
       if (!file.name.endsWith('.zip')) {
+        trackProjectDrawerAction('workspace_import', {
+          status: 'failed',
+          reason: 'invalid_file_type',
+          fileSize: file.size,
+          file_size: file.size,
+          fileSizeBucket: getFileSizeBucket(file.size),
+          file_size_bucket: getFileSizeBucket(file.size),
+        });
         MessagePlugin.error('请选择 ZIP 文件');
         return;
       }
 
+      trackProjectDrawerAction('workspace_import', {
+        status: 'start',
+        fileSize: file.size,
+        file_size: file.size,
+        fileSizeBucket: getFileSizeBucket(file.size),
+        file_size_bucket: getFileSizeBucket(file.size),
+      });
       setShowImportDialog(true);
       setIsImporting(true);
       setImportProgress({ progress: 0, message: '准备导入...' });
@@ -1379,12 +1497,46 @@ export const ProjectDrawer: React.FC<ProjectDrawerProps> = ({
         });
 
         if (result.success) {
+          trackProjectDrawerAction('workspace_import', {
+            status: 'success',
+            durationMs: Date.now() - startedAt,
+            duration_ms: Date.now() - startedAt,
+            fileSize: file.size,
+            file_size: file.size,
+            fileSizeBucket: getFileSizeBucket(file.size),
+            file_size_bucket: getFileSizeBucket(file.size),
+            folderCount: result.folders,
+            folder_count: result.folders,
+            boardCount: result.boards,
+            board_count: result.boards,
+            assetCount: result.assets,
+            asset_count: result.assets,
+            errorCount: result.errors.length,
+            error_count: result.errors.length,
+          });
           MessagePlugin.success(
             `导入成功：${result.folders} 个文件夹，${result.boards} 个画板，${result.assets} 个素材`
           );
           // Reload the page to refresh workspace
           void safeReload();
         } else {
+          trackProjectDrawerAction('workspace_import', {
+            status: result.errors.length > 0 ? 'partial' : 'failed',
+            durationMs: Date.now() - startedAt,
+            duration_ms: Date.now() - startedAt,
+            fileSize: file.size,
+            file_size: file.size,
+            fileSizeBucket: getFileSizeBucket(file.size),
+            file_size_bucket: getFileSizeBucket(file.size),
+            folderCount: result.folders,
+            folder_count: result.folders,
+            boardCount: result.boards,
+            board_count: result.boards,
+            assetCount: result.assets,
+            asset_count: result.assets,
+            errorCount: result.errors.length,
+            error_count: result.errors.length,
+          });
           if (result.errors.length > 0) {
             MessagePlugin.warning(
               `导入完成，但有 ${result.errors.length} 个错误`
@@ -1396,6 +1548,16 @@ export const ProjectDrawer: React.FC<ProjectDrawerProps> = ({
         }
       } catch (error: any) {
         console.error('[ProjectDrawer] Import failed:', error);
+        trackProjectDrawerAction('workspace_import', {
+          status: 'failed',
+          durationMs: Date.now() - startedAt,
+          duration_ms: Date.now() - startedAt,
+          fileSize: file.size,
+          file_size: file.size,
+          fileSizeBucket: getFileSizeBucket(file.size),
+          file_size_bucket: getFileSizeBucket(file.size),
+          error: error.message || 'import_failed',
+        });
         MessagePlugin.error(`导入失败: ${error.message}`);
       } finally {
         setIsImporting(false);
@@ -1475,7 +1637,7 @@ export const ProjectDrawer: React.FC<ProjectDrawerProps> = ({
         className={`project-drawer-tabs__tab${
           activeTab === 'boards' ? ' project-drawer-tabs__tab--active' : ''
         }`}
-        onClick={() => setActiveTab('boards')}
+        onClick={() => handleTabChange('boards')}
       >
         <ArtboardIcon />
         画布管理
@@ -1485,17 +1647,17 @@ export const ProjectDrawer: React.FC<ProjectDrawerProps> = ({
         className={`project-drawer-tabs__tab${
           activeTab === 'frames' ? ' project-drawer-tabs__tab--active' : ''
         }`}
-        onClick={() => setActiveTab('frames')}
+        onClick={() => handleTabChange('frames')}
       >
-        <ViewListIcon />
-        Frame 管理
+        <Presentation size={16} strokeWidth={1.8} />
+        PPT 编辑
       </button>
       <button
         type="button"
         className={`project-drawer-tabs__tab${
           activeTab === 'layers' ? ' project-drawer-tabs__tab--active' : ''
         }`}
-        onClick={() => setActiveTab('layers')}
+        onClick={() => handleTabChange('layers')}
       >
         <LayersIcon />
         图层
@@ -1607,7 +1769,11 @@ export const ProjectDrawer: React.FC<ProjectDrawerProps> = ({
         footer={footerSection}
         position="toolbar-right"
         width="narrow"
+        defaultWidth={380}
         storageKey={PROJECT_DRAWER_WIDTH_KEY}
+        pinStorageKey={
+          activeTab === 'frames' ? undefined : DRAWER_PIN_KEYS.project
+        }
         resizable={true}
         className="project-drawer"
         contentClassName="project-drawer__content"
@@ -1616,7 +1782,10 @@ export const ProjectDrawer: React.FC<ProjectDrawerProps> = ({
         {activeTab === 'layers' ? (
           <LayerPanel />
         ) : activeTab === 'frames' ? (
-          <FramePanel />
+          <FramePanel
+            currentBoardName={currentBoard?.name}
+            onOpenMediaLibrary={onOpenMediaLibrary}
+          />
         ) : isLoading ? (
           <div className="project-drawer__loading">加载中...</div>
         ) : filteredTree.length === 0 ? (

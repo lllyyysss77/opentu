@@ -3,7 +3,7 @@ import { ChevronRight, Plus } from 'lucide-react';
 import type { AnalysisRecord } from '../types';
 import type { Task } from '../../../types/task.types';
 import { TaskStatus, TaskType } from '../../../types/task.types';
-import { HoverTip } from '../../shared';
+import { HoverTip, RetryImage } from '../../shared';
 import { VideoPosterPreview } from '../../shared/VideoPosterPreview';
 
 export interface RelatedTasks {
@@ -76,6 +76,12 @@ function taskPromptSummary(task: Task): string {
   return prompt.length > 40 ? `${prompt.slice(0, 40)}…` : prompt;
 }
 
+function sourceIcon(source: AnalysisRecord['source']): string {
+  if (source === 'youtube') return '🔗';
+  if (source === 'prompt') return '✦';
+  return '📁';
+}
+
 interface HistoryRecordCardProps {
   record: AnalysisRecord;
   related?: RelatedTasks;
@@ -110,7 +116,7 @@ export const HistoryRecordCard: React.FC<HistoryRecordCardProps> = ({
     <div className="va-history-item" onClick={() => onSelect(record)}>
       <div className="va-history-header">
         <span className="va-history-source">
-          {record.source === 'youtube' ? '🔗' : '📁'} {record.sourceLabel}
+          {sourceIcon(record.source)} {record.sourceLabel}
         </span>
         <button
           className={`va-star-btn ${record.starred ? 'starred' : ''}`}
@@ -262,10 +268,11 @@ const RelatedTaskItem: React.FC<{
                 }}
               />
             ) : (
-              <img
+              <RetryImage
                 src={thumbnailUrl || primaryUrl}
                 alt=""
-                referrerPolicy="no-referrer"
+                showSkeleton={false}
+                eager
               />
             )}
             {task.type === TaskType.VIDEO && (

@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { HistoryIcon } from 'tdesign-icons-react';
 import { useI18n } from '../../i18n';
-import { HoverTip } from '../shared';
+import { HoverTip } from '../shared/hover';
+import { RetryImage } from '../retry-image';
 import './generation-history.scss';
 
 // 通用历史记录项接口
@@ -26,6 +27,7 @@ export interface VideoHistoryItem extends BaseHistoryItem {
   imageUrl: string; // 视频缩略图URL，适配图片格式
   width: number;    // 视频宽度，适配图片格式
   height: number;   // 视频高度，适配图片格式
+  duration?: number; // 视频时长（秒）
   // 视频特有字段
   previewUrl: string;
   downloadUrl?: string;
@@ -72,21 +74,21 @@ export const GenerationHistory: React.FC<GenerationHistoryProps> = ({
       >
         <div className="history-item-media">
           {item.type === 'image' ? (
-            <img
+            <RetryImage
               src={item.imageUrl}
               alt="History item"
               className="history-item-image"
-              loading="lazy"
+              showSkeleton={false}
             />
           ) : (
             // 视频类型，使用统一的 imageUrl 字段
             item.imageUrl ? (
               <div className="history-video-thumbnail">
-                <img
+                <RetryImage
                   src={item.imageUrl}
                   alt="Video history thumbnail"
                   className="history-item-image"
-                  loading="lazy"
+                  showSkeleton={false}
                 />
               </div>
 
@@ -125,14 +127,18 @@ export const GenerationHistory: React.FC<GenerationHistoryProps> = ({
         zIndex: 10
       }}
     >
-      <button
-        className="history-icon-button"
-        onClick={() => setShowHistoryPopover(!showHistoryPopover)}
-        onMouseEnter={() => setShowHistoryPopover(true)}
-        title={language === 'zh' ? '查看生成历史' : 'View generation history'}
+      <HoverTip
+        content={language === 'zh' ? '查看生成历史' : 'View generation history'}
+        showArrow={false}
       >
-        <HistoryIcon />
-      </button>
+        <button
+          className="history-icon-button"
+          onClick={() => setShowHistoryPopover(!showHistoryPopover)}
+          onMouseEnter={() => setShowHistoryPopover(true)}
+        >
+          <HistoryIcon />
+        </button>
+      </HoverTip>
       {showHistoryPopover && (
         <div
           className="history-popover"

@@ -1,11 +1,10 @@
 import { Dialog, DialogContent } from '../dialog/dialog';
-import MermaidToDrawnix from './mermaid-to-drawnix';
 import { DialogType, useDrawnix } from '../../hooks/use-drawnix';
-import MarkdownToDrawnix from './markdown-to-drawnix';
 import AIImageGeneration from './ai-image-generation';
 import AIVideoGeneration from './ai-video-generation';
 import type { ReferenceImage } from './shared/ReferenceImageUpload';
 import { useI18n } from '../../i18n';
+import type { KnowledgeContextRef } from '../../types/task.types';
 import { useBoard } from '@plait-board/react-board';
 import React, {
   useState,
@@ -43,6 +42,8 @@ import type { VideoModel } from '../../types/video.types';
 
 // 懒加载批量出图组件
 const BatchImageGeneration = lazy(() => import('./batch-image-generation'));
+const MermaidToDrawnix = lazy(() => import('./mermaid-to-drawnix'));
+const MarkdownToDrawnix = lazy(() => import('./markdown-to-drawnix'));
 
 // 图像生成模式类型
 type ImageGenerationMode = 'single' | 'batch';
@@ -198,10 +199,14 @@ const TTDDialogComponent = ({
     initialPrompt: string;
     initialImages: ReferenceImage[];
     selectedElementIds: string[]; // 保存选中元素的IDs
+    initialKnowledgeContextRefs?: KnowledgeContextRef[];
     initialResultUrl?: string; // 初始结果URL,用于显示预览
     initialAspectRatio?: string; // 选中 Frame 时自动匹配的宽高比
     targetFrameId?: string; // 目标 Frame ID（用于将生成结果插入到 Frame 内部）
     targetFrameDimensions?: { width: number; height: number }; // Frame 尺寸
+    pptSlideImage?: boolean;
+    pptSlidePrompt?: string;
+    pptReplaceElementId?: string;
   }>({
     initialPrompt: '',
     initialImages: [],
@@ -341,6 +346,10 @@ const TTDDialogComponent = ({
               imageDialogInitialData.initialImages ||
               imageDialogInitialData.uploadedImages ||
               [],
+            initialKnowledgeContextRefs:
+              imageDialogInitialData.initialKnowledgeContextRefs ||
+              imageDialogInitialData.knowledgeContextRefs ||
+              [],
             selectedElementIds: [],
             initialResultUrl:
               imageDialogInitialData.initialResultUrl ||
@@ -349,6 +358,9 @@ const TTDDialogComponent = ({
             targetFrameId: imageDialogInitialData.targetFrameId,
             targetFrameDimensions:
               imageDialogInitialData.targetFrameDimensions,
+            pptSlideImage: imageDialogInitialData.pptSlideImage,
+            pptSlidePrompt: imageDialogInitialData.pptSlidePrompt,
+            pptReplaceElementId: imageDialogInitialData.pptReplaceElementId,
           });
           if (imageDialogInitialData.initialModel) {
             setSelectedImageModel(imageDialogInitialData.initialModel);
@@ -403,6 +415,7 @@ const TTDDialogComponent = ({
         setAiImageData({
           initialPrompt: processedContent.remainingText || '',
           initialImages: imageItems,
+          initialKnowledgeContextRefs: [],
           selectedElementIds,
           initialAspectRatio: frameAspectRatio,
           targetFrameId: detectedFrameId,
@@ -420,6 +433,7 @@ const TTDDialogComponent = ({
         setAiImageData({
           initialPrompt: selectedContent.text || '',
           initialImages: imageItems,
+          initialKnowledgeContextRefs: [],
           selectedElementIds: [],
         });
       } finally {
@@ -644,7 +658,9 @@ const TTDDialogComponent = ({
         }}
       >
         <DialogContent className="Dialog ttd-dialog" container={container}>
-          <MermaidToDrawnix></MermaidToDrawnix>
+          <Suspense fallback={null}>
+            <MermaidToDrawnix />
+          </Suspense>
         </DialogContent>
       </Dialog>
       <Dialog
@@ -658,11 +674,14 @@ const TTDDialogComponent = ({
         }}
       >
         <DialogContent className="Dialog ttd-dialog" container={container}>
-          <MarkdownToDrawnix></MarkdownToDrawnix>
+          <Suspense fallback={null}>
+            <MarkdownToDrawnix />
+          </Suspense>
         </DialogContent>
       </Dialog>
       {/* AI 图片生成窗口 - 使用 WinBox */}
       <WinBoxWindow
+        key={imageDialogInitialData?.prefillId || 'ai-image-window'}
         id="ai-image-dialog"
         visible={appState.openDialogTypes.has(DialogType.aiImageGeneration)}
         title={
@@ -743,9 +762,19 @@ const TTDDialogComponent = ({
             </Suspense>
           ) : (
             <AIImageGeneration
-              key={imageDialogInitialData?.batchId || 'ai-image-dialog'}
+              key={
+                imageDialogInitialData?.prefillId ||
+                imageDialogInitialData?.batchId ||
+                'ai-image-dialog'
+              }
               initialPrompt={aiImageData.initialPrompt}
               initialImages={aiImageData.initialImages}
+              initialKnowledgeContextRefs={
+                aiImageData.initialKnowledgeContextRefs ||
+                imageDialogInitialData?.initialKnowledgeContextRefs ||
+                imageDialogInitialData?.knowledgeContextRefs ||
+                []
+              }
               selectedElementIds={aiImageData.selectedElementIds}
               initialWidth={
                 imageDialogInitialData?.initialWidth ||
@@ -759,11 +788,15 @@ const TTDDialogComponent = ({
               initialAspectRatio={aiImageData.initialAspectRatio}
               targetFrameId={aiImageData.targetFrameId}
               targetFrameDimensions={aiImageData.targetFrameDimensions}
+              pptSlideImage={aiImageData.pptSlideImage}
+              pptSlidePrompt={aiImageData.pptSlidePrompt}
+              pptReplaceElementId={aiImageData.pptReplaceElementId}
               selectedModel={selectedImageModel}
               selectedModelRef={selectedImageModelRef}
               onModelChange={handleImageModelChange}
               onModelRefChange={handleImageModelRefChange}
               externalBatchId={imageDialogInitialData?.batchId}
+              assetMetadata={imageDialogInitialData?.assetMetadata}
               initialAutoInsertToCanvas={imageDialogInitialData?.autoInsertToCanvas}
               onDraftChange={imageDialogInitialData?.onDraftChange}
             />
@@ -793,6 +826,11 @@ const TTDDialogComponent = ({
             initialPrompt={aiVideoData.initialPrompt}
             initialImage={aiVideoData.initialImage}
             initialImages={aiVideoData.initialImages}
+            initialKnowledgeContextRefs={
+              videoDialogInitialData?.initialKnowledgeContextRefs ||
+              videoDialogInitialData?.knowledgeContextRefs ||
+              []
+            }
             initialDuration={aiVideoData.initialDuration}
             initialModel={aiVideoData.initialModel}
             initialSize={aiVideoData.initialSize}

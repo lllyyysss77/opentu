@@ -12,6 +12,7 @@ import { Freehand, FreehandShape } from './type';
 import { FreehandGenerator } from './freehand.generator';
 import { FreehandSmoother } from './smoother';
 import { BrushShape, getFreehandSettings, FreehandStrokeStyle } from './freehand-settings';
+import { shouldDelegateToHandPointer } from '../hand-mode';
 
 export const withFreehandCreate = (board: PlaitBoard) => {
   const { pointerDown, pointerMove, pointerUp, globalPointerUp } = board;
@@ -35,6 +36,8 @@ export const withFreehandCreate = (board: PlaitBoard) => {
   });
 
   let temporaryElement: Freehand | null = null;
+
+  let isTemporaryHandPanning = false;
 
   // 缓存当前绘制期间的设置，避免频繁读取
   let cachedSettings: {
@@ -153,6 +156,12 @@ export const withFreehandCreate = (board: PlaitBoard) => {
   };
 
   board.pointerDown = (event: PointerEvent) => {
+    if (shouldDelegateToHandPointer(board, event)) {
+      isTemporaryHandPanning = true;
+      pointerDown(event);
+      return;
+    }
+
     const freehandPointers = getFreehandPointers();
     const isFreehandPointer = PlaitBoard.isInPointer(board, freehandPointers);
     if (isFreehandPointer && isDrawingMode(board)) {
@@ -176,6 +185,11 @@ export const withFreehandCreate = (board: PlaitBoard) => {
   };
 
   board.pointerMove = (event: PointerEvent) => {
+    if (isTemporaryHandPanning) {
+      pointerMove(event);
+      return;
+    }
+
     if (isDrawing) {
       const currentScreenPoint: Point = [event.x, event.y];
       if (
@@ -224,11 +238,18 @@ export const withFreehandCreate = (board: PlaitBoard) => {
   };
 
   board.pointerUp = (event: PointerEvent) => {
+    if (isTemporaryHandPanning) {
+      isTemporaryHandPanning = false;
+      pointerUp(event);
+      return;
+    }
+
     complete();
     pointerUp(event);
   };
 
   board.globalPointerUp = (event: PointerEvent) => {
+    isTemporaryHandPanning = false;
     complete(true);
     globalPointerUp(event);
   };

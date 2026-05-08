@@ -26,21 +26,21 @@ export function MediaLibraryModal({
   onClose,
   mode = SelectionMode.BROWSE,
   filterType,
+  filterCategory,
   onSelect,
   selectButtonText,
 }: MediaLibraryModalProps) {
   const {
     assets,
-    loading,
     loadAssets,
     addAsset,
-    filters,
     setFilters,
     selectedAssetId,
     setSelectedAssetId,
     storageStatus,
     checkStorageQuota,
     renameAsset,
+    markAssetAsSubject,
     removeAsset,
   } = useAssets();
 
@@ -51,7 +51,16 @@ export function MediaLibraryModal({
   );
   const [showMobileInspector, setShowMobileInspector] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [isSelecting, setIsSelecting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   // 加载素材和检查配额
   useEffect(() => {
@@ -61,12 +70,15 @@ export function MediaLibraryModal({
     }
   }, [isOpen, loadAssets, checkStorageQuota]);
 
-  // 应用filterType（如果提供）
+  // 应用入口限定筛选（如果提供）
   useEffect(() => {
-    if (isOpen && filterType) {
-      setFilters({ activeType: filterType });
+    if (isOpen && (filterType || filterCategory)) {
+      setFilters({
+        ...(filterType ? { activeType: filterType } : {}),
+        activeCategory: filterCategory || undefined,
+      });
     }
-  }, [isOpen, filterType, setFilters]);
+  }, [isOpen, filterType, filterCategory, setFilters]);
 
   // 同步选中状态
   useEffect(() => {
@@ -104,24 +116,42 @@ export function MediaLibraryModal({
 
   // 处理双击插入
   const handleDoubleClick = useCallback(
-    (asset: Asset) => {
-      if (onSelect) {
-        onSelect(asset);
+    async (asset: Asset) => {
+      if (!onSelect || isSelecting) {
+        return;
+      }
+
+      try {
+        setIsSelecting(true);
+        await onSelect(asset);
         onClose();
+      } finally {
+        if (isMountedRef.current) {
+          setIsSelecting(false);
+        }
       }
     },
-    [onSelect, onClose],
+    [isSelecting, onClose, onSelect],
   );
 
   // 处理"使用"按钮点击
   const handleUseAsset = useCallback(
-    (asset: Asset) => {
-      if (onSelect) {
-        onSelect(asset);
+    async (asset: Asset) => {
+      if (!onSelect || isSelecting) {
+        return;
+      }
+
+      try {
+        setIsSelecting(true);
+        await onSelect(asset);
         onClose();
+      } finally {
+        if (isMountedRef.current) {
+          setIsSelecting(false);
+        }
       }
     },
-    [onSelect, onClose],
+    [isSelecting, onClose, onSelect],
   );
 
   const handleDownloadAsset = useCallback(async (asset: Asset) => {
@@ -270,7 +300,6 @@ export function MediaLibraryModal({
   return (
     <>
       <WinBoxWindow
-        id="media-library"
         visible={isOpen}
         title="素材库"
         onClose={onClose}
@@ -285,13 +314,9 @@ export function MediaLibraryModal({
         resizable={true}
         movable={true}
         modal={false}
-        className="winbox-media-library"
+        className="winbox-media-library media-library-modal"
         data-testid="media-library-modal"
-        headerContent={
-          <div className="media-library-header-content">
-            <MediaLibraryIcon size={18} />
-          </div>
-        }
+        icon={<MediaLibraryIcon size={18} />}
       >
         {/* 隐藏的文件输入 */}
         <input
@@ -308,6 +333,7 @@ export function MediaLibraryModal({
           <div className="media-library-layout__main">
             <MediaLibraryGrid
               filterType={filterType}
+              filterCategory={filterCategory}
               selectedAssetId={localSelectedAssetId}
               onSelectAsset={handleSelectAsset}
               onDoubleClick={handleDoubleClick}
@@ -325,8 +351,10 @@ export function MediaLibraryModal({
                 onRename={renameAsset}
                 onDelete={handleRemoveAsset}
                 onDownload={handleDownloadAsset}
+                onMarkAsSubject={markAssetAsSubject}
                 onSelect={showSelectButton ? handleUseAsset : undefined}
                 showSelectButton={showSelectButton}
+                selecting={isSelecting}
                 selectButtonText={selectButtonText}
               />
             </div>
@@ -350,8 +378,10 @@ export function MediaLibraryModal({
             onRename={renameAsset}
             onDelete={handleRemoveAsset}
             onDownload={handleDownloadAsset}
+            onMarkAsSubject={markAssetAsSubject}
             onSelect={showSelectButton ? handleUseAsset : undefined}
             showSelectButton={showSelectButton}
+            selecting={isSelecting}
             selectButtonText={selectButtonText}
           />
         </Drawer>

@@ -21,6 +21,7 @@ import {
   ThemeColorMode,
   Viewport,
   Transforms,
+  clearSelectedElement,
 } from '@plait/core';
 import { PlaitDrawElement } from '@plait/draw';
 import { isVideoElement } from '../../../plugins/with-video';
@@ -63,6 +64,10 @@ export const OpenFile = () => {
     theme?: PlaitTheme
   ) => {
     board.children = value;
+    board.history.undos = [];
+    board.history.redos = [];
+    clearSelectedElement(board);
+    board.selection = null;
     board.viewport = viewport || { zoom: 1 };
     board.theme = theme || { themeColorMode: ThemeColorMode.default };
     listRender.update(board.children, {
@@ -78,6 +83,9 @@ export const OpenFile = () => {
       data-track="toolbar_click_menu_open"
       onSelect={() => {
         loadFromJSON(board).then((data) => {
+          if (!data) {
+            return;
+          }
           clearAndLoad(data.elements, data.viewport);
         });
       }}

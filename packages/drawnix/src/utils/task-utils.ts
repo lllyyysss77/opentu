@@ -7,6 +7,7 @@
 
 import { Task, TaskStatus, TaskType } from '../types/task.types';
 import { TASK_TIMEOUT } from '../constants/TASK_CONSTANTS';
+import { isAsyncImageModel } from '../constants/model-config';
 import { generateUUID, formatDate } from '@aitu/utils';
 
 /**
@@ -36,6 +37,33 @@ export function isTaskActive(task: Task): boolean {
          task.status === TaskStatus.PROCESSING;
 }
 
+function hasAsyncImageInvocationRoute(
+  task: Pick<Task, 'invocationRoute'>
+): boolean {
+  const binding = task.invocationRoute?.binding;
+  return (
+    task.invocationRoute?.operation === 'image' &&
+    (binding?.protocol === 'openai.async.media' ||
+      binding?.requestSchema === 'openai.async.image.form')
+  );
+}
+
+/**
+ * Checks whether an image task can resume polling after page reload.
+ *
+ * Dynamic provider models may not be listed in ASYNC_IMAGE_MODEL_IDS, so the
+ * persisted invocation binding is the source of truth once a remoteId exists.
+ */
+export function isResumableAsyncImageTask(
+  task: Pick<Task, 'type' | 'remoteId' | 'params' | 'invocationRoute'>
+): boolean {
+  return (
+    task.type === TaskType.IMAGE &&
+    Boolean(task.remoteId) &&
+    (isAsyncImageModel(task.params?.model) || hasAsyncImageInvocationRoute(task))
+  );
+}
+
 /**
  * Checks if a task has exceeded its timeout limit
  * 
@@ -43,8 +71,8 @@ export function isTaskActive(task: Task): boolean {
  * @returns True if the task has timed out, false otherwise
  * 
  * @example
- * const task = { type: 'image', startedAt: Date.now() - 11 * 60 * 1000 };
- * isTaskTimeout(task) // Returns true (started > 10 minutes ago)
+ * const task = { type: 'image', startedAt: Date.now() - 16 * 60 * 1000 };
+ * isTaskTimeout(task) // Returns true (started > 15 minutes ago)
  */
 export function isTaskTimeout(task: Task): boolean {
   if (!task.startedAt || task.status !== TaskStatus.PROCESSING) {
@@ -64,7 +92,7 @@ export function isTaskTimeout(task: Task): boolean {
  * @returns Timeout duration in milliseconds
  * 
  * @example
- * getTaskTimeout('image') // Returns 600000 (10 minutes)
+ * getTaskTimeout('image') // Returns 900000 (15 minutes)
  * getTaskTimeout('video') // Returns 1800000 (30 minutes)
  */
 export function getTaskTimeout(taskType: TaskType): number {

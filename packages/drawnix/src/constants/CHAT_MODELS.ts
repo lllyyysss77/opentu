@@ -45,15 +45,6 @@ export const PROVIDER_NAMES: Record<ModelProvider, string> = {
 export const CHAT_MODELS: ChatModel[] = [
   // OpenAI Models
   {
-    id: 'gpt-image-1.5',
-    name: 'GPT Image 1.5',
-    description: 'OpenAI 最新图片生成模型',
-    provider: ModelProvider.OPENAI,
-    badges: ['NEW', 'Multimodal'],
-    maxTokens: 128000,
-    supportsVision: true,
-  },
-  {
     id: 'gpt-4o-image',
     name: 'GPT-4o Image',
     description: 'OpenAI 多模态图片模型',
@@ -61,6 +52,14 @@ export const CHAT_MODELS: ChatModel[] = [
     badges: ['Multimodal'],
     maxTokens: 128000,
     supportsVision: true,
+  },
+  {
+    id: 'gpt-5.5',
+    name: 'GPT-5.5',
+    description: 'OpenAI 最新旗舰文本模型',
+    provider: ModelProvider.OPENAI,
+    badges: ['NEW'],
+    maxTokens: 128000,
   },
   {
     id: 'gpt-5.2',
@@ -252,7 +251,7 @@ export const CHAT_MODELS: ChatModel[] = [
 ];
 
 /** Default model ID */
-export const DEFAULT_CHAT_MODEL_ID = 'gpt-5.1';
+export const DEFAULT_CHAT_MODEL_ID = 'gpt-5.5';
 
 /** Get model by ID */
 export function getChatModelById(id: string): ChatModel | undefined {

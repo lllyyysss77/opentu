@@ -16,6 +16,8 @@ export interface DrawnixDeferredRuntimeProps {
   value: PlaitElement[];
 }
 
+const FRESH_WORKZONE_GRACE_MS = 60_000;
+
 function runWhenIdle(callback: () => void, timeout: number): () => void {
   const idleCallback = (
     window as Window & {
@@ -89,11 +91,26 @@ export function DrawnixDeferredRuntime({
     }
 
     return runWhenIdle(() => {
-      import('../../services/video-recovery-service').then(
-        ({ initVideoRecoveryService }) => {
+      import('../../services/video-recovery-service')
+        .then((videoRecoveryService) => {
+          const initVideoRecoveryService =
+            videoRecoveryService?.initVideoRecoveryService;
+
+          if (typeof initVideoRecoveryService !== 'function') {
+            console.warn(
+              '[DrawnixDeferredRuntime] Video recovery service unavailable.'
+            );
+            return;
+          }
+
           initVideoRecoveryService(board);
-        }
-      );
+        })
+        .catch((error) => {
+          console.warn(
+            '[DrawnixDeferredRuntime] Failed to load video recovery service:',
+            error
+          );
+        });
     }, 3000);
   }, [board]);
 
@@ -153,6 +170,13 @@ export function DrawnixDeferredRuntime({
         const workzones = WorkZoneTransforms.getAllWorkZones(board);
 
         for (const workzone of workzones) {
+          if (
+            workzone.createdAt &&
+            Date.now() - workzone.createdAt < FRESH_WORKZONE_GRACE_MS
+          ) {
+            continue;
+          }
+
           const currentWorkflow = {
             ...workzone.workflow,
             steps: [...workzone.workflow.steps],
@@ -186,6 +210,7 @@ export function DrawnixDeferredRuntime({
                 'generate_video',
                 'generate_grid_image',
                 'generate_inspiration_board',
+                'generate_ppt',
               ];
               if (
                 step.mcp === 'ai_analyze' ||

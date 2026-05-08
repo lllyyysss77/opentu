@@ -28,6 +28,7 @@ import { KBTagSelector } from './KBTagSelector';
 import { McpToolSelector } from './McpToolSelector';
 import { useCanvasAudioPlayback } from '../../hooks/useCanvasAudioPlayback';
 import { knowledgeBaseService } from '../../services/knowledge-base-service';
+import { exportNoteAsMarkdown } from '../../services/kb-import-export-service';
 import { openMusicPlayerToolAndPlay } from '../../services/tool-launch-service';
 import { createReadingPlaybackSource } from '../../services/reading-playback-source';
 import { buildBlockAssetEmbedMarkdown } from '../../utils/markdown-asset-embeds';
@@ -35,7 +36,7 @@ import './knowledge-base-editor.scss';
 import type { Asset } from '../../types/asset.types';
 import { SelectionMode } from '../../types/asset.types';
 import type { KBNote, KBTag, KBTagWithCount } from '../../types/knowledge-base.types';
-import { HoverTip } from '../shared';
+import { HoverTip } from '../shared/hover';
 
 interface KBNoteEditorProps {
   note: KBNote | null;
@@ -87,12 +88,12 @@ export const KBNoteEditor: React.FC<KBNoteEditorProps> = ({
   const selectedTagIds = useMemo(() => noteTags.map((t) => t.id), [noteTags]);
 
   // MCP 输出类型（仅 Skill 目录下有效）
-  const [outputType, setOutputType] = useState<'image' | 'text' | 'video' | 'ppt' | undefined>(undefined);
+  const [outputType, setOutputType] = useState<'image' | 'text' | 'video' | 'audio' | 'ppt' | undefined>(undefined);
 
   // 笔记切换时同步 outputType
   useEffect(() => {
     if (note && isSkillDirectory) {
-setOutputType((note.metadata?.outputType as 'image' | 'text' | 'video' | 'ppt' | undefined) || undefined);
+setOutputType((note.metadata?.outputType as 'image' | 'text' | 'video' | 'audio' | 'ppt' | undefined) || undefined);
     } else {
       setOutputType(undefined);
     }
@@ -178,7 +179,7 @@ setOutputType((note.metadata?.outputType as 'image' | 'text' | 'video' | 'ppt' |
 
   // 输出类型变化
   const handleOutputTypeChange = useCallback(
-    (newOutputType: 'image' | 'text' | 'video' | 'ppt' | undefined) => {
+    (newOutputType: 'image' | 'text' | 'video' | 'audio' | 'ppt' | undefined) => {
       if (!note) return;
       setOutputType(newOutputType);
       // 立即保存到元数据
@@ -239,7 +240,7 @@ setOutputType((note.metadata?.outputType as 'image' | 'text' | 'video' | 'ppt' |
   // 导出 Markdown
   const handleExportMarkdown = useCallback(async () => {
     if (!note) return;
-    const result = await knowledgeBaseService.exportNoteAsMarkdown(note.id);
+    const result = await exportNoteAsMarkdown(note.id);
     if (!result) return;
 
     const blob = new Blob([result.content], { type: 'text/markdown;charset=utf-8' });
@@ -368,14 +369,18 @@ setOutputType((note.metadata?.outputType as 'image' | 'text' | 'video' | 'ppt' |
       {/* 来源信息区域 - 可折叠 */}
       {hasSourceInfo && (
         <div className={`kb-note-editor__metadata-section ${metadataCollapsed ? 'kb-note-editor__metadata-section--collapsed' : ''}`}>
-          <button
-            className="kb-note-editor__metadata-toggle"
-            onClick={() => setMetadataCollapsed(!metadataCollapsed)}
-            title={metadataCollapsed ? '展开来源信息' : '收起来源信息'}
+          <HoverTip
+            content={metadataCollapsed ? '展开来源信息' : '收起来源信息'}
+            showArrow={false}
           >
-            {metadataCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
-            <span>来源信息</span>
-          </button>
+            <button
+              className="kb-note-editor__metadata-toggle"
+              onClick={() => setMetadataCollapsed(!metadataCollapsed)}
+            >
+              {metadataCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+              <span>来源信息</span>
+            </button>
+          </HoverTip>
 
           {/* 折叠时显示简要信息 */}
           {metadataCollapsed && (
@@ -387,17 +392,18 @@ setOutputType((note.metadata?.outputType as 'image' | 'text' | 'video' | 'ppt' |
                 </span>
               )}
               {metadata.sourceUrl && (
-                <a
-                  href={metadata.sourceUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="kb-note-editor__metadata-collapsed-link"
-                  onClick={(e) => e.stopPropagation()}
-                  title={metadata.sourceUrl}
-                >
-                  <ExternalLink size={10} />
-                  <span>{metadata.domain || metadata.sourceUrl}</span>
-                </a>
+                <HoverTip content={metadata.sourceUrl} showArrow={false}>
+                  <a
+                    href={metadata.sourceUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="kb-note-editor__metadata-collapsed-link"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <ExternalLink size={10} />
+                    <span>{metadata.domain || metadata.sourceUrl}</span>
+                  </a>
+                </HoverTip>
               )}
             </div>
           )}

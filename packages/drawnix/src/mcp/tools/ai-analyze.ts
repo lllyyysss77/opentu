@@ -10,11 +10,25 @@
  * - onUpdateStep: 更新步骤状态
  */
 
-import type { MCPTool, MCPResult, MCPExecuteOptions, AgentExecutionContext, WorkflowStepInfo, AgentExecuteOptions } from '../types';
-import { getModelType, IMAGE_MODELS } from '../types';
+import type {
+  MCPTool,
+  MCPResult,
+  MCPExecuteOptions,
+  AgentExecutionContext,
+  WorkflowStepInfo,
+  AgentExecuteOptions,
+} from '../types';
 import { agentExecutor } from '../../services/agent';
 import { geminiSettings, type ModelRef } from '../../utils/settings-manager';
 import type { GeminiMessagePart } from '../../utils/gemini-api/types';
+import { applyMediaModelDefaultsToArgs } from '../../services/agent/media-model-routing';
+import {
+  getDefaultAudioModel,
+  getDefaultImageModel,
+  getDefaultVideoModel,
+} from '../../constants/model-config';
+import type { KnowledgeContextRef } from '../../types/task.types';
+import { normalizeKnowledgeContextRefs } from '../../services/generation-context-service';
 
 /**
  * AI 分析参数
@@ -35,6 +49,8 @@ export interface AIAnalyzeParams {
     role: 'system' | 'user' | 'assistant';
     content: string | GeminiMessagePart[];
   }>;
+  /** 本次 Agent 分析使用的知识库笔记轻量引用 */
+  knowledgeContextRefs?: KnowledgeContextRef[];
 }
 
 /**
@@ -79,7 +95,12 @@ export const aiAnalyzeTool: MCPTool = {
       },
       messages: {
         type: 'array',
-        description: '预构建的消息数组，传入时直接使用，不再生成默认系统提示词（用于 Skill 角色扮演/精准工具注入）',
+        description:
+          '预构建的消息数组，传入时直接使用，不再生成默认系统提示词（用于 Skill 角色扮演/精准工具注入）',
+      },
+      knowledgeContextRefs: {
+        type: 'array',
+        description: '本次 Agent 分析使用的知识库笔记轻量引用',
       },
     },
     required: ['context'],
@@ -87,8 +108,11 @@ export const aiAnalyzeTool: MCPTool = {
 
   supportedModes: ['async'],
 
-  execute: async (params: Record<string, unknown>, options?: MCPExecuteOptions): Promise<MCPResult> => {
-    const { context, textModel, messages, modelRef } =
+  execute: async (
+    params: Record<string, unknown>,
+    options?: MCPExecuteOptions
+  ): Promise<MCPResult> => {
+    const { context, textModel, messages, modelRef, knowledgeContextRefs } =
       params as unknown as AIAnalyzeParams;
 
     if (!context) {
@@ -101,17 +125,20 @@ export const aiAnalyzeTool: MCPTool = {
 
     const startTime = Date.now();
     const generatedSteps: WorkflowStepInfo[] = [];
+    const normalizedKnowledgeContextRefs = normalizeKnowledgeContextRefs(
+      knowledgeContextRefs || context.knowledgeContextRefs
+    );
+    const executionContext: AgentExecutionContext = {
+      ...context,
+      knowledgeContextRefs:
+        normalizedKnowledgeContextRefs.length > 0
+          ? normalizedKnowledgeContextRefs
+          : undefined,
+    };
 
     try {
-      console.log('[AIAnalyzeTool] 开始分析:', {
-        userInstruction: context.userInstruction?.substring(0, 50),
-        model: context.model,
-        textModel,
-        hasCustomMessages: !!messages,
-      });
-
-      const result = await agentExecutor.execute(context, {
-        model: textModel || context.model.id,
+      const result = await agentExecutor.execute(executionContext, {
+        model: textModel || executionContext.model.id,
         modelRef: modelRef || null,
         messages: messages as AgentExecuteOptions['messages'],
         onChunk: (chunk) => {
@@ -123,68 +150,41 @@ export const aiAnalyzeTool: MCPTool = {
           // console.log('[AIAnalyzeTool] Tool call:', toolCall.name);
 
           // 注入模型参数到工具参数中
-          const toolArgs = { ...toolCall.arguments };
-          const generationTools = ['generate_image', 'generate_video', 'generate_grid_image', 'generate_photo_wall'];
-          if (generationTools.includes(toolCall.name)) {
-            const specifiedModel = toolArgs.model as string | undefined;
-            const isVideoTool = toolCall.name === 'generate_video';
-            const settings = geminiSettings.get();
-            const contextModelType = context.model?.type;
-            const contextModelId = context.model?.id;
-            const preferredContextModelId =
-              contextModelType === (isVideoTool ? 'video' : 'image')
-                ? contextModelId
-                : undefined;
-            const preferredContextModelRef =
-              preferredContextModelId && modelRef?.modelId === preferredContextModelId
-                ? modelRef
-                : null;
-
-            // 获取用户设置的默认模型
-            const defaultImageModel = settings.imageModelName || IMAGE_MODELS[0]?.id || 'gemini-2.5-flash-image-vip';
-            const defaultVideoModel = settings.videoModelName || 'veo3';
-            const fallbackModel = preferredContextModelId || (isVideoTool ? defaultVideoModel : defaultImageModel);
-
-            if (specifiedModel) {
-              // AI 指定了模型，检查类型是否匹配
-              const modelType = getModelType(specifiedModel);
-              const needsCorrection = isVideoTool
-                ? modelType !== 'video'
-                : modelType !== 'image';
-
-              if (needsCorrection) {
-                toolArgs.model = fallbackModel;
-                if (
-                  preferredContextModelRef &&
-                  preferredContextModelRef.modelId === fallbackModel
-                ) {
-                  toolArgs.modelRef = preferredContextModelRef;
-                } else {
-                  delete toolArgs.modelRef;
-                }
-              } else if (
-                preferredContextModelRef &&
-                preferredContextModelRef.modelId === specifiedModel
-              ) {
-                toolArgs.modelRef = preferredContextModelRef;
-              }
-            } else {
-              // AI 没有指定模型，优先沿用当前上下文显式模型，否则回退默认模型
-              toolArgs.model = fallbackModel;
-              if (
-                preferredContextModelRef &&
-                preferredContextModelRef.modelId === fallbackModel
-              ) {
-                toolArgs.modelRef = preferredContextModelRef;
-              } else {
-                delete toolArgs.modelRef;
-              }
+          const settings = geminiSettings.get();
+          const toolArgs = applyMediaModelDefaultsToArgs(
+            toolCall.name,
+            { ...toolCall.arguments },
+            {
+              defaultModels: executionContext.defaultModels,
+              defaultModelRefs: executionContext.defaultModelRefs,
+              contextModel: executionContext.model,
+              contextModelRef: modelRef || null,
+              fallbackModels: {
+                image: settings.imageModelName || getDefaultImageModel(),
+                video: settings.videoModelName || getDefaultVideoModel(),
+                audio: settings.audioModelName || getDefaultAudioModel(),
+              },
             }
+          );
+          if (
+            normalizedKnowledgeContextRefs.length > 0 &&
+            [
+              'generate_image',
+              'generate_video',
+              'generate_long_video',
+              'generate_audio',
+              'generate_text',
+            ].includes(toolCall.name) &&
+            !toolArgs.knowledgeContextRefs
+          ) {
+            toolArgs.knowledgeContextRefs = normalizedKnowledgeContextRefs;
           }
 
           // 创建新的工作流步骤
           const newStep: WorkflowStepInfo = {
-            id: `step-tool-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+            id: `step-tool-${Date.now()}-${Math.random()
+              .toString(36)
+              .substring(2, 6)}`,
             mcp: toolCall.name,
             args: toolArgs,
             description: getToolDescription(toolCall.name, toolArgs),
@@ -257,14 +257,33 @@ export const aiAnalyzeTool: MCPTool = {
 /**
  * 根据工具名称生成描述
  */
-function getToolDescription(toolName: string, args?: Record<string, unknown>): string {
+function getToolDescription(
+  toolName: string,
+  args?: Record<string, unknown>
+): string {
   switch (toolName) {
     case 'generate_image':
-      return `生成图片: ${((args?.prompt as string) || '').substring(0, 30)}...`;
+      return `生成图片: ${((args?.prompt as string) || '').substring(
+        0,
+        30
+      )}...`;
     case 'generate_video':
-      return `生成视频: ${((args?.prompt as string) || '').substring(0, 30)}...`;
+      return `生成视频: ${((args?.prompt as string) || '').substring(
+        0,
+        30
+      )}...`;
+    case 'generate_audio':
+      return `生成音频: ${((args?.prompt as string) || '').substring(
+        0,
+        30
+      )}...`;
+    case 'generate_ppt':
+      return `生成PPT: ${((args?.topic as string) || '').substring(0, 30)}...`;
     case 'generate_grid_image':
-      return `生成宫格图: ${((args?.theme as string) || '').substring(0, 30)}...`;
+      return `生成宫格图: ${((args?.theme as string) || '').substring(
+        0,
+        30
+      )}...`;
     case 'insert_svg':
       return `插入SVG矢量图`;
     case 'canvas_insertion':
@@ -287,7 +306,9 @@ export async function analyzeWithAI(
     options
   );
 
-  const data = result.data as { generatedSteps?: WorkflowStepInfo[]; response?: string } | undefined;
+  const data = result.data as
+    | { generatedSteps?: WorkflowStepInfo[]; response?: string }
+    | undefined;
 
   return {
     success: result.success,

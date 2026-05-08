@@ -8,17 +8,48 @@
 @import '../../styles/z-index.scss';
 
 // Color variables
-$orange-primary: #F59E0B;
-$orange-dark: #D97706;
-$gray-light: #F3F4F6;
-$gray-medium: #9CA3AF;
-$gray-dark: #6B7280;
-$text-dark: #1F2937;
-$vip-color: #E91E63;
+$orange-primary: #f59e0b;
+$orange-dark: #d97706;
+$gray-light: #f3f4f6;
+$gray-medium: #9ca3af;
+$gray-dark: #6b7280;
+$text-dark: #1f2937;
+$vip-color: #e91e63;
+$ai-input-font-size: 15px;
+$ai-input-line-height-ratio: 1.5;
+$ai-input-line-height: $ai-input-font-size * $ai-input-line-height-ratio;
+$ai-input-collapsed-vertical-padding: 6px;
+$ai-input-vertical-padding: 12px;
+$ai-input-collapsed-min-height: $ai-input-line-height +
+  $ai-input-collapsed-vertical-padding;
+$ai-input-expanded-min-height: $ai-input-line-height * 4 +
+  $ai-input-vertical-padding;
+$ai-input-expanded-max-height: $ai-input-line-height * 6 +
+  $ai-input-vertical-padding;
+$ai-input-mobile-font-size: 14px;
+$ai-input-mobile-line-height: $ai-input-mobile-font-size *
+  $ai-input-line-height-ratio;
+$ai-input-mobile-collapsed-vertical-padding: 4px;
+$ai-input-mobile-vertical-padding: 8px;
+$ai-input-mobile-collapsed-min-height: $ai-input-mobile-line-height +
+  $ai-input-mobile-collapsed-vertical-padding;
+$ai-input-mobile-expanded-min-height: $ai-input-mobile-line-height * 4 +
+  $ai-input-mobile-vertical-padding;
+$ai-input-mobile-expanded-max-height: $ai-input-mobile-line-height * 6 +
+  $ai-input-mobile-vertical-padding;
+$ai-input-small-font-size: 13px;
+$ai-input-small-line-height: $ai-input-small-font-size *
+  $ai-input-line-height-ratio;
+$ai-input-small-collapsed-min-height: $ai-input-small-line-height +
+  $ai-input-mobile-collapsed-vertical-padding;
+$ai-input-small-expanded-min-height: $ai-input-small-line-height * 4 +
+  $ai-input-mobile-vertical-padding;
+$ai-input-small-expanded-max-height: $ai-input-small-line-height * 6 +
+  $ai-input-mobile-vertical-padding;
 
 .ai-input-bar {
   position: fixed;
-  bottom: 24px;
+  bottom: 12px;
   left: 50%;
   transform: translateX(-50%);
   z-index: $z-canvas-internal;
@@ -107,7 +138,7 @@ $vip-color: #E91E63;
     }
 
     &--video {
-      border: 2px solid #3B82F6;
+      border: 2px solid #3b82f6;
     }
 
     &--text {
@@ -116,8 +147,8 @@ $vip-color: #E91E63;
       min-width: 64px;
       max-width: 180px; // 增大文本框宽度
       padding: 8px 12px;
-      background: #EFF6FF;
-      border: 1px solid #BFDBFE;
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
       display: flex;
       align-items: center;
       justify-content: flex-start;
@@ -194,7 +225,7 @@ $vip-color: #E91E63;
     gap: 6px;
     padding-bottom: 8px;
     border-bottom: 1px solid $gray-light;
-    color: #3B82F6;
+    color: #3b82f6;
     font-size: 14px;
     font-weight: 500;
   }
@@ -248,7 +279,7 @@ $vip-color: #E91E63;
   }
 
   &__text-icon {
-    color: #3B82F6;
+    color: #3b82f6;
     flex-shrink: 0;
   }
 
@@ -324,7 +355,7 @@ $vip-color: #E91E63;
     width: 100%;
     background: var(--island-bg-color, #fff);
     border-radius: 24px;
-    padding: 8px 12px;
+    padding: 6px 10px;
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
     transition: all 0.2s ease;
 
@@ -349,34 +380,49 @@ $vip-color: #E91E63;
   &__bottom-bar {
     display: flex;
     align-items: center;
-    gap: 4px; // 减小间距防止换行
+    gap: 8px;
     width: 100%;
     flex-shrink: 0;
-    flex-wrap: nowrap; // 强制不换行
-    overflow-x: auto; // 如果实在太长允许滚动（虽然最好不要）
-    scrollbar-width: none; // 隐藏滚动条
-    &::-webkit-scrollbar { display: none; }
+    flex-wrap: nowrap;
   }
 
-  // 底部栏中间的弹性空间
-  &__bottom-spacer {
-    flex: 1;
-    min-width: 8px; // 最小间距
+  &__bottom-start,
+  &__bottom-controls {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  &__bottom-start {
+    flex: 0 0 auto;
+  }
+
+  &__bottom-controls {
+    flex: 1 1 auto;
+    justify-content: flex-end;
+    overflow: hidden;
   }
 
   // 输入区域 - 向上扩展
   &__input-area {
-    position: relative; // 用于 PromptHistoryPopover 绝对定位
+    position: relative;
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    margin-bottom: 8px;
+    gap: 6px;
+    margin-bottom: 4px;
     width: 100%; // 确保输入区域占满宽度
     transition: max-height 0.2s ease;
 
     // 展开状态
     &--expanded {
       max-height: 200px; // 最大高度限制
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    &--long-text {
+      max-height: clamp(320px, 65vh, 680px);
     }
   }
 
@@ -386,6 +432,14 @@ $vip-color: #E91E63;
     align-items: center;
     gap: 4px;
     flex-shrink: 0;
+  }
+
+  &__prompt-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 4px;
+    width: 100%;
+    min-width: 0;
   }
 
   // Generation type toggle (image/video)
@@ -539,6 +593,39 @@ $vip-color: #E91E63;
     width: 100%;
   }
 
+  &__prompt-expand-btn {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    z-index: 3;
+    width: 26px;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: $gray-medium;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+
+    svg {
+      stroke-width: 2;
+    }
+
+    &:hover:not(:disabled),
+    &--active {
+      background: rgba(245, 158, 11, 0.12);
+      color: $orange-primary;
+    }
+
+    &:disabled {
+      cursor: not-allowed;
+      opacity: 0.5;
+    }
+  }
+
   // 高亮背景层 - 在 textarea 下方显示模型标签的背景色块
   // 新方案：不改变文字颜色，只添加背景高亮，避免光标偏移问题
   &__highlight-layer {
@@ -548,9 +635,9 @@ $vip-color: #E91E63;
     right: 0;
     bottom: 0;
     padding: 6px 12px;
-    padding-right: 20px;
-    font-size: 15px;
-    line-height: 1.5;
+    padding-right: 32px;
+    font-size: $ai-input-font-size;
+    line-height: $ai-input-line-height-ratio;
     letter-spacing: normal;
     word-spacing: normal;
     white-space: pre-wrap;
@@ -558,7 +645,8 @@ $vip-color: #E91E63;
     word-break: break-word;
     overflow-wrap: break-word;
     pointer-events: none;
-    font-family: 'PingFang SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-family: 'PingFang SC', -apple-system, BlinkMacSystemFont, 'Segoe UI',
+      sans-serif;
     overflow: hidden;
     z-index: 1;
     box-sizing: border-box;
@@ -607,8 +695,8 @@ $vip-color: #E91E63;
     width: 100%;
     border: none;
     background: transparent;
-    font-size: 15px;
-    line-height: 1.5;
+    font-size: $ai-input-font-size;
+    line-height: $ai-input-line-height-ratio;
     letter-spacing: normal;
     word-spacing: normal;
     text-rendering: auto;
@@ -616,14 +704,16 @@ $vip-color: #E91E63;
     color: $text-dark;
     resize: none;
     outline: none;
-    min-height: 24px;
-    max-height: 120px;
-    overflow-y: auto;
-    padding: 6px 12px;
-    padding-right: 20px;
+    min-height: $ai-input-collapsed-min-height;
+    max-height: $ai-input-expanded-max-height;
+    overflow-y: hidden;
+    padding: 3px 12px;
+    padding-right: 32px;
     margin: 0;
-    font-family: 'PingFang SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    transition: all 0.2s ease;
+    font-family: 'PingFang SC', -apple-system, BlinkMacSystemFont, 'Segoe UI',
+      sans-serif;
+    transition: height 0.2s ease, min-height 0.2s ease, max-height 0.2s ease,
+      padding 0.2s ease;
     position: relative;
     z-index: 2;
     box-sizing: border-box;
@@ -656,24 +746,31 @@ $vip-color: #E91E63;
 
     &:focus {
       outline: none;
-      border: none!important;
+      border: none !important;
       box-shadow: none;
     }
 
     &:hover {
       outline: none;
-      border: none!important;
+      border: none !important;
       box-shadow: none;
     }
-    
+
     &:disabled {
       opacity: 0.6;
     }
 
-    // When focused, expand height smoothly (controlled by parent container max-height)
+    // Focused input starts at 4 rows and grows to 6 rows via JS auto-resize.
     &--focused {
-      min-height: 80px; // 约 3-4 行
-      max-height: 160px; // 最大高度限制
+      padding-top: 6px;
+      padding-bottom: 6px;
+      min-height: $ai-input-expanded-min-height;
+      max-height: $ai-input-expanded-max-height;
+    }
+
+    &--long-text {
+      min-height: $ai-input-line-height * 8 + $ai-input-vertical-padding;
+      max-height: clamp(320px, 65vh, 680px);
     }
   }
 
@@ -707,11 +804,36 @@ $vip-color: #E91E63;
     @extend .ai-input-bar__upload-btn;
   }
 
+  &__knowledge-selector {
+    flex: 0 0 auto;
+
+    .knowledge-note-context-selector__trigger {
+      width: 32px;
+      min-width: 32px;
+      height: 32px;
+      min-height: 32px;
+      border-radius: 8px;
+    }
+
+    .knowledge-note-context-selector__dropdown {
+      top: auto;
+      bottom: calc(100% + 8px);
+      left: 0;
+      width: min(360px, calc(100vw - 32px));
+      max-width: calc(100vw - 32px);
+    }
+
+    .knowledge-note-context-selector__hover-summary {
+      left: 0;
+    }
+  }
+
   // Generation Type Dropdown
   .generation-type-dropdown {
     position: relative;
     display: inline-flex;
-    flex-shrink: 0;
+    flex: 0 1 auto;
+    min-width: 0;
 
     &__trigger {
       display: flex;
@@ -815,7 +937,8 @@ $vip-color: #E91E63;
   .skill-dropdown {
     position: relative;
     display: inline-flex;
-    flex-shrink: 0;
+    flex: 0 1 auto;
+    min-width: 0;
 
     &__trigger {
       display: flex;
@@ -868,7 +991,7 @@ $vip-color: #E91E63;
   .count-dropdown {
     position: relative;
     display: inline-flex;
-    flex-shrink: 0;
+    flex: 0 0 auto;
 
     &__trigger {
       display: flex;
@@ -966,7 +1089,8 @@ $vip-color: #E91E63;
     color: $gray-medium;
     cursor: not-allowed;
     transition: all 0.2s ease;
-    flex-shrink: 0;
+    flex: 0 0 40px;
+    min-width: 40px;
 
     &.active {
       background: $orange-primary;
@@ -984,6 +1108,16 @@ $vip-color: #E91E63;
       background: rgba(245, 158, 11, 0.6);
       cursor: wait;
       animation: pulse 1.5s infinite;
+    }
+
+    &--guide {
+      box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0.55),
+        0 2px 8px rgba(245, 158, 11, 0.4);
+      animation: sendGuidePulse 1.4s ease-in-out infinite;
+
+      &.active:hover {
+        transform: none;
+      }
     }
 
     &:disabled {
@@ -1010,6 +1144,18 @@ $vip-color: #E91E63;
   }
   to {
     opacity: 1;
+  }
+}
+
+@keyframes sendGuidePulse {
+  0%,
+  100% {
+    box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0.55),
+      0 2px 8px rgba(245, 158, 11, 0.4);
+  }
+  50% {
+    box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0.82),
+      0 6px 16px rgba(245, 158, 11, 0.45);
   }
 }
 
@@ -1050,7 +1196,7 @@ $vip-color: #E91E63;
 
     &__hover-text-header {
       border-bottom-color: var(--color-border, #444);
-      color: #60A5FA; // Lighter blue for dark mode
+      color: #60a5fa; // Lighter blue for dark mode
     }
 
     &__hover-text-content {
@@ -1129,10 +1275,30 @@ $vip-color: #E91E63;
       }
     }
 
-    .generation-type-dropdown, .count-dropdown, .skill-dropdown {
+    &__knowledge-selector {
+      .knowledge-note-context-selector__trigger {
+        color: var(--color-gray-50, #999);
+
+        &:hover,
+        &:focus-visible {
+          color: $orange-primary;
+          background: rgba($orange-primary, 0.15);
+        }
+      }
+
+      &.knowledge-note-context-selector--selected
+        .knowledge-note-context-selector__trigger {
+        color: $orange-primary;
+        background: rgba($orange-primary, 0.18);
+      }
+    }
+
+    .generation-type-dropdown,
+    .count-dropdown,
+    .skill-dropdown {
       &__trigger {
         color: var(--color-gray-20, #ccc);
-        
+
         &:hover {
           background: rgba($orange-primary, 0.15);
         }
@@ -1142,7 +1308,8 @@ $vip-color: #E91E63;
         }
       }
 
-      &__icon-prefix, &__plus-icon {
+      &__icon-prefix,
+      &__plus-icon {
         color: $orange-primary;
       }
 
@@ -1354,7 +1521,7 @@ $vip-color: #E91E63;
 
     &:hover {
       background: rgba(239, 68, 68, 0.1);
-      color: #EF4444;
+      color: #ef4444;
     }
   }
 }
@@ -1415,7 +1582,7 @@ $vip-color: #E91E63;
 
       &:hover {
         background: rgba(239, 68, 68, 0.15);
-        color: #F87171;
+        color: #f87171;
       }
     }
   }
@@ -1435,7 +1602,7 @@ $vip-color: #E91E63;
 // 平板及以下 (max-width: 768px) - 调整布局
 @media (max-width: 768px) {
   .ai-input-bar {
-    bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
     padding: 0 12px;
     max-width: calc(100% - 80px); // 给左侧工具栏留空间
     left: calc(50% + 30px); // 稍微右偏以避开工具栏
@@ -1463,7 +1630,7 @@ $vip-color: #E91E63;
 // 移动端竖屏 (max-width: 640px) - 全宽布局
 @media (max-width: 640px) {
   .ai-input-bar {
-    bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
     padding: 0 8px;
     padding-left: calc(env(safe-area-inset-left, 0px) + 8px);
     padding-right: calc(env(safe-area-inset-right, 0px) + 8px);
@@ -1497,11 +1664,12 @@ $vip-color: #E91E63;
     }
 
     &__bottom-bar {
-      gap: 2px;
+      gap: 4px;
     }
 
-    &__bottom-spacer {
-      min-width: 4px;
+    &__bottom-start,
+    &__bottom-controls {
+      gap: 2px;
     }
 
     &__type-btn {
@@ -1522,21 +1690,43 @@ $vip-color: #E91E63;
       min-width: 36px;
     }
 
+    &__knowledge-selector .knowledge-note-context-selector__trigger {
+      width: 36px;
+      height: 36px;
+      min-width: 36px;
+    }
+
     &__highlight-layer {
       font-size: 14px;
       padding: 4px 8px;
+      padding-right: 36px;
     }
 
     &__input {
-      font-size: 14px;
-      padding: 4px 8px;
-      min-height: 20px;
+      font-size: $ai-input-mobile-font-size;
+      padding: 2px 8px;
+      padding-right: 36px;
+      min-height: $ai-input-mobile-collapsed-min-height;
+
+      &--focused {
+        padding-top: 4px;
+        padding-bottom: 4px;
+        min-height: $ai-input-mobile-expanded-min-height;
+        max-height: $ai-input-mobile-expanded-max-height;
+      }
+
+      &--long-text {
+        min-height: $ai-input-mobile-line-height * 8 +
+          $ai-input-mobile-vertical-padding;
+        max-height: clamp(320px, 65vh, 680px);
+      }
     }
 
     &__send-btn {
       width: 36px;
       height: 36px;
       min-width: 36px;
+      flex-basis: 36px;
     }
 
     // 下拉菜单调整
@@ -1551,6 +1741,12 @@ $vip-color: #E91E63;
       &__menu {
         max-width: calc(100vw - 32px);
       }
+    }
+
+    .model-dropdown__trigger--minimal,
+    .parameters-dropdown__trigger {
+      padding: 4px 6px;
+      font-size: 12px;
     }
   }
 
@@ -1572,7 +1768,7 @@ $vip-color: #E91E63;
 // 小屏移动端 (max-width: 480px) - 更紧凑
 @media (max-width: 480px) {
   .ai-input-bar {
-    bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 6px);
     padding: 0 6px;
     padding-left: calc(env(safe-area-inset-left, 0px) + 6px);
     padding-right: calc(env(safe-area-inset-right, 0px) + 6px);
@@ -1590,19 +1786,43 @@ $vip-color: #E91E63;
       min-width: 34px;
     }
 
+    &__send-btn {
+      flex-basis: 34px;
+    }
+
+    &__knowledge-selector .knowledge-note-context-selector__trigger {
+      width: 34px;
+      height: 34px;
+      min-width: 34px;
+    }
+
     &__model-btn {
       padding: 4px 6px;
       font-size: 12px;
     }
 
     &__input {
-      font-size: 13px;
+      font-size: $ai-input-small-font-size;
+      min-height: $ai-input-small-collapsed-min-height;
+
+      &--focused {
+        min-height: $ai-input-small-expanded-min-height;
+        max-height: $ai-input-small-expanded-max-height;
+      }
+
+      &--long-text {
+        min-height: $ai-input-small-line-height * 8 +
+          $ai-input-mobile-vertical-padding;
+        max-height: clamp(320px, 65vh, 680px);
+      }
     }
 
     // 隐藏一些次要元素节省空间
     .generation-type-dropdown__label,
     .count-dropdown__label,
-    .skill-dropdown__label {
+    .skill-dropdown__label,
+    .parameters-dropdown__label,
+    .model-dropdown__code {
       display: none;
     }
   }
@@ -1618,7 +1838,7 @@ $vip-color: #E91E63;
     max-width: 400px;
     max-height: 320px;
     background: var(--island-bg-color, #fff);
-    border: 1px solid #E5E7EB;
+    border: 1px solid #e5e7eb;
     border-radius: 12px;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
     overflow: hidden;
@@ -1631,8 +1851,8 @@ $vip-color: #E91E63;
     font-size: 12px;
     font-weight: 500;
     color: $gray-dark;
-    border-bottom: 1px solid #F3F4F6;
-    background: #FAFAFA;
+    border-bottom: 1px solid #f3f4f6;
+    background: #fafafa;
   }
 
   &__at-suggestion-list {
@@ -1650,7 +1870,7 @@ $vip-color: #E91E63;
     }
 
     &::-webkit-scrollbar-thumb {
-      background: #E5E7EB;
+      background: #e5e7eb;
       border-radius: 2px;
     }
   }
@@ -1831,7 +2051,7 @@ $vip-color: #E91E63;
   font-weight: 500;
   color: $gray-dark;
   border-bottom: 1px solid $gray-light;
-  background: #FAFAFA;
+  background: #fafafa;
 }
 
 .generation-type-dropdown__list {
@@ -1906,7 +2126,7 @@ $vip-color: #E91E63;
   font-weight: 500;
   color: $gray-dark;
   border-bottom: 1px solid $gray-light;
-  background: #FAFAFA;
+  background: #fafafa;
 }
 
 .skill-dropdown__list {
@@ -2032,7 +2252,7 @@ $vip-color: #E91E63;
   font-weight: 500;
   color: $gray-dark;
   border-bottom: 1px solid $gray-light;
-  background: #FAFAFA;
+  background: #fafafa;
 }
 
 .count-dropdown__list {

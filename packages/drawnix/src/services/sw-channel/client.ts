@@ -1,6 +1,6 @@
 /**
  * Service Worker 双工通信客户端
- * 
+ *
  * 基于 postmessage-duplex 库实现的应用层客户端
  * 提供请求-响应和事件订阅功能
  */
@@ -20,10 +20,17 @@ import { callWithDefault, callOperation } from './rpc-helpers';
 export interface SWChannelEventHandlers {
   // Cache events
   onCacheImageCached?: (event: import('./types').CacheImageCachedEvent) => void;
+  onCacheImageCacheFailed?: (
+    event: import('./types').CacheImageCacheFailedEvent
+  ) => void;
   onCacheDeleted?: (event: import('./types').CacheDeletedEvent) => void;
-  onCacheQuotaWarning?: (event: import('./types').CacheQuotaWarningEvent) => void;
+  onCacheQuotaWarning?: (
+    event: import('./types').CacheQuotaWarningEvent
+  ) => void;
   // SW status events
-  onSWNewVersionReady?: (event: import('./types').SWNewVersionReadyEvent) => void;
+  onSWNewVersionReady?: (
+    event: import('./types').SWNewVersionReadyEvent
+  ) => void;
   onSWActivated?: (event: import('./types').SWActivatedEvent) => void;
   onSWUpdated?: (event: import('./types').SWUpdatedEvent) => void;
 }
@@ -50,6 +57,125 @@ export class SWChannelClient {
   // eslint-disable-next-line @typescript-eslint/no-empty-function
   private constructor() {}
 
+  private log(...args: unknown[]): void {}
+
+  private async collectSWDebugState(): Promise<Record<string, unknown>> {
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) {
+      return { supported: false };
+    }
+
+    const registration = await navigator.serviceWorker
+      .getRegistration()
+      .catch(() => undefined);
+
+    return {
+      supported: true,
+      controller: navigator.serviceWorker.controller
+        ? {
+            scriptURL: navigator.serviceWorker.controller.scriptURL,
+            state: navigator.serviceWorker.controller.state,
+          }
+        : null,
+      registration: registration
+        ? {
+            scope: registration.scope,
+            active: registration.active
+              ? {
+                  scriptURL: registration.active.scriptURL,
+                  state: registration.active.state,
+                }
+              : null,
+            waiting: registration.waiting
+              ? {
+                  scriptURL: registration.waiting.scriptURL,
+                  state: registration.waiting.state,
+                }
+              : null,
+            installing: registration.installing
+              ? {
+                  scriptURL: registration.installing.scriptURL,
+                  state: registration.installing.state,
+                }
+              : null,
+          }
+        : null,
+      readyState: document.readyState,
+      visibilityState: document.visibilityState,
+      url: window.location.href,
+    };
+  }
+
+  private async waitForUsableServiceWorker(
+    attempt: number
+  ): Promise<ServiceWorker> {
+    const currentController = navigator.serviceWorker?.controller;
+    if (currentController) {
+      this.log(`attempt ${attempt}: using existing controller`, {
+        scriptURL: currentController.scriptURL,
+        state: currentController.state,
+      });
+      return currentController;
+    }
+
+    const readyWorker = await Promise.race<ServiceWorker | null>([
+      navigator.serviceWorker.ready
+        .then((registration) => registration.active || null)
+        .catch(() => null),
+      new Promise<null>((resolve) => {
+        setTimeout(() => resolve(null), 10000);
+      }),
+    ]);
+
+    if (readyWorker) {
+      this.log(
+        `attempt ${attempt}: using ready.active worker without controller`,
+        {
+          scriptURL: readyWorker.scriptURL,
+          state: readyWorker.state,
+        }
+      );
+      return readyWorker;
+    }
+
+    this.log(
+      `attempt ${attempt}: no controller and no ready.active worker, waiting for controllerchange`
+    );
+
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(
+        () => reject(new Error('SW activation timeout')),
+        10000
+      );
+
+      if (navigator.serviceWorker.controller) {
+        clearTimeout(timeout);
+        resolve();
+        return;
+      }
+
+      navigator.serviceWorker.addEventListener(
+        'controllerchange',
+        () => {
+          clearTimeout(timeout);
+          this.log(`attempt ${attempt}: received controllerchange`);
+          resolve();
+        },
+        { once: true }
+      );
+    });
+
+    const nextController = navigator.serviceWorker.controller;
+    if (!nextController) {
+      throw new Error('SW controller unavailable after controllerchange');
+    }
+
+    this.log(`attempt ${attempt}: using controller after controllerchange`, {
+      scriptURL: nextController.scriptURL,
+      state: nextController.state,
+    });
+    return nextController;
+  }
+
   /**
    * 获取单例实例
    */
@@ -65,6 +191,13 @@ export class SWChannelClient {
    * 支持重试和并发保护
    */
   async initialize(): Promise<boolean> {
+    if (
+      typeof window !== 'undefined' &&
+      new URLSearchParams(window.location.search).get('sw') === '0'
+    ) {
+      return false;
+    }
+
     // 已初始化直接返回
     // Note: channel.isReady 可能是数字（0=未就绪, 1=就绪）或布尔值
     if (this.initialized && !!this.channel?.isReady) {
@@ -94,24 +227,10 @@ export class SWChannelClient {
 
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
       try {
-        // 等待 Service Worker 就绪
-        const sw = navigator.serviceWorker?.controller;
-        if (!sw) {
-          await new Promise<void>((resolve, reject) => {
-            const timeout = setTimeout(() => reject(new Error('SW activation timeout')), 10000);
-            
-            if (navigator.serviceWorker.controller) {
-              clearTimeout(timeout);
-              resolve();
-              return;
-            }
-            
-            navigator.serviceWorker.addEventListener('controllerchange', () => {
-              clearTimeout(timeout);
-              resolve();
-            }, { once: true });
-          });
-        }
+        this.log(
+          `initialize attempt ${attempt + 1}/${this.maxRetries + 1} started`
+        );
+        await this.waitForUsableServiceWorker(attempt + 1);
 
         // 创建客户端通道
         // postmessage-duplex 1.1.0 配合 SW 的 enableGlobalRouting 自动创建 channel
@@ -120,18 +239,33 @@ export class SWChannelClient {
         this.channel = await ServiceWorkerChannel.createFromPage<SWMethods>({
           timeout: 120000,
           autoReconnect: true,
-          log: { log: () => {}, warn: () => {}, error: () => {} },
-        } as any);  // log 属性在 PageChannelOptions 中不存在，但 BaseChannel 支持
+          log: {
+            log: () => undefined,
+            warn: () => undefined,
+            error: () => undefined,
+          },
+        } as any); // log 属性在 PageChannelOptions 中不存在，但 BaseChannel 支持
+
+        this.log(`attempt ${attempt + 1}: channel created`, {
+          isReady: this.channel?.isReady,
+        });
 
         // 设置事件订阅
         this.setupEventSubscriptions();
 
         this.initialized = true;
+        this.log(`attempt ${attempt + 1}: initialize success`);
         return true;
-
       } catch (error) {
         lastError = error as Error;
-        console.error(`[SWChannelClient] Attempt ${attempt + 1} failed:`, error);
+        const debugState = await this.collectSWDebugState().catch(() => ({
+          debugStateError: true,
+        }));
+        console.error(
+          `[SWChannelClient] Attempt ${attempt + 1} failed:`,
+          error,
+          debugState
+        );
 
         // 清理失败的通道
         this.channel = null;
@@ -140,12 +274,19 @@ export class SWChannelClient {
         // 如果还有重试次数，等待后重试
         if (attempt < this.maxRetries) {
           const delay = this.retryDelay * Math.pow(2, attempt);
-          await new Promise(r => setTimeout(r, delay));
+          await new Promise((r) => setTimeout(r, delay));
         }
       }
     }
 
-    console.error('[SWChannelClient] All attempts failed, lastError:', lastError);
+    const finalState = await this.collectSWDebugState().catch(() => ({
+      debugStateError: true,
+    }));
+    console.error(
+      '[SWChannelClient] All attempts failed, lastError:',
+      lastError,
+      finalState
+    );
     return false;
   }
 
@@ -235,7 +376,11 @@ export class SWChannelClient {
     try {
       const callPromise = this.channel!.call(method, params);
       const response = timeoutMs
-        ? await this.withTimeout(callPromise, timeoutMs, `RPC ${method} timeout`)
+        ? await this.withTimeout(
+            callPromise,
+            timeoutMs,
+            `RPC ${method} timeout`
+          )
         : await callPromise;
       if (response.ret !== ReturnCode.Success) {
         return defaultOnError;
@@ -261,7 +406,11 @@ export class SWChannelClient {
     try {
       const callPromise = this.channel!.call(method, params);
       const response = timeoutMs
-        ? await this.withTimeout(callPromise, timeoutMs, `RPC ${method} timeout`)
+        ? await this.withTimeout(
+            callPromise,
+            timeoutMs,
+            `RPC ${method} timeout`
+          )
         : await callPromise;
       if (response.ret !== ReturnCode.Success) {
         return { success: false, error: response.msg || errorMessage };
@@ -289,7 +438,7 @@ export class SWChannelClient {
     sizes?: ('small' | 'large')[]
   ): Promise<TaskOperationResult> {
     this.ensureInitialized();
-    
+
     try {
       const response = await this.channel!.call('thumbnail:generate', {
         url,
@@ -298,11 +447,14 @@ export class SWChannelClient {
         mimeType,
         sizes,
       });
-      
+
       if (response.ret !== ReturnCode.Success) {
-        return { success: false, error: response.msg || 'Generate thumbnail failed' };
+        return {
+          success: false,
+          error: response.msg || 'Generate thumbnail failed',
+        };
       }
-      
+
       return response.data || { success: true };
     } catch (error) {
       console.error('[SWChannelClient] thumbnail:generate error:', error);
@@ -313,15 +465,19 @@ export class SWChannelClient {
   /**
    * 注册视频缩略图生成处理器
    * SW 发起 publish('thumbnail:generate', { url }) 请求，主线程处理并返回 thumbnailUrl
-   * 
+   *
    * @param handler 处理函数，接收 url，返回 { thumbnailUrl } 或 { error }
    */
   registerVideoThumbnailHandler(
-    handler: (url: string, maxSize?: number) => Promise<{ thumbnailUrl?: string; error?: string }>
+    handler: (
+      url: string,
+      maxSize?: number
+    ) => Promise<{ thumbnailUrl?: string; error?: string }>
   ): void {
     this.ensureInitialized();
     this.channel!.subscribe('thumbnail:generate', async (request) => {
-      const { url, maxSize } = (request.data as { url?: string; maxSize?: number }) || {};
+      const { url, maxSize } =
+        (request.data as { url?: string; maxSize?: number }) || {};
       if (!url) {
         throw new Error('Missing url parameter');
       }
@@ -337,19 +493,24 @@ export class SWChannelClient {
   /**
    * 上报崩溃快照
    */
-  async reportCrashSnapshot(snapshot: import('./types').CrashSnapshot): Promise<TaskOperationResult> {
+  async reportCrashSnapshot(
+    snapshot: import('./types').CrashSnapshot
+  ): Promise<TaskOperationResult> {
     if (!this.initialized || !this.channel) {
       // 崩溃上报不应该因为未初始化而失败，静默返回
       return { success: false, error: 'Not initialized' };
     }
-    
+
     try {
       const response = await this.channel.call('crash:snapshot', { snapshot });
-      
+
       if (response.ret !== ReturnCode.Success) {
-        return { success: false, error: response.msg || 'Report crash snapshot failed' };
+        return {
+          success: false,
+          error: response.msg || 'Report crash snapshot failed',
+        };
       }
-      
+
       return response.data || { success: true };
     } catch (error) {
       // 崩溃上报失败不应该抛出异常
@@ -364,14 +525,19 @@ export class SWChannelClient {
     if (!this.initialized || !this.channel) {
       return { success: false, error: 'Not initialized' };
     }
-    
+
     try {
-      const response = await this.channel.call('crash:heartbeat', { timestamp });
-      
+      const response = await this.channel.call('crash:heartbeat', {
+        timestamp,
+      });
+
       if (response.ret !== ReturnCode.Success) {
-        return { success: false, error: response.msg || 'Send heartbeat failed' };
+        return {
+          success: false,
+          error: response.msg || 'Send heartbeat failed',
+        };
       }
-      
+
       return response.data || { success: true };
     } catch (error) {
       // 心跳失败不应该抛出异常
@@ -394,18 +560,21 @@ export class SWChannelClient {
     if (!this.initialized || !this.channel) {
       return { success: false, error: 'Not initialized' };
     }
-    
+
     try {
       const response = await this.channel.call('console:report', {
         logLevel,
         logArgs,
         timestamp,
       });
-      
+
       if (response.ret !== ReturnCode.Success) {
-        return { success: false, error: response.msg || 'Report console log failed' };
+        return {
+          success: false,
+          error: response.msg || 'Report console log failed',
+        };
       }
-      
+
       return response.data || { success: true };
     } catch (error) {
       // 日志上报失败不应该抛出异常
@@ -421,117 +590,218 @@ export class SWChannelClient {
    * 获取调试状态
    */
   async getDebugStatus(): Promise<DebugStatusResult> {
-    return callWithDefault(this.channel, 'debug:getStatus', undefined, { enabled: false });
+    return callWithDefault(this.channel, 'debug:getStatus', undefined, {
+      enabled: false,
+    });
   }
 
   /**
    * 启用调试模式
    */
-  async enableDebugMode(): Promise<TaskOperationResult & { status?: Record<string, unknown> }> {
-    return callOperation(this.channel, 'debug:enable', undefined, 'Enable debug mode failed');
+  async enableDebugMode(): Promise<
+    TaskOperationResult & { status?: Record<string, unknown> }
+  > {
+    return callOperation(
+      this.channel,
+      'debug:enable',
+      undefined,
+      'Enable debug mode failed'
+    );
   }
 
   /**
    * 禁用调试模式
    */
-  async disableDebugMode(): Promise<TaskOperationResult & { status?: Record<string, unknown> }> {
-    return callOperation(this.channel, 'debug:disable', undefined, 'Disable debug mode failed');
+  async disableDebugMode(): Promise<
+    TaskOperationResult & { status?: Record<string, unknown> }
+  > {
+    return callOperation(
+      this.channel,
+      'debug:disable',
+      undefined,
+      'Disable debug mode failed'
+    );
   }
 
   /**
    * 获取调试日志
    */
-  async getDebugLogs(params?: { limit?: number; offset?: number; filter?: Record<string, unknown> }): Promise<{
+  async getDebugLogs(params?: {
+    limit?: number;
+    offset?: number;
+    filter?: Record<string, unknown>;
+  }): Promise<{
     logs: unknown[];
     total: number;
     offset: number;
     limit: number;
   }> {
-    const defaultValue = { logs: [], total: 0, offset: params?.offset || 0, limit: params?.limit || 100 };
-    return callWithDefault(this.channel, 'debug:getLogs', params || {}, defaultValue);
+    const defaultValue = {
+      logs: [],
+      total: 0,
+      offset: params?.offset || 0,
+      limit: params?.limit || 100,
+    };
+    return callWithDefault(
+      this.channel,
+      'debug:getLogs',
+      params || {},
+      defaultValue
+    );
   }
 
   /**
    * 清空调试日志
    */
   async clearDebugLogs(): Promise<TaskOperationResult> {
-    return callOperation(this.channel, 'debug:clearLogs', undefined, 'Clear debug logs failed');
+    return callOperation(
+      this.channel,
+      'debug:clearLogs',
+      undefined,
+      'Clear debug logs failed'
+    );
   }
 
   /**
    * 获取控制台日志
    */
-  async getConsoleLogs(params?: { limit?: number; offset?: number; filter?: Record<string, unknown> }): Promise<{
+  async getConsoleLogs(params?: {
+    limit?: number;
+    offset?: number;
+    filter?: Record<string, unknown>;
+  }): Promise<{
     logs: unknown[];
     total: number;
     offset: number;
     limit: number;
     error?: string;
   }> {
-    const defaultValue = { logs: [], total: 0, offset: params?.offset || 0, limit: params?.limit || 500 };
-    return callWithDefault(this.channel, 'debug:getConsoleLogs', params || {}, defaultValue);
+    const defaultValue = {
+      logs: [],
+      total: 0,
+      offset: params?.offset || 0,
+      limit: params?.limit || 500,
+    };
+    return callWithDefault(
+      this.channel,
+      'debug:getConsoleLogs',
+      params || {},
+      defaultValue
+    );
   }
 
   /**
    * 清空控制台日志
    */
   async clearConsoleLogs(): Promise<TaskOperationResult> {
-    return callOperation(this.channel, 'debug:clearConsoleLogs', undefined, 'Clear console logs failed');
+    return callOperation(
+      this.channel,
+      'debug:clearConsoleLogs',
+      undefined,
+      'Clear console logs failed'
+    );
   }
 
   /**
    * 获取 PostMessage 日志
    */
-  async getPostMessageLogs(params?: { limit?: number; offset?: number; filter?: Record<string, unknown> }): Promise<{
+  async getPostMessageLogs(params?: {
+    limit?: number;
+    offset?: number;
+    filter?: Record<string, unknown>;
+  }): Promise<{
     logs: unknown[];
     total: number;
     offset: number;
     limit: number;
     stats?: Record<string, unknown>;
   }> {
-    const defaultValue = { logs: [], total: 0, offset: params?.offset || 0, limit: params?.limit || 200 };
-    return callWithDefault(this.channel, 'debug:getPostMessageLogs', params || {}, defaultValue);
+    const defaultValue = {
+      logs: [],
+      total: 0,
+      offset: params?.offset || 0,
+      limit: params?.limit || 200,
+    };
+    return callWithDefault(
+      this.channel,
+      'debug:getPostMessageLogs',
+      params || {},
+      defaultValue
+    );
   }
 
   /**
    * 清空 PostMessage 日志
    */
   async clearPostMessageLogs(): Promise<TaskOperationResult> {
-    return callOperation(this.channel, 'debug:clearPostMessageLogs', undefined, 'Clear postmessage logs failed');
+    return callOperation(
+      this.channel,
+      'debug:clearPostMessageLogs',
+      undefined,
+      'Clear postmessage logs failed'
+    );
   }
 
   /**
    * 获取崩溃快照列表
    */
-  async getCrashSnapshots(): Promise<{ snapshots: unknown[]; total: number; error?: string }> {
-    return callWithDefault(this.channel, 'debug:getCrashSnapshots', undefined, { snapshots: [], total: 0 });
+  async getCrashSnapshots(): Promise<{
+    snapshots: unknown[];
+    total: number;
+    error?: string;
+  }> {
+    return callWithDefault(this.channel, 'debug:getCrashSnapshots', undefined, {
+      snapshots: [],
+      total: 0,
+    });
   }
 
   /**
    * 清空崩溃快照
    */
   async clearCrashSnapshots(): Promise<TaskOperationResult> {
-    return callOperation(this.channel, 'debug:clearCrashSnapshots', undefined, 'Clear crash snapshots failed');
+    return callOperation(
+      this.channel,
+      'debug:clearCrashSnapshots',
+      undefined,
+      'Clear crash snapshots failed'
+    );
   }
 
   /**
    * 获取 LLM API 日志
    */
-  async getLLMApiLogs(): Promise<{ logs: unknown[]; total: number; error?: string }> {
-    return callWithDefault(this.channel, 'debug:getLLMApiLogs', undefined, { logs: [], total: 0 });
+  async getLLMApiLogs(): Promise<{
+    logs: unknown[];
+    total: number;
+    error?: string;
+  }> {
+    return callWithDefault(this.channel, 'debug:getLLMApiLogs', undefined, {
+      logs: [],
+      total: 0,
+    });
   }
 
   /**
    * 清空 LLM API 日志
    */
   async clearLLMApiLogs(): Promise<TaskOperationResult> {
-    return callOperation(this.channel, 'debug:clearLLMApiLogs', undefined, 'Clear LLM API logs failed');
+    return callOperation(
+      this.channel,
+      'debug:clearLLMApiLogs',
+      undefined,
+      'Clear LLM API logs failed'
+    );
   }
 
   /**
    * 获取缓存条目
    */
-  async getCacheEntries(params?: { cacheName?: string; limit?: number; offset?: number }): Promise<{
+  async getCacheEntries(params?: {
+    cacheName?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{
     cacheName: string;
     entries: { url: string; cacheDate?: number; size?: number }[];
     total: number;
@@ -539,8 +809,19 @@ export class SWChannelClient {
     limit: number;
     error?: string;
   }> {
-    const defaultValue = { cacheName: '', entries: [], total: 0, offset: 0, limit: 50 };
-    return callWithDefault(this.channel, 'debug:getCacheEntries', params || {}, defaultValue);
+    const defaultValue = {
+      cacheName: '',
+      entries: [],
+      total: 0,
+      offset: 0,
+      limit: 50,
+    };
+    return callWithDefault(
+      this.channel,
+      'debug:getCacheEntries',
+      params || {},
+      defaultValue
+    );
   }
 
   /**
@@ -562,7 +843,12 @@ export class SWChannelClient {
       consoleLogs: [],
       postmessageLogs: [],
     };
-    return callWithDefault(this.channel, 'debug:exportLogs', undefined, defaultValue);
+    return callWithDefault(
+      this.channel,
+      'debug:exportLogs',
+      undefined,
+      defaultValue
+    );
   }
 
   // ============================================================================
@@ -573,21 +859,30 @@ export class SWChannelClient {
    * 获取 CDN 状态
    */
   async getCDNStatus(): Promise<{ status: Record<string, unknown> }> {
-    return callWithDefault(this.channel, 'cdn:getStatus', undefined, { status: {} });
+    return callWithDefault(this.channel, 'cdn:getStatus', undefined, {
+      status: {},
+    });
   }
 
   /**
    * 重置 CDN 状态
    */
   async resetCDNStatus(): Promise<TaskOperationResult> {
-    return callOperation(this.channel, 'cdn:resetStatus', undefined, 'Reset CDN status failed');
+    return callOperation(
+      this.channel,
+      'cdn:resetStatus',
+      undefined,
+      'Reset CDN status failed'
+    );
   }
 
   /**
    * CDN 健康检查
    */
   async cdnHealthCheck(): Promise<{ results: Record<string, unknown> }> {
-    return callWithDefault(this.channel, 'cdn:healthCheck', undefined, { results: {} });
+    return callWithDefault(this.channel, 'cdn:healthCheck', undefined, {
+      results: {},
+    });
   }
 
   // ============================================================================
@@ -598,14 +893,21 @@ export class SWChannelClient {
    * 获取升级状态（SW 版本）
    */
   async getUpgradeStatus(): Promise<{ version: string }> {
-    return callWithDefault(this.channel, 'upgrade:getStatus', undefined, { version: 'unknown' });
+    return callWithDefault(this.channel, 'upgrade:getStatus', undefined, {
+      version: 'unknown',
+    });
   }
 
   /**
    * 强制升级 SW
    */
   async forceUpgrade(): Promise<TaskOperationResult> {
-    return callOperation(this.channel, 'upgrade:force', undefined, 'Force upgrade failed');
+    return callOperation(
+      this.channel,
+      'upgrade:force',
+      undefined,
+      'Force upgrade failed'
+    );
   }
 
   // ============================================================================
@@ -616,7 +918,12 @@ export class SWChannelClient {
    * 删除单个缓存项
    */
   async deleteCache(url: string): Promise<TaskOperationResult> {
-    return callOperation(this.channel, 'cache:delete', { url }, 'Delete cache failed');
+    return callOperation(
+      this.channel,
+      'cache:delete',
+      { url },
+      'Delete cache failed'
+    );
   }
 
   // ============================================================================
@@ -644,7 +951,10 @@ export class SWChannelClient {
    * @param eventName 事件名称
    * @param data 消息数据
    */
-  async publish(eventName: string, data?: Record<string, unknown>): Promise<void> {
+  async publish(
+    eventName: string,
+    data?: Record<string, unknown>
+  ): Promise<void> {
     this.ensureInitialized();
     try {
       await this.channel!.publish(eventName, data);
@@ -661,7 +971,10 @@ export class SWChannelClient {
    * @returns 取消订阅的函数
    * Note: subscribe handler must return a response to avoid timeout on the sender side
    */
-  subscribeToEvent(eventName: string, callback: (data: unknown) => unknown): () => void {
+  subscribeToEvent(
+    eventName: string,
+    callback: (data: unknown) => unknown
+  ): () => void {
     this.ensureInitialized();
     this.channel!.subscribe(eventName, (response) => {
       if (response.data !== undefined) {
@@ -686,7 +999,9 @@ export class SWChannelClient {
    */
   private ensureInitialized(): void {
     if (!this.initialized || !this.channel) {
-      throw new Error('SWChannelClient not initialized. Call initialize() first.');
+      throw new Error(
+        'SWChannelClient not initialized. Call initialize() first.'
+      );
     }
   }
 
@@ -700,19 +1015,25 @@ export class SWChannelClient {
   ): void {
     // 使用 onBroadcast 接收 SW 的广播消息（单向，不需要响应）
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (this.channel as any)?.onBroadcast(eventName, (response: { data?: Record<string, unknown> } | Record<string, unknown>) => {
-      // 兼容两种数据格式：
-      // 1. { data: { ... } } - 标准格式
-      // 2. { ... } - 直接数据格式
-      const data = (response as { data?: Record<string, unknown> })?.data ?? response;
-      
-      if (data && Object.keys(data).length > 0) {
-        const handler = getHandler();
-        if (handler) {
-          handler(data as T);
+    (this.channel as any)?.onBroadcast(
+      eventName,
+      (
+        response: { data?: Record<string, unknown> } | Record<string, unknown>
+      ) => {
+        // 兼容两种数据格式：
+        // 1. { data: { ... } } - 标准格式
+        // 2. { ... } - 直接数据格式
+        const data =
+          (response as { data?: Record<string, unknown> })?.data ?? response;
+
+        if (data && Object.keys(data).length > 0) {
+          const handler = getHandler();
+          if (handler) {
+            handler(data as T);
+          }
         }
       }
-    });
+    );
   }
 
   /**
@@ -726,16 +1047,38 @@ export class SWChannelClient {
     // ============================================================================
     // Cache 事件订阅
     // ============================================================================
-    this.subscribeEvent<import('./types').CacheImageCachedEvent>('cache:imageCached', () => this.eventHandlers.onCacheImageCached);
-    this.subscribeEvent<import('./types').CacheDeletedEvent>('cache:deleted', () => this.eventHandlers.onCacheDeleted);
-    this.subscribeEvent<import('./types').CacheQuotaWarningEvent>('cache:quotaWarning', () => this.eventHandlers.onCacheQuotaWarning);
+    this.subscribeEvent<import('./types').CacheImageCachedEvent>(
+      'cache:imageCached',
+      () => this.eventHandlers.onCacheImageCached
+    );
+    this.subscribeEvent<import('./types').CacheImageCacheFailedEvent>(
+      'cache:imageCacheFailed',
+      () => this.eventHandlers.onCacheImageCacheFailed
+    );
+    this.subscribeEvent<import('./types').CacheDeletedEvent>(
+      'cache:deleted',
+      () => this.eventHandlers.onCacheDeleted
+    );
+    this.subscribeEvent<import('./types').CacheQuotaWarningEvent>(
+      'cache:quotaWarning',
+      () => this.eventHandlers.onCacheQuotaWarning
+    );
 
     // ============================================================================
     // SW 状态事件订阅
     // ============================================================================
-    this.subscribeEvent<import('./types').SWNewVersionReadyEvent>('sw:newVersionReady', () => this.eventHandlers.onSWNewVersionReady);
-    this.subscribeEvent<import('./types').SWActivatedEvent>('sw:activated', () => this.eventHandlers.onSWActivated);
-    this.subscribeEvent<import('./types').SWUpdatedEvent>('sw:updated', () => this.eventHandlers.onSWUpdated);
+    this.subscribeEvent<import('./types').SWNewVersionReadyEvent>(
+      'sw:newVersionReady',
+      () => this.eventHandlers.onSWNewVersionReady
+    );
+    this.subscribeEvent<import('./types').SWActivatedEvent>(
+      'sw:activated',
+      () => this.eventHandlers.onSWActivated
+    );
+    this.subscribeEvent<import('./types').SWUpdatedEvent>(
+      'sw:updated',
+      () => this.eventHandlers.onSWUpdated
+    );
   }
 }
 

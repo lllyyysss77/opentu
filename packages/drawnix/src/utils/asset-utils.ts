@@ -9,8 +9,12 @@ import type {
   AssetType,
   FilterState,
   FilteredAssetsResult,
-  AssetSource,
 } from '../types/asset.types';
+import { AssetCategory } from '../types/asset.types';
+
+type SearchableAsset = Asset & {
+  title?: string;
+};
 
 /**
  * Validate Asset Name
@@ -47,7 +51,7 @@ export function validateMimeType(
   if (!allowedTypes.includes(mimeType as any)) {
     return {
       valid: false,
-      error: `不支持的文件类型: ${mimeType}。只支持图片（JPG, PNG, GIF, WebP）、视频（MP4, WebM, OGG）和音频（MP3, WAV, OGG, AAC, FLAC）。`,
+      error: `不支持的文件类型: ${mimeType}。只支持图片（JPG, PNG, GIF, WebP）、视频（MP4, WebM, OGG, MOV, M4V）和音频（MP3, WAV, OGG, AAC, FLAC）。`,
     };
   }
   return { valid: true };
@@ -62,6 +66,38 @@ export function getAssetType(mimeType: string): AssetType | null {
   if (mimeType.startsWith('video/')) return 'VIDEO' as AssetType;
   if (mimeType.startsWith('audio/')) return 'AUDIO' as AssetType;
   return null;
+}
+
+function normalizeSearchText(value: string | undefined): string {
+  return value?.trim().toLowerCase() || '';
+}
+
+/**
+ * Match Asset Search Query
+ * 按标题/提示词模糊匹配素材搜索关键词
+ */
+export function matchesAssetSearchQuery(
+  asset: Asset,
+  searchQuery: string | undefined,
+): boolean {
+  const tokens = normalizeSearchText(searchQuery).split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) {
+    return true;
+  }
+
+  const searchableAsset = asset as SearchableAsset;
+  const searchableText = [
+    searchableAsset.name,
+    searchableAsset.title,
+    searchableAsset.prompt,
+    asset.characterMeta?.name,
+    asset.characterMeta?.prompt,
+  ]
+    .map(normalizeSearchText)
+    .filter(Boolean)
+    .join(' ');
+
+  return tokens.every((token) => searchableText.includes(token));
 }
 
 /**
@@ -86,12 +122,16 @@ export function filterAssets(
         filters.activeSource === ('ALL' as any) ||
         asset.source === (filters.activeSource as any);
 
-      // Search filter
-      const matchesSearch =
-        !filters.searchQuery ||
-        asset.name.toLowerCase().includes(filters.searchQuery.toLowerCase());
+      // Category filter
+      const matchesCategory =
+        !filters.activeCategory ||
+        filters.activeCategory === ('ALL' as any) ||
+        (asset.category || AssetCategory.GENERAL) === filters.activeCategory;
 
-      return matchesType && matchesSource && matchesSearch;
+      // Search filter
+      const matchesSearch = matchesAssetSearchQuery(asset, filters.searchQuery);
+
+      return matchesType && matchesSource && matchesCategory && matchesSearch;
     })
     .sort((a, b) => {
       switch (filters.sortBy) {

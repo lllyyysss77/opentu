@@ -6,6 +6,7 @@ import type { ModelVendor } from '../constants/model-config';
 import { kvStorageService } from './kv-storage-service';
 import { generateTaskId } from '../utils/task-utils';
 import { createModelRef } from '../utils/settings-manager';
+import { analytics } from '../utils/posthog-analytics';
 import {
   getAdapterContextFromSettings,
   resolveAdapterForInvocation,
@@ -26,6 +27,11 @@ import {
   type BenchmarkPromptPreset,
   type BenchmarkRankingMode,
 } from './model-benchmark-pure';
+import {
+  buildPromptWithKnowledgeContext,
+  normalizeKnowledgeContextRefs,
+} from './generation-context-service';
+import type { KnowledgeContextRef } from '../types/task.types';
 
 export type { BenchmarkModality, BenchmarkRankingMode };
 
@@ -35,10 +41,7 @@ const MAX_PERSISTED_TEXT_LENGTH = 4000;
 const MAX_PERSISTED_URL_LENGTH = 120000;
 const DEFAULT_CONCURRENCY = 2;
 
-export type BenchmarkCompareMode =
-  | 'cross-provider'
-  | 'cross-model'
-  | 'custom';
+export type BenchmarkCompareMode = 'cross-provider' | 'cross-model' | 'custom';
 export type BenchmarkEntryStatus =
   | 'pending'
   | 'running'
@@ -94,6 +97,7 @@ export interface ModelBenchmarkSession {
   compareMode: BenchmarkCompareMode;
   promptPresetId: string;
   prompt: string;
+  knowledgeContextRefs?: KnowledgeContextRef[];
   status: BenchmarkSessionStatus;
   rankingMode: BenchmarkRankingMode;
   createdAt: number;
@@ -120,6 +124,7 @@ export interface CreateBenchmarkSessionInput {
   compareMode: BenchmarkCompareMode;
   promptPresetId: string;
   prompt: string;
+  knowledgeContextRefs?: KnowledgeContextRef[];
   rankingMode: BenchmarkRankingMode;
   targets: ModelBenchmarkTarget[];
   source?: 'manual' | 'shortcut';
@@ -159,13 +164,15 @@ function sanitizeUrl(url?: string): string | undefined {
     : url;
 }
 
-function sanitizePreview(preview: ModelBenchmarkPreview): ModelBenchmarkPreview {
+function sanitizePreview(
+  preview: ModelBenchmarkPreview
+): ModelBenchmarkPreview {
   return {
     text: sanitizeText(preview.text),
     url: sanitizeUrl(preview.url),
-    urls: preview.urls
-      ?.map((item) => sanitizeUrl(item))
-      .filter(Boolean) as string[] | undefined,
+    urls: preview.urls?.map((item) => sanitizeUrl(item)).filter(Boolean) as
+      | string[]
+      | undefined,
     format: preview.format,
     duration: preview.duration,
     title: sanitizeText(preview.title),
@@ -173,9 +180,7 @@ function sanitizePreview(preview: ModelBenchmarkPreview): ModelBenchmarkPreview 
   };
 }
 
-function sanitizeEntry(
-  entry: ModelBenchmarkEntry
-): ModelBenchmarkEntry {
+function sanitizeEntry(entry: ModelBenchmarkEntry): ModelBenchmarkEntry {
   return {
     ...entry,
     errorSummary: sanitizeText(entry.errorSummary || undefined) || null,
@@ -189,6 +194,9 @@ function sanitizeSession(
   return {
     ...session,
     prompt: sanitizeText(session.prompt) || session.prompt,
+    knowledgeContextRefs: normalizeKnowledgeContextRefs(
+      session.knowledgeContextRefs
+    ),
     entries: session.entries.map(sanitizeEntry),
   };
 }
@@ -259,6 +267,27 @@ function summarizeError(error: unknown): string {
     return error.message || '请求失败';
   }
   return '请求失败';
+}
+
+export function trackBenchmarkEvent(
+  eventName: string,
+  payload: Record<string, unknown>
+): void {
+  analytics.track(eventName, {
+    area: 'model_benchmark',
+    ...payload,
+  });
+}
+
+function getEntryStatusCounts(entries: ModelBenchmarkEntry[]) {
+  return {
+    targetCount: entries.length,
+    completedCount: entries.filter((entry) => entry.status === 'completed')
+      .length,
+    failedCount: entries.filter((entry) => entry.status === 'failed').length,
+    runningCount: entries.filter((entry) => entry.status === 'running').length,
+    pendingCount: entries.filter((entry) => entry.status === 'pending').length,
+  };
 }
 
 async function executeTextBenchmark(
@@ -476,8 +505,9 @@ class ModelBenchmarkService {
       return;
     }
     try {
-      const persisted =
-        await kvStorageService.get<ModelBenchmarkStoreState>(STORAGE_KEY);
+      const persisted = await kvStorageService.get<ModelBenchmarkStoreState>(
+        STORAGE_KEY
+      );
       const sessions = trimSessions(persisted?.sessions || []);
       const activeSessionId = sessions.some(
         (session) => session.id === persisted?.activeSessionId
@@ -579,6 +609,9 @@ class ModelBenchmarkService {
       compareMode: input.compareMode,
       promptPresetId: input.promptPresetId,
       prompt: input.prompt,
+      knowledgeContextRefs: normalizeKnowledgeContextRefs(
+        input.knowledgeContextRefs
+      ),
       status: 'draft',
       rankingMode: input.rankingMode,
       createdAt,
@@ -593,10 +626,28 @@ class ModelBenchmarkService {
       activeSessionId: session.id,
     }));
 
+    trackBenchmarkEvent('model_benchmark_session_created', {
+      sessionId: session.id,
+      modality: session.modality,
+      compareMode: session.compareMode,
+      source: session.source,
+      targetCount: session.entries.length,
+      promptPresetId: session.promptPresetId,
+      promptLength: session.prompt.length,
+      knowledgeContextCount: session.knowledgeContextRefs?.length || 0,
+    });
+
     return session;
   }
 
   removeSession(sessionId: string) {
+    const removedSession = this.state$.value.sessions.find(
+      (session) => session.id === sessionId
+    );
+    if (!removedSession) {
+      return;
+    }
+
     this.mutate((state) => {
       const sessions = state.sessions.filter((item) => item.id !== sessionId);
       return {
@@ -608,9 +659,28 @@ class ModelBenchmarkService {
             : state.activeSessionId,
       };
     });
+
+    trackBenchmarkEvent('model_benchmark_session_removed', {
+      sessionId,
+      modality: removedSession.modality,
+      compareMode: removedSession.compareMode,
+      source: removedSession.source,
+      status: removedSession.status,
+      rankingMode: removedSession.rankingMode,
+      ...getEntryStatusCounts(removedSession.entries),
+      hasFavorite: removedSession.entries.some((entry) => entry.favorite),
+      hasRejected: removedSession.entries.some((entry) => entry.rejected),
+    });
   }
 
   setRankingMode(sessionId: string, rankingMode: BenchmarkRankingMode) {
+    const currentSession = this.state$.value.sessions.find(
+      (session) => session.id === sessionId
+    );
+    if (!currentSession || currentSession.rankingMode === rankingMode) {
+      return;
+    }
+
     this.mutate((state) => ({
       ...state,
       sessions: state.sessions.map((session) =>
@@ -623,6 +693,15 @@ class ModelBenchmarkService {
           : session
       ),
     }));
+
+    trackBenchmarkEvent('model_benchmark_ranking_mode_changed', {
+      sessionId,
+      modality: currentSession.modality,
+      compareMode: currentSession.compareMode,
+      previousRankingMode: currentSession.rankingMode,
+      rankingMode,
+      targetCount: currentSession.entries.length,
+    });
   }
 
   setEntryFeedback(
@@ -632,6 +711,25 @@ class ModelBenchmarkService {
       Pick<ModelBenchmarkEntry, 'userScore' | 'favorite' | 'rejected'>
     >
   ) {
+    const currentSession = this.state$.value.sessions.find(
+      (session) => session.id === sessionId
+    );
+    const currentEntry = currentSession?.entries.find(
+      (entry) => entry.id === entryId
+    );
+    if (!currentSession || !currentEntry) {
+      return;
+    }
+
+    const nextUserScore =
+      'userScore' in updates
+        ? updates.userScore ?? null
+        : currentEntry.userScore;
+    const nextFavorite =
+      'favorite' in updates ? Boolean(updates.favorite) : currentEntry.favorite;
+    const nextRejected =
+      'rejected' in updates ? Boolean(updates.rejected) : currentEntry.rejected;
+
     this.mutate((state) => ({
       ...state,
       sessions: state.sessions.map((session) =>
@@ -651,6 +749,26 @@ class ModelBenchmarkService {
           : session
       ),
     }));
+
+    trackBenchmarkEvent('model_benchmark_entry_feedback_changed', {
+      sessionId,
+      entryId,
+      modality: currentEntry.modality,
+      compareMode: currentSession.compareMode,
+      profileId: currentEntry.profileId,
+      profileName: currentEntry.profileName,
+      modelId: currentEntry.modelId,
+      modelLabel: currentEntry.modelLabel,
+      vendor: currentEntry.vendor,
+      entryStatus: currentEntry.status,
+      changedFields: Object.keys(updates).join(','),
+      previousUserScore: currentEntry.userScore,
+      userScore: nextUserScore,
+      previousFavorite: currentEntry.favorite,
+      favorite: nextFavorite,
+      previousRejected: currentEntry.rejected,
+      rejected: nextRejected,
+    });
   }
 
   async runSession(
@@ -664,10 +782,32 @@ class ModelBenchmarkService {
       return;
     }
 
+    const runStartedAt = Date.now();
+    trackBenchmarkEvent('model_benchmark_session_started', {
+      sessionId,
+      modality: currentSession.modality,
+      compareMode: currentSession.compareMode,
+      source: currentSession.source,
+      targetCount: currentSession.entries.length,
+      concurrency,
+      promptPresetId: currentSession.promptPresetId,
+      promptLength: currentSession.prompt.length,
+      knowledgeContextCount: currentSession.knowledgeContextRefs?.length || 0,
+    });
+
     const preset = resolvePromptPreset(
       currentSession.promptPresetId,
       currentSession.modality
     );
+    const knowledgeContextResult =
+      currentSession.knowledgeContextRefs?.length
+        ? await buildPromptWithKnowledgeContext(
+            currentSession.prompt,
+            currentSession.knowledgeContextRefs
+          )
+        : null;
+    const executionPrompt =
+      knowledgeContextResult?.prompt || currentSession.prompt;
     const queue = [...currentSession.entries];
 
     this.mutate((state) => ({
@@ -703,7 +843,7 @@ class ModelBenchmarkService {
           const next = queue[cursor];
           cursor += 1;
           if (next) {
-            await this.runEntry(sessionId, next.id, preset);
+            await this.runEntry(sessionId, next.id, preset, executionPrompt);
           }
         }
       })
@@ -715,7 +855,9 @@ class ModelBenchmarkService {
         if (session.id !== sessionId) {
           return session;
         }
-        const failedCount = session.entries.filter((entry) => entry.status === 'failed').length;
+        const failedCount = session.entries.filter(
+          (entry) => entry.status === 'failed'
+        ).length;
         const allFailed = failedCount === session.entries.length;
         const hasFailed = failedCount > 0;
         return {
@@ -725,12 +867,36 @@ class ModelBenchmarkService {
         };
       }),
     }));
+
+    const finalSession = this.state$.value.sessions.find(
+      (session) => session.id === sessionId
+    );
+    if (finalSession) {
+      const completedCount = finalSession.entries.filter(
+        (entry) => entry.status === 'completed'
+      ).length;
+      const failedCount = finalSession.entries.filter(
+        (entry) => entry.status === 'failed'
+      ).length;
+      trackBenchmarkEvent('model_benchmark_session_completed', {
+        sessionId,
+        modality: finalSession.modality,
+        compareMode: finalSession.compareMode,
+        source: finalSession.source,
+        status: finalSession.status,
+        targetCount: finalSession.entries.length,
+        completedCount,
+        failedCount,
+        durationMs: Date.now() - runStartedAt,
+      });
+    }
   }
 
   private async runEntry(
     sessionId: string,
     entryId: string,
-    preset: BenchmarkPromptPreset
+    preset: BenchmarkPromptPreset,
+    executionPrompt: string
   ) {
     const startedAt = Date.now();
 
@@ -759,13 +925,15 @@ class ModelBenchmarkService {
       const latestSession = this.state$.value.sessions.find(
         (session) => session.id === sessionId
       );
-      const latestEntry = latestSession?.entries.find((entry) => entry.id === entryId);
+      const latestEntry = latestSession?.entries.find(
+        (entry) => entry.id === entryId
+      );
       if (!latestSession || !latestEntry) {
         return;
       }
       const result = await executeBenchmark(
         latestEntry,
-        latestSession.prompt,
+        executionPrompt,
         preset
       );
       const completedAt = Date.now();
@@ -796,8 +964,29 @@ class ModelBenchmarkService {
             : session
         ),
       }));
+      trackBenchmarkEvent('model_benchmark_entry_completed', {
+        sessionId,
+        entryId,
+        modality: latestEntry.modality,
+        compareMode: latestSession.compareMode,
+        profileId: latestEntry.profileId,
+        profileName: latestEntry.profileName,
+        modelId: latestEntry.modelId,
+        vendor: latestEntry.vendor,
+        firstResponseMs: firstResponseAt - startedAt,
+        totalDurationMs: completedAt - startedAt,
+        hasPreview: Boolean(result.text || result.url || result.urls?.length),
+        resultCount: result.urls?.length || (result.url || result.text ? 1 : 0),
+        format: result.format,
+      });
     } catch (error) {
       const completedAt = Date.now();
+      const latestSession = this.state$.value.sessions.find(
+        (session) => session.id === sessionId
+      );
+      const latestEntry = latestSession?.entries.find(
+        (entry) => entry.id === entryId
+      );
       this.mutate((state) => ({
         ...state,
         sessions: state.sessions.map((session) =>
@@ -820,6 +1009,20 @@ class ModelBenchmarkService {
             : session
         ),
       }));
+      if (latestEntry && latestSession) {
+        trackBenchmarkEvent('model_benchmark_entry_failed', {
+          sessionId,
+          entryId,
+          modality: latestEntry.modality,
+          compareMode: latestSession.compareMode,
+          profileId: latestEntry.profileId,
+          profileName: latestEntry.profileName,
+          modelId: latestEntry.modelId,
+          vendor: latestEntry.vendor,
+          totalDurationMs: completedAt - startedAt,
+          errorMessage: summarizeError(error),
+        });
+      }
     }
   }
 }
@@ -836,12 +1039,16 @@ export function buildBenchmarkTarget(
     modelLabel: model.shortLabel || model.label || model.id,
     modality: model.type,
     vendor: model.vendor,
-    selectionKey:
-      model.selectionKey || buildSelectionKey(profileId, model.id),
+    selectionKey: model.selectionKey || buildSelectionKey(profileId, model.id),
   };
 }
 
-export { BENCHMARK_PROMPT_PRESETS, getDefaultPromptPreset, rankBenchmarkEntries, computeValueScore };
+export {
+  BENCHMARK_PROMPT_PRESETS,
+  getDefaultPromptPreset,
+  rankBenchmarkEntries,
+  computeValueScore,
+};
 export { resolvePromptPreset as resolveBenchmarkPromptPreset };
 
 export const modelBenchmarkService = new ModelBenchmarkService();

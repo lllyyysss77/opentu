@@ -16,6 +16,8 @@ import type {
 export interface ApiConfig {
   apiKey: string;
   baseUrl: string;
+  /** Optional provider-specific template variables for async query/download paths */
+  params?: Record<string, unknown>;
   /** 可选：自定义 fetch 实现（用于 SW 中注入 debugFetch） */
   fetchImpl?: typeof fetch;
   /** 可选：统一供应商上下文 */
@@ -58,6 +60,8 @@ export interface ImageGenerationParams {
   aspectRatio?: string;
   /** 参考图片 URL 或 base64 数组 */
   referenceImages?: string[];
+  /** 图片编辑蒙版 URL 或 base64 */
+  maskImage?: string;
   /** 质量设置 */
   quality?: '1k' | '2k' | '4k' | string;
   /** 生成数量 */

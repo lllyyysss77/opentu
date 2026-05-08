@@ -7,7 +7,7 @@
 
 import React, { useCallback, useEffect, useState, useRef } from 'react';
 import { Button } from 'tdesign-react';
-import { CloseIcon } from 'tdesign-icons-react';
+import { CloseIcon, PinFilledIcon, PinIcon } from 'tdesign-icons-react';
 import { HoverTip } from '../shared/hover';
 import './side-drawer.scss';
 
@@ -25,6 +25,12 @@ export interface SideDrawerProps {
   subtitle?: React.ReactNode;
   /** 头部右侧操作区（关闭按钮之前） */
   headerActions?: React.ReactNode;
+  /** 是否显示固定按钮 */
+  pinnable?: boolean;
+  /** 是否已固定，固定后上层可跳过自动关闭 */
+  pinned?: boolean;
+  /** 固定状态变化回调 */
+  onPinnedChange?: (pinned: boolean) => void;
   /** 头部下方的筛选/搜索区域 */
   filterSection?: React.ReactNode;
   /** 抽屉内容 */
@@ -78,6 +84,9 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
   title,
   subtitle,
   headerActions,
+  pinnable = false,
+  pinned = false,
+  onPinnedChange,
   filterSection,
   children,
   footer,
@@ -106,6 +115,7 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
   const drawerRef = useRef<HTMLDivElement>(null);
   const startXRef = useRef(0);
   const startWidthRef = useRef(0);
+  const resizeEdgeRef = useRef<'left' | 'right'>('right');
 
   // ESC 键关闭
   useEffect(() => {
@@ -129,6 +139,10 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
     }
   }, [closeOnBackdropClick, onClose]);
 
+  const handlePinnedChange = useCallback(() => {
+    onPinnedChange?.(!pinned);
+  }, [onPinnedChange, pinned]);
+
   // 开始拖拽 - 支持鼠标和触摸
   const handleResizeStart = useCallback((e: React.MouseEvent | React.TouchEvent) => {
     e.preventDefault();
@@ -139,7 +153,12 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
     const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
     startXRef.current = clientX;
     startWidthRef.current = drawerRef.current.offsetWidth;
-  }, []);
+    resizeEdgeRef.current =
+      position === 'toolbar-right' &&
+      document.documentElement.classList.contains('aitu-toolbar-dock-right')
+        ? 'left'
+        : 'right';
+  }, [position]);
 
   // 拖拽中 - 支持鼠标和触摸
   useEffect(() => {
@@ -148,7 +167,10 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
     const handleMove = (e: MouseEvent | TouchEvent) => {
       // 获取当前 X 坐标（支持鼠标和触摸）
       const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-      const deltaX = clientX - startXRef.current;
+      const deltaX =
+        resizeEdgeRef.current === 'left'
+          ? startXRef.current - clientX
+          : clientX - startXRef.current;
       const newWidth = Math.min(maxWidth, Math.max(minWidth, startWidthRef.current + deltaX));
       setDraggingWidth(newWidth);
     };
@@ -213,6 +235,23 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
           </div>
           <div className="side-drawer__header-right">
             {headerActions}
+            {pinnable && (
+              <HoverTip
+                content={pinned ? '取消固定' : '固定，不自动收起'}
+                showArrow={false}
+              >
+                <Button
+                  variant="text"
+                  size={closeButtonSize}
+                  icon={pinned ? <PinFilledIcon /> : <PinIcon />}
+                  onClick={handlePinnedChange}
+                  className={`side-drawer__pin-btn${
+                    pinned ? ' side-drawer__pin-btn--active' : ''
+                  }`}
+                  aria-label={pinned ? '取消固定抽屉' : '固定抽屉'}
+                />
+              </HoverTip>
+            )}
             {showCloseButton && (
               <HoverTip content="关闭" showArrow={false}>
                 <Button

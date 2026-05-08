@@ -17,11 +17,11 @@ import {
   writeBatchToIDB,
 } from './indexeddb.js';
 import {
-  BACKUP_SIGNATURE,
   waitForJSZip,
   normalizeCacheMediaType,
 } from './backup.js';
 import {
+  validateBackupManifest,
   findBinaryFile,
   importKnowledgeBaseData,
   buildFolderPathMap,
@@ -77,16 +77,15 @@ async function performRestore(file) {
     const manifestFile = zip.file('manifest.json');
     if (!manifestFile) throw new Error('无效的备份文件：缺少 manifest.json');
 
-    const manifest = JSON.parse(await manifestFile.async('string'));
-    if (manifest.signature !== BACKUP_SIGNATURE) {
-      throw new Error('无效的备份文件：签名不匹配');
-    }
-    // 兼容 v2（无分片字段）和 v3
-    if (manifest.version < 2 || manifest.version > 3) {
-      throw new Error(`不支持的备份版本: ${manifest.version}`);
-    }
+    const manifest = validateBackupManifest(JSON.parse(await manifestFile.async('string')));
 
-    const stats = { prompts: 0, projects: 0, tasks: 0, knowledgeBase: 0, assets: 0 };
+    const stats = {
+      prompts: 0,
+      projects: 0,
+      tasks: 0,
+      knowledgeBase: 0,
+      assets: 0,
+    };
 
     // 1. 恢复提示词
     if (manifest.includes?.prompts !== false) {
@@ -126,7 +125,6 @@ async function performRestore(file) {
       progressContainer.remove();
       showRestoreSuccessNotification(stats, manifest);
     }, 500);
-
   } catch (error) {
     progressContainer.remove();
     throw error;
@@ -147,8 +145,10 @@ async function restorePrompts(zip) {
   const mergePromptList = async (kvKey, incoming) => {
     if (!incoming || incoming.length === 0) return 0;
     const existing = (await readKVItem(kvKey)) || [];
-    const existingContents = new Set(existing.map(p => p.content));
-    const newItems = incoming.filter(p => p.content && !existingContents.has(p.content));
+    const existingContents = new Set(existing.map((p) => p.content));
+    const newItems = incoming.filter(
+      (p) => p.content && !existingContents.has(p.content)
+    );
     if (newItems.length > 0) {
       await writeKVItem(kvKey, [...existing, ...newItems]);
     }
@@ -156,18 +156,68 @@ async function restorePrompts(zip) {
   };
 
   count += await mergePromptList(KV_KEYS.PROMPT_HISTORY, data.promptHistory);
-  count += await mergePromptList(KV_KEYS.VIDEO_PROMPT_HISTORY, data.videoPromptHistory);
-  count += await mergePromptList(KV_KEYS.IMAGE_PROMPT_HISTORY, data.imagePromptHistory);
+  count += await mergePromptList(
+    KV_KEYS.VIDEO_PROMPT_HISTORY,
+    data.videoPromptHistory
+  );
+  count += await mergePromptList(
+    KV_KEYS.IMAGE_PROMPT_HISTORY,
+    data.imagePromptHistory
+  );
 
-  // 恢复预设设置（如果本地没有则写入）
+  // 恢复预设设置（全类型合并）
   if (data.presetSettings) {
-    const existing = await readKVItem(KV_KEYS.PRESET_SETTINGS);
-    if (!existing) {
-      await writeKVItem(KV_KEYS.PRESET_SETTINGS, data.presetSettings);
-    }
+    const existing = (await readKVItem(KV_KEYS.PRESET_SETTINGS)) || {};
+    await writeKVItem(KV_KEYS.PRESET_SETTINGS, mergePresetSettings(existing, data.presetSettings));
+  }
+
+  if (Array.isArray(data.deletedPromptContents)) {
+    const existing = (await readKVItem(KV_KEYS.PROMPT_DELETED_CONTENTS)) || [];
+    await writeKVItem(
+      KV_KEYS.PROMPT_DELETED_CONTENTS,
+      Array.from(new Set([...existing, ...data.deletedPromptContents].filter(Boolean)))
+    );
+  }
+
+  if (Array.isArray(data.promptHistoryOverrides)) {
+    const existing = (await readKVItem(KV_KEYS.PROMPT_HISTORY_OVERRIDES)) || [];
+    await writeKVItem(
+      KV_KEYS.PROMPT_HISTORY_OVERRIDES,
+      mergePromptOverrides(existing, data.promptHistoryOverrides)
+    );
   }
 
   return count;
+}
+
+function mergePresetSettings(existing, incoming) {
+  const result = {};
+  for (const type of ['image', 'video', 'audio', 'text', 'agent', 'ppt-common', 'ppt-slide']) {
+    result[type] = {
+      pinnedPrompts: Array.from(new Set([
+        ...(existing?.[type]?.pinnedPrompts || []),
+        ...(incoming?.[type]?.pinnedPrompts || []),
+      ])),
+      deletedPrompts: Array.from(new Set([
+        ...(existing?.[type]?.deletedPrompts || []),
+        ...(incoming?.[type]?.deletedPrompts || []),
+      ])),
+    };
+  }
+  return result;
+}
+
+function mergePromptOverrides(existing, incoming) {
+  const map = new Map();
+  for (const item of [...existing, ...incoming]) {
+    const key = item?.sourceContent || item?.sourceSentPrompt;
+    if (!key) continue;
+    const current = map.get(key);
+    if (!current || (item.updatedAt || 0) >= (current.updatedAt || 0)) {
+      map.set(key, item);
+    }
+  }
+  return Array.from(map.values()).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
 }
 
 /**
@@ -206,21 +256,29 @@ async function restoreProjects(zip) {
         });
       }
     } catch (err) {
-      console.debug('[Restore] Failed to parse board file:', file.name, err);
+      void err;
     }
   }
 
   const existingFolders = await readAllFromIDB(
-    IDB_STORES.WORKSPACE.name, IDB_STORES.WORKSPACE.stores.FOLDERS
+    IDB_STORES.WORKSPACE.name,
+    IDB_STORES.WORKSPACE.stores.FOLDERS
   );
-  const folderRestore = await restoreProjectFolders(zip, existingFolders || [], drawnixFiles.map(file => file.name));
+  const folderRestore = await restoreProjectFolders(
+    zip,
+    existingFolders || [],
+    drawnixFiles.map((file) => file.name)
+  );
 
   // 写入画板（upsert）
   if (boards.length > 0) {
     const existingBoards = await readAllFromIDB(
-      IDB_STORES.WORKSPACE.name, IDB_STORES.WORKSPACE.stores.BOARDS
+      IDB_STORES.WORKSPACE.name,
+      IDB_STORES.WORKSPACE.stores.BOARDS
     );
-    const existingBoardMap = new Map((existingBoards || []).map(b => [b.id, b]));
+    const existingBoardMap = new Map(
+      (existingBoards || []).map((b) => [b.id, b])
+    );
 
     for (let i = 0; i < boards.length; i++) {
       const board = boards[i];
@@ -231,20 +289,27 @@ async function restoreProjects(zip) {
         const filePath = drawnixFiles[i]?.name || '';
         const relativePath = filePath.replace(/^projects\//, '');
         const parts = relativePath.split('/');
-        const folderPath = parts.length > 1 ? parts.slice(0, -1).join('/') : null;
+        const folderPath =
+          parts.length > 1 ? parts.slice(0, -1).join('/') : null;
         const folderId = folderPath
-          ? folderRestore.pathToId.get(folderPath)
-            || (board.folderId ? folderRestore.importedToLocalId.get(board.folderId) : null)
-            || board.folderId
-            || null
+          ? folderRestore.pathToId.get(folderPath) ||
+            (board.folderId
+              ? folderRestore.importedToLocalId.get(board.folderId)
+              : null) ||
+            board.folderId ||
+            null
           : null;
-        await writeToIDB(IDB_STORES.WORKSPACE.name, IDB_STORES.WORKSPACE.stores.BOARDS, {
-          ...board,
-          folderId,
-        });
+        await writeToIDB(
+          IDB_STORES.WORKSPACE.name,
+          IDB_STORES.WORKSPACE.stores.BOARDS,
+          {
+            ...board,
+            folderId,
+          }
+        );
         count++;
       } catch (err) {
-        console.debug('[Restore] Failed to write board:', board.id, err);
+        void err;
       }
     }
   }
@@ -262,14 +327,21 @@ async function restoreTasks(zip) {
   const tasks = JSON.parse(await tasksFile.async('string'));
   if (!Array.isArray(tasks) || tasks.length === 0) return 0;
 
-  const existingTasks = await readAllFromIDB(SW_TASK_QUEUE_DB.name, SW_TASK_QUEUE_DB.stores.TASKS);
-  const existingIds = new Set((existingTasks || []).map(t => t.id));
+  const existingTasks = await readAllFromIDB(
+    SW_TASK_QUEUE_DB.name,
+    SW_TASK_QUEUE_DB.stores.TASKS
+  );
+  const existingIds = new Set((existingTasks || []).map((t) => t.id));
 
-  const newTasks = tasks.filter(t => !existingIds.has(t.id));
+  const newTasks = tasks.filter((t) => !existingIds.has(t.id));
   if (newTasks.length > 0) {
     // 标记为远程同步，避免 SW 重新执行
-    const markedTasks = newTasks.map(t => ({ ...t, syncedFromRemote: true }));
-    await writeBatchToIDB(SW_TASK_QUEUE_DB.name, SW_TASK_QUEUE_DB.stores.TASKS, markedTasks);
+    const markedTasks = newTasks.map((t) => ({ ...t, syncedFromRemote: true }));
+    await writeBatchToIDB(
+      SW_TASK_QUEUE_DB.name,
+      SW_TASK_QUEUE_DB.stores.TASKS,
+      markedTasks
+    );
   }
 
   return newTasks.length;
@@ -300,16 +372,24 @@ async function restoreAssets(zip, onProgress) {
     try {
       const meta = JSON.parse(await file.async('string'));
       const assetId = meta.id;
-      if (!assetId) { processedCount++; continue; }
+      if (!assetId) {
+        processedCount++;
+        continue;
+      }
 
       // 查找对应的二进制文件
-      const binaryFile = findBinaryFile(assetsFolder, relativePath, meta.mimeType);
+      const binaryFile = findBinaryFile(
+        assetsFolder,
+        relativePath,
+        meta.mimeType
+      );
 
       if (binaryFile) {
         const blob = await binaryFile.async('blob');
         if (blob.size > 0 && meta.url) {
           // 写入 Cache Storage（为每个 URL 创建独立 Response）
-          const contentType = meta.mimeType || blob.type || 'application/octet-stream';
+          const contentType =
+            meta.mimeType || blob.type || 'application/octet-stream';
           const response = new Response(blob, {
             headers: { 'Content-Type': contentType },
           });
@@ -329,7 +409,11 @@ async function restoreAssets(zip, onProgress) {
           lastUsed: meta.updatedAt || meta.createdAt,
           metadata: meta.metadata,
         };
-        await writeToIDB(IDB_STORES.UNIFIED_CACHE.name, IDB_STORES.UNIFIED_CACHE.store, cacheItem);
+        await writeToIDB(
+          IDB_STORES.UNIFIED_CACHE.name,
+          IDB_STORES.UNIFIED_CACHE.store,
+          cacheItem
+        );
       } else {
         // 本地素材 → aitu-assets
         await writeToIDB(IDB_STORES.ASSETS.name, IDB_STORES.ASSETS.store, meta);
@@ -337,7 +421,7 @@ async function restoreAssets(zip, onProgress) {
 
       count++;
     } catch (err) {
-      console.debug('[Restore] Failed to restore asset:', relativePath, err);
+      void err;
     }
 
     processedCount++;
@@ -356,30 +440,35 @@ async function restoreKnowledgeBase(zip) {
 
   const data = JSON.parse(await kbFile.async('string'));
   const result = await importKnowledgeBaseData(data, {
-    getAllDirectories: () => readAllFromIDB(
-      IDB_STORES.KNOWLEDGE_BASE.name,
-      IDB_STORES.KNOWLEDGE_BASE.stores.DIRECTORIES
-    ),
-    getDirectoryById: (id) => readItemFromIDB(
-      IDB_STORES.KNOWLEDGE_BASE.name,
-      IDB_STORES.KNOWLEDGE_BASE.stores.DIRECTORIES,
-      id
-    ),
-    putDirectory: (_id, value) => writeToIDB(
-      IDB_STORES.KNOWLEDGE_BASE.name,
-      IDB_STORES.KNOWLEDGE_BASE.stores.DIRECTORIES,
-      value
-    ),
-    getTagById: (id) => readItemFromIDB(
-      IDB_STORES.KNOWLEDGE_BASE.name,
-      IDB_STORES.KNOWLEDGE_BASE.stores.TAGS,
-      id
-    ),
-    putTag: (_id, value) => writeToIDB(
-      IDB_STORES.KNOWLEDGE_BASE.name,
-      IDB_STORES.KNOWLEDGE_BASE.stores.TAGS,
-      value
-    ),
+    getAllDirectories: () =>
+      readAllFromIDB(
+        IDB_STORES.KNOWLEDGE_BASE.name,
+        IDB_STORES.KNOWLEDGE_BASE.stores.DIRECTORIES
+      ),
+    getDirectoryById: (id) =>
+      readItemFromIDB(
+        IDB_STORES.KNOWLEDGE_BASE.name,
+        IDB_STORES.KNOWLEDGE_BASE.stores.DIRECTORIES,
+        id
+      ),
+    putDirectory: (_id, value) =>
+      writeToIDB(
+        IDB_STORES.KNOWLEDGE_BASE.name,
+        IDB_STORES.KNOWLEDGE_BASE.stores.DIRECTORIES,
+        value
+      ),
+    getTagById: (id) =>
+      readItemFromIDB(
+        IDB_STORES.KNOWLEDGE_BASE.name,
+        IDB_STORES.KNOWLEDGE_BASE.stores.TAGS,
+        id
+      ),
+    putTag: (_id, value) =>
+      writeToIDB(
+        IDB_STORES.KNOWLEDGE_BASE.name,
+        IDB_STORES.KNOWLEDGE_BASE.stores.TAGS,
+        value
+      ),
     getNoteById: async (id) => {
       const meta = await readItemFromIDB(
         IDB_STORES.KNOWLEDGE_BASE.name,
@@ -397,36 +486,42 @@ async function restoreKnowledgeBase(zip) {
         content: contentRecord?.content ?? '',
       };
     },
-    putNoteMeta: (_id, value) => writeToIDB(
-      IDB_STORES.KNOWLEDGE_BASE.name,
-      IDB_STORES.KNOWLEDGE_BASE.stores.NOTES,
-      value
-    ),
-    putNoteContent: (_id, value) => writeToIDB(
-      IDB_STORES.KNOWLEDGE_BASE.name,
-      IDB_STORES.KNOWLEDGE_BASE.stores.NOTE_CONTENTS,
-      value
-    ),
-    getNoteTagById: (id) => readItemFromIDB(
-      IDB_STORES.KNOWLEDGE_BASE.name,
-      IDB_STORES.KNOWLEDGE_BASE.stores.NOTE_TAGS,
-      id
-    ),
-    putNoteTag: (_id, value) => writeToIDB(
-      IDB_STORES.KNOWLEDGE_BASE.name,
-      IDB_STORES.KNOWLEDGE_BASE.stores.NOTE_TAGS,
-      value
-    ),
-    getNoteImageById: (id) => readItemFromIDB(
-      IDB_STORES.KNOWLEDGE_BASE.name,
-      IDB_STORES.KNOWLEDGE_BASE.stores.NOTE_IMAGES,
-      id
-    ),
-    putNoteImage: (_id, value) => writeToIDB(
-      IDB_STORES.KNOWLEDGE_BASE.name,
-      IDB_STORES.KNOWLEDGE_BASE.stores.NOTE_IMAGES,
-      value
-    ),
+    putNoteMeta: (_id, value) =>
+      writeToIDB(
+        IDB_STORES.KNOWLEDGE_BASE.name,
+        IDB_STORES.KNOWLEDGE_BASE.stores.NOTES,
+        value
+      ),
+    putNoteContent: (_id, value) =>
+      writeToIDB(
+        IDB_STORES.KNOWLEDGE_BASE.name,
+        IDB_STORES.KNOWLEDGE_BASE.stores.NOTE_CONTENTS,
+        value
+      ),
+    getNoteTagById: (id) =>
+      readItemFromIDB(
+        IDB_STORES.KNOWLEDGE_BASE.name,
+        IDB_STORES.KNOWLEDGE_BASE.stores.NOTE_TAGS,
+        id
+      ),
+    putNoteTag: (_id, value) =>
+      writeToIDB(
+        IDB_STORES.KNOWLEDGE_BASE.name,
+        IDB_STORES.KNOWLEDGE_BASE.stores.NOTE_TAGS,
+        value
+      ),
+    getNoteImageById: (id) =>
+      readItemFromIDB(
+        IDB_STORES.KNOWLEDGE_BASE.name,
+        IDB_STORES.KNOWLEDGE_BASE.stores.NOTE_IMAGES,
+        id
+      ),
+    putNoteImage: (_id, value) =>
+      writeToIDB(
+        IDB_STORES.KNOWLEDGE_BASE.name,
+        IDB_STORES.KNOWLEDGE_BASE.stores.NOTE_IMAGES,
+        value
+      ),
   });
 
   return result.noteCount;
@@ -435,28 +530,47 @@ async function restoreKnowledgeBase(zip) {
 async function restoreProjectFolders(zip, existingFolders, drawnixFilePaths) {
   const importedToLocalId = new Map();
   const pathToId = new Map();
-  const folderKeyMap = new Map(existingFolders.map(folder => [getFolderKey(folder.name, folder.parentId), folder]));
+  const folderKeyMap = new Map(
+    existingFolders.map((folder) => [
+      getFolderKey(folder.name, folder.parentId),
+      folder,
+    ])
+  );
   const foldersFile = zip.file('projects/_folders.json');
 
   if (foldersFile) {
     const parsed = JSON.parse(await foldersFile.async('string'));
-    const importedFolders = Array.isArray(parsed) ? parsed : parsed?.folders || [];
-    const folderMap = new Map(importedFolders.map(folder => [folder.id, folder]));
+    const importedFolders = Array.isArray(parsed)
+      ? parsed
+      : parsed?.folders || [];
+    const folderMap = new Map(
+      importedFolders.map((folder) => [folder.id, folder])
+    );
     const sortedFolders = [...importedFolders].sort((a, b) => {
       const depthA = getFolderDepth(a, folderMap);
       const depthB = getFolderDepth(b, folderMap);
-      return depthA - depthB || (a.order || 0) - (b.order || 0) || a.name.localeCompare(b.name);
+      return (
+        depthA - depthB ||
+        (a.order || 0) - (b.order || 0) ||
+        a.name.localeCompare(b.name)
+      );
     });
 
     for (const folder of sortedFolders) {
-      const mappedParentId = folder.parentId ? importedToLocalId.get(folder.parentId) || null : null;
-      const existingById = existingFolders.find(item => item.id === folder.id);
+      const mappedParentId = folder.parentId
+        ? importedToLocalId.get(folder.parentId) || null
+        : null;
+      const existingById = existingFolders.find(
+        (item) => item.id === folder.id
+      );
       if (existingById) {
         importedToLocalId.set(folder.id, existingById.id);
         continue;
       }
 
-      const existingByKey = folderKeyMap.get(getFolderKey(folder.name, mappedParentId));
+      const existingByKey = folderKeyMap.get(
+        getFolderKey(folder.name, mappedParentId)
+      );
       if (existingByKey) {
         importedToLocalId.set(folder.id, existingByKey.id);
         continue;
@@ -466,13 +580,23 @@ async function restoreProjectFolders(zip, existingFolders, drawnixFilePaths) {
         ...folder,
         parentId: mappedParentId,
       };
-      await writeToIDB(IDB_STORES.WORKSPACE.name, IDB_STORES.WORKSPACE.stores.FOLDERS, nextFolder);
+      await writeToIDB(
+        IDB_STORES.WORKSPACE.name,
+        IDB_STORES.WORKSPACE.stores.FOLDERS,
+        nextFolder
+      );
       existingFolders.push(nextFolder);
-      folderKeyMap.set(getFolderKey(nextFolder.name, nextFolder.parentId), nextFolder);
+      folderKeyMap.set(
+        getFolderKey(nextFolder.name, nextFolder.parentId),
+        nextFolder
+      );
       importedToLocalId.set(folder.id, nextFolder.id);
     }
 
-    const allFolders = await readAllFromIDB(IDB_STORES.WORKSPACE.name, IDB_STORES.WORKSPACE.stores.FOLDERS);
+    const allFolders = await readAllFromIDB(
+      IDB_STORES.WORKSPACE.name,
+      IDB_STORES.WORKSPACE.stores.FOLDERS
+    );
     const fullPathMap = buildFolderPathMap(allFolders || []);
     for (const [folderId, folderPath] of fullPathMap.entries()) {
       pathToId.set(folderPath, folderId);
@@ -493,7 +617,9 @@ async function restoreProjectFolders(zip, existingFolders, drawnixFilePaths) {
     }
 
     const folder = {
-      id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`,
+      id: `${Date.now().toString(36)}-${Math.random()
+        .toString(36)
+        .slice(2, 10)}`,
       name: folderName,
       parentId,
       order: existingFolders.length,
@@ -501,7 +627,11 @@ async function restoreProjectFolders(zip, existingFolders, drawnixFilePaths) {
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
-    await writeToIDB(IDB_STORES.WORKSPACE.name, IDB_STORES.WORKSPACE.stores.FOLDERS, folder);
+    await writeToIDB(
+      IDB_STORES.WORKSPACE.name,
+      IDB_STORES.WORKSPACE.stores.FOLDERS,
+      folder
+    );
     existingFolders.push(folder);
     folderKeyMap.set(getFolderKey(folder.name, folder.parentId), folder);
     pathToId.set(folderPath, folder.id);
@@ -536,7 +666,9 @@ function showRestoreProgress() {
  */
 function showRestoreSuccessNotification(stats, manifest) {
   const partInfo = manifest.partIndex
-    ? ` (分片 ${manifest.partIndex}${manifest.totalParts ? '/' + manifest.totalParts : ''})`
+    ? ` (分片 ${manifest.partIndex}${
+        manifest.totalParts ? '/' + manifest.totalParts : ''
+      })`
     : '';
   const notification = document.createElement('div');
   notification.className = 'import-notification restore-notification';
@@ -547,11 +679,48 @@ function showRestoreSuccessNotification(stats, manifest) {
         <strong>恢复成功${partInfo}</strong>
         <p class="counts">
           ${stats.prompts > 0 ? `新增提示词: ${stats.prompts}` : ''}
-          ${stats.projects > 0 ? `${stats.prompts > 0 ? ' | ' : ''}画板: ${stats.projects}` : ''}
-          ${stats.tasks > 0 ? `${(stats.prompts + stats.projects) > 0 ? ' | ' : ''}任务: ${stats.tasks}` : ''}
-          ${stats.knowledgeBase > 0 ? `${(stats.prompts + stats.projects + stats.tasks) > 0 ? ' | ' : ''}知识库笔记: ${stats.knowledgeBase}` : ''}
-          ${stats.assets > 0 ? `${(stats.prompts + stats.projects + stats.tasks + stats.knowledgeBase) > 0 ? ' | ' : ''}素材: ${stats.assets}` : ''}
-          ${(stats.prompts + stats.projects + stats.tasks + stats.knowledgeBase + stats.assets) === 0 ? '所有数据已是最新，无需更新' : ''}
+          ${
+            stats.projects > 0
+              ? `${stats.prompts > 0 ? ' | ' : ''}画板: ${stats.projects}`
+              : ''
+          }
+          ${
+            stats.tasks > 0
+              ? `${stats.prompts + stats.projects > 0 ? ' | ' : ''}任务: ${
+                  stats.tasks
+                }`
+              : ''
+          }
+          ${
+            stats.knowledgeBase > 0
+              ? `${
+                  stats.prompts + stats.projects + stats.tasks > 0 ? ' | ' : ''
+                }知识库笔记: ${stats.knowledgeBase}`
+              : ''
+          }
+          ${
+            stats.assets > 0
+              ? `${
+                  stats.prompts +
+                    stats.projects +
+                    stats.tasks +
+                    stats.knowledgeBase >
+                  0
+                    ? ' | '
+                    : ''
+                }素材: ${stats.assets}`
+              : ''
+          }
+          ${
+            stats.prompts +
+              stats.projects +
+              stats.tasks +
+              stats.knowledgeBase +
+              stats.assets ===
+            0
+              ? '所有数据已是最新，无需更新'
+              : ''
+          }
         </p>
       </div>
       <button class="close" onclick="this.parentElement.parentElement.remove()">×</button>

@@ -4,11 +4,13 @@ import {
   type ModelConfig,
 } from '../../constants/model-config';
 import type { PricingEndpointInfo } from '../../utils/model-pricing-types';
+import type { ImageApiCompatibility } from '../../utils/settings-types';
+import {
+  OFFICIAL_GPT_IMAGE_EDIT_REQUEST_SCHEMA,
+  TUZI_GPT_IMAGE_EDIT_REQUEST_SCHEMA,
+} from '../model-adapters/image-request-schemas';
 import { inferAllBindingHintsFromEndpoints } from './endpoint-binding-inference';
-import type {
-  ProviderModelBinding,
-  ProviderProfileSnapshot,
-} from './types';
+import type { ProviderModelBinding, ProviderProfileSnapshot } from './types';
 
 function buildBindingId(
   profileId: string,
@@ -77,16 +79,8 @@ function isGeminiFamilyModel(model: ModelConfig): boolean {
   ]);
 }
 
-function isOfficialGoogleBaseUrl(baseUrl: string): boolean {
-  const normalized = baseUrl.trim().toLowerCase();
-  return (
-    normalized.includes('generativelanguage.googleapis.com') ||
-    normalized.includes('vertex.googleapis.com')
-  );
-}
-
-function isTuziBaseUrl(baseUrl: string): boolean {
-  return baseUrl.trim().toLowerCase().includes('api.tu-zi.com');
+function isTuziProviderProfile(profile: ProviderProfileSnapshot): boolean {
+  return isTuziBaseUrl(profile.baseUrl);
 }
 
 function isMidjourneyModel(model: ModelConfig): boolean {
@@ -101,8 +95,7 @@ function isMidjourneyModel(model: ModelConfig): boolean {
 
 function isFluxModel(model: ModelConfig): boolean {
   return (
-    model.vendor === ModelVendor.FLUX ||
-    model.id.toLowerCase().includes('flux')
+    model.vendor === ModelVendor.FLUX || model.id.toLowerCase().includes('flux')
   );
 }
 
@@ -153,11 +146,32 @@ function isStandardKlingVideoModel(model: ModelConfig): boolean {
 
 function isSeedreamModel(model: ModelConfig): boolean {
   const lowerId = model.id.toLowerCase();
-  return lowerId.includes('seedream') || normalizeModelTags(model).includes('seedream');
+  return (
+    lowerId.includes('seedream') ||
+    normalizeModelTags(model).includes('seedream')
+  );
+}
+
+function isGptImageModel(model: ModelConfig): boolean {
+  const lowerId = model.id.toLowerCase();
+  return (
+    lowerId.startsWith('gpt-image') ||
+    lowerId === 'chatgpt-image-latest' ||
+    (model.vendor === ModelVendor.GPT && lowerId.includes('gpt-image'))
+  );
 }
 
 function isSeedanceModel(model: ModelConfig): boolean {
   return model.id.toLowerCase().includes('seedance');
+}
+
+function isHappyHorseModel(model: ModelConfig): boolean {
+  const lowerId = model.id.toLowerCase();
+  return (
+    model.vendor === ModelVendor.HAPPYHORSE ||
+    lowerId.includes('happyhorse') ||
+    normalizeModelTags(model).includes('happyhorse')
+  );
 }
 
 function isSoraModel(model: ModelConfig): boolean {
@@ -179,6 +193,71 @@ function isSunoModel(model: ModelConfig): boolean {
 
 function isOfficialOpenAIProfile(profile: ProviderProfileSnapshot): boolean {
   return profile.baseUrl.toLowerCase().includes('api.openai.com');
+}
+
+function isTuziProfile(profile: ProviderProfileSnapshot): boolean {
+  return isTuziBaseUrl(profile.baseUrl);
+}
+
+function isTuziBaseUrl(baseUrl: string): boolean {
+  const normalizedBaseUrl = baseUrl.trim().toLowerCase();
+  if (!normalizedBaseUrl) {
+    return false;
+  }
+
+  try {
+    const url = new URL(
+      /^[a-z][a-z\d+\-.]*:\/\//i.test(normalizedBaseUrl)
+        ? normalizedBaseUrl
+        : `https://${normalizedBaseUrl}`
+    );
+    const hostname = url.hostname.toLowerCase();
+    return hostname === 'tu-zi.com' || hostname.endsWith('.tu-zi.com');
+  } catch {
+    return false;
+  }
+}
+
+function normalizeImageApiCompatibilityMode(
+  value?: ImageApiCompatibility | string | null
+): ImageApiCompatibility {
+  if (
+    value === 'auto' ||
+    value === 'openai-gpt-image' ||
+    value === 'tuzi-gpt-image' ||
+    value === 'openai-compatible-basic'
+  ) {
+    return value;
+  }
+
+  if (value === 'tuzi-compatible') {
+    return 'tuzi-gpt-image';
+  }
+
+  return 'auto';
+}
+
+function resolveImageApiCompatibility(
+  profile: ProviderProfileSnapshot,
+  model: ModelConfig
+): Exclude<ImageApiCompatibility, 'auto'> {
+  const configured = normalizeImageApiCompatibilityMode(
+    profile.imageApiCompatibility
+  );
+
+  if (configured !== 'auto') {
+    return configured;
+  }
+
+  if (isOfficialOpenAIProfile(profile) && isGptImageModel(model)) {
+    return 'openai-gpt-image';
+  }
+
+  if (isTuziProfile(profile) && isGptImageModel(model)) {
+    return 'tuzi-gpt-image';
+  }
+
+  return 'openai-compatible-basic';
 }
 
 function hasAnyTag(model: ModelConfig, candidates: string[]): boolean {
@@ -229,7 +308,11 @@ function inferTextBindings(
       ? true
       : isLikelyVisionCapableTextModel(model);
 
-  if (profile.providerType === 'gemini-compatible' && isGeminiFamilyModel(model)) {
+  if (
+    isGeminiFamilyModel(model) &&
+    (profile.providerType === 'gemini-compatible' ||
+      isTuziProviderProfile(profile))
+  ) {
     bindings.push(
       buildBinding(profile, model, {
         protocol: 'google.generateContent',
@@ -265,9 +348,7 @@ function inferTextBindings(
         metadata: {
           text: {
             supportsImageInput,
-            imageInputMode: supportsImageInput
-              ? 'openai-image_url'
-              : undefined,
+            imageInputMode: supportsImageInput ? 'openai-image_url' : undefined,
             maxImageCount: supportsImageInput ? 6 : undefined,
             capabilitySource: supportsImageInput ? 'template' : 'heuristic',
             capabilityConfidence: supportsImageInput ? 'medium' : 'low',
@@ -290,9 +371,7 @@ function inferTextBindings(
         metadata: {
           text: {
             supportsImageInput,
-            imageInputMode: supportsImageInput
-              ? 'openai-image_url'
-              : undefined,
+            imageInputMode: supportsImageInput ? 'openai-image_url' : undefined,
             maxImageCount: supportsImageInput ? 6 : undefined,
             capabilitySource: supportsImageInput ? 'template' : 'heuristic',
             capabilityConfidence: supportsImageInput ? 'medium' : 'low',
@@ -315,11 +394,6 @@ function inferImageBindings(
   const bindings: ProviderModelBinding[] = [];
   const isGeminiImageModel =
     isGeminiFamilyModel(model) && !isAsyncImageModel(model.id);
-  const isTuziProfile = isTuziBaseUrl(profile.baseUrl);
-  const preferImagesGenerationsForBuiltinGemini =
-    profile.providerType === 'gemini-compatible' &&
-    isGeminiImageModel &&
-    !isOfficialGoogleBaseUrl(profile.baseUrl);
 
   if (isMidjourneyModel(model)) {
     bindings.push(
@@ -365,25 +439,7 @@ function inferImageBindings(
     );
   }
 
-  if (preferImagesGenerationsForBuiltinGemini) {
-    bindings.push(
-      buildBinding(profile, model, {
-        protocol: 'openai.images.generations',
-        requestSchema: 'openai.image.basic-json',
-        responseSchema: 'openai.image.data',
-        submitPath: '/images/generations',
-        priority: 500,
-        confidence: 'high',
-        source: 'template',
-      })
-    );
-  }
-
-  if (
-    profile.providerType === 'gemini-compatible' &&
-    isGeminiImageModel &&
-    !isTuziProfile
-  ) {
+  if (profile.providerType === 'gemini-compatible' && isGeminiImageModel) {
     bindings.push(
       buildBinding(profile, model, {
         protocol: 'google.generateContent',
@@ -391,18 +447,37 @@ function inferImageBindings(
         responseSchema: 'google.generate-content.parts',
         submitPath: '/v1beta/models/{model}:generateContent',
         baseUrlStrategy: 'trim-v1',
-        priority: preferImagesGenerationsForBuiltinGemini ? 460 : 480,
+        priority: 480,
         confidence: 'high',
         source: 'template',
       })
     );
   }
 
-  if (profile.providerType === 'openai-compatible' || profile.providerType === 'custom') {
+  if (
+    profile.providerType === 'openai-compatible' ||
+    profile.providerType === 'custom'
+  ) {
     const genericPriority =
       profile.providerType === 'openai-compatible' ? 320 : 160;
     const genericConfidence =
       profile.providerType === 'openai-compatible' ? 'high' : 'medium';
+    const imageApiCompatibility = normalizeImageApiCompatibilityMode(
+      profile.imageApiCompatibility
+    );
+    const resolvedImageApiCompatibility = resolveImageApiCompatibility(
+      profile,
+      model
+    );
+    const requestSchema = isSeedreamModel(model)
+      ? 'openai.image.seedream-json'
+      : isGptImageModel(model) &&
+        resolvedImageApiCompatibility === 'openai-gpt-image'
+      ? 'openai.image.gpt-generation-json'
+      : isGptImageModel(model) &&
+        resolvedImageApiCompatibility === 'tuzi-gpt-image'
+      ? 'tuzi.image.gpt-generation-json'
+      : 'openai.image.basic-json';
 
     if (!isMidjourneyModel(model) && isAsyncImageModel(model.id)) {
       bindings.push(
@@ -423,12 +498,71 @@ function inferImageBindings(
       bindings.push(
         buildBinding(profile, model, {
           protocol: 'openai.images.generations',
-          requestSchema: isSeedreamModel(model)
-            ? 'openai.image.seedream-json'
-            : 'openai.image.basic-json',
+          requestSchema,
           responseSchema: 'openai.image.data',
           submitPath: '/images/generations',
+          metadata: {
+            image: {
+              action: 'generation',
+              imageApiCompatibility,
+              resolvedImageApiCompatibility,
+            },
+          },
           priority: genericPriority,
+          confidence: genericConfidence,
+          source: 'template',
+        })
+      );
+    }
+
+    if (
+      !isAsyncImageModel(model.id) &&
+      isGptImageModel(model) &&
+      resolvedImageApiCompatibility === 'openai-gpt-image'
+    ) {
+      bindings.push(
+        buildBinding(profile, model, {
+          protocol: 'openai.images.edits',
+          requestSchema: OFFICIAL_GPT_IMAGE_EDIT_REQUEST_SCHEMA,
+          responseSchema: 'openai.image.data',
+          submitPath: '/images/edits',
+          metadata: {
+            image: {
+              action: 'edit',
+              imageApiCompatibility,
+              resolvedImageApiCompatibility,
+              maxImageCount: 16,
+              supportsMask: true,
+            },
+          },
+          priority: genericPriority - 1,
+          confidence: genericConfidence,
+          source: 'template',
+        })
+      );
+    }
+
+    if (
+      !isAsyncImageModel(model.id) &&
+      isGptImageModel(model) &&
+      resolvedImageApiCompatibility === 'tuzi-gpt-image'
+    ) {
+      bindings.push(
+        buildBinding(profile, model, {
+          protocol: 'openai.images.generations',
+          requestSchema: TUZI_GPT_IMAGE_EDIT_REQUEST_SCHEMA,
+          responseSchema: 'openai.image.data',
+          submitPath: '/images/generations',
+          metadata: {
+            image: {
+              action: 'edit',
+              imageApiCompatibility,
+              resolvedImageApiCompatibility,
+              maxImageCount: 16,
+              supportsMask: false,
+            },
+          },
+          priority: genericPriority - 1,
           confidence: genericConfidence,
           source: 'template',
         })
@@ -491,7 +625,50 @@ function inferVideoBindings(
     );
   }
 
-  if (profile.providerType === 'openai-compatible' || profile.providerType === 'custom') {
+  if (isHappyHorseModel(model)) {
+    bindings.push(
+      buildBinding(profile, model, {
+        protocol: 'happyhorse.video',
+        requestSchema: 'happyhorse.video.json',
+        responseSchema: 'happyhorse.video.task',
+        submitPath: '/videos',
+        pollPathTemplate: '/videos/{taskId}',
+        metadata: {
+          video: {
+            allowedDurations: [
+              '3',
+              '4',
+              '5',
+              '6',
+              '7',
+              '8',
+              '9',
+              '10',
+              '11',
+              '12',
+              '13',
+              '14',
+              '15',
+            ],
+            defaultDuration: '5',
+            durationMode: 'request-param',
+            durationField: 'parameters.duration',
+            strictDurationValidation: false,
+            resultMode: 'download-content',
+            downloadPathTemplate: '/videos/{taskId}/content',
+          },
+        },
+        priority: 630,
+        confidence: 'high',
+        source: 'template',
+      })
+    );
+  }
+
+  if (
+    profile.providerType === 'openai-compatible' ||
+    profile.providerType === 'custom'
+  ) {
     const soraDownloadMetadata = isSoraModel(model)
       ? {
           video: {
@@ -587,7 +764,9 @@ function inferAudioBindings(
   return bindings;
 }
 
-function dedupeBindings(bindings: ProviderModelBinding[]): ProviderModelBinding[] {
+function dedupeBindings(
+  bindings: ProviderModelBinding[]
+): ProviderModelBinding[] {
   const deduped = new Map<string, ProviderModelBinding>();
 
   bindings.forEach((binding) => {
@@ -597,6 +776,40 @@ function dedupeBindings(bindings: ProviderModelBinding[]): ProviderModelBinding[
   });
 
   return Array.from(deduped.values());
+}
+
+function shouldUseDiscoveredEndpointHintForModel(
+  hint: ReturnType<typeof inferAllBindingHintsFromEndpoints>[number],
+  profile: ProviderProfileSnapshot,
+  model: ModelConfig
+): boolean {
+  if (hint.protocol === 'openai.images.edits') {
+    return (
+      isGptImageModel(model) &&
+      resolveImageApiCompatibility(profile, model) === 'openai-gpt-image'
+    );
+  }
+
+  if (hint.protocol === 'openai.async.media') {
+    return model.type === 'image';
+  }
+
+  if (hint.protocol === 'openai.async.video') {
+    return model.type === 'video';
+  }
+
+  return true;
+}
+
+function getDiscoveredEndpointPriority(
+  hint: ReturnType<typeof inferAllBindingHintsFromEndpoints>[number],
+  model: ModelConfig
+): number {
+  if (hint.protocol === 'openai.async.media' && model.type === 'image') {
+    return 700;
+  }
+
+  return 140;
 }
 
 export function inferBindingsForProviderModel(
@@ -625,15 +838,21 @@ export function inferBindingsForProviderModel(
   if (endpointHints) {
     const hints = inferAllBindingHintsFromEndpoints(endpointHints);
     for (const hint of hints) {
+      if (!shouldUseDiscoveredEndpointHintForModel(hint, profile, model)) {
+        continue;
+      }
+
       const alreadyHasSpecific = bindings.some(
-        (b) => b.protocol === hint.protocol && b.confidence === 'high' && b.source === 'template'
+        (b) =>
+          b.protocol === hint.protocol &&
+          b.confidence === 'high' &&
+          b.source === 'template'
       );
       if (!alreadyHasSpecific) {
         bindings.push(
           buildBinding(profile, model, {
             ...hint,
-            // discovered endpoint 只补充候选，不应抢过现有模板绑定
-            priority: 140,
+            priority: getDiscoveredEndpointPriority(hint, model),
             confidence: 'medium',
             source: 'discovered',
           })

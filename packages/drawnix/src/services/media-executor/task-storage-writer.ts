@@ -10,6 +10,7 @@
 
 import { normalizeImageDataUrl } from '@aitu/utils';
 import { APP_DB_NAME, APP_DB_STORES } from '../app-database';
+import type { TaskInvocationRouteSnapshot } from '../../types/task.types';
 
 // 使用主线程专用数据库
 const DB_NAME = APP_DB_NAME;
@@ -83,6 +84,7 @@ export interface SWTask {
   };
   progress?: number;
   remoteId?: string;
+  invocationRoute?: TaskInvocationRouteSnapshot;
   executionPhase?: string;
   savedToLibrary?: boolean;
   insertedToCanvas?: boolean;
@@ -168,6 +170,10 @@ class TaskStorageWriter {
    * 获取任务
    */
   async getTask(taskId: string): Promise<SWTask | null> {
+    if (!taskId) {
+      return null;
+    }
+
     const db = await this.getDB();
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(TASKS_STORE, 'readonly');
@@ -185,7 +191,8 @@ class TaskStorageWriter {
   async createTask(
     taskId: string,
     type: SWTaskType,
-    params: SWTask['params']
+    params: SWTask['params'],
+    invocationRoute?: TaskInvocationRouteSnapshot
   ): Promise<SWTask> {
     const now = Date.now();
     const task: SWTask = {
@@ -193,6 +200,7 @@ class TaskStorageWriter {
       type,
       status: 'pending',
       params,
+      invocationRoute,
       createdAt: now,
       updatedAt: now,
     };
@@ -280,10 +288,17 @@ class TaskStorageWriter {
   /**
    * 更新任务的 remoteId（用于异步任务恢复）
    */
-  async updateRemoteId(taskId: string, remoteId: string): Promise<void> {
+  async updateRemoteId(
+    taskId: string,
+    remoteId: string,
+    invocationRoute?: TaskInvocationRouteSnapshot
+  ): Promise<void> {
     const task = await this.getTask(taskId);
     if (task) {
       task.remoteId = remoteId;
+      if (invocationRoute) {
+        task.invocationRoute = invocationRoute;
+      }
       task.updatedAt = Date.now();
       task.executionPhase = 'polling';
       await this.saveTask(task);
@@ -294,6 +309,10 @@ class TaskStorageWriter {
    * 删除任务
    */
   async deleteTask(taskId: string): Promise<void> {
+    if (!taskId) {
+      return;
+    }
+
     const db = await this.getDB();
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(TASKS_STORE, 'readwrite');
@@ -311,40 +330,37 @@ class TaskStorageWriter {
    * 
    * @returns 成功导入的任务数量
    */
-  async importTasks(tasks: SWTask[]): Promise<{ imported: number; skipped: number }> {
+  async importTasks(
+    tasks: SWTask[],
+    options: { replaceExisting?: boolean; batchSize?: number } = {}
+  ): Promise<{ imported: number; skipped: number }> {
     if (tasks.length === 0) {
       return { imported: 0, skipped: 0 };
     }
 
     const db = await this.getDB();
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction(TASKS_STORE, 'readwrite');
-      const store = transaction.objectStore(TASKS_STORE);
-      
-      let imported = 0;
-      let skipped = 0;
-      let completed = 0;
-      
-      // 处理每个任务
-      for (const task of tasks) {
-        // 先检查是否存在
-        const getRequest = store.get(task.id);
-        
-        getRequest.onsuccess = () => {
-          if (getRequest.result) {
-            // 任务已存在，跳过
-            skipped++;
-            completed++;
-            if (completed === tasks.length) {
-              resolve({ imported, skipped });
-            }
-          } else {
-            // 任务不存在，插入
+    const batchSize = Math.max(1, options.batchSize ?? 200);
+    let totalImported = 0;
+    let totalSkipped = 0;
+
+    for (let i = 0; i < tasks.length; i += batchSize) {
+      const batch = tasks.slice(i, i + batchSize);
+      const result = await new Promise<{ imported: number; skipped: number }>((resolve, reject) => {
+        const transaction = db.transaction(TASKS_STORE, 'readwrite');
+        const store = transaction.objectStore(TASKS_STORE);
+
+        let imported = 0;
+        let skipped = 0;
+        let completed = 0;
+
+        // 处理每个任务
+        for (const task of batch) {
+          if (options.replaceExisting) {
             const putRequest = store.put(task);
             putRequest.onsuccess = () => {
               imported++;
               completed++;
-              if (completed === tasks.length) {
+              if (completed === batch.length) {
                 resolve({ imported, skipped });
               }
             };
@@ -352,22 +368,76 @@ class TaskStorageWriter {
               // 单个任务失败不影响其他任务
               skipped++;
               completed++;
-              if (completed === tasks.length) {
+              if (completed === batch.length) {
                 resolve({ imported, skipped });
               }
             };
+            continue;
           }
-        };
-        
-        getRequest.onerror = () => {
-          skipped++;
-          completed++;
-          if (completed === tasks.length) {
-            resolve({ imported, skipped });
-          }
-        };
-      }
 
+          // 先检查是否存在
+          const getRequest = store.get(task.id);
+
+          getRequest.onsuccess = () => {
+            if (getRequest.result) {
+              // 任务已存在，跳过
+              skipped++;
+              completed++;
+              if (completed === batch.length) {
+                resolve({ imported, skipped });
+              }
+            } else {
+              // 任务不存在，插入
+              const putRequest = store.put(task);
+              putRequest.onsuccess = () => {
+                imported++;
+                completed++;
+                if (completed === batch.length) {
+                  resolve({ imported, skipped });
+                }
+              };
+              putRequest.onerror = () => {
+                // 单个任务失败不影响其他任务
+                skipped++;
+                completed++;
+                if (completed === batch.length) {
+                  resolve({ imported, skipped });
+                }
+              };
+            }
+          };
+
+          getRequest.onerror = () => {
+            skipped++;
+            completed++;
+            if (completed === batch.length) {
+              resolve({ imported, skipped });
+            }
+          };
+        }
+
+        transaction.onerror = () => reject(transaction.error);
+      });
+      totalImported += result.imported;
+      totalSkipped += result.skipped;
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+
+    return { imported: totalImported, skipped: totalSkipped };
+  }
+
+  /**
+   * 清空任务表（用于完整覆盖恢复）
+   */
+  async clearAllTasks(): Promise<void> {
+    const db = await this.getDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(TASKS_STORE, 'readwrite');
+      const store = transaction.objectStore(TASKS_STORE);
+      const request = store.clear();
+
+      request.onerror = () => reject(request.error);
+      transaction.oncomplete = () => resolve();
       transaction.onerror = () => reject(transaction.error);
     });
   }

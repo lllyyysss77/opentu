@@ -9,6 +9,8 @@ import {
   type ModelType,
 } from '../../constants/model-config';
 import {
+  DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY,
+  LEGACY_DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY,
   LEGACY_DEFAULT_PROVIDER_PROFILE_ID,
   TUZI_DEFAULT_PROVIDER_NAME,
   TUZI_PROVIDER_DEFAULT_BASE_URL,
@@ -36,6 +38,8 @@ import type {
 export interface SettingsInvocationPlannerOptions {
   includeLegacyProfile?: boolean;
   manualBindings?: ProviderModelBinding[];
+  bindingId?: string | null;
+  preferredRequestSchema?: string | readonly string[] | null;
 }
 
 function inferProviderTypeFromBaseUrl(
@@ -54,12 +58,31 @@ function inferProviderTypeFromBaseUrl(
     normalizedBaseUrl.includes('/openai') ||
     normalizedBaseUrl.endsWith('/v1') ||
     normalizedBaseUrl.includes('api.openai.com') ||
-    normalizedBaseUrl.includes('api.tu-zi.com')
+    isTuziBaseUrl(normalizedBaseUrl)
   ) {
     return 'openai-compatible';
   }
 
   return 'custom';
+}
+
+function isTuziBaseUrl(baseUrl: string): boolean {
+  const normalizedBaseUrl = baseUrl.trim().toLowerCase();
+  if (!normalizedBaseUrl) {
+    return false;
+  }
+
+  try {
+    const url = new URL(
+      /^[a-z][a-z\d+\-.]*:\/\//i.test(normalizedBaseUrl)
+        ? normalizedBaseUrl
+        : `https://${normalizedBaseUrl}`
+    );
+    const hostname = url.hostname.toLowerCase();
+    return hostname === 'tu-zi.com' || hostname.endsWith('.tu-zi.com');
+  } catch {
+    return false;
+  }
 }
 
 function inferAuthType(
@@ -88,6 +111,7 @@ function toProviderProfileSnapshot(
     | 'baseUrl'
     | 'apiKey'
     | 'authType'
+    | 'imageApiCompatibility'
     | 'extraHeaders'
   >
 ): ProviderProfileSnapshot {
@@ -102,6 +126,8 @@ function toProviderProfileSnapshot(
       profile.providerType,
       profile.authType
     ),
+    imageApiCompatibility:
+      profile.imageApiCompatibility || DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY,
     extraHeaders: profile.extraHeaders,
   };
 }
@@ -117,6 +143,7 @@ function inferVendorFromModelId(modelId: string): ModelVendor {
     return ModelVendor.SUNO;
   }
   if (lowerId.includes('kling')) return ModelVendor.KLING;
+  if (lowerId.includes('happyhorse')) return ModelVendor.HAPPYHORSE;
   if (lowerId.includes('seedance') || lowerId.includes('seedream')) {
     return ModelVendor.DOUBAO;
   }
@@ -159,6 +186,9 @@ function buildLegacyProfileSnapshot(): ProviderProfileSnapshot {
     .get()
     .find((profile) => profile.id === LEGACY_DEFAULT_PROVIDER_PROFILE_ID);
   const baseUrl = gemini.baseUrl?.trim() || TUZI_PROVIDER_DEFAULT_BASE_URL;
+  const legacyImageApiCompatibilityFallback = isTuziBaseUrl(baseUrl)
+    ? LEGACY_DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY
+    : DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY;
   const providerType =
     existingLegacyProfile?.providerType === 'openai-compatible' ||
     existingLegacyProfile?.providerType === 'gemini-compatible' ||
@@ -177,6 +207,9 @@ function buildLegacyProfileSnapshot(): ProviderProfileSnapshot {
       providerType,
       existingLegacyProfile?.authType
     ),
+    imageApiCompatibility:
+      existingLegacyProfile?.imageApiCompatibility ||
+      legacyImageApiCompatibilityFallback,
   };
 }
 
@@ -329,6 +362,8 @@ export function resolveInvocationPlanFromRoute(
       {
         operation,
         modelRef,
+        bindingId: options.bindingId,
+        preferredRequestSchema: options.preferredRequestSchema,
       },
       options
     );

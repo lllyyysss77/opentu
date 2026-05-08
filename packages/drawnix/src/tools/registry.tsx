@@ -1,11 +1,7 @@
 import React from 'react';
 import type { ToolDefinition } from '../types/toolbox.types';
 import { BUILT_IN_TOOL_MANIFESTS } from './built-in-manifests';
-
-export interface ToolPluginModule {
-  manifest: ToolDefinition;
-  Component?: React.ComponentType<any>;
-}
+export type { ToolPluginModule } from './types';
 
 type InternalComponentLoader = () => Promise<{
   default: React.ComponentType<any>;
@@ -24,6 +20,13 @@ const INTERNAL_COMPONENT_LOADERS = new Map<string, InternalComponentLoader>([
     () =>
       import('./tools/model-benchmark').then((module) => ({
         default: module.ModelBenchmarkToolComponent,
+      })),
+  ],
+  [
+    'prompt-history',
+    () =>
+      import('./tools/prompt-history').then((module) => ({
+        default: module.PromptHistoryToolComponent,
       })),
   ],
   [
@@ -59,6 +62,13 @@ const INTERNAL_COMPONENT_LOADERS = new Map<string, InternalComponentLoader>([
     () =>
       import('./tools/mv-creator').then((module) => ({
         default: module.MVCreatorToolComponent,
+      })),
+  ],
+  [
+    'comic-creator',
+    () =>
+      import('./tools/comic-creator').then((module) => ({
+        default: module.ComicCreatorToolComponent,
       })),
   ],
 ]);

@@ -15,14 +15,15 @@ import React, {
   useEffect,
   useMemo,
 } from 'react';
+import { copyToClipboard } from '../../utils/runtime-helpers';
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown, Copy, ExternalLink, Plus, Search, X } from 'lucide-react';
 import { MessagePlugin } from 'tdesign-react';
 import {
   IMAGE_MODELS,
+  ModelVendor,
   getModelConfig,
   type ModelConfig,
-  type ModelVendor,
 } from '../../constants/model-config';
 import { VendorTabPanel, type VendorTab } from '../shared/VendorTabPanel';
 import { ATTACHED_ELEMENT_CLASS_NAME } from '@plait/core';
@@ -39,13 +40,14 @@ import {
   ContextMenu,
   useContextMenuState,
   type ContextMenuEntry,
-} from '../shared';
+} from '../shared/ContextMenu';
 import './model-dropdown.scss';
 import { ModelHealthBadge } from '../shared/ModelHealthBadge';
 import { ModelBenchmarkBadge } from '../shared/ModelBenchmarkBadge';
-import { useFormattedModelPrice, useModelMeta } from '../../hooks/use-model-pricing';
+import { HoverTip } from '../shared/hover';
+import { useModelPriceText, useModelMeta } from '../../hooks/use-model-pricing';
 import { modelPricingService } from '../../utils/model-pricing-service';
-import { KeyboardDropdown } from './KeyboardDropdown';
+import { KeyboardDropdown, type DropdownPlacement } from './KeyboardDropdown';
 import {
   groupModelsByProvider,
   DEFAULT_PROVIDER_ID,
@@ -71,9 +73,16 @@ function normalizeSearchText(value?: string | null): string {
 
 const ModelDropdownPriceTag: React.FC<{ model: ModelConfig }> = React.memo(
   ({ model }) => {
-    const text = useFormattedModelPrice(model.sourceProfileId, model.id);
-    if (!text) return null;
-    return <span className="model-dropdown__item-price">{text}</span>;
+    const { summary, detail } = useModelPriceText(
+      model.sourceProfileId,
+      model.id
+    );
+    if (!summary) return null;
+    return (
+      <HoverTip content={detail} placement="top" disabled={detail === summary}>
+        <span className="model-dropdown__item-price">{summary}</span>
+      </HoverTip>
+    );
   }
 );
 
@@ -156,8 +165,8 @@ export interface ModelDropdownProps {
   language?: 'zh' | 'en';
   /** 模型列表（可选，默认为图片模型） */
   models?: ModelConfig[];
-  /** 下拉菜单弹出方向（可选，默认为 up） */
-  placement?: 'up' | 'down';
+  /** 下拉菜单弹出方向（可选，默认自动判断） */
+  placement?: DropdownPlacement;
   /** 自定义标题（可选，仅用于 minimal 变体） */
   header?: string;
   /** 是否禁用 */
@@ -188,7 +197,7 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
   onSelectModel,
   language = 'zh',
   models = IMAGE_MODELS,
-  placement = 'up',
+  placement = 'auto',
   header,
   disabled = false,
   variant = 'minimal',
@@ -338,6 +347,8 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
     () => (currentModel ? getModelProfile(currentModel) : null),
     [currentModel, getModelProfile]
   );
+  const shouldUseVendorIconInTrigger =
+    currentModel?.vendor === ModelVendor.HAPPYHORSE;
   // 使用 shortCode 或默认简写
   const shortCode = currentModel?.shortCode || 'img';
   const isSearching = Boolean(searchQuery.trim());
@@ -607,15 +618,8 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
 
   const handleCopyModelId = useCallback(
     async (modelId: string) => {
-      if (!navigator.clipboard?.writeText) {
-        MessagePlugin.warning(
-          language === 'zh' ? '当前环境不支持复制' : 'Clipboard is not supported'
-        );
-        return;
-      }
-
       try {
-        await navigator.clipboard.writeText(modelId);
+        await copyToClipboard(modelId);
         MessagePlugin.success(
           language === 'zh' ? '模型名已复制' : 'Model name copied'
         );
@@ -787,16 +791,25 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
             <ModelSourceIcon
               vendor={currentModel.vendor}
               profileName={
-                currentProfile?.name || currentModel.sourceProfileName
+                shouldUseVendorIconInTrigger
+                  ? undefined
+                  : currentProfile?.name || currentModel.sourceProfileName
               }
-              iconUrl={currentProfile?.iconUrl}
+              iconUrl={
+                shouldUseVendorIconInTrigger
+                  ? undefined
+                  : currentProfile?.iconUrl
+              }
               size={15}
               className="model-dropdown__trigger-source-icon"
             />
           ) : null}
           <span className="model-dropdown__at">#</span>
           <span className="model-dropdown__code">{shortCode}</span>
-          <ModelHealthBadge modelId={selectedModel} />
+          <ModelHealthBadge
+            modelId={selectedModel}
+            profileId={currentProfile?.id || currentModel?.sourceProfileId || null}
+          />
           <ChevronDown
             size={14}
             className={`model-dropdown__chevron ${
@@ -829,9 +842,15 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
             <ModelSourceIcon
               vendor={currentModel.vendor}
               profileName={
-                currentProfile?.name || currentModel.sourceProfileName
+                shouldUseVendorIconInTrigger
+                  ? undefined
+                  : currentProfile?.name || currentModel.sourceProfileName
               }
-              iconUrl={currentProfile?.iconUrl}
+              iconUrl={
+                shouldUseVendorIconInTrigger
+                  ? undefined
+                  : currentProfile?.iconUrl
+              }
               size={18}
               className="model-dropdown__trigger-source-icon"
             />
@@ -851,7 +870,10 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
             }
             disabled={disabled}
           />
-          <ModelHealthBadge modelId={selectedModel} />
+          <ModelHealthBadge
+            modelId={selectedModel}
+            profileId={currentProfile?.id || currentModel?.sourceProfileId || null}
+          />
         </div>
         <ChevronDown
           size={16}
@@ -877,16 +899,31 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
       openKeys={['Enter', ' ']}
       onOpenKey={handleOpenKey}
       trackPosition={
-        variant === 'form' || placement === 'down' || placement === 'up'
+        variant === 'form' ||
+        placement === 'down' ||
+        placement === 'up' ||
+        placement === 'auto'
       }
+      placement={placement}
+      offset={4}
     >
-      {({ containerRef, menuRef, portalPosition, handleTriggerKeyDown }) => {
+      {({
+        containerRef,
+        menuRef,
+        portalPosition,
+        menuStyle,
+        resolvedPlacement,
+        handleTriggerKeyDown,
+      }) => {
         const isPortalled =
-          variant === 'form' || placement === 'down' || placement === 'up';
+          variant === 'form' ||
+          placement === 'down' ||
+          placement === 'up' ||
+          placement === 'auto';
 
         const menu = (
           <div
-            className={`model-dropdown__menu model-dropdown__menu--${placement} ${
+            className={`model-dropdown__menu model-dropdown__menu--${resolvedPlacement} ${
               variant === 'form' ? 'model-dropdown__menu--form' : ''
             } ${
               isPortalled ? 'model-dropdown__menu--portalled' : ''
@@ -899,21 +936,14 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
             style={
               isPortalled
                 ? {
-                    position: 'fixed',
+                    ...menuStyle,
                     zIndex: Z_INDEX.DROPDOWN_PORTAL,
-                    left: portalPosition.left,
                     width:
                       variant === 'form'
                         ? Math.max(
                             portalPosition.width,
                             providerGroups.length > 1 ? 620 : 520
                           )
-                        : 'auto',
-                    top:
-                      placement === 'down' ? portalPosition.bottom + 4 : 'auto',
-                    bottom:
-                      placement === 'up'
-                        ? window.innerHeight - portalPosition.top + 4
                         : 'auto',
                     visibility:
                       portalPosition.width === 0 ? 'hidden' : 'visible',
@@ -1046,7 +1076,10 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
                                   NEW
                                 </span>
                               )}
-                              <ModelHealthBadge modelId={model.id} />
+                              <ModelHealthBadge
+                                modelId={model.id}
+                                profileId={model.sourceProfileId || null}
+                              />
                               <ModelBenchmarkBadge modelId={model.id} />
                               <ModelDropdownPriceTag model={model} />
                             </div>

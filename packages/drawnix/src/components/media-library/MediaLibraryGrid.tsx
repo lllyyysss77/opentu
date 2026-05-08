@@ -21,7 +21,6 @@ import {
   Video as VideoIcon,
   Image as ImageIcon,
   Music,
-  Globe,
   User,
   Sparkles,
   Clock,
@@ -45,7 +44,11 @@ import {
 } from '../icons';
 import { useAssets } from '../../contexts/AssetContext';
 import { useConfirmDialog } from '../dialog/ConfirmDialog';
-import { filterAssets, formatFileSize } from '../../utils/asset-utils';
+import {
+  filterAssets,
+  formatFileSize,
+  matchesAssetSearchQuery,
+} from '../../utils/asset-utils';
 import { useDeviceType } from '../../hooks/useDeviceType';
 import { VirtualAssetGrid } from './VirtualAssetGrid';
 import { MediaLibraryEmpty } from './MediaLibraryEmpty';
@@ -60,14 +63,18 @@ import {
   ContextMenu,
   useContextMenuState,
   type ContextMenuEntry,
-} from '../shared';
+} from '../shared/ContextMenu';
 import type {
   MediaLibraryGridProps,
   ViewMode,
   SortOption,
   Asset,
 } from '../../types/asset.types';
-import { AssetType, AssetSource } from '../../types/asset.types';
+import {
+  AssetType,
+  AssetSource,
+  AssetCategory,
+} from '../../types/asset.types';
 import { useDrawnix } from '../../hooks/use-drawnix';
 import {
   removeElementsByAssetIds,
@@ -93,7 +100,7 @@ import {
 } from '../../utils/download-utils';
 import './MediaLibraryGrid.scss';
 import './VirtualAssetGrid.scss';
-import { HoverTip } from '../shared';
+import { HoverTip } from '../shared/hover';
 
 // 视图切换防抖时间
 const VIEW_MODE_DEBOUNCE_MS = 150;
@@ -160,26 +167,38 @@ const getStoredGridSize = (): number => {
 
 // 类型过滤选项
 const TYPE_OPTIONS = [
-  { value: 'ALL', label: '全部类型', icon: MediaLibraryIcon },
+  { value: 'ALL', label: '全部', icon: MediaLibraryIcon },
   { value: AssetType.IMAGE, label: '图片', icon: ImageUploadIconComp },
   { value: AssetType.VIDEO, label: '视频', icon: VideoIcon },
   { value: AssetType.AUDIO, label: '音频', icon: Music },
 ];
 
 // 来源过滤选项
-const SOURCE_OPTIONS = [
-  { value: 'ALL', label: '全部来源', icon: Globe, countKey: 'sourceAll' },
+const SOURCE_FILTER_TAGS = [
   {
     value: AssetSource.LOCAL,
-    label: '本地上传',
-    icon: User,
+    label: '本地',
+    tooltip: '本地上传',
+    icon: HardDrive,
     countKey: 'local',
   },
   {
     value: AssetSource.AI_GENERATED,
-    label: 'AI生成',
+    label: 'AI',
+    tooltip: 'AI生成',
     icon: Sparkles,
     countKey: 'ai',
+  },
+];
+
+// 业务类别过滤选项
+const CATEGORY_FILTER_TAGS = [
+  {
+    value: AssetCategory.CHARACTER,
+    label: '主体',
+    tooltip: '主体素材',
+    icon: User,
+    countKey: 'character',
   },
 ];
 
@@ -211,6 +230,7 @@ const SORT_GROUPS = [
 interface SelectionScopeSnapshot {
   activeType?: AssetType;
   activeSource?: AssetSource;
+  activeCategory?: AssetCategory;
   searchQuery: string;
   playlistId: string | null;
 }
@@ -239,8 +259,10 @@ function matchesSelectionScope(
   const matchesType = !scope.activeType || asset.type === scope.activeType;
   const matchesSource =
     !scope.activeSource || asset.source === scope.activeSource;
-  const matchesSearch =
-    !scope.searchQuery || asset.name.toLowerCase().includes(scope.searchQuery);
+  const matchesCategory =
+    !scope.activeCategory ||
+    (asset.category || AssetCategory.GENERAL) === scope.activeCategory;
+  const matchesSearch = matchesAssetSearchQuery(asset, scope.searchQuery);
 
   let matchesPlaylist = true;
   if (scope.playlistId) {
@@ -252,11 +274,12 @@ function matchesSelectionScope(
     }
   }
 
-  return matchesType && matchesSource && matchesSearch && matchesPlaylist;
+  return (
+    matchesType && matchesSource && matchesCategory && matchesSearch && matchesPlaylist
+  );
 }
 
 export function MediaLibraryGrid({
-  filterType,
   selectedAssetId,
   onSelectAsset,
   onDoubleClick,
@@ -364,9 +387,6 @@ export function MediaLibraryGrid({
     let mounted = true;
     const handleSyncCompleted = async () => {
       if (mounted) {
-        console.log(
-          '[MediaLibraryGrid] Media sync completed, refreshing synced URLs'
-        );
         await loadSyncedUrls();
       }
     };
@@ -396,9 +416,11 @@ export function MediaLibraryGrid({
       image: assets.filter((a) => a.type === AssetType.IMAGE).length,
       video: assets.filter((a) => a.type === AssetType.VIDEO).length,
       audio: assets.filter((a) => a.type === AssetType.AUDIO).length,
+      character: assets.filter(
+        (a) => a.category === AssetCategory.CHARACTER
+      ).length,
       local: assets.filter((a) => a.source === AssetSource.LOCAL).length,
       ai: assets.filter((a) => a.source === AssetSource.AI_GENERATED).length,
-      sourceAll: assets.length,
     };
   }, [assets]);
 
@@ -670,10 +692,15 @@ export function MediaLibraryGrid({
         filters.activeSource && filters.activeSource !== 'ALL'
           ? (filters.activeSource as AssetSource)
           : undefined,
+      activeCategory:
+        filters.activeCategory && filters.activeCategory !== 'ALL'
+          ? (filters.activeCategory as AssetCategory)
+          : undefined,
       searchQuery: filters.searchQuery.trim().toLowerCase(),
       playlistId: selectedPlaylistId || null,
     };
   }, [
+    filters.activeCategory,
     filters.activeSource,
     filters.activeType,
     filters.searchQuery,
@@ -1058,7 +1085,6 @@ export function MediaLibraryGrid({
       });
 
     if (syncableUrls.length === 0) {
-      console.log('[MediaLibraryGrid] No syncable assets found');
       return;
     }
 
@@ -1072,12 +1098,6 @@ export function MediaLibraryGrid({
           setSyncProgress(Math.round((current / total) * 100));
         }
       );
-
-      console.log('[MediaLibraryGrid] Batch sync result:', {
-        succeeded: result.succeeded,
-        failed: result.failed,
-        skipped: result.skipped,
-      });
       setSyncProgress(100);
 
       // 刷新同步状态（更新已同步 URL 列表）
@@ -1481,57 +1501,18 @@ export function MediaLibraryGrid({
 
           <div className="media-library-grid__filter-island">
             <div className="media-library-grid__filter-group">
-              {TYPE_OPTIONS.map((opt) => {
-                const count =
-                  opt.value === 'ALL'
-                    ? counts.all
-                    : opt.value === AssetType.IMAGE
-                    ? counts.image
-                    : opt.value === AssetType.AUDIO
-                    ? counts.audio
-                    : counts.video;
-                const Icon = opt.icon;
-                const isActive = (filters.activeType || 'ALL') === opt.value;
-                return (
-                  <HoverTip
-                    key={opt.value}
-                    content={`${opt.label} (${count})`}
-                    placement="top"
-                    showArrow={false}
-                  >
-                    <div
-                      className={`media-library-grid__filter-option ${
-                        isActive
-                          ? 'media-library-grid__filter-option--active'
-                          : ''
-                      }`}
-                      onClick={() =>
-                        setFilters({
-                          activeType:
-                            opt.value === 'ALL'
-                              ? undefined
-                              : (opt.value as AssetType),
-                        })
-                      }
-                    >
-                      <Icon
-                        size={14}
-                        strokeWidth={1.5}
-                        className={opt.value === 'ALL' ? 'icon-all' : ''}
-                      />
-                      <span className="media-library-grid__filter-count">
-                        {count}
-                      </span>
-                    </div>
-                  </HoverTip>
-                );
-              })}
-
-              {SOURCE_OPTIONS.filter((opt) => opt.value !== 'ALL').map(
-                (opt) => {
-                  const count = counts[opt.countKey as keyof typeof counts];
+              <div className="media-library-grid__type-tabs">
+                {TYPE_OPTIONS.map((opt) => {
+                  const count =
+                    opt.value === 'ALL'
+                      ? counts.all
+                      : opt.value === AssetType.IMAGE
+                      ? counts.image
+                      : opt.value === AssetType.AUDIO
+                      ? counts.audio
+                      : counts.video;
                   const Icon = opt.icon;
-                  const isActive = filters.activeSource === opt.value;
+                  const isActive = (filters.activeType || 'ALL') === opt.value;
                   return (
                     <HoverTip
                       key={opt.value}
@@ -1539,10 +1520,108 @@ export function MediaLibraryGrid({
                       placement="top"
                       showArrow={false}
                     >
-                      <div
-                        className={`media-library-grid__filter-option ${
+                      <button
+                        type="button"
+                        aria-label={`${opt.label}：${count}`}
+                        aria-pressed={isActive}
+                        className={`media-library-grid__type-tab ${
                           isActive
-                            ? 'media-library-grid__filter-option--active'
+                            ? 'media-library-grid__type-tab--active'
+                            : ''
+                        }`}
+                        onClick={() =>
+                          setFilters({
+                            activeType:
+                              opt.value === 'ALL'
+                                ? undefined
+                                : (opt.value as AssetType),
+                          })
+                        }
+                      >
+                        <Icon
+                          size={14}
+                          strokeWidth={1.5}
+                          className={opt.value === 'ALL' ? 'icon-all' : ''}
+                        />
+                        <span className="media-library-grid__type-tab-label">
+                          {opt.label}
+                        </span>
+                        <span className="media-library-grid__type-tab-count">
+                          {count}
+                        </span>
+                      </button>
+                    </HoverTip>
+                  );
+                })}
+              </div>
+
+              <div className="media-library-grid__filter-tags">
+                <span className="media-library-grid__filter-tags-label">
+                  标签
+                </span>
+                {CATEGORY_FILTER_TAGS.map((opt) => {
+                  const count = counts[opt.countKey as keyof typeof counts];
+                  const Icon = opt.icon;
+                  const isActive = filters.activeCategory === opt.value;
+                  return (
+                    <HoverTip
+                      key={opt.value}
+                      content={`${opt.tooltip} (${count})`}
+                      placement="top"
+                      showArrow={false}
+                    >
+                      <button
+                        type="button"
+                        aria-label={`${opt.tooltip}：${count}`}
+                        aria-pressed={isActive}
+                        className={`media-library-grid__filter-chip ${
+                          isActive
+                            ? 'media-library-grid__filter-chip--active'
+                            : ''
+                        }`}
+                        onClick={() =>
+                          setFilters({
+                            activeCategory: isActive
+                              ? undefined
+                              : (opt.value as AssetCategory),
+                            ...(isActive
+                              ? {}
+                              : { activeType: AssetType.IMAGE }),
+                          })
+                        }
+                      >
+                        <Icon size={13} strokeWidth={1.7} />
+                        <span className="media-library-grid__filter-chip-label">
+                          {opt.label}
+                        </span>
+                        <span className="media-library-grid__filter-chip-count">
+                          {count}
+                        </span>
+                      </button>
+                    </HoverTip>
+                  );
+                })}
+
+                <span className="media-library-grid__filter-tags-divider" />
+
+                {SOURCE_FILTER_TAGS.map((opt) => {
+                  const count = counts[opt.countKey as keyof typeof counts];
+                  const Icon = opt.icon;
+                  const isActive = filters.activeSource === opt.value;
+                  return (
+                    <HoverTip
+                      key={opt.value}
+                      content={`${opt.tooltip} (${count})`}
+                      placement="top"
+                      showArrow={false}
+                    >
+                      <button
+                        type="button"
+                        aria-label={`${opt.tooltip}：${count}`}
+                        aria-pressed={isActive}
+                        className={`media-library-grid__filter-chip ${
+                          isActive
+                            ? 'media-library-grid__filter-chip--active'
                             : ''
                         }`}
                         onClick={() =>
@@ -1553,15 +1632,18 @@ export function MediaLibraryGrid({
                           })
                         }
                       >
-                        <Icon size={14} strokeWidth={1.5} />
-                        <span className="media-library-grid__filter-count">
+                        <Icon size={13} strokeWidth={1.7} />
+                        <span className="media-library-grid__filter-chip-label">
+                          {opt.label}
+                        </span>
+                        <span className="media-library-grid__filter-chip-count">
                           {count}
                         </span>
-                      </div>
+                      </button>
                     </HoverTip>
                   );
-                }
-              )}
+                })}
+              </div>
             </div>
           </div>
 
@@ -1723,12 +1805,11 @@ export function MediaLibraryGrid({
                     </span>
                   )}
                 </div>
-                <div
-                  className="media-library-grid__mobile-inspector-name"
-                  title={selectedAsset.name}
-                >
-                  {selectedAsset.name}
-                </div>
+                <HoverTip content={selectedAsset.name} showArrow={false}>
+                  <div className="media-library-grid__mobile-inspector-name">
+                    {selectedAsset.name}
+                  </div>
+                </HoverTip>
               </div>
               <div className="media-library-grid__mobile-inspector-actions">
                 <HoverTip content="预览">

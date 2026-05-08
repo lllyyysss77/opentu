@@ -11,12 +11,11 @@
 
 import type { PlaitBoard, PlaitElement, Point } from '@plait/core';
 import { Transforms, BoardTransforms, PlaitBoard as PlaitBoardUtils, RectangleClient } from '@plait/core';
-import { DrawTransforms } from '@plait/draw';
 import { MindElement, PlaitMind } from '@plait/mind';
 import { Node } from 'slate';
 import { FrameTransforms } from '../../plugins/with-frame';
-import { insertPPTImagePlaceholder } from '../../utils/frame-insertion-utils';
-import { isFrameElement, PlaitFrame } from '../../types/frame.types';
+import { setFramePPTMeta } from '../../utils/frame-insertion-utils';
+import { PlaitFrame } from '../../types/frame.types';
 import type {
   MindmapNodeInfo,
   MindmapToPPTOptions,
@@ -24,12 +23,20 @@ import type {
   PPTOutline,
   PPTPageSpec,
   PPTFrameMeta,
-  FrameRect,
 } from './ppt.types';
-import { layoutPageContent, convertToAbsoluteCoordinates, createStyledTextElement, PPT_FRAME_WIDTH, PPT_FRAME_HEIGHT } from './ppt-layout-engine';
-
-/** Frame 间距 */
-const FRAME_GAP = 60;
+import { PPT_FRAME_WIDTH, PPT_FRAME_HEIGHT } from './ppt-layout-engine';
+import {
+  buildPPTImageGenerationPrompt,
+  createDefaultPPTStyleSpec,
+  formatPPTCommonPrompt,
+  generateSlideImagePrompt,
+} from './ppt-prompts';
+import {
+  calcPPTFrameInsertionStartPosition,
+  getPPTFrameGridPositions,
+  loadPPTFrameLayoutColumns,
+} from './ppt-frame-layout';
+import { analytics } from '../../utils/posthog-analytics';
 
 /**
  * 从 MindElement 的 data 中提取纯文本
@@ -185,6 +192,7 @@ export function convertMindmapToOutline(
 
   return {
     title,
+    styleSpec: createDefaultPPTStyleSpec(),
     pages,
   };
 }
@@ -207,46 +215,6 @@ export function mindmapToOutline(
 }
 
 /**
- * 计算新 Frame 的插入位置
- * PPT Frame 固定 1920x1080（横屏），放在最右侧 Frame 的右边
- */
-function calcNewFramePosition(board: PlaitBoard): Point {
-  const existingFrames: RectangleClient[] = [];
-
-  for (const el of board.children) {
-    if (isFrameElement(el)) {
-      existingFrames.push(RectangleClient.getRectangleByPoints(el.points));
-    }
-  }
-
-  // 无 Frame 时居中显示
-  if (existingFrames.length === 0) {
-    const container = PlaitBoardUtils.getBoardContainer(board);
-    const vw = container.clientWidth;
-    const vh = container.clientHeight;
-    const zoom = board.viewport?.zoom ?? 1;
-    const orig = board.viewport?.origination;
-    const ox = orig ? orig[0] : 0;
-    const oy = orig ? orig[1] : 0;
-    const cx = ox + vw / 2 / zoom;
-    const cy = oy + vh / 2 / zoom;
-    return [cx - PPT_FRAME_WIDTH / 2, cy - PPT_FRAME_HEIGHT / 2];
-  }
-
-  // 横屏：放在最右侧 Frame 的右边
-  let maxRight = -Infinity;
-  let refY = 0;
-  for (const r of existingFrames) {
-    const right = r.x + r.width;
-    if (right > maxRight) {
-      maxRight = right;
-      refY = r.y;
-    }
-  }
-  return [maxRight + FRAME_GAP, refY];
-}
-
-/**
  * 聚焦视口到指定 Frame
  */
 function focusOnFrame(board: PlaitBoard, frame: PlaitFrame): void {
@@ -254,8 +222,8 @@ function focusOnFrame(board: PlaitBoard, frame: PlaitFrame): void {
   const padding = 80;
 
   const container = PlaitBoardUtils.getBoardContainer(board);
-  const viewportWidth = container.clientWidth;
-  const viewportHeight = container.clientHeight;
+  const viewportWidth = container?.clientWidth ?? 1920;
+  const viewportHeight = container?.clientHeight ?? 1080;
 
   // 计算缩放比例，让 Frame 适应视口
   const scaleX = viewportWidth / (rect.width + padding * 2);
@@ -273,9 +241,15 @@ function focusOnFrame(board: PlaitBoard, frame: PlaitFrame): void {
 }
 
 /**
- * 创建单个 PPT 页面（Frame + 文本内容）
+ * 创建单个 PPT 页面（Frame + 整页图片元数据）
  */
-function createPPTPage(board: PlaitBoard, pageSpec: PPTPageSpec, pageIndex: number, framePosition: Point): PlaitFrame {
+function createPPTPage(
+  board: PlaitBoard,
+  outline: PPTOutline,
+  pageSpec: PPTPageSpec,
+  pageIndex: number,
+  framePosition: Point
+): { frame: PlaitFrame; slidePrompt: string } {
   // 1. 创建 Frame
   const framePoints: [Point, Point] = [
     framePosition,
@@ -284,49 +258,20 @@ function createPPTPage(board: PlaitBoard, pageSpec: PPTPageSpec, pageIndex: numb
   const frameName = pageSpec.title || `Slide ${pageIndex}`;
   const frame = FrameTransforms.insertFrame(board, framePoints, frameName);
 
-  // 2. 计算布局
-  const frameRect: FrameRect = {
-    x: framePosition[0],
-    y: framePosition[1],
-    width: PPT_FRAME_WIDTH,
-    height: PPT_FRAME_HEIGHT,
-  };
-  const layoutElements = layoutPageContent(pageSpec, frameRect);
-  const absoluteElements = convertToAbsoluteCoordinates(layoutElements, frameRect);
-
-  // 3. 插入文本元素并绑定到 Frame
-  for (const element of absoluteElements) {
-    const insertPoint: Point = element.point;
-
-    // 跳过占位符文本
-    if (element.text === '[图片区域]') {
-      continue;
-    }
-
-    // 记录插入前的 children 数量
-    const childrenCountBefore = board.children.length;
-
-    // 插入带样式的文本（Slate Element 包含字号/粗细/颜色）
-    const styledText = createStyledTextElement(element);
-    DrawTransforms.insertText(board, insertPoint, styledText);
-
-    // 绑定到 Frame
-    if (board.children.length > childrenCountBefore) {
-      const newElement = board.children[childrenCountBefore];
-      if (newElement) {
-        FrameTransforms.bindToFrame(board, newElement, frame);
-      }
-    }
-  }
-
   // 4. 设置 pptMeta 扩展属性
+  const slidePrompt = generateSlideImagePrompt(outline, pageSpec, pageIndex);
+  const commonPrompt = formatPPTCommonPrompt(outline.styleSpec);
   const pptMeta: PPTFrameMeta = {
     layout: pageSpec.layout,
     pageIndex,
+    slidePrompt,
+    styleSpec: outline.styleSpec,
+    commonPrompt,
+    slideImageStatus: 'loading',
+    imageStatus: 'loading',
   };
   if (pageSpec.imagePrompt) {
     pptMeta.imagePrompt = pageSpec.imagePrompt;
-    pptMeta.imageStatus = 'placeholder';
   }
   if (pageSpec.notes) {
     pptMeta.notes = pageSpec.notes;
@@ -338,11 +283,33 @@ function createPPTPage(board: PlaitBoard, pageSpec: PPTPageSpec, pageIndex: numb
     Transforms.setNode(board, { pptMeta } as any, [frameIndex]);
   }
 
-  if (pageSpec.imagePrompt) {
-    insertPPTImagePlaceholder(board, frame, pageSpec.imagePrompt);
-  }
+  return { frame, slidePrompt };
+}
 
-  return frame;
+async function enqueueSlideImageTask(
+  frame: PlaitFrame,
+  prompt: string,
+  slidePrompt: string
+): Promise<boolean> {
+  try {
+    const { createImageTask } = await import('../../mcp/tools/image-generation');
+    const result = await createImageTask({
+      prompt,
+      size: '16x9',
+      pptSlidePrompt: slidePrompt,
+      autoInsertToCanvas: true,
+      targetFrameId: frame.id,
+      targetFrameDimensions: {
+        width: PPT_FRAME_WIDTH,
+        height: PPT_FRAME_HEIGHT,
+      },
+      pptSlideImage: true,
+    });
+    return !!result.success;
+  } catch (error) {
+    console.warn('[MindmapToPPT] Slide image task creation failed:', error);
+    return false;
+  }
 }
 
 /**
@@ -406,9 +373,16 @@ export async function generatePPTFromMindmap(
   mindElement: MindElement,
   options: MindmapToPPTOptions = {}
 ): Promise<MindmapToPPTResult> {
+  const startTime = Date.now();
   try {
     // 1. 验证输入
     if (!isPlaitMind(mindElement)) {
+      analytics.trackPPTAction({
+        action: 'mindmap_to_ppt',
+        source: 'popup_toolbar',
+        status: 'failed',
+        error: 'InvalidMindmapSelection',
+      });
       return {
         success: false,
         error: '请选择一个完整的思维导图（根节点）',
@@ -417,12 +391,30 @@ export async function generatePPTFromMindmap(
 
     // 2. 提取思维导图结构并转换为大纲
     const outline = mindmapToOutline(mindElement, options);
+    analytics.trackPPTAction({
+      action: 'mindmap_to_ppt',
+      source: 'popup_toolbar',
+      status: 'start',
+      pageCount: outline.pages.length,
+      prompt: outline.title,
+      metadata: {
+        include_toc: options.includeToc !== false,
+        has_ending_subtitle: Boolean(options.endingSubtitle),
+      },
+    });
 
     // 3. 验证大纲
     if (outline.pages.length <= 2) {
       // 只有封面页和结尾页，说明思维导图内容为空
       const rootInfo = extractMindmapStructure(mindElement);
       if (!rootInfo.text && rootInfo.children.length === 0) {
+        analytics.trackPPTAction({
+          action: 'mindmap_to_ppt',
+          source: 'popup_toolbar',
+          status: 'failed',
+          pageCount: outline.pages.length,
+          error: 'EmptyMindmap',
+        });
         return {
           success: false,
           error: '思维导图内容为空，请先添加内容',
@@ -430,22 +422,57 @@ export async function generatePPTFromMindmap(
       }
     }
 
-    // 4. 逐页创建 Frame
+    // 4. 逐页创建 Frame，并生成整页图片
     let firstFrame: PlaitFrame | null = null;
     let createdCount = 0;
+    let queuedImageTaskCount = 0;
+    let failedImageTaskCount = 0;
+    const startPosition = calcPPTFrameInsertionStartPosition(board);
+    const framePositions = getPPTFrameGridPositions(
+      outline.pages.length,
+      startPosition,
+      loadPPTFrameLayoutColumns()
+    );
 
     for (let i = 0; i < outline.pages.length; i++) {
       const pageSpec = outline.pages[i];
       const pageIndex = i + 1;
 
       // 计算 Frame 位置
-      const framePosition = calcNewFramePosition(board);
+      const framePosition = framePositions[i];
 
       // 创建页面
-      const frame = createPPTPage(board, pageSpec, pageIndex, framePosition);
+      const { frame, slidePrompt } = createPPTPage(
+        board,
+        outline,
+        pageSpec,
+        pageIndex,
+        framePosition
+      );
 
       if (i === 0) {
         firstFrame = frame;
+      }
+
+      if (slidePrompt) {
+        const queued = await enqueueSlideImageTask(
+          frame,
+          buildPPTImageGenerationPrompt(
+            formatPPTCommonPrompt(outline.styleSpec),
+            slidePrompt
+          ),
+          slidePrompt
+        );
+        if (queued) {
+          queuedImageTaskCount++;
+        }
+        if (!queued) {
+          failedImageTaskCount++;
+          setFramePPTMeta(board, frame.id, {
+            slideImageStatus: 'failed',
+            imageStatus: 'failed',
+          });
+        }
       }
 
       createdCount++;
@@ -456,12 +483,40 @@ export async function generatePPTFromMindmap(
       focusOnFrame(board, firstFrame);
     }
 
+    analytics.trackPPTAction({
+      action: 'mindmap_to_ppt',
+      source: 'popup_toolbar',
+      status: failedImageTaskCount > 0 ? 'failed' : 'success',
+      pageCount: createdCount,
+      frameCount: createdCount,
+      successCount: queuedImageTaskCount,
+      failedCount: failedImageTaskCount,
+      durationMs: Date.now() - startTime,
+      prompt: outline.title,
+      metadata: {
+        image_task_count: queuedImageTaskCount,
+        layout_count: outline.pages.reduce<Record<string, number>>(
+          (acc, page) => {
+            acc[page.layout] = (acc[page.layout] || 0) + 1;
+            return acc;
+          },
+          {}
+        ),
+      },
+    });
     return {
       success: true,
       pageCount: createdCount,
     };
   } catch (error: any) {
     console.error('[MindmapToPPT] Conversion failed:', error);
+    analytics.trackPPTAction({
+      action: 'mindmap_to_ppt',
+      source: 'popup_toolbar',
+      status: 'failed',
+      durationMs: Date.now() - startTime,
+      error: error instanceof Error ? error.name || 'Error' : typeof error,
+    });
     return {
       success: false,
       error: error.message || '思维导图转 PPT 失败',
